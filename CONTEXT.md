@@ -15,11 +15,11 @@ The single sign-in identity (Google sign-in) that owns a Household and administe
 _Avoid_: User, login, admin
 
 **Profile**:
-A person in the Household, used for attribution and colour-coding. Has no credentials beyond an optional PIN.
+A person in the Household, used for attribution and colour-coding. Has no credentials.
 _Avoid_: User, member, account, kiosk
 
 **Device**:
-A tablet paired to a Household so it can show the display without a sign-in. A Device is not a Profile.
+A tablet paired to a Household so it can show the display without a sign-in. It may read everything, tick Routines and list items, and manage Native Events, but never administer the Household. A Device is not a Profile.
 _Avoid_: Kiosk profile, terminal
 
 **Household Timezone**:
@@ -31,8 +31,12 @@ The one timezone stored on the Household. All display, rollover and reset logic 
 An external calendar provider connection (v1: Google only) belonging to the Household, from which events are mirrored.
 _Avoid_: Integration, connection, OAuth account
 
+**Mirrored Calendar**:
+One selected calendar within a Calendar Account that Nidus mirrors. Carries the Profile (or whole-Household) attribution that its Synced Events inherit.
+_Avoid_: Sub-calendar, feed, source
+
 **Synced Event**:
-An event mirrored read-only from a Calendar Account. Nidus never edits or writes it back.
+One occurrence of an event mirrored read-only from a Mirrored Calendar. Recurring events arrive already expanded into occurrences. Nidus never edits or writes it back.
 _Avoid_: External event, imported event
 
 **Native Event**:
@@ -42,9 +46,13 @@ _Avoid_: Local event, manual event
 ### Tasks & lists
 
 **Routine**:
-A fixed daily habit that resets to unchecked at Household midnight regardless of whether it was done.
+A habit owned by one Profile on a days-of-week schedule. It resets to unchecked at Household midnight regardless of whether it was done.
 _Avoid_: Habit, daily task, chore
 
+**Routine Completion**:
+A record that a Profile completed a Routine on a given Household date. Kept after the midnight reset.
+_Avoid_: Check, tick, history entry
+
 **Shared List**:
-A household-wide list of items (e.g. groceries) anyone can add to or cross off.
+A named household-wide list of text items (e.g. Groceries) anyone can add to or cross off. Crossed items remain visible until cleared.
 _Avoid_: Todo list, checklist
