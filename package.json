@@ -7,9 +7,6 @@
   "engines": {
     "node": ">=22"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "supabase"]
-  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
