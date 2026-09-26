@@ -29,3 +29,7 @@ Tests exercise one seam: the Supabase JS client against the local stack, acting 
 ## Schema
 
 Every schema change is a migration under `supabase/migrations/`, applied to the local stack. There is no hosted project until the final milestone.
+
+## Sign-in
+
+The Household Account signs in with Google. To run it locally, create the OAuth client and set the env files as described in `docs/google-sign-in.md`.
