@@ -65,7 +65,7 @@ export type HouseholdAccount = {
   household: Household;
   email: string;
   password: string;
-  userId: string;
+  authUserId: string;
 };
 
 let counter = 0;
@@ -98,7 +98,7 @@ export async function createHousehold(name = unique('Household')): Promise<House
     .insert({ auth_user_id: created.user.id, household_id: household.id });
   if (linkError) throw linkError;
 
-  return { household, email, password, userId: created.user.id };
+  return { household, email, password, authUserId: created.user.id };
 }
 
 // A client signed in as the Household Account: the phone-side principal.
@@ -114,6 +114,6 @@ export async function asHouseholdAccount(account: HouseholdAccount): Promise<Sup
 // account link; deleting the Household cascades to everything under it.
 export async function destroyHousehold(account: HouseholdAccount): Promise<void> {
   const admin = asServiceRole();
-  await admin.auth.admin.deleteUser(account.userId);
+  await admin.auth.admin.deleteUser(account.authUserId);
   await admin.from('households').delete().eq('id', account.household.id);
 }

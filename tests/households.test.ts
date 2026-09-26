@@ -28,7 +28,8 @@ describe('households', () => {
     const neighbours = await createHousehold('The Nguyens');
     arranged.push(mine, neighbours);
 
-    const { data, error } = await asHouseholdAccount(mine).then((c) => c.from('households').select('id, name, timezone'));
+    const account = await asHouseholdAccount(mine);
+    const { data, error } = await account.from('households').select('id, name, timezone');
 
     expect(error).toBeNull();
     expect(data).toEqual([{ id: mine.household.id, name: 'The Andersons', timezone: 'America/Chicago' }]);
