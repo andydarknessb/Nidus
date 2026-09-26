@@ -1,0 +1,4 @@
+# pnpm 12 blocks dependency build scripts unless listed here.
+allowBuilds:
+  esbuild: true
+  supabase: true
