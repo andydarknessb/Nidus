@@ -8,7 +8,10 @@ language sql
 stable
 set search_path = ''
 as $$
-  select exists (select 1 from pg_catalog.pg_timezone_names as n where n.name = tz)
+  select exists (
+    select 1 from pg_catalog.pg_timezone_names as n
+    where n.name = tz and n.name not like 'posix/%' and n.name not like 'right/%' and n.name <> 'Factory'
+  )
 $$;
 
 alter table public.households
@@ -51,4 +54,5 @@ end;
 $$;
 
 revoke all on function public.ensure_household(text, text) from public;
+revoke execute on function public.ensure_household(text, text) from anon;
 grant execute on function public.ensure_household(text, text) to authenticated;

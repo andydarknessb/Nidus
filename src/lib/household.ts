@@ -14,8 +14,8 @@ export function displayNameOf(session: Session): string {
 export async function ensureHousehold(session: Session): Promise<Household> {
   const display_name = displayNameOf(session);
   let { error } = await supabase.rpc('ensure_household', { display_name, browser_timezone: browserTimezone() });
-  if (error) {
-    // A browser timezone the database does not recognise must not block sign-in.
+  if (error?.code === '23514') {
+    // Only a rejected timezone (check_violation) falls back; other errors surface.
     ({ error } = await supabase.rpc('ensure_household', { display_name, browser_timezone: 'UTC' }));
   }
   if (error) throw error;

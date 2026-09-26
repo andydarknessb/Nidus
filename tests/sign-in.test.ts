@@ -101,7 +101,7 @@ describe('Household settings', () => {
     expect(data).toEqual([{ name: 'The Andersons-Nguyen', timezone: 'Europe/Paris' }]);
   });
 
-  it.each(['Mars/Olympus', 'EST5EDT-ish', '', 'america/chicago '])('refuses timezone %j', async (bad) => {
+  it.each(['Mars/Olympus', 'posix/America/Denver', 'right/UTC', 'Factory', 'EST5EDT-ish', '', 'america/chicago '])('refuses timezone %j', async (bad) => {
     const mine = await createHousehold('The Andersons');
     arranged.push(mine);
     const client = await asHouseholdAccount(mine);
