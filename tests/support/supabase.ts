@@ -117,3 +117,32 @@ export async function destroyHousehold(account: HouseholdAccount): Promise<void>
   await admin.auth.admin.deleteUser(account.authUserId);
   await admin.from('households').delete().eq('id', account.household.id);
 }
+
+export type SignedUpAccount = { email: string; password: string; authUserId: string };
+
+// A real auth user with no Household yet: what Google sign-in leaves behind on
+// the first visit, before the app calls ensure_household.
+export async function createSignedUpAccount(): Promise<SignedUpAccount> {
+  const admin = asServiceRole();
+  const email = `${unique('newcomer')}@nidus.test`;
+  const password = `pw-${unique('secret')}`;
+  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+  if (error || !data.user) throw error ?? new Error('auth user creation returned nothing');
+  return { email, password, authUserId: data.user.id };
+}
+
+export async function signInAs(account: { email: string; password: string }): Promise<SupabaseClient> {
+  const { url, anonKey } = localStack();
+  const client = createClient(url, anonKey, clientOptions);
+  const { error } = await client.auth.signInWithPassword(account);
+  if (error) throw error;
+  return client;
+}
+
+// Removes a signed-up account and any Household it ended up owning.
+export async function destroySignedUpAccount(account: SignedUpAccount): Promise<void> {
+  const admin = asServiceRole();
+  const { data } = await admin.from('household_accounts').select('household_id').eq('auth_user_id', account.authUserId);
+  await admin.auth.admin.deleteUser(account.authUserId);
+  for (const row of data ?? []) await admin.from('households').delete().eq('id', row.household_id);
+}
