@@ -1,0 +1,14 @@
+@import 'tailwindcss';
+
+/* Dark theme only: the wall never glows white (PLAN.md). */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+  background-color: var(--color-zinc-950);
+  color: var(--color-zinc-50);
+  -webkit-font-smoothing: antialiased;
+}
