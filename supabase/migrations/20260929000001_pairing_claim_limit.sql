@@ -72,7 +72,6 @@ begin
   returning id into new_device;
 
   update public.pairing_requests as r set claimed_at = now() where r.code = request.code;
-  delete from public.pairing_claim_failures as f where f.auth_user_id = uid;
   return new_device;
 end;
 $$;

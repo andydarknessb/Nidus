@@ -359,7 +359,7 @@ describe('device pairing', () => {
       expect((await wall.client.rpc('touch_device')).data).toBe(true);
     });
 
-    it("a successful claim clears the caller's failures", async () => {
+    it("a successful claim does not clear the caller's failures", async () => {
       const { arranged, phone } = await household('The Andersons');
       const wall = await tablet();
       const { code } = await requestCode(wall.client);
@@ -368,7 +368,17 @@ describe('device pairing', () => {
 
       expect((await claim(phone, code)).error).toBeNull();
 
-      expect((await failuresFor(arranged.authUserId)).data).toEqual([]);
+      expect((await failuresFor(arranged.authUserId)).data).toHaveLength(4);
+
+      expect(await claim(phone, missing)).toMatchObject({ data: null, error: null });
+
+      const other = await tablet();
+      const { code: freshCode } = await requestCode(other.client);
+      const refused = await claim(phone, freshCode);
+
+      expect(refused.data).toBeNull();
+      expect(refused.error?.code).toBe('P0429');
+      expect((await other.client.rpc('touch_device')).data).toBe(false);
     });
 
     it('a bad Device name raises 22023 and is not counted', async () => {
