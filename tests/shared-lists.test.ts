@@ -192,6 +192,19 @@ describe('shared lists', () => {
       expect((await loadItems(phone, list)).map((item) => item.text)).toEqual(['C', 'A', 'B']);
     });
 
+    it('a Device reorders items', async () => {
+      const { arranged, phone } = await household('The Andersons');
+      const wall = await device(arranged);
+      const list = await pinnedListOf(wall);
+      const a = await addItem(wall, list, 'A', 0);
+      const b = await addItem(wall, list, 'B', 1);
+      const c = await addItem(wall, list, 'C', 2);
+
+      await reorderItems(wall, [c.id, a.id, b.id]);
+
+      expect((await loadItems(phone, list)).map((item) => item.text)).toEqual(['C', 'A', 'B']);
+    });
+
     it('clear completed only clears the list it was asked to', async () => {
       const { arranged, phone } = await household('The Andersons');
       const groceries = await pinnedListOf(phone);
