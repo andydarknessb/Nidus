@@ -126,7 +126,7 @@ describe('shared lists', () => {
 
       await expect(createList(wall, arranged.household.id, 'Sneaky', 1)).rejects.toBeTruthy();
       await renameList(wall, groceries, 'Renamed');
-      await reorderLists(wall, [groceries]);
+      await expect(reorderLists(wall, [groceries])).rejects.toBeTruthy();
       await deleteList(wall, groceries);
 
       // The rename, reorder and delete matched no row for the Device: nothing changed.
@@ -203,6 +203,52 @@ describe('shared lists', () => {
       await reorderItems(wall, [c.id, a.id, b.id]);
 
       expect((await loadItems(phone, list)).map((item) => item.text)).toEqual(['C', 'A', 'B']);
+    });
+
+    it('a rejected reorder changes nothing', async () => {
+      const { phone } = await household('The Andersons');
+      const { phone: neighbour } = await household('The Neighbours');
+      const list = await pinnedListOf(phone);
+      const a = await addItem(phone, list, 'A', 0);
+      const b = await addItem(phone, list, 'B', 1);
+      const c = await addItem(phone, list, 'C', 2);
+      const x = await addItem(neighbour, await pinnedListOf(neighbour), 'X', 0);
+
+      await expect(reorderItems(phone, [c.id, x.id, a.id, b.id])).rejects.toBeTruthy();
+
+      expect((await loadItems(phone, list)).map((item) => item.text)).toEqual(['A', 'B', 'C']);
+      expect((await loadItems(neighbour, await pinnedListOf(neighbour))).map((item) => [item.text, item.sort_order])).toEqual([['X', 0]]);
+    });
+
+    it('a reorder that names an item twice is rejected whole', async () => {
+      const { phone } = await household('The Andersons');
+      const list = await pinnedListOf(phone);
+      const a = await addItem(phone, list, 'A', 0);
+      const b = await addItem(phone, list, 'B', 1);
+
+      await expect(reorderItems(phone, [b.id, a.id, b.id])).rejects.toBeTruthy();
+
+      expect((await loadItems(phone, list)).map((item) => item.text)).toEqual(['A', 'B']);
+    });
+
+    it('reordering nothing is a no-op', async () => {
+      const { phone } = await household('The Andersons');
+
+      await expect(reorderItems(phone, [])).resolves.toBeUndefined();
+      await expect(reorderLists(phone, [])).resolves.toBeUndefined();
+    });
+
+    it('a rejected list reorder changes nothing', async () => {
+      const { arranged, phone } = await household('The Andersons');
+      const { phone: neighbour } = await household('The Neighbours');
+      const chores = await createList(phone, arranged.household.id, 'Chores', 1);
+      const groceries = await pinnedListOf(phone);
+      const theirs = await pinnedListOf(neighbour);
+
+      await expect(reorderLists(phone, [chores.id, theirs, groceries])).rejects.toBeTruthy();
+
+      expect((await loadLists(phone)).map((list) => list.name)).toEqual(['Groceries', 'Chores']);
+      expect(await loadLists(neighbour)).toEqual([{ id: theirs, name: 'Groceries', sort_order: 0 }]);
     });
 
     it('clear completed only clears the list it was asked to', async () => {

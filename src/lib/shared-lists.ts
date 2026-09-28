@@ -70,13 +70,11 @@ export async function deleteList(client: SupabaseClient, id: string): Promise<vo
   if (error) throw error;
 }
 
-// Writes positions 0..n-1 in the order given.
+// Writes positions 0..n-1 in the order given, all or nothing: the database
+// refuses the whole reorder if any id is not a list the caller may move.
 export async function reorderLists(client: SupabaseClient, orderedIds: string[]): Promise<void> {
-  const results = await Promise.all(
-    orderedIds.map((id, index) => client.from('shared_lists').update({ sort_order: index }).eq('id', id)),
-  );
-  const failed = results.find((result) => result.error);
-  if (failed?.error) throw failed.error;
+  const { error } = await client.rpc('reorder_lists', { ids: orderedIds });
+  if (error) throw error;
 }
 
 // ---- The pinned list (a Household setting) --------------------------------------
@@ -129,12 +127,10 @@ export async function clearCompleted(client: SupabaseClient, listId: string): Pr
   if (error) throw error;
 }
 
+// Same all-or-nothing rule as reorderLists, for items.
 export async function reorderItems(client: SupabaseClient, orderedIds: string[]): Promise<void> {
-  const results = await Promise.all(
-    orderedIds.map((id, index) => client.from('list_items').update({ sort_order: index }).eq('id', id)),
-  );
-  const failed = results.find((result) => result.error);
-  if (failed?.error) throw failed.error;
+  const { error } = await client.rpc('reorder_list_items', { ids: orderedIds });
+  if (error) throw error;
 }
 
 // ---- Optimistic updates ----------------------------------------------------------
