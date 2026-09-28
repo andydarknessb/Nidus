@@ -118,7 +118,24 @@ export async function destroyHousehold(account: HouseholdAccount): Promise<void>
   await admin.from('households').delete().eq('id', account.household.id);
 }
 
-export type SignedUpAccount = { email: string; password: string; authUserId: string };
+export type Tablet = { client: SupabaseClient; authUserId: string };
+
+// An unpaired tablet: an anonymous Supabase session, exactly what the wall
+// creates on first launch.
+export async function asTablet(): Promise<Tablet> {
+  const { url, anonKey } = localStack();
+  const client = createClient(url, anonKey, clientOptions);
+  const { data, error } = await client.auth.signInAnonymously();
+  if (error || !data.user) throw error ?? new Error('anonymous sign-in returned no user');
+  return { client, authUserId: data.user.id };
+}
+
+// Deleting the auth user cascades to its pairing requests and Device row.
+export async function destroyTablet(tablet: Tablet): Promise<void> {
+  await asServiceRole().auth.admin.deleteUser(tablet.authUserId);
+}
+
+export type SignedUpAccount ={ email: string; password: string; authUserId: string };
 
 // A real auth user with no Household yet: what Google sign-in leaves behind on
 // the first visit, before the app calls ensure_household.
