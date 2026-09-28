@@ -273,6 +273,16 @@ describe('device pairing', () => {
     expect(renamed.data).toEqual([{ name: 'Hallway' }]);
   });
 
+  it('a tablet session cannot create a Household of its own', async () => {
+    const wall = await tablet();
+
+    const result = await wall.client.rpc('ensure_household', { display_name: 'Squatters', browser_timezone: 'UTC' });
+
+    expect(result.error).not.toBeNull();
+    const links = await asServiceRole().from('household_accounts').select('auth_user_id').eq('auth_user_id', wall.authUserId);
+    expect(links.data).toEqual([]);
+  });
+
   it('a Device name is required and at most 100 characters', async () => {
     const { phone } = await household('The Andersons');
     const wall = await tablet();
