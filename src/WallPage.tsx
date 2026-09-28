@@ -4,6 +4,7 @@ import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } fr
 import { formatCountdown } from './lib/device-format';
 import { loadHousehold } from './lib/household';
 import { supabase } from './lib/supabase';
+import { PinnedListRail, WallListsScreen } from './SharedListsPage';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
 const HEARTBEAT_MS = 30_000;
@@ -108,9 +109,11 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
   );
 }
 
-// The still-empty landscape home screen the later milestones fill in.
+// The landscape home screen: the calendar columns come later; the right rail
+// holds the pinned Shared List, and the other lists open from the header.
 function HomeShell() {
   const [name, setName] = useState('');
+  const [listsOpen, setListsOpen] = useState(false);
   useEffect(() => {
     let live = true;
     loadHousehold()
@@ -122,11 +125,18 @@ function HomeShell() {
   }, []);
 
   return (
-    <main className="grid min-h-svh grid-rows-[auto_1fr] gap-6 p-8">
-      <header>
+    <main className="grid h-svh grid-rows-[auto_minmax(0,1fr)] gap-6 p-8">
+      <header className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-semibold">{name}</h1>
+        <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setListsOpen(true)}>
+          Lists
+        </button>
       </header>
-      <section aria-label="Home" className="rounded-xl border border-border" />
+      <div className="grid min-h-0 grid-cols-[1fr_24rem] gap-6">
+        <section aria-label="Home" className="rounded-xl border border-border" />
+        <PinnedListRail />
+      </div>
+      {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
     </main>
   );
 }

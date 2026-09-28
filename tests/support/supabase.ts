@@ -135,6 +135,19 @@ export async function destroyTablet(tablet: Tablet): Promise<void> {
   await asServiceRole().auth.admin.deleteUser(tablet.authUserId);
 }
 
+// A paired Device of the Household: a tablet session that asked for a Pairing
+// Code and had it claimed by the Household Account, the way the wall is paired.
+// destroyTablet removes it (deleting the auth user cascades to the Device row).
+export async function asDevice(account: HouseholdAccount, name = 'Kitchen'): Promise<Tablet> {
+  const tablet = await asTablet();
+  const { data, error } = await tablet.client.rpc('create_pairing_request').single<{ code: string }>();
+  if (error || !data) throw error ?? new Error('create_pairing_request returned nothing');
+  const phone = await asHouseholdAccount(account);
+  const { error: claimError } = await phone.rpc('claim_pairing_code', { pairing_code: data.code, device_name: name });
+  if (claimError) throw claimError;
+  return tablet;
+}
+
 export type SignedUpAccount = { email: string; password: string; authUserId: string };
 
 // A real auth user with no Household yet: what Google sign-in leaves behind on

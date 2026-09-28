@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { SettingsPage } from './SettingsPage';
+import { SharedListsPage } from './SharedListsPage';
 import { isDeviceSession } from './lib/device';
 import { ensureHousehold, signInWithGoogle, type Household } from './lib/household';
 import { supabase } from './lib/supabase';
 
+const navLink = 'inline-flex min-h-12 items-center rounded-lg border border-border px-4 text-base font-medium aria-[current=page]:bg-muted';
 const action = 'min-h-12 rounded-lg bg-primary px-6 text-base font-medium text-primary-foreground';
 
 // undefined: still reading the stored session. null: signed out.
@@ -67,14 +69,30 @@ export function AdminApp() {
   if (failed) return <main className="p-4 text-base">Could not load your Household. Reload to try again.</main>;
   if (!household) return null;
 
+  const onLists = window.location.pathname.startsWith('/settings/lists');
+
   return (
-    <SettingsPage
-      household={household}
-      onSaved={setHousehold}
-      onSignOut={() => {
-        setHousehold(null);
-        void supabase.auth.signOut();
-      }}
-    />
+    <>
+      <nav aria-label="Settings sections" className="mx-auto flex max-w-md gap-2 px-4 pt-4">
+        <a href="/settings" aria-current={onLists ? undefined : 'page'} className={navLink}>
+          Household
+        </a>
+        <a href="/settings/lists" aria-current={onLists ? 'page' : undefined} className={navLink}>
+          Shared Lists
+        </a>
+      </nav>
+      {onLists ? (
+        <SharedListsPage household={household} />
+      ) : (
+        <SettingsPage
+          household={household}
+          onSaved={setHousehold}
+          onSignOut={() => {
+            setHousehold(null);
+            void supabase.auth.signOut();
+          }}
+        />
+      )}
+    </>
   );
 }
