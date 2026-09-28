@@ -52,5 +52,8 @@ $$;
 
 revoke all on function public.reorder_lists(uuid[]) from public;
 revoke all on function public.reorder_list_items(uuid[]) from public;
+-- Supabase grants execute on new functions to anon directly; revoking from public does not remove it.
+revoke execute on function public.reorder_lists(uuid[]) from anon;
+revoke execute on function public.reorder_list_items(uuid[]) from anon;
 grant execute on function public.reorder_lists(uuid[]) to authenticated;
 grant execute on function public.reorder_list_items(uuid[]) to authenticated;
