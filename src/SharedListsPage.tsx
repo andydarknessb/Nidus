@@ -181,12 +181,13 @@ function ListItems({ listId, reorderable }: { listId: string; reorderable: boole
 // The pinned Shared List, on the home screen's right rail.
 export function PinnedListRail() {
   const [pinned, setPinned] = useState<SharedList | null | undefined>(undefined);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
     Promise.all([loadPinnedListId(supabase), loadLists(supabase)])
       .then(([pinnedId, lists]) => live && setPinned(lists.find((list) => list.id === pinnedId) ?? null))
-      .catch(() => live && setPinned(null));
+      .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
@@ -194,7 +195,12 @@ export function PinnedListRail() {
 
   return (
     <aside aria-label="Pinned list" className="flex min-h-0 flex-col gap-4 rounded-xl border border-border p-4">
-      {pinned === undefined && <p className="text-base">Loading</p>}
+      {pinned === undefined && !failed && <p className="text-base">Loading</p>}
+      {failed && (
+        <p role="alert" className="text-base">
+          Could not load lists. Check your connection.
+        </p>
+      )}
       {pinned === null && <p className="text-base">No list is pinned. Pin one in settings on your phone.</p>}
       {pinned && (
         <>
