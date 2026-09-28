@@ -134,13 +134,16 @@ begin
   if uid is null or not coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) then
     raise exception 'only an unpaired tablet session can ask for a pairing code' using errcode = '42501';
   end if;
+  -- Its earlier unclaimed codes are void, and so is anything long expired (until the
+  -- nightly prune exists). This delete comes first on purpose: if a claim of one of
+  -- those codes is still in flight it waits for that claim to commit, so the
+  -- "already paired" check below sees the new Device.
+  delete from public.pairing_requests as r
+  where (r.device_auth_user_id = uid and r.claimed_at is null) or r.expires_at < now() - interval '1 hour';
+
   if exists (select 1 from public.devices as d where d.auth_user_id = uid) then
     raise exception 'this tablet is already paired' using errcode = '42501';
   end if;
-
-  -- Its earlier codes are void, and so is anything long expired (until the nightly prune exists).
-  delete from public.pairing_requests as r
-  where r.device_auth_user_id = uid or r.expires_at < now() - interval '1 hour';
 
   loop
     attempts := attempts + 1;
