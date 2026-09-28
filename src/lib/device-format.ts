@@ -14,7 +14,7 @@ export function lastSeenLabel(lastSeenAt: string | null, now: Date): string {
   const seconds = Math.max(0, Math.floor((now.getTime() - new Date(lastSeenAt).getTime()) / 1000));
   if (seconds < 90) return 'Just now';
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} minutes ago`;
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`;
   const hours = Math.floor(minutes / 60);
   if (hours < 48) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
   return `${Math.floor(hours / 24)} days ago`;

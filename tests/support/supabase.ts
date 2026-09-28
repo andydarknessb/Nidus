@@ -135,7 +135,7 @@ export async function destroyTablet(tablet: Tablet): Promise<void> {
   await asServiceRole().auth.admin.deleteUser(tablet.authUserId);
 }
 
-export type SignedUpAccount ={ email: string; password: string; authUserId: string };
+export type SignedUpAccount = { email: string; password: string; authUserId: string };
 
 // A real auth user with no Household yet: what Google sign-in leaves behind on
 // the first visit, before the app calls ensure_household.

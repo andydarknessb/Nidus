@@ -24,6 +24,8 @@ describe('lastSeenLabel', () => {
 
   it('reads recent, minute, hour and day ages', () => {
     expect(lastSeenLabel(ago(30_000), now)).toBe('Just now');
+    expect(lastSeenLabel(ago(90_000), now)).toBe('1 minute ago');
+    expect(lastSeenLabel(ago(119_000), now)).toBe('1 minute ago');
     expect(lastSeenLabel(ago(5 * 60_000), now)).toBe('5 minutes ago');
     expect(lastSeenLabel(ago(60 * 60_000), now)).toBe('1 hour ago');
     expect(lastSeenLabel(ago(5 * 3_600_000), now)).toBe('5 hours ago');
