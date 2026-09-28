@@ -22,6 +22,10 @@ _Avoid_: User, member, account, kiosk
 A tablet paired to a Household so it can show the display without a sign-in. It may read everything, tick Routines and list items, and manage Native Events, but never administer the Household. A Device is not a Profile.
 _Avoid_: Kiosk profile, terminal
 
+**Pairing Code**:
+The six-character code an unpaired tablet shows so a Household Account can claim it and turn it into a Device. Expires after 10 minutes; single use.
+_Avoid_: PIN, token, invite
+
 **Household Timezone**:
 The one timezone stored on the Household. All display, rollover and reset logic uses it; source calendar timezones are converted on ingest.
 
