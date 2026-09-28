@@ -13,7 +13,7 @@ const itemColumns = 'id, list_id, text, crossed_at, sort_order';
 
 // ---- Pure helpers -------------------------------------------------------------
 
-// Order the way the rail shows it: position first, then oldest first for ties.
+// Order the way the rail shows it: by position (the server breaks ties by age).
 export function byPosition<T extends { sort_order: number }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => a.sort_order - b.sort_order);
 }
@@ -135,4 +135,43 @@ export async function reorderItems(client: SupabaseClient, orderedIds: string[])
   );
   const failed = results.find((result) => result.error);
   if (failed?.error) throw failed.error;
+}
+
+// ---- Optimistic updates ----------------------------------------------------------
+
+type Publish = (update: (current: ListItem[]) => ListItem[]) => void;
+
+// Shows the cross (or uncross) at once, then asks the server. If the server says
+// no, only that item goes back to what it was; other changes made meanwhile stay.
+// `before` is the rows as they were when the tap happened. Returns whether it stuck.
+export async function crossOptimistically(
+  publish: Publish,
+  id: string,
+  crossed: boolean,
+  before: ListItem[],
+  write: () => Promise<void>,
+): Promise<boolean> {
+  const previous = before.find((item) => item.id === id)?.crossed_at ?? null;
+  publish((current) => withCrossed(current, id, crossed));
+  try {
+    await write();
+    return true;
+  } catch {
+    publish((current) => current.map((item) => (item.id === id ? { ...item, crossed_at: previous } : item)));
+    return false;
+  }
+}
+
+// Same for "clear completed": the crossed items vanish at once and come back in
+// their places if the delete fails.
+export async function clearOptimistically(publish: Publish, before: ListItem[], write: () => Promise<void>): Promise<boolean> {
+  const removed = before.filter((item) => item.crossed_at !== null);
+  publish((current) => withoutCrossed(current));
+  try {
+    await write();
+    return true;
+  } catch {
+    publish((current) => byPosition([...current, ...removed]));
+    return false;
+  }
 }

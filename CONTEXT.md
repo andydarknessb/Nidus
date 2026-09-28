@@ -60,3 +60,7 @@ _Avoid_: Check, tick, history entry
 **Shared List**:
 A named household-wide list of text items (e.g. Groceries) anyone can add to or cross off. Crossed items remain visible until cleared.
 _Avoid_: Todo list, checklist
+
+**Pinned List**:
+The one Shared List a Household shows on the home screen's rail (`households.pinned_list_id`). A new Household starts with Groceries pinned; only the Household Account changes it. The other lists open from the tablet's Lists screen.
+_Avoid_: Favourite list, default list

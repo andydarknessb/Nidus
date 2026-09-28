@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   addItem,
   clearCompleted,
+  clearOptimistically,
   createList,
+  crossOptimistically,
   deleteList,
   loadItems,
   loadLists,
@@ -369,5 +371,94 @@ describe('list ordering and optimistic helpers', () => {
   it('drops crossed items for the optimistic clear', () => {
     const items = [item('a', 0, '2026-09-29T12:00:00Z'), item('b', 1)];
     expect(withoutCrossed(items).map((row) => row.id)).toEqual(['b']);
+  });
+});
+
+describe('optimistic updates', () => {
+  const rows = (): ListItem[] => [
+    { id: 'a', list_id: 'l', text: 'Milk', crossed_at: null, sort_order: 0 },
+    { id: 'b', list_id: 'l', text: 'Eggs', crossed_at: '2026-09-29T12:00:00Z', sort_order: 1 },
+  ];
+
+  // Stands in for React's setState: applies each updater to the current rows.
+  function screen() {
+    const state = { rows: rows() };
+    const publish = (update: (current: ListItem[]) => ListItem[]) => {
+      state.rows = update(state.rows);
+    };
+    return { state, publish };
+  }
+
+  it('cross shows at once, and stays once the server accepts it', async () => {
+    const { state, publish } = screen();
+    let shownDuringWrite: string | null | undefined;
+
+    const ok = await crossOptimistically(publish, 'a', true, rows(), async () => {
+      shownDuringWrite = state.rows[0]?.crossed_at;
+    });
+
+    expect(ok).toBe(true);
+    expect(shownDuringWrite).not.toBeNull();
+    expect(state.rows[0]?.crossed_at).not.toBeNull();
+  });
+
+  it('rolls a rejected cross back to what was there, leaving other items alone', async () => {
+    const { state, publish } = screen();
+
+    const ok = await crossOptimistically(publish, 'a', true, rows(), async () => {
+      throw new Error('offline');
+    });
+
+    expect(ok).toBe(false);
+    expect(state.rows).toEqual(rows());
+  });
+
+  it('rolls a rejected uncross back to crossed', async () => {
+    const { state, publish } = screen();
+
+    const ok = await crossOptimistically(publish, 'b', false, rows(), async () => {
+      throw new Error('offline');
+    });
+
+    expect(ok).toBe(false);
+    expect(state.rows[1]?.crossed_at).toBe('2026-09-29T12:00:00Z');
+  });
+
+  it('clear completed removes crossed items at once and puts them back if it fails', async () => {
+    const { state, publish } = screen();
+    let shownDuringWrite: string[] = [];
+
+    const failed = await clearOptimistically(publish, rows(), async () => {
+      shownDuringWrite = state.rows.map((row) => row.id);
+      throw new Error('offline');
+    });
+
+    expect(failed).toBe(false);
+    expect(shownDuringWrite).toEqual(['a']);
+    expect(state.rows).toEqual(rows());
+
+    const ok = await clearOptimistically(publish, rows(), async () => undefined);
+    expect(ok).toBe(true);
+    expect(state.rows.map((row) => row.id)).toEqual(['a']);
+  });
+
+  it('against the real database: a Device crossing an item is what the phone then sees', async () => {
+    const account = await createHousehold('The Andersons');
+    const wall = await asDevice(account);
+    try {
+      const phone = await asHouseholdAccount(account);
+      const list = (await loadPinnedListId(phone))!;
+      const milk = await addItem(phone, list, 'Milk', 0);
+      const { state, publish } = screen();
+      state.rows = [milk];
+
+      const ok = await crossOptimistically(publish, milk.id, true, [milk], () => setCrossed(wall.client, milk.id, true));
+
+      expect(ok).toBe(true);
+      expect((await loadItems(phone, list))[0]?.crossed_at).not.toBeNull();
+    } finally {
+      await destroyTablet(wall);
+      await destroyHousehold(account);
+    }
   });
 });
