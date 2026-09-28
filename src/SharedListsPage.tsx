@@ -258,7 +258,7 @@ export function WallListsScreen({ onClose }: { onClose: () => void }) {
         </p>
       )}
       {open ? (
-        <ListItems listId={open.id} reorderable={false} />
+        <ListItems listId={open.id} reorderable />
       ) : (
         <>
           {others?.length === 0 && <p className="text-xl">No other lists. Add one from your phone.</p>}
