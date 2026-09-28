@@ -86,8 +86,14 @@ function useItems(listId: string) {
       await reorderItems(supabase, ids);
       fail('');
     } catch {
-      publish(() => before);
-      fail('Could not reorder. It has been put back.');
+      // Some of the writes may have landed, so show what the database holds, not the snapshot.
+      try {
+        const held = await loadItems(supabase, listId);
+        if (current.current === listId) setState({ items: held, loaded: true, problem: 'Could not reorder. Showing the list as it is saved.' });
+      } catch {
+        publish(() => before);
+        fail('Could not reorder. Check your connection and reload.');
+      }
     }
   }
 
@@ -141,7 +147,6 @@ function ListItems({ listId, reorderable }: { listId: string; reorderable: boole
               >
                 {crossed ? <Check aria-hidden className="size-6 shrink-0" /> : <Circle aria-hidden className="size-6 shrink-0" />}
                 <span className={crossed ? 'line-through decoration-2' : ''}>{item.text}</span>
-                {crossed && <span className="sr-only">(crossed off)</span>}
               </button>
               {reorderable && (
                 <>
@@ -206,6 +211,14 @@ export function WallListsScreen({ onClose }: { onClose: () => void }) {
   const [others, setOthers] = useState<SharedList[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<SharedList | null>(null);
+  const dialog = useRef<HTMLDivElement>(null);
+
+  // Focus moves into the dialog on open and back to what opened it on close; Escape closes.
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    dialog.current?.focus();
+    return () => opener?.focus();
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -218,9 +231,23 @@ export function WallListsScreen({ onClose }: { onClose: () => void }) {
   }, []);
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Lists" className="fixed inset-0 z-10 flex flex-col gap-6 bg-background p-8">
+    <div
+      ref={dialog}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="wall-lists-title"
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        if (open) setOpen(null);
+        else onClose();
+      }}
+      className="fixed inset-0 z-10 flex flex-col gap-6 bg-background p-8 outline-none"
+    >
       <header className="flex items-center justify-between gap-4">
-        <h2 className="text-3xl font-semibold">{open ? open.name : 'Lists'}</h2>
+        <h2 id="wall-lists-title" className="text-3xl font-semibold">
+          {open ? open.name : 'Lists'}
+        </h2>
         <button type="button" className={quiet} onClick={open ? () => setOpen(null) : onClose}>
           {open ? 'Back to lists' : 'Close'}
         </button>
@@ -390,7 +417,7 @@ export function SharedListsPage({ household }: { household: Household }) {
               </button>
               {confirming === list.id ? (
                 <>
-                  <button type="button" className={`${action} bg-destructive text-foreground`} onClick={() => void remove(list.id)}>
+                  <button type="button" className={`${action} border-2 border-destructive bg-primary text-primary-foreground`} onClick={() => void remove(list.id)}>
                     Delete {list.name} and its items
                   </button>
                   <button type="button" className={quiet} onClick={() => setConfirming(null)}>
