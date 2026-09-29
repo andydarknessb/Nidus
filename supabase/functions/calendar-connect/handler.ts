@@ -1,0 +1,255 @@
+// Connecting a Calendar Account (issue #6). The whole Google OAuth dance for one Household,
+// as a plain request handler: no Deno globals and no ambient network, so the tests drive it
+// under Node with an injected `fetch` returning canned Google responses and a real service
+// role client against the local stack. index.ts is the only Deno-specific file.
+//
+// Routes (the last path segment picks one):
+//   POST start     Household Account only (a Nidus session). Returns the URL to send the
+//                  browser to: Google's consent screen for the parent's own account
+//                  (`kind: 'settings'`), or a shareable link that opens on another adult's
+//                  phone with no Nidus session (`kind: 'link'`).
+//   GET  consent   The shareable link. No session: the signed `state` is the whole
+//                  authority. Redirects to Google's consent screen.
+//   GET  callback  Google returns here with a code. Exchanges it, stores the refresh
+//                  token in Vault, upserts the Calendar Account and lists its calendars.
+//
+// The signed `state` parameter binds the flow to a Household: an HMAC over the Household
+// id and an expiry, so a callback can only ever attach the account to the Household that
+// started the flow, and a forged or tampered state is refused.
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+export type ConnectEnv = {
+  // Where this function is reachable from a browser, no trailing slash. Also the OAuth redirect base.
+  functionUrl: string;
+  // Where the app lives; the parent's own flow ends there.
+  appUrl: string;
+  // Signs the state parameter. Long and random; never leaves the server.
+  stateSecret: string;
+  googleClientId: string;
+  googleClientSecret: string;
+};
+
+export type ConnectDeps = {
+  env: ConnectEnv;
+  // The service role: it stores Vault secrets and reads who a JWT belongs to.
+  admin: SupabaseClient;
+  fetch: typeof fetch;
+  // Epoch milliseconds; injectable so expiry is testable.
+  now?: () => number;
+};
+
+export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+export const GOOGLE_CALENDAR_LIST_URL = 'https://www.googleapis.com/calendar/v3/users/me/calendarList';
+
+// The parent's own flow finishes within minutes; a link waits for another adult to open it.
+export const SETTINGS_STATE_SECONDS = 30 * 60;
+export const LINK_STATE_SECONDS = 7 * 24 * 60 * 60;
+
+type FlowKind = 'settings' | 'link';
+type State = { household_id: string; kind: FlowKind; exp: number };
+
+const encoder = new TextEncoder();
+
+function toBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64Url(text: string): Uint8Array | null {
+  try {
+    const padded = text.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(text.length / 4) * 4, '=');
+    return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
+function hmacKey(secret: string, usage: 'sign' | 'verify'): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, [usage]);
+}
+
+export async function signState(secret: string, state: State): Promise<string> {
+  const payload = toBase64Url(encoder.encode(JSON.stringify(state)));
+  const signature = await crypto.subtle.sign('HMAC', await hmacKey(secret, 'sign'), encoder.encode(payload));
+  return `${payload}.${toBase64Url(new Uint8Array(signature))}`;
+}
+
+// The state if it is genuine and unexpired; null otherwise (tampered, forged, expired, malformed).
+export async function verifyState(secret: string, token: string | null, nowMs: number): Promise<State | null> {
+  if (!token) return null;
+  const [payload, signature, extra] = token.split('.');
+  if (!payload || !signature || extra !== undefined) return null;
+  const signatureBytes = fromBase64Url(signature);
+  if (!signatureBytes) return null;
+  const genuine = await crypto.subtle.verify(
+    'HMAC',
+    await hmacKey(secret, 'verify'),
+    signatureBytes as BufferSource,
+    encoder.encode(payload),
+  );
+  if (!genuine) return null;
+  const bytes = fromBase64Url(payload);
+  if (!bytes) return null;
+  try {
+    const state = JSON.parse(new TextDecoder().decode(bytes)) as Partial<State>;
+    if (
+      typeof state.household_id !== 'string' ||
+      (state.kind !== 'settings' && state.kind !== 'link') ||
+      typeof state.exp !== 'number' ||
+      state.exp * 1000 <= nowMs
+    ) {
+      return null;
+    }
+    return { household_id: state.household_id, kind: state.kind, exp: state.exp };
+  } catch {
+    return null;
+  }
+}
+
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+};
+
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+}
+
+function page(status: number, title: string, message: string): Response {
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title></head><body style="background:#09090b;color:#fafafa;font:18px/1.5 system-ui,sans-serif;padding:2rem;max-width:32rem;margin:0 auto"><h1>${title}</h1><p>${message}</p></body></html>`;
+  return new Response(html, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
+function consentUrl(env: ConnectEnv, state: string): string {
+  const params = new URLSearchParams({
+    client_id: env.googleClientId,
+    redirect_uri: `${env.functionUrl}/callback`,
+    response_type: 'code',
+    scope: CALENDAR_SCOPE,
+    // Offline access plus a forced consent screen is what makes Google return a refresh token.
+    access_type: 'offline',
+    prompt: 'consent',
+    state,
+  });
+  return `${GOOGLE_AUTH_URL}?${params.toString()}`;
+}
+
+type GoogleCalendar = { id: string; summary?: string; summaryOverride?: string; primary?: boolean };
+
+async function listCalendars(deps: ConnectDeps, accessToken: string): Promise<GoogleCalendar[] | null> {
+  const calendars: GoogleCalendar[] = [];
+  let pageToken: string | undefined;
+  do {
+    const url = new URL(GOOGLE_CALENDAR_LIST_URL);
+    url.searchParams.set('minAccessRole', 'reader');
+    if (pageToken) url.searchParams.set('pageToken', pageToken);
+    const response = await deps.fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { items?: GoogleCalendar[]; nextPageToken?: string };
+    calendars.push(...(body.items ?? []));
+    pageToken = body.nextPageToken;
+  } while (pageToken);
+  return calendars;
+}
+
+// POST start: who is asking must be a Household Account, and the state carries its Household.
+async function start(request: Request, deps: ConnectDeps, now: number): Promise<Response> {
+  const token = /^Bearer (.+)$/i.exec(request.headers.get('Authorization') ?? '')?.[1];
+  if (!token) return json(401, { error: 'sign in first' });
+  const { data: session } = await deps.admin.auth.getUser(token);
+  if (!session.user) return json(401, { error: 'sign in first' });
+  const { data: account } = await deps.admin
+    .from('household_accounts')
+    .select('household_id')
+    .eq('auth_user_id', session.user.id)
+    .maybeSingle<{ household_id: string }>();
+  if (!account) return json(403, { error: 'only the Household Account connects a Calendar Account' });
+
+  const body = (await request.json().catch(() => ({}))) as { kind?: unknown };
+  const kind: FlowKind = body.kind === 'link' ? 'link' : 'settings';
+  const seconds = kind === 'link' ? LINK_STATE_SECONDS : SETTINGS_STATE_SECONDS;
+  const state = await signState(deps.env.stateSecret, {
+    household_id: account.household_id,
+    kind,
+    exp: Math.floor(now / 1000) + seconds,
+  });
+  return json(200, { url: kind === 'link' ? `${deps.env.functionUrl}/consent?state=${encodeURIComponent(state)}` : consentUrl(deps.env, state) });
+}
+
+// GET consent: the shareable link. Nothing but the state proves anything, and that is enough.
+async function consent(url: URL, deps: ConnectDeps, now: number): Promise<Response> {
+  const stateParam = url.searchParams.get('state');
+  const state = await verifyState(deps.env.stateSecret, stateParam, now);
+  if (!state || !stateParam) return page(400, 'Link expired', 'This link is no longer valid. Ask for a new one from Nidus settings.');
+  return new Response(null, { status: 302, headers: { Location: consentUrl(deps.env, stateParam) } });
+}
+
+// GET callback: code for tokens, tokens into Vault, calendars into Mirrored Calendars (unselected).
+async function callback(url: URL, deps: ConnectDeps, now: number): Promise<Response> {
+  const state = await verifyState(deps.env.stateSecret, url.searchParams.get('state'), now);
+  if (!state) return page(400, 'Link expired', 'This link is no longer valid. Ask for a new one from Nidus settings.');
+  if (url.searchParams.get('error')) {
+    return page(400, 'Calendar not connected', 'Calendar access was not granted, so nothing was connected. You can close this tab.');
+  }
+  const code = url.searchParams.get('code');
+  if (!code) return page(400, 'Calendar not connected', 'Google did not send back a code. Please try again.');
+
+  const tokenResponse = await deps.fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: deps.env.googleClientId,
+      client_secret: deps.env.googleClientSecret,
+      redirect_uri: `${deps.env.functionUrl}/callback`,
+      grant_type: 'authorization_code',
+    }).toString(),
+  });
+  if (!tokenResponse.ok) return page(502, 'Calendar not connected', 'Google would not accept that sign-in. Please try again.');
+  const tokens = (await tokenResponse.json()) as { access_token?: string; refresh_token?: string };
+  if (!tokens.access_token || !tokens.refresh_token) {
+    return page(502, 'Calendar not connected', 'Google did not allow ongoing access. Please try again and accept every prompt.');
+  }
+
+  const calendars = await listCalendars(deps, tokens.access_token);
+  // The primary calendar's id is the account's email; asking for it this way avoids a second scope.
+  const email = calendars?.find((calendar) => calendar.primary)?.id;
+  if (!calendars || !email) return page(502, 'Calendar not connected', 'Could not read that Google account’s calendars. Please try again.');
+
+  const { data: accountId, error: storeError } = await deps.admin.rpc('store_calendar_account', {
+    p_household_id: state.household_id,
+    p_google_email: email,
+    p_refresh_token: tokens.refresh_token,
+  });
+  if (storeError || typeof accountId !== 'string') return page(500, 'Calendar not connected', 'Something went wrong on our side. Please try again.');
+
+  // Only the identifying columns: a reconnect keeps the parent's selection, Profile and colour.
+  const { error: listError } = await deps.admin.from('mirrored_calendars').upsert(
+    calendars.map((calendar) => ({
+      household_id: state.household_id,
+      calendar_account_id: accountId,
+      google_calendar_id: calendar.id,
+      name: (calendar.summaryOverride ?? calendar.summary ?? calendar.id).slice(0, 500),
+    })),
+    { onConflict: 'calendar_account_id,google_calendar_id' },
+  );
+  if (listError) return page(500, 'Calendar not connected', 'Something went wrong on our side. Please try again.');
+
+  if (state.kind === 'settings') return new Response(null, { status: 302, headers: { Location: deps.env.appUrl } });
+  return page(200, 'Calendar connected', 'Thanks. That calendar can now be chosen in the Nidus settings. You can close this tab.');
+}
+
+export async function handleCalendarConnect(request: Request, deps: ConnectDeps): Promise<Response> {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+  const now = (deps.now ?? Date.now)();
+  const url = new URL(request.url);
+  const route = url.pathname.split('/').filter(Boolean).pop();
+  if (route === 'start' && request.method === 'POST') return start(request, deps, now);
+  if (route === 'consent' && request.method === 'GET') return consent(url, deps, now);
+  if (route === 'callback' && request.method === 'GET') return callback(url, deps, now);
+  return json(404, { error: 'not found' });
+}
