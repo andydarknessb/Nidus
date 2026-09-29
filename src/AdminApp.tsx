@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import { RoutinesPage } from './RoutinesPage';
 import { SettingsPage } from './SettingsPage';
 import { SharedListsPage } from './SharedListsPage';
 import { isDeviceSession } from './lib/device';
@@ -70,12 +71,17 @@ export function AdminApp() {
   if (!household) return null;
 
   const onLists = window.location.pathname.startsWith('/settings/lists');
+  const onRoutines = window.location.pathname.startsWith('/settings/routines');
+  const onHousehold = !onLists && !onRoutines;
 
   return (
     <>
-      <nav aria-label="Settings sections" className="mx-auto flex max-w-md gap-2 px-4 pt-4">
-        <a href="/settings" aria-current={onLists ? undefined : 'page'} className={navLink}>
+      <nav aria-label="Settings sections" className="mx-auto flex max-w-md flex-wrap gap-2 px-4 pt-4">
+        <a href="/settings" aria-current={onHousehold ? 'page' : undefined} className={navLink}>
           Household
+        </a>
+        <a href="/settings/routines" aria-current={onRoutines ? 'page' : undefined} className={navLink}>
+          Routines
         </a>
         <a href="/settings/lists" aria-current={onLists ? 'page' : undefined} className={navLink}>
           Shared Lists
@@ -83,6 +89,8 @@ export function AdminApp() {
       </nav>
       {onLists ? (
         <SharedListsPage household={household} />
+      ) : onRoutines ? (
+        <RoutinesPage household={household} />
       ) : (
         <SettingsPage
           household={household}

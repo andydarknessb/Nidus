@@ -4,6 +4,7 @@ import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } fr
 import { formatCountdown } from './lib/device-format';
 import { loadHousehold } from './lib/household';
 import { supabase } from './lib/supabase';
+import { RoutinesRail } from './RoutinesPage';
 import { PinnedListRail, WallListsScreen } from './SharedListsPage';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
@@ -110,14 +111,20 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
 }
 
 // The landscape home screen: the calendar columns come later; the right rail
-// holds the pinned Shared List, and the other lists open from the header.
+// holds today's Routines above the pinned Shared List, and the other lists open from the header.
 function HomeShell() {
   const [name, setName] = useState('');
+  // The Household Timezone decides which day the Routines rail shows; none until it is read.
+  const [timezone, setTimezone] = useState<string | null>(null);
   const [listsOpen, setListsOpen] = useState(false);
   useEffect(() => {
     let live = true;
     loadHousehold()
-      .then((household) => live && setName(household.name))
+      .then((household) => {
+        if (!live) return;
+        setName(household.name);
+        setTimezone(household.timezone);
+      })
       .catch(() => undefined);
     return () => {
       live = false;
@@ -134,7 +141,10 @@ function HomeShell() {
       </header>
       <div className="grid min-h-0 grid-cols-[1fr_24rem] gap-6">
         <section aria-label="Home" className="rounded-xl border border-border" />
-        <PinnedListRail />
+        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
+          {timezone ? <RoutinesRail timezone={timezone} /> : <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4" />}
+          <PinnedListRail />
+        </div>
       </div>
       {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
     </main>
