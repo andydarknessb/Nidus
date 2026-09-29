@@ -96,7 +96,7 @@ describe('device pairing', () => {
 
     const result = await claim(phone, code);
 
-    expect(result.error).not.toBeNull();
+    expect(result).toMatchObject({ data: null, error: null });
     const devices = await asServiceRole().from('devices').select('id').eq('household_id', arranged.household.id);
     expect(devices.data).toEqual([]);
     expect((await wall.client.rpc('touch_device')).data).toBe(false);
@@ -107,7 +107,7 @@ describe('device pairing', () => {
 
     const result = await claim(phone, 'ABC234');
 
-    expect(result.error).not.toBeNull();
+    expect(result).toMatchObject({ data: null, error: null });
   });
 
   it('rejects a code that has already been claimed', async () => {
@@ -118,7 +118,7 @@ describe('device pairing', () => {
 
     const again = await claim(phone, code, 'Hallway');
 
-    expect(again.error).not.toBeNull();
+    expect(again).toMatchObject({ data: null, error: null });
     expect((await phone.from('devices').select('id')).data).toHaveLength(1);
   });
 
@@ -130,7 +130,7 @@ describe('device pairing', () => {
     expect((await claim(mine.phone, code, 'Kitchen')).error).toBeNull();
 
     const stolen = await claim(neighbours.phone, code, 'Mine now');
-    expect(stolen.error).not.toBeNull();
+    expect(stolen).toMatchObject({ data: null, error: null });
 
     expect((await neighbours.phone.from('devices').select('id')).data).toEqual([]);
     const revoke = await neighbours.phone.from('devices').delete().not('id', 'is', null).select('id');
@@ -199,7 +199,7 @@ describe('device pairing', () => {
     const first = await requestCode(wall.client);
     const second = await requestCode(wall.client);
 
-    expect((await claim(phone, first.code)).error).not.toBeNull();
+    expect(await claim(phone, first.code)).toMatchObject({ data: null, error: null });
     expect((await claim(phone, second.code)).error).toBeNull();
   });
 
@@ -291,5 +291,113 @@ describe('device pairing', () => {
     expect((await claim(phone, code, '   ')).error).not.toBeNull();
     expect((await claim(phone, code, 'x'.repeat(101))).error).not.toBeNull();
     expect((await claim(phone, code, 'Kitchen')).error).toBeNull();
+  });
+
+  describe('failed claims are limited per Household Account', () => {
+    const missing = 'ABC234';
+
+    async function failFiveTimes(phone: SupabaseClient) {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        expect(await claim(phone, missing)).toMatchObject({ data: null, error: null });
+      }
+    }
+
+    function failuresFor(authUserId: string) {
+      return asServiceRole().from('pairing_claim_failures').select('failed_at').eq('auth_user_id', authUserId);
+    }
+
+    it('the sixth claim is refused with P0429 even for a valid code, and pairs nothing', async () => {
+      const { phone } = await household('The Andersons');
+      const wall = await tablet();
+      const { code } = await requestCode(wall.client);
+      await failFiveTimes(phone);
+
+      const refused = await claim(phone, code);
+
+      expect(refused.data).toBeNull();
+      expect(refused.error?.code).toBe('P0429');
+      expect(refused.error?.message).toBe('Too many attempts. Wait 15 minutes and try again.');
+      expect((await wall.client.rpc('touch_device')).data).toBe(false);
+    });
+
+    it('a refusal is not itself counted as a failure', async () => {
+      const { arranged, phone } = await household('The Andersons');
+      await failFiveTimes(phone);
+
+      expect((await claim(phone, missing)).error?.code).toBe('P0429');
+      expect((await claim(phone, missing)).error?.code).toBe('P0429');
+
+      expect((await failuresFor(arranged.authUserId)).data).toHaveLength(5);
+    });
+
+    it('failures older than 15 minutes no longer count', async () => {
+      const { arranged, phone } = await household('The Andersons');
+      const wall = await tablet();
+      const { code } = await requestCode(wall.client);
+      await failFiveTimes(phone);
+      const sixteenMinutesAgo = new Date(Date.now() - 16 * 60_000).toISOString();
+      await asServiceRole()
+        .from('pairing_claim_failures')
+        .update({ failed_at: sixteenMinutesAgo })
+        .eq('auth_user_id', arranged.authUserId);
+
+      const claimed = await claim(phone, code);
+
+      expect(claimed.error).toBeNull();
+      expect(claimed.data).toBeTruthy();
+      expect((await wall.client.rpc('touch_device')).data).toBe(true);
+    });
+
+    it("another Household Account is not limited by the first one's failures", async () => {
+      const { phone } = await household('The Andersons');
+      const neighbours = await household('The Nguyens');
+      const wall = await tablet();
+      const { code } = await requestCode(wall.client);
+      await failFiveTimes(phone);
+
+      expect((await claim(neighbours.phone, code)).error).toBeNull();
+      expect((await wall.client.rpc('touch_device')).data).toBe(true);
+    });
+
+    it("a successful claim does not clear the caller's failures", async () => {
+      const { arranged, phone } = await household('The Andersons');
+      const wall = await tablet();
+      const { code } = await requestCode(wall.client);
+      for (let attempt = 0; attempt < 4; attempt += 1) await claim(phone, missing);
+      expect((await failuresFor(arranged.authUserId)).data).toHaveLength(4);
+
+      expect((await claim(phone, code)).error).toBeNull();
+
+      expect((await failuresFor(arranged.authUserId)).data).toHaveLength(4);
+
+      expect(await claim(phone, missing)).toMatchObject({ data: null, error: null });
+
+      const other = await tablet();
+      const { code: freshCode } = await requestCode(other.client);
+      const refused = await claim(phone, freshCode);
+
+      expect(refused.data).toBeNull();
+      expect(refused.error?.code).toBe('P0429');
+      expect((await other.client.rpc('touch_device')).data).toBe(false);
+    });
+
+    it('a bad Device name raises 22023 and is not counted', async () => {
+      const { arranged, phone } = await household('The Andersons');
+
+      const result = await claim(phone, missing, '   ');
+
+      expect(result.error?.code).toBe('22023');
+      expect((await failuresFor(arranged.authUserId)).data).toEqual([]);
+    });
+
+    it('nobody but the service role can read or write the failure log', async () => {
+      const { arranged, phone } = await household('The Andersons');
+      await claim(phone, missing);
+
+      expect((await phone.from('pairing_claim_failures').select('failed_at')).error).not.toBeNull();
+      expect((await phone.from('pairing_claim_failures').delete().eq('auth_user_id', arranged.authUserId)).error).not.toBeNull();
+      expect((await asAnonymous().from('pairing_claim_failures').select('failed_at')).error).not.toBeNull();
+      expect((await failuresFor(arranged.authUserId)).data).toHaveLength(1);
+    });
   });
 });

@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { claimPairingCode, isInvalidCode, listDevices, revokeDevice, type Device } from './lib/device';
+import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice, type Device } from './lib/device';
 import { lastSeenLabel } from './lib/device-format';
 
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 
-type PairStatus = 'idle' | 'pairing' | 'paired' | 'invalid' | 'failed';
+type PairStatus = 'idle' | 'pairing' | 'paired' | 'invalid' | 'tooMany' | 'failed';
 
 const pairMessages: Record<PairStatus, string> = {
   idle: '',
   pairing: 'Pairing.',
   paired: 'Paired. The tablet will show the home screen in a few seconds.',
   invalid: 'That code is not valid. It may have expired or already been used. Check the tablet for a fresh one.',
+  tooMany: 'Too many attempts. Wait 15 minutes and try again.',
   failed: 'Could not pair. Try again.',
 };
 
@@ -53,7 +54,7 @@ export function DevicesSection() {
       setPairStatus('paired');
       await refresh();
     } catch (error) {
-      setPairStatus(isInvalidCode(error) ? 'invalid' : 'failed');
+      setPairStatus(isInvalidCode(error) ? 'invalid' : isTooManyAttempts(error) ? 'tooMany' : 'failed');
     }
   }
 

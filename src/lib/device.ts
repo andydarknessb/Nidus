@@ -25,14 +25,32 @@ export async function touchDevice(): Promise<boolean> {
   return data === true;
 }
 
-// Phone side. The database rejects an unknown, expired or used code with 22023.
+const INVALID_CODE = '22023';
+const TOO_MANY_ATTEMPTS = 'P0429';
+
+// Phone side. The database answers null for an unknown, expired or used code
+// (so the failure it counts can commit) and raises P0429 once this account has
+// failed too often.
 export async function claimPairingCode(code: string, name: string): Promise<void> {
-  const { error } = await supabase.rpc('claim_pairing_code', { pairing_code: code, device_name: name.trim() });
+  const { data, error } = await supabase.rpc('claim_pairing_code', { pairing_code: code, device_name: name.trim() });
   if (error) throw error;
+  if (data === null) {
+    throw Object.assign(new Error('That code is not valid. It may have expired or already been used.'), {
+      code: INVALID_CODE,
+    });
+  }
+}
+
+function errorCode(error: unknown): string | undefined {
+  return typeof error === 'object' && error !== null ? (error as { code?: string }).code : undefined;
 }
 
 export function isInvalidCode(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === '22023';
+  return errorCode(error) === INVALID_CODE;
+}
+
+export function isTooManyAttempts(error: unknown): boolean {
+  return errorCode(error) === TOO_MANY_ATTEMPTS;
 }
 
 export async function listDevices(): Promise<Device[]> {
