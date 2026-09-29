@@ -28,6 +28,16 @@ export async function loadHousehold(): Promise<Household> {
   return data;
 }
 
+// What the wall knows of the Household: the last good read, and whether the latest read failed.
+export type HouseholdView = { household: Household | null; failed: boolean };
+
+// The wall re-reads the Household on a timer. A failed read never discards a
+// Household already read; a successful one replaces it (a changed timezone included).
+export function householdViewAfter(prev: HouseholdView, read: { household: Household } | { failed: true }): HouseholdView {
+  if ('failed' in read) return { household: prev.household, failed: true };
+  return { household: read.household, failed: false };
+}
+
 export async function updateHousehold(id: string, changes: { name: string; timezone: string }): Promise<Household> {
   const { data, error } = await supabase
     .from('households')
