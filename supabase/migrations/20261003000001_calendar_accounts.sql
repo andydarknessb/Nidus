@@ -15,7 +15,7 @@ create table public.calendar_accounts (
   google_email text not null check (char_length(google_email) between 3 and 320 and google_email = lower(google_email)),
   -- The Vault secret holding the refresh token. No client may read this column.
   vault_secret_id uuid not null,
-  status text not null default 'active' check (status in ('active', 'needs_reauth', 'error')),
+  status text not null default 'active' check (status in ('active', 'needs_reauth')),
   last_synced_at timestamptz,
   last_error text,
   created_at timestamptz not null default now(),
@@ -201,6 +201,21 @@ $$;
 revoke all on function public.store_calendar_account(uuid, text, text) from public;
 revoke execute on function public.store_calendar_account(uuid, text, text) from anon, authenticated;
 grant execute on function public.store_calendar_account(uuid, text, text) to service_role;
+
+-- Whether a Vault secret still exists, by id alone (no account row needed, nothing decrypted).
+-- Lets the tests see that removing an account or a Household really removed its secret.
+create or replace function public.calendar_secret_exists(p_secret_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = ''
+as $
+  select exists (select 1 from vault.secrets where id = p_secret_id);
+$;
+
+revoke all on function public.calendar_secret_exists(uuid) from public;
+revoke execute on function public.calendar_secret_exists(uuid) from anon, authenticated;
+grant execute on function public.calendar_secret_exists(uuid) to service_role;
 
 revoke all on function public.read_calendar_secret(uuid) from public;
 revoke execute on function public.read_calendar_secret(uuid) from anon, authenticated;

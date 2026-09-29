@@ -348,6 +348,8 @@ describe('calendar_accounts access', () => {
     expect((await phone.rpc('store_calendar_account', args)).error).not.toBeNull();
     expect((await phone.rpc('read_calendar_secret', { p_secret_id: account.household.id })).error).not.toBeNull();
     expect((await device.client.rpc('read_calendar_secret', { p_secret_id: account.household.id })).error).not.toBeNull();
+    expect((await phone.rpc('calendar_secret_exists', { p_secret_id: account.household.id })).error).not.toBeNull();
+    expect((await device.client.rpc('calendar_secret_exists', { p_secret_id: account.household.id })).error).not.toBeNull();
     expect((await asServiceRole().from('calendar_accounts').select('vault_secret_id')).error).toBeNull();
   });
 
@@ -362,7 +364,7 @@ describe('calendar_accounts access', () => {
 
     const insert = await phone.from('calendar_accounts').insert({ household_id: account.household.id, google_email: 'x@example.com', vault_secret_id: account.household.id });
     expect(insert.error).not.toBeNull();
-    expect((await phone.from('calendar_accounts').update({ status: 'error' }).eq('id', id)).error).not.toBeNull();
+    expect((await phone.from('calendar_accounts').update({ status: 'needs_reauth' }).eq('id', id)).error).not.toBeNull();
 
     await device.client.from('calendar_accounts').delete().eq('id', id);
     await strangerPhone.from('calendar_accounts').delete().eq('id', id);
@@ -455,7 +457,7 @@ describe('removing a Calendar Account', () => {
     const id = await connect(account, 'parent@example.com');
     const admin = asServiceRole();
     const { data: row } = await admin.from('calendar_accounts').select('vault_secret_id').eq('id', id).single<{ vault_secret_id: string }>();
-    expect((await admin.rpc('read_calendar_secret', { p_secret_id: row!.vault_secret_id })).data).toBe('refresh-token-1');
+    expect((await admin.rpc('calendar_secret_exists', { p_secret_id: row!.vault_secret_id })).data).toBe(true);
     const phone = await asHouseholdAccount(account);
     expect((await loadMirroredCalendars(phone)).length).toBeGreaterThan(0);
 
@@ -463,7 +465,7 @@ describe('removing a Calendar Account', () => {
 
     expect(await loadCalendarAccounts(phone)).toEqual([]);
     expect(await loadMirroredCalendars(phone)).toEqual([]);
-    expect((await admin.rpc('read_calendar_secret', { p_secret_id: row!.vault_secret_id })).data).toBeNull();
+    expect((await admin.rpc('calendar_secret_exists', { p_secret_id: row!.vault_secret_id })).data).toBe(false);
     const { count } = await admin.from('mirrored_calendars').select('id', { count: 'exact', head: true }).eq('calendar_account_id', id);
     expect(count).toBe(0);
   });
@@ -489,6 +491,6 @@ describe('removing a Calendar Account', () => {
     await destroyHousehold(account);
     households = households.filter((existing) => existing !== account);
 
-    expect((await admin.rpc('read_calendar_secret', { p_secret_id: row!.vault_secret_id })).data).toBeNull();
+    expect((await admin.rpc('calendar_secret_exists', { p_secret_id: row!.vault_secret_id })).data).toBe(false);
   });
 });

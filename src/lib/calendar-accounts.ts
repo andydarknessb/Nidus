@@ -6,7 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // connection itself is the calendar-connect Edge Function; the refresh token never
 // reaches a client, and neither does the column that names its Vault secret.
 
-export type CalendarAccountStatus = 'active' | 'needs_reauth' | 'error';
+export type CalendarAccountStatus = 'active' | 'needs_reauth';
 
 export type CalendarAccount = {
   id: string;

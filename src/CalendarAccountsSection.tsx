@@ -18,7 +18,6 @@ const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 const STATUS_TEXT: Record<CalendarAccount['status'], string> = {
   active: 'Connected',
   needs_reauth: 'Needs to be connected again',
-  error: 'Not syncing',
 };
 
 // The choice values a select can carry: '' is "no override" and "whole Household".
