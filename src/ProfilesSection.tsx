@@ -159,10 +159,11 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
         </label>
         <ColorPicker label="New Profile colour" value={adding.color} onChange={(color) => setAdding({ ...adding, color })} />
         <label className="flex flex-col gap-2 text-base">
-          Picture address (optional)
+          Picture address (optional, starts with https://)
           <input
             className={field}
             type="url"
+            pattern="https://.*"
             inputMode="url"
             value={adding.avatar}
             onChange={(e) => setAdding({ ...adding, avatar: e.target.value })}
@@ -188,6 +189,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                   Name
                   <input
                     className={field}
+                    autoFocus
                     value={editing.draft.name}
                     onChange={(e) => setEditing({ id: profile.id, draft: { ...editing.draft, name: e.target.value } })}
                     maxLength={100}
@@ -200,10 +202,11 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                   onChange={(color) => setEditing({ id: profile.id, draft: { ...editing.draft, color } })}
                 />
                 <label className="flex flex-col gap-2 text-base">
-                  Picture address (optional)
+                  Picture address (optional, starts with https://)
                   <input
                     className={field}
                     type="url"
+                    pattern="https://.*"
                     inputMode="url"
                     value={editing.draft.avatar}
                     onChange={(e) => setEditing({ id: profile.id, draft: { ...editing.draft, avatar: e.target.value } })}
@@ -239,7 +242,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                 </div>
                 {confirming === profile.id ? (
                   <div className="flex gap-3">
-                    <button type="button" className={`${action} flex-1 border-2 border-destructive bg-primary text-primary-foreground`} onClick={() => void remove(profile.id)}>
+                    <button type="button" autoFocus className={`${action} flex-1 border-2 border-destructive bg-primary text-primary-foreground`} onClick={() => void remove(profile.id)}>
                       Delete {profile.name}
                     </button>
                     <button type="button" className={`${action} border border-border`} onClick={() => setConfirming(null)}>

@@ -119,6 +119,11 @@ describe('profiles', () => {
 
     await expect(createProfile(phone, id, { name: '   ', color: red, avatar_url: null }, 0)).rejects.toMatchObject({ code: '23514' });
     await expect(createProfile(phone, id, { name: 'Mom', color: 'red', avatar_url: null }, 0)).rejects.toMatchObject({ code: '23514' });
+    // Only whitespace of any kind is still blank; the client's trim is not the guard.
+    const tab = await phone.from('profiles').insert({ household_id: id, name: '\t\n', color: red });
+    expect(tab.error?.code).toBe('23514');
+    await expect(createProfile(phone, id, { name: 'Mom', color: red, avatar_url: 'http://example.com/a.png' }, 0)).rejects.toMatchObject({ code: '23514' });
+    await expect(createProfile(phone, id, { name: 'Mom', color: red, avatar_url: 'HTTPS://example.com/a.png' }, 0)).resolves.toMatchObject({ name: 'Mom' });
     await expect(
       createProfile(phone, id, { name: 'Mom', color: red, avatar_url: 'javascript:alert(1)' }, 0),
     ).rejects.toMatchObject({ code: '23514' });

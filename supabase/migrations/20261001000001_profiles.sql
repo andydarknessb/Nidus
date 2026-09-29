@@ -6,12 +6,12 @@
 create table public.profiles (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households (id) on delete cascade,
-  name text not null check (char_length(btrim(name)) between 1 and 100),
+  name text not null check (char_length(name) between 1 and 100 and name ~ '\S'),
   -- A #rrggbb hex. Which hexes are offered is the app's fixed high-contrast
   -- palette (src/lib/profiles.ts), tested for WCAG AAA on Zinc-950; the column
   -- only guards the shape so the palette can change without a migration.
   color text not null check (color ~ '^#[0-9a-f]{6}$'),
-  avatar_url text check (avatar_url is null or (char_length(avatar_url) <= 2048 and avatar_url ~ '^https?://')),
+  avatar_url text check (avatar_url is null or (char_length(avatar_url) <= 2048 and avatar_url ~* '^https://')),
   sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
