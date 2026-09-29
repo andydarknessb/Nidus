@@ -296,6 +296,12 @@ describe('routines', () => {
     expect(await loadCompletions(wall, today)).toEqual([]);
     expect(await loadCompletions(wall, yesterday)).toEqual([pills.id]);
 
+    // A tablet still showing yesterday just after midnight cannot erase it: unticks reach today only.
+    await uncompleteRoutine(wall, pills.id, yesterday);
+    expect(await loadCompletions(wall, yesterday)).toEqual([pills.id]);
+    await uncompleteRoutine(phone, pills.id, yesterday);
+    expect(await loadCompletions(phone, yesterday)).toEqual([pills.id]);
+
     // Today's tick is its own record; yesterday's stays.
     await completeRoutine(wall, pills.id, today);
     const rows = await admin.from('routine_completions').select('completed_on').eq('routine_id', pills.id).order('completed_on');
@@ -312,6 +318,15 @@ describe('routines', () => {
     await expect(completeRoutine(wall, pills.id, yesterday)).rejects.toMatchObject({ code: '23514' });
     await expect(completeRoutine(wall, pills.id, tomorrow)).rejects.toMatchObject({ code: '23514' });
     expect((await asServiceRole().from('routine_completions').select('id').eq('routine_id', pills.id)).data).toEqual([]);
+  });
+
+  it('refuses a tick on an archived Routine', async () => {
+    const { arranged, phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay }, 0);
+    const wall = await device(arranged);
+    await archiveRoutine(phone, pills.id);
+
+    await expect(completeRoutine(wall, pills.id, householdDay(arranged.household.timezone).date)).rejects.toMatchObject({ code: '42501' });
   });
 
   it("a Device cannot tick another household's Routine or edit a completion", async () => {

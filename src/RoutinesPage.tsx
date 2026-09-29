@@ -58,15 +58,18 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
   const [failed, setFailed] = useState(false);
   // Ticks in flight: a refresh landing meanwhile would show the stale answer over the tap.
   const writing = useRef(0);
+  // Bumped when a tick starts and again when it ends: a read that began before either is stale.
+  const epoch = useRef(0);
 
   useEffect(() => {
     let live = true;
     const date = day.date;
     async function read() {
       if (writing.current > 0) return;
+      const started = epoch.current;
       try {
         const [profiles, routines, completed] = await Promise.all([loadProfiles(supabase), loadRoutines(supabase), loadCompletions(supabase, date)]);
-        if (live && writing.current === 0) {
+        if (live && writing.current === 0 && epoch.current === started) {
           setLoaded({ date, profiles, routines, done: new Set(completed) });
           setFailed(false);
         }
@@ -92,6 +95,7 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
     const publish = (update: (ids: Set<string>) => Set<string>) =>
       setLoaded((prev) => (prev && prev.date === date ? { ...prev, done: update(prev.done) } : prev));
     writing.current += 1;
+    epoch.current += 1;
     try {
       const stuck = await tickOptimistically(publish, routine.id, checking, () =>
         checking ? completeRoutine(supabase, routine.id, date) : uncompleteRoutine(supabase, routine.id, date),
@@ -99,6 +103,7 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
       setProblem(stuck ? '' : 'Could not save that tick. It has been put back.');
     } finally {
       writing.current -= 1;
+      epoch.current += 1;
     }
   }
 
@@ -218,6 +223,14 @@ export function RoutinesPage({ household }: { household: Household }) {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [problem, setProblem] = useState('');
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [focusNext, setFocusNext] = useState<string | null>(null);
+
+  // Moves focus once the element it names is on screen; the swap unmounts whatever had it.
+  useEffect(() => {
+    if (focusNext === null) return;
+    document.getElementById(focusNext)?.focus();
+    setFocusNext(null);
+  }, [focusNext]);
 
   const refresh = useCallback(async () => {
     try {
@@ -265,7 +278,7 @@ export function RoutinesPage({ household }: { household: Household }) {
         const own = ofProfile(profile.id);
         return (
           <section key={profile.id} aria-labelledby={`profile-${profile.id}`} className="flex flex-col gap-3 rounded-lg border border-border p-3">
-            <h2 id={`profile-${profile.id}`} className="flex items-center gap-2 text-xl font-semibold" style={{ color: profile.color }}>
+            <h2 id={`profile-${profile.id}`} tabIndex={-1} className="flex items-center gap-2 text-xl font-semibold" style={{ color: profile.color }}>
               <span aria-hidden className="size-4 shrink-0 rounded-full" style={{ backgroundColor: profile.color }} />
               {profile.name}
             </h2>
@@ -309,17 +322,25 @@ export function RoutinesPage({ household }: { household: Household }) {
                         className={`${action} flex-1 border-2 border-destructive bg-primary text-primary-foreground`}
                         onClick={() => {
                           setConfirming(null);
+                          setFocusNext(`profile-${profile.id}`);
                           void change(() => archiveRoutine(supabase, routine.id), 'Could not archive that Routine. Try again.');
                         }}
                       >
                         Archive {routine.title}
                       </button>
-                      <button type="button" className={quiet} onClick={() => setConfirming(null)}>
+                      <button
+                        type="button"
+                        className={quiet}
+                        onClick={() => {
+                          setConfirming(null);
+                          setFocusNext(`archive-${routine.id}`);
+                        }}
+                      >
                         Keep it
                       </button>
                     </div>
                   ) : (
-                    <button type="button" className={quiet} aria-label={`Archive ${routine.title}`} onClick={() => setConfirming(routine.id)}>
+                    <button type="button" id={`archive-${routine.id}`} className={quiet} aria-label={`Archive ${routine.title}`} onClick={() => setConfirming(routine.id)}>
                       Archive
                     </button>
                   )}

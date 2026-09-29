@@ -90,7 +90,7 @@ grant select on public.routines to authenticated;
 grant insert (household_id, profile_id, title, days_of_week, sort_order) on public.routines to authenticated;
 grant update (title, days_of_week, sort_order, archived_at) on public.routines to authenticated;
 
--- A tick and an untick are all a Device may write; a completion is never edited.
+-- A tick and an untick (of today) are all a Device may write; a completion is never edited.
 revoke all on public.routine_completions from anon, authenticated;
 grant select, delete on public.routine_completions to authenticated;
 grant insert (routine_id, completed_on) on public.routine_completions to authenticated;
@@ -133,18 +133,26 @@ create policy "principals tick their household's routines"
   with check (
     exists (
       select 1 from public.routines as r
-      where r.id = routine_completions.routine_id and r.household_id = public.current_household_id()
+      where r.id = routine_completions.routine_id
+        and r.household_id = public.current_household_id()
+        and r.archived_at is null
     )
   );
 
-create policy "principals untick their household's routines"
+-- An untick removes today's completion only. Earlier days are history that outlives the
+-- midnight reset, so a tablet still showing yesterday just after midnight cannot erase it.
+create policy "principals untick their household's routines today"
   on public.routine_completions
   for delete
   to authenticated
   using (
     exists (
-      select 1 from public.routines as r
-      where r.id = routine_completions.routine_id and r.household_id = public.current_household_id()
+      select 1
+      from public.routines as r
+      join public.households as h on h.id = r.household_id
+      where r.id = routine_completions.routine_id
+        and r.household_id = public.current_household_id()
+        and routine_completions.completed_on = (now() at time zone h.timezone)::date
     )
   );
 
