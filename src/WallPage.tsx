@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
-import { loadHousehold } from './lib/household';
+import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { supabase } from './lib/supabase';
 import { RoutinesRail } from './RoutinesPage';
 import { PinnedListRail, WallListsScreen } from './SharedListsPage';
@@ -12,6 +12,10 @@ const HEARTBEAT_MS = 30_000;
 // While showing a code, ask often so a claim is noticed within seconds.
 const CLAIM_POLL_MS = 3_000;
 const RETRY_MS = 5_000;
+// Same cadence as the Routines rail, so a changed Household Timezone reaches the wall within a read.
+const HOUSEHOLD_REFRESH_MS = 30_000;
+// After a failed Household read, retry sooner.
+const HOUSEHOLD_RETRY_MS = 5_000;
 
 type WallState = { kind: 'connecting' } | { kind: 'unpaired'; pairing: PairingCode } | { kind: 'paired' };
 
@@ -113,23 +117,34 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
 // The landscape home screen: the calendar columns come later; the right rail
 // holds today's Routines above the pinned Shared List, and the other lists open from the header.
 function HomeShell() {
-  const [name, setName] = useState('');
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
-  const [timezone, setTimezone] = useState<string | null>(null);
+  const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   const [listsOpen, setListsOpen] = useState(false);
   useEffect(() => {
     let live = true;
-    loadHousehold()
-      .then((household) => {
-        if (!live) return;
-        setName(household.name);
-        setTimezone(household.timezone);
-      })
-      .catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    async function read() {
+      let outcome: { household: Household } | { failed: true };
+      try {
+        outcome = { household: await loadHousehold() };
+      } catch {
+        outcome = { failed: true };
+      }
+      if (!live) return;
+      setView((prev) => householdViewAfter(prev, outcome));
+      // After a failed read retry sooner, so the rail appears once the connection is back.
+      timer = setTimeout(() => void read(), 'household' in outcome ? HOUSEHOLD_REFRESH_MS : HOUSEHOLD_RETRY_MS);
+    }
+
+    void read();
     return () => {
       live = false;
+      clearTimeout(timer);
     };
   }, []);
+  const name = view.household?.name ?? '';
+  const timezone = view.household?.timezone ?? null;
 
   return (
     <main className="grid h-svh grid-rows-[auto_minmax(0,1fr)] gap-6 p-8">
@@ -142,7 +157,17 @@ function HomeShell() {
       <div className="grid min-h-0 grid-cols-[1fr_24rem] gap-6">
         <section aria-label="Home" className="rounded-xl border border-border" />
         <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
-          {timezone ? <RoutinesRail timezone={timezone} /> : <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4" />}
+          {timezone ? (
+            <RoutinesRail timezone={timezone} />
+          ) : (
+            <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4">
+              {view.failed && (
+                <p role="alert" className="text-base">
+                  Could not load Routines. Check your connection.
+                </p>
+              )}
+            </aside>
+          )}
           <PinnedListRail />
         </div>
       </div>
