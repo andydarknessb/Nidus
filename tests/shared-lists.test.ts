@@ -117,6 +117,20 @@ describe('shared lists', () => {
       await expect(createList(phone, arranged.household.id, '   ', 1)).rejects.toMatchObject({ code: '23514' });
     });
 
+    it('rejects a tab-and-newline-only list name written past the trimming helpers', async () => {
+      const { arranged, phone } = await household('The Andersons');
+      const groceries = await pinnedListOf(phone);
+
+      const inserted = await phone
+        .from('shared_lists')
+        .insert({ household_id: arranged.household.id, name: '\t\n', sort_order: 1 });
+      const renamed = await phone.from('shared_lists').update({ name: '\t\n' }).eq('id', groceries);
+
+      expect(inserted.error?.code).toBe('23514');
+      expect(renamed.error?.code).toBe('23514');
+      expect(await loadLists(phone)).toEqual([{ id: groceries, name: 'Groceries', sort_order: 0 }]);
+    });
+
     it('a Device reads lists but cannot create, rename, reorder or delete them', async () => {
       const { arranged, phone } = await household('The Andersons');
       const wall = await device(arranged);
@@ -272,6 +286,33 @@ describe('shared lists', () => {
 
       await expect(addItem(phone, list, '   ', 0)).rejects.toMatchObject({ code: '23514' });
       await expect(addItem(phone, list, 'x'.repeat(201), 0)).rejects.toMatchObject({ code: '23514' });
+    });
+
+    it('rejects tab-and-newline-only item text written past the trimming helper', async () => {
+      const { arranged, phone } = await household('The Andersons');
+      const wall = await device(arranged);
+      const list = await pinnedListOf(phone);
+
+      const fromPhone = await phone.from('list_items').insert({ list_id: list, text: '\t\n', sort_order: 0 });
+      const fromWall = await wall.from('list_items').insert({ list_id: list, text: '\t\n', sort_order: 0 });
+
+      expect(fromPhone.error?.code).toBe('23514');
+      expect(fromWall.error?.code).toBe('23514');
+      expect(await loadItems(phone, list)).toEqual([]);
+    });
+
+    it('rejects editing an item to tab-and-newline-only text past the trimming helper', async () => {
+      const { arranged, phone } = await household('The Andersons');
+      const wall = await device(arranged);
+      const list = await pinnedListOf(phone);
+      const milk = await addItem(phone, list, 'Milk', 0);
+
+      const fromPhone = await phone.from('list_items').update({ text: '\t\n' }).eq('id', milk.id);
+      const fromWall = await wall.from('list_items').update({ text: '\t\n' }).eq('id', milk.id);
+
+      expect(fromPhone.error?.code).toBe('23514');
+      expect(fromWall.error?.code).toBe('23514');
+      expect((await loadItems(phone, list)).map((item) => item.text)).toEqual(['Milk']);
     });
 
     it('a Device cannot move an item to another list', async () => {
