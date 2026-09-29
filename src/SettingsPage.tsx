@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { DevicesSection } from '@/DevicesSection';
+import { ProfilesSection } from '@/ProfilesSection';
 import { updateHousehold, type Household } from '@/lib/household';
 import { timezoneOptions } from '@/lib/timezones';
 
@@ -50,6 +51,7 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
           {status === 'failed' && 'Could not save. Check the name and try again.'}
         </p>
       </form>
+      <ProfilesSection householdId={household.id} />
       <DevicesSection />
       <button type="button" className={`${action} border border-border`} onClick={onSignOut}>
         Sign out
