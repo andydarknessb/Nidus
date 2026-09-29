@@ -191,7 +191,11 @@ language sql
 security definer
 set search_path = ''
 as $$
-  select decrypted_secret from vault.decrypted_secrets where id = p_secret_id;
+  -- Only a secret a Calendar Account points at; the rest of Vault stays out of reach.
+  select s.decrypted_secret
+  from vault.decrypted_secrets as s
+  where s.id = p_secret_id
+    and exists (select 1 from public.calendar_accounts a where a.vault_secret_id = s.id);
 $$;
 
 revoke all on function public.store_calendar_account(uuid, text, text) from public;

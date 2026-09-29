@@ -15,6 +15,9 @@ function required(name: string): string {
   return value;
 }
 
+// A short secret lets one observed state be brute-forced offline and then forged.
+if (required('CALENDAR_STATE_SECRET').length < 32) throw new Error('CALENDAR_STATE_SECRET must be at least 32 characters');
+
 const supabaseUrl = required('SUPABASE_URL');
 const admin = createClient(supabaseUrl, required('SUPABASE_SERVICE_ROLE_KEY'), {
   auth: { persistSession: false, autoRefreshToken: false },
