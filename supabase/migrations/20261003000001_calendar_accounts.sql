@@ -209,9 +209,9 @@ returns boolean
 language sql
 security definer
 set search_path = ''
-as $
+as $$
   select exists (select 1 from vault.secrets where id = p_secret_id);
-$;
+$$;
 
 revoke all on function public.calendar_secret_exists(uuid) from public;
 revoke execute on function public.calendar_secret_exists(uuid) from anon, authenticated;
