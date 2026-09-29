@@ -301,6 +301,20 @@ describe('shared lists', () => {
       expect(await loadItems(phone, list)).toEqual([]);
     });
 
+    it('rejects editing an item to tab-and-newline-only text past the trimming helper', async () => {
+      const { arranged, phone } = await household('The Andersons');
+      const wall = await device(arranged);
+      const list = await pinnedListOf(phone);
+      const milk = await addItem(phone, list, 'Milk', 0);
+
+      const fromPhone = await phone.from('list_items').update({ text: '\t\n' }).eq('id', milk.id);
+      const fromWall = await wall.from('list_items').update({ text: '\t\n' }).eq('id', milk.id);
+
+      expect(fromPhone.error?.code).toBe('23514');
+      expect(fromWall.error?.code).toBe('23514');
+      expect((await loadItems(phone, list)).map((item) => item.text)).toEqual(['Milk']);
+    });
+
     it('a Device cannot move an item to another list', async () => {
       const { arranged, phone } = await household('The Andersons');
       const wall = await device(arranged);
