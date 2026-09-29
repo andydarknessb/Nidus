@@ -19,6 +19,11 @@ const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 const iconAction = 'flex size-12 items-center justify-center rounded-lg border border-border disabled:opacity-40';
 
+type Control = 'edit' | 'delete' | 'up' | 'down';
+
+// Ids for a row's buttons, so focus can go back to one after the screen swaps controls.
+const controlId = (profileId: string, control: Control) => `profile-${profileId}-${control}`;
+
 type Draft = { name: string; color: string; avatar: string };
 
 const emptyDraft: Draft = { name: '', color: PROFILE_PALETTE[0].hex, avatar: '' };
@@ -76,6 +81,14 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   const [adding, setAdding] = useState<Draft>(emptyDraft);
   const [editing, setEditing] = useState<{ id: string; draft: Draft } | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [focusNext, setFocusNext] = useState<string | null>(null);
+
+  // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
+  useEffect(() => {
+    if (focusNext === null) return;
+    document.getElementById(focusNext)?.focus();
+    setFocusNext(null);
+  }, [focusNext]);
 
   const refresh = useCallback(async () => {
     try {
@@ -127,7 +140,10 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
       () => updateProfile(supabase, id, { name: draft.name, color: draft.color, avatar_url: cleanAvatarUrl(draft.avatar) }),
       'Could not save the Profile. Check the name and the picture address, then try again.',
     );
-    if (ok) setEditing(null);
+    if (ok) {
+      setEditing(null);
+      setFocusNext(controlId(id, 'edit'));
+    }
   }
 
   async function remove(id: string) {
@@ -137,6 +153,10 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
 
   async function move(id: string, offset: number) {
     const ids = movedIds((profiles ?? []).map((profile) => profile.id), id, offset);
+    // A row that reaches an end disables the button just pressed; hand focus to its sibling arrow.
+    const at = ids.indexOf(id);
+    if (at === 0 && offset < 0) setFocusNext(controlId(id, 'down'));
+    if (at === ids.length - 1 && offset > 0) setFocusNext(controlId(id, 'up'));
     await change(() => reorderProfiles(supabase, ids), 'Could not reorder Profiles. Try again.');
   }
 
@@ -217,7 +237,14 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                   <button type="submit" className={`${action} flex-1 bg-primary text-primary-foreground`}>
                     Save
                   </button>
-                  <button type="button" className={`${action} border border-border`} onClick={() => setEditing(null)}>
+                  <button
+                    type="button"
+                    className={`${action} border border-border`}
+                    onClick={() => {
+                      setEditing(null);
+                      setFocusNext(controlId(profile.id, 'edit'));
+                    }}
+                  >
                     Cancel
                   </button>
                 </div>
@@ -227,11 +254,12 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                 <div className="flex items-center gap-3">
                   <Swatch profile={profile} />
                   <p className="flex-1 text-base font-medium">{profile.name}</p>
-                  <button type="button" className={iconAction} aria-label={`Move ${profile.name} up`} disabled={index === 0} onClick={() => void move(profile.id, -1)}>
+                  <button type="button" id={controlId(profile.id, 'up')} className={iconAction} aria-label={`Move ${profile.name} up`} disabled={index === 0} onClick={() => void move(profile.id, -1)}>
                     <ArrowUp aria-hidden="true" />
                   </button>
                   <button
                     type="button"
+                    id={controlId(profile.id, 'down')}
                     className={iconAction}
                     aria-label={`Move ${profile.name} down`}
                     disabled={index === profiles.length - 1}
@@ -245,7 +273,10 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                     <button type="button" autoFocus className={`${action} flex-1 border-2 border-destructive bg-primary text-primary-foreground`} onClick={() => void remove(profile.id)}>
                       Delete {profile.name}
                     </button>
-                    <button type="button" className={`${action} border border-border`} onClick={() => setConfirming(null)}>
+                    <button type="button" className={`${action} border border-border`} onClick={() => {
+                      setConfirming(null);
+                      setFocusNext(controlId(profile.id, 'delete'));
+                    }}>
                       Cancel
                     </button>
                   </div>
@@ -254,12 +285,13 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                     <button
                       type="button"
                       className={`${action} flex-1 border border-border`}
+                      id={controlId(profile.id, 'edit')}
                       aria-label={`Edit ${profile.name}`}
                       onClick={() => setEditing({ id: profile.id, draft: { name: profile.name, color: profile.color, avatar: profile.avatar_url ?? '' } })}
                     >
                       Edit
                     </button>
-                    <button type="button" className={`${action} flex-1 border border-border`} aria-label={`Delete ${profile.name}`} onClick={() => setConfirming(profile.id)}>
+                    <button type="button" id={controlId(profile.id, 'delete')} className={`${action} flex-1 border border-border`} aria-label={`Delete ${profile.name}`} onClick={() => setConfirming(profile.id)}>
                       Delete
                     </button>
                   </div>

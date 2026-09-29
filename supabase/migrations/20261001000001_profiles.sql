@@ -22,7 +22,9 @@ create index profiles_household_id_idx on public.profiles (household_id, sort_or
 
 alter table public.profiles enable row level security;
 
--- household_id is set on insert and never moves; a Device gets no write grant at all.
+-- Column grants keep household_id immutable (set on insert, never updated). A Device runs
+-- as authenticated too, so it holds these grants; the is_household_account() clause in the
+-- write policies below is what refuses it.
 revoke all on public.profiles from anon, authenticated;
 grant select, delete on public.profiles to authenticated;
 grant insert (household_id, name, color, avatar_url, sort_order) on public.profiles to authenticated;
