@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { CalendarAccountsSection } from '@/CalendarAccountsSection';
 import { DevicesSection } from '@/DevicesSection';
 import { ProfilesSection } from '@/ProfilesSection';
 import { updateHousehold, type Household } from '@/lib/household';
@@ -52,6 +53,7 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
         </p>
       </form>
       <ProfilesSection householdId={household.id} />
+      <CalendarAccountsSection />
       <DevicesSection />
       <button type="button" className={`${action} border border-border`} onClick={onSignOut}>
         Sign out
