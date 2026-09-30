@@ -67,8 +67,16 @@ function fakeGoogle(options: FakeOptions): { fetch: typeof fetch; calls: Call[] 
   return { fetch: fake as typeof fetch, calls };
 }
 
-function deps(google: { fetch: typeof fetch }): SyncDeps {
-  return { env: { syncSecret: SECRET, googleClientId: 'client-id', googleClientSecret: 'client-secret' }, admin: asServiceRole(), fetch: google.fetch, now: () => NOW };
+// Scoped to the test's own Household: the local stack is shared, and a sync of everyone's accounts
+// would touch (and count) accounts other runs left there.
+function deps(account: HouseholdAccount, google: { fetch: typeof fetch }): SyncDeps {
+  return {
+    env: { syncSecret: SECRET, googleClientId: 'client-id', googleClientSecret: 'client-secret' },
+    admin: asServiceRole(),
+    fetch: google.fetch,
+    now: () => NOW,
+    householdId: account.household.id,
+  };
 }
 
 async function runSync(d: SyncDeps, secret: string | null = SECRET, method = 'POST'): Promise<Response> {
@@ -127,10 +135,11 @@ const standup: GoogleEvent = {
 
 describe('who may run it', () => {
   it('refuses a request without the sync secret, with a wrong one, or that is not a POST', async () => {
+    const account = await arrange();
     const google = fakeGoogle({ events: {} });
-    expect((await runSync(deps(google), null)).status).toBe(401);
-    expect((await runSync(deps(google), 'wrong')).status).toBe(401);
-    expect((await runSync(deps(google), SECRET, 'GET')).status).toBe(405);
+    expect((await runSync(deps(account, google), null)).status).toBe(401);
+    expect((await runSync(deps(account, google), 'wrong')).status).toBe(401);
+    expect((await runSync(deps(account, google), SECRET, 'GET')).status).toBe(405);
     expect(google.calls).toEqual([]);
   });
 });
@@ -141,7 +150,7 @@ describe('a full sync', () => {
     const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'family@group.calendar.google.com', refreshToken: 'refresh-A' });
     const google = fakeGoogle({ events: { 'family@group.calendar.google.com': [standup] } });
 
-    await syncOk(deps(google));
+    await syncOk(deps(account, google));
 
     const token = google.calls.find((call) => String(call.url) === GOOGLE_TOKEN_URL)!;
     const form = new URLSearchParams(String(token.init?.body));
@@ -161,7 +170,7 @@ describe('a full sync', () => {
   it('stores a timed event as an instant with its title, notes and place', async () => {
     const account = await arrange();
     const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
-    await syncOk(deps(fakeGoogle({ events: { cal: [standup] } })));
+    await syncOk(deps(account, fakeGoogle({ events: { cal: [standup] } })));
 
     expect(await rowsOf(calendarId)).toEqual([
       expect.objectContaining({
@@ -188,7 +197,7 @@ describe('a full sync', () => {
         end: { dateTime: `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6)}T18:00:00-05:00` },
       }),
     );
-    await syncOk(deps(fakeGoogle({ events: { cal: weekly } })));
+    await syncOk(deps(account, fakeGoogle({ events: { cal: weekly } })));
 
     const rows = await rowsOf(calendarId);
     expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-05T22:00:00+00:00', '2026-10-12T22:00:00+00:00', '2026-10-19T22:00:00+00:00']);
@@ -199,7 +208,7 @@ describe('a full sync', () => {
     const account = await arrange(); // America/Chicago, CDT until Nov 1
     const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
     await syncOk(
-      deps(fakeGoogle({ events: { cal: [{ id: 'holiday', summary: 'Columbus Day', start: { date: '2026-10-12' }, end: { date: '2026-10-13' } }] } })),
+      deps(account, fakeGoogle({ events: { cal: [{ id: 'holiday', summary: 'Columbus Day', start: { date: '2026-10-12' }, end: { date: '2026-10-13' } }] } })),
     );
 
     expect(await rowsOf(calendarId)).toEqual([
@@ -211,7 +220,7 @@ describe('a full sync', () => {
     const account = await arrange();
     const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
     await syncOk(
-      deps(fakeGoogle({ events: { cal: [{ id: 'trip', summary: 'Grandma’s', start: { date: '2026-10-30' }, end: { date: '2026-11-03' } }] } })),
+      deps(account, fakeGoogle({ events: { cal: [{ id: 'trip', summary: 'Grandma’s', start: { date: '2026-10-30' }, end: { date: '2026-11-03' } }] } })),
     );
 
     // Oct 30 midnight is CDT (UTC-5); Nov 3 midnight is CST (UTC-6).
@@ -224,7 +233,7 @@ describe('a full sync', () => {
     const account = await arrange();
     const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
     await syncOk(
-      deps(
+      deps(account,
         fakeGoogle({
           events: { cal: [{ id: 'party', summary: 'Sleepover', start: { dateTime: '2026-10-09T20:00:00-05:00' }, end: { dateTime: '2026-10-10T10:00:00-05:00' } }] },
         }),
@@ -241,7 +250,7 @@ describe('a full sync', () => {
       { length: 5 },
       (_, index): GoogleEvent => ({ id: `e${index}`, summary: `Event ${index}`, start: { dateTime: `2026-10-0${index + 1}T10:00:00Z` }, end: { dateTime: `2026-10-0${index + 1}T11:00:00Z` } }),
     );
-    const summary = await syncOk(deps(fakeGoogle({ events: { cal: many }, pageSize: 2, syncToken: 'token-xyz' })));
+    const summary = await syncOk(deps(account, fakeGoogle({ events: { cal: many }, pageSize: 2, syncToken: 'token-xyz' })));
 
     expect(await rowsOf(calendarId)).toHaveLength(5);
     expect(summary).toMatchObject({ accounts: 1, calendars: 1, events: 5, errors: [] });
@@ -256,7 +265,7 @@ describe('a full sync', () => {
     const account = await arrange();
     const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
     await syncOk(
-      deps(
+      deps(account,
         fakeGoogle({
           events: {
             cal: [
@@ -277,10 +286,10 @@ describe('syncing again', () => {
   it('updates what changed in place and leaves the rest', async () => {
     const account = await arrange();
     const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
-    await syncOk(deps(fakeGoogle({ events: { cal: [standup] } })));
+    await syncOk(deps(account, fakeGoogle({ events: { cal: [standup] } })));
     const [before] = await rowsOf(calendarId);
 
-    await syncOk(deps(fakeGoogle({ events: { cal: [{ ...standup, summary: 'Standup moved', start: { dateTime: '2026-10-05T10:00:00-05:00' }, end: { dateTime: '2026-10-05T10:30:00-05:00' } }] } })));
+    await syncOk(deps(account, fakeGoogle({ events: { cal: [{ ...standup, summary: 'Standup moved', start: { dateTime: '2026-10-05T10:00:00-05:00' }, end: { dateTime: '2026-10-05T10:30:00-05:00' } }] } })));
 
     const rows = await rowsOf(calendarId);
     expect(rows).toHaveLength(1);
@@ -291,13 +300,13 @@ describe('syncing again', () => {
     const account = await arrange();
     const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
     const second: GoogleEvent = { ...standup, id: 'second', summary: 'Second' };
-    await syncOk(deps(fakeGoogle({ events: { cal: [standup, second] } })));
+    await syncOk(deps(account, fakeGoogle({ events: { cal: [standup, second] } })));
     expect(await rowsOf(calendarId)).toHaveLength(2);
 
-    await syncOk(deps(fakeGoogle({ events: { cal: [standup, { ...second, status: 'cancelled' }] } })));
+    await syncOk(deps(account, fakeGoogle({ events: { cal: [standup, { ...second, status: 'cancelled' }] } })));
     expect((await rowsOf(calendarId)).map((row) => row.google_event_id)).toEqual(['standup']);
 
-    await syncOk(deps(fakeGoogle({ events: { cal: [] } })));
+    await syncOk(deps(account, fakeGoogle({ events: { cal: [] } })));
     expect(await rowsOf(calendarId)).toEqual([]);
   });
 
@@ -307,7 +316,7 @@ describe('syncing again', () => {
     await arrangeEvents(calendarId, [{ google_event_id: 'old', title: 'Old', starts_at: '2026-10-05T14:00:00Z', ends_at: '2026-10-05T15:00:00Z' }]);
     const google = fakeGoogle({ events: { cal: [standup] } });
 
-    await syncOk(deps(google));
+    await syncOk(deps(account, google));
 
     expect(await rowsOf(calendarId)).toEqual([]);
     expect(google.calls.filter((call) => call.url.pathname.endsWith('/events'))).toEqual([]);
@@ -320,7 +329,7 @@ describe('when Google says no', () => {
     const { calendarId, accountId } = await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'revoked' });
     await arrangeEvents(calendarId, [{ google_event_id: 'kept', title: 'Kept', starts_at: '2026-10-05T14:00:00Z', ends_at: '2026-10-05T15:00:00Z' }]);
 
-    const summary = await syncOk(deps(fakeGoogle({ events: { cal: [standup] }, refreshTokens: { revoked: false } })));
+    const summary = await syncOk(deps(account, fakeGoogle({ events: { cal: [standup] }, refreshTokens: { revoked: false } })));
 
     expect(await accountOf(accountId)).toMatchObject({ status: 'needs_reauth', last_synced_at: null });
     expect((await accountOf(accountId)).last_error).toMatch(/reconnect/i);
@@ -333,11 +342,11 @@ describe('when Google says no', () => {
     const broken = await arrangeCalendar(account, { googleCalendarId: 'broken', refreshToken: 'revoked' });
     const fine = await arrangeCalendar(account, { googleCalendarId: 'fine', refreshToken: 'good' });
     const google = fakeGoogle({ events: { broken: [standup], fine: [standup] }, refreshTokens: { revoked: false } });
-    await syncOk(deps(google));
+    await syncOk(deps(account, google));
     const tokenCalls = () => google.calls.filter((call) => String(call.url) === GOOGLE_TOKEN_URL).length;
     const before = tokenCalls();
 
-    await syncOk(deps(google));
+    await syncOk(deps(account, google));
 
     expect(tokenCalls() - before).toBe(1);
     expect(await rowsOf(broken.calendarId)).toEqual([]);
@@ -351,7 +360,7 @@ describe('when Google says no', () => {
     const second = await arrangeCalendar(account, { googleCalendarId: 'steady', email: 'two@example.test' });
     await arrangeEvents(first.calendarId, [{ google_event_id: 'kept', title: 'Kept', starts_at: '2026-10-05T14:00:00Z', ends_at: '2026-10-05T15:00:00Z' }]);
 
-    const summary = await syncOk(deps(fakeGoogle({ events: { flaky: 503, steady: [standup] } })));
+    const summary = await syncOk(deps(account, fakeGoogle({ events: { flaky: 503, steady: [standup] } })));
 
     expect((await rowsOf(first.calendarId)).map((row) => row.google_event_id)).toEqual(['kept']);
     expect(await rowsOf(second.calendarId)).toHaveLength(1);
@@ -366,5 +375,13 @@ describe('when Google says no', () => {
 describe('the window', () => {
   it('runs from one month back to six months ahead', () => {
     expect(syncWindow(NOW)).toEqual({ timeMin: '2026-08-30T12:00:00.000Z', timeMax: '2027-03-30T12:00:00.000Z' });
+  });
+
+  it('stops at the end of a shorter month instead of spilling into the next', () => {
+    // Mar 31 less a month is Feb 28 (not Mar 3); Aug 31 plus six months is Feb 28 (not Mar 3).
+    expect(syncWindow(Date.parse('2026-03-31T08:30:00Z'))).toEqual({ timeMin: '2026-02-28T08:30:00.000Z', timeMax: '2026-09-30T08:30:00.000Z' });
+    expect(syncWindow(Date.parse('2026-08-31T08:30:00Z'))).toEqual({ timeMin: '2026-07-31T08:30:00.000Z', timeMax: '2027-02-28T08:30:00.000Z' });
+    // A leap year keeps the 29th.
+    expect(syncWindow(Date.parse('2027-08-31T00:00:00Z')).timeMax).toBe('2028-02-29T00:00:00.000Z');
   });
 });

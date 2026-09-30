@@ -4,7 +4,7 @@ import {
   formatClock,
   describeWhen,
   loadOccurrences,
-  nowFraction,
+  nowHour,
   place,
   visibleHours,
   type AllDayBar,
@@ -96,8 +96,8 @@ export function FiveDayCalendar({ timezone }: { timezone: string }) {
   }, [timezone, today]);
 
   const days = fiveDays(timezone, now);
-  const todayFraction = nowFraction(days[0]!, now);
-  const { startHour, endHour } = visibleHours(place(occurrences ?? [], days).columns, todayFraction);
+  const todayHour = nowHour(days[0]!, now);
+  const { startHour, endHour } = visibleHours(place(occurrences ?? [], days).columns, todayHour);
   const minMinutes = (MIN_TARGET_PX / (gridPx / (endHour - startHour))) * 60;
   const { allDay, columns } = place(occurrences ?? [], days, minMinutes);
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, index) => startHour + index);
@@ -132,12 +132,12 @@ export function FiveDayCalendar({ timezone }: { timezone: string }) {
             {(columns[index] ?? []).map((block) => (
               <EventBlock key={`${block.occurrence.id}-${day.date}`} block={block} startHour={startHour} endHour={endHour} timezone={timezone} onOpen={setOpen} />
             ))}
-            {day.isToday && todayFraction !== null && (
+            {day.isToday && todayHour !== null && (
               <div
                 aria-hidden
                 data-testid="now-line"
                 className="pointer-events-none absolute inset-x-0 z-[5] h-0.5 bg-red-300"
-                style={{ top: `${((todayFraction * 24 - startHour) / (endHour - startHour)) * 100}%` }}
+                style={{ top: `${((todayHour - startHour) / (endHour - startHour)) * 100}%` }}
               >
                 <span className="absolute -top-1 -left-1.5 size-3.5 rounded-full bg-red-300" />
               </div>
@@ -197,8 +197,8 @@ function EventBlock({
 }) {
   const { occurrence } = block;
   const range = endHour - startHour;
-  const top = ((block.top * 24 - startHour) / range) * 100;
-  const bottom = ((block.bottom * 24 - startHour) / range) * 100;
+  const top = ((block.topHour - startHour) / range) * 100;
+  const bottom = ((block.bottomHour - startHour) / range) * 100;
   return (
     <button
       type="button"

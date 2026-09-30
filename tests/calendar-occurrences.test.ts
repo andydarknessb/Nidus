@@ -66,6 +66,26 @@ describe('synced_events', () => {
     expect(data).toEqual([{ title: 'Lunch' }]);
   });
 
+  it('cannot be rewritten through the sync function by any client', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account);
+    await arrangeEvents(calendarId, [lunch]);
+    const device = await asDevice(account);
+    tablets.push(device);
+    const forged = [{ google_event_id: 'forged', title: 'Forged', description: null, location: null, starts_at: lunch.starts_at, ends_at: lunch.ends_at, is_all_day: false }];
+
+    for (const client of [asAnonymous(), await asHouseholdAccount(account), device.client]) {
+      const { error } = await client.rpc('replace_synced_events', { p_mirrored_calendar_id: calendarId, p_events: forged, p_sync_token: 'forged' });
+      expect(error).not.toBeNull();
+      expect((await client.rpc('invoke_calendar_sync')).error).not.toBeNull();
+    }
+
+    const { data } = await asServiceRole().from('synced_events').select('title').eq('mirrored_calendar_id', calendarId);
+    expect(data).toEqual([{ title: 'Lunch' }]);
+    const { data: calendar } = await asServiceRole().from('mirrored_calendars').select('sync_token').eq('id', calendarId).single<{ sync_token: string | null }>();
+    expect(calendar?.sync_token).toBeNull();
+  });
+
   it('keeps one row per Google event in a calendar', async () => {
     const account = await arrange();
     const { calendarId } = await arrangeCalendar(account);

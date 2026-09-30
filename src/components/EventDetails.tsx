@@ -28,6 +28,20 @@ export function EventDetails({ occurrence, timezone, onClose }: { occurrence: Oc
         tabIndex={-1}
         onKeyDown={(event) => {
           if (event.key === 'Escape') onClose();
+          if (event.key !== 'Tab') return;
+          // aria-modal: Tab and Shift+Tab stay inside the sheet instead of reaching the wall behind it.
+          const focusable = [...event.currentTarget.querySelectorAll<HTMLElement>('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])')];
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (!first || !last) {
+            event.preventDefault();
+          } else if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
         }}
         className="flex max-h-full w-full max-w-3xl flex-col gap-6 overflow-y-auto rounded-xl border-2 border-border bg-card p-8 outline-none"
       >

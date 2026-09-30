@@ -5,7 +5,7 @@ import {
   describeWhen,
   fiveDays,
   formatClock,
-  nowFraction,
+  nowHour,
   place,
   visibleHours,
   type Occurrence,
@@ -81,8 +81,8 @@ describe('placing timed events', () => {
     // 18:00 to 19:30 Chicago on Wednesday.
     expect(columns.map((column) => column.length)).toEqual([0, 1, 0, 0, 0]);
     const block = columns[1]![0]!;
-    expect(block.top).toBeCloseTo(18 / 24);
-    expect(block.bottom).toBeCloseTo(19.5 / 24);
+    expect(block.topHour).toBeCloseTo(18);
+    expect(block.bottomHour).toBeCloseTo(19.5);
     expect(block).toMatchObject({ lane: 0, lanes: 1, continuesBefore: false, continuesAfter: false });
   });
 
@@ -96,10 +96,10 @@ describe('placing timed events', () => {
     const { columns } = place([event('Sleepover', '2026-09-30T03:00:00Z', '2026-09-30T13:00:00Z')], days);
     // 22:00 Tuesday to 08:00 Wednesday Chicago.
     expect(columns.map((column) => column.length)).toEqual([1, 1, 0, 0, 0]);
-    expect(columns[0]![0]).toMatchObject({ continuesBefore: false, continuesAfter: true, bottom: 1 });
-    expect(columns[0]![0]!.top).toBeCloseTo(22 / 24);
-    expect(columns[1]![0]).toMatchObject({ continuesBefore: true, continuesAfter: false, top: 0 });
-    expect(columns[1]![0]!.bottom).toBeCloseTo(8 / 24);
+    expect(columns[0]![0]).toMatchObject({ continuesBefore: false, continuesAfter: true, bottomHour: 24 });
+    expect(columns[0]![0]!.topHour).toBeCloseTo(22);
+    expect(columns[1]![0]).toMatchObject({ continuesBefore: true, continuesAfter: false, topHour: 0 });
+    expect(columns[1]![0]!.bottomHour).toBeCloseTo(8);
   });
 
   it('ignores events outside the five days, and one ending exactly at the first midnight', () => {
@@ -118,7 +118,7 @@ describe('placing timed events', () => {
   it('gives an event of no length something to tap', () => {
     const { columns } = place([event('Reminder', '2026-09-29T15:00:00Z', '2026-09-29T15:00:00Z')], days);
     const block = columns[0]![0]!;
-    expect(block.bottom - block.top).toBeCloseTo(15 / (24 * 60));
+    expect(block.bottomHour - block.topHour).toBeCloseTo(0.25);
   });
 
   it('puts overlapping events side by side and lets later ones use the full width again', () => {
@@ -150,6 +150,43 @@ describe('placing timed events', () => {
   });
 });
 
+describe('daylight saving days', () => {
+  // The hour lines and labels are wall-clock hours, so a block must sit on its wall-clock time
+  // even though the day is 23 or 25 hours long.
+  it('draws an event at its wall-clock time on a 23 hour day', () => {
+    // US clocks go forward on Sun 2026-03-08: 2:00 AM becomes 3:00 AM. 8:00 AM CDT is 13:00Z.
+    const spring = fiveDays(CHICAGO, new Date('2026-03-08T18:00:00Z'));
+    expect((spring[0]!.endMs - spring[0]!.startMs) / 3_600_000).toBe(23);
+    const { columns } = place([event('Early', '2026-03-08T13:00:00Z', '2026-03-08T14:00:00Z')], spring);
+    expect(columns[0]![0]!.topHour).toBeCloseTo(8);
+    expect(columns[0]![0]!.bottomHour).toBeCloseTo(9);
+  });
+
+  it('draws an event at its wall-clock time on a 25 hour day', () => {
+    // Clocks go back on Sun 2026-11-01. 6:00 PM CST is 00:00Z on the 2nd.
+    const fall = fiveDays(CHICAGO, new Date('2026-11-01T18:00:00Z'));
+    expect((fall[0]!.endMs - fall[0]!.startMs) / 3_600_000).toBe(25);
+    const { columns } = place([event('Dinner', '2026-11-02T00:00:00Z', '2026-11-02T01:30:00Z')], fall);
+    expect(columns[0]![0]!.topHour).toBeCloseTo(18);
+    expect(columns[0]![0]!.bottomHour).toBeCloseTo(19.5);
+  });
+
+  it('ends a block that runs to the end of a DST day at 24', () => {
+    const spring = fiveDays(CHICAGO, new Date('2026-03-08T18:00:00Z'));
+    const { columns } = place([event('Overnight', '2026-03-09T03:00:00Z', '2026-03-09T12:00:00Z')], spring);
+    // 22:00 Sunday CDT to 07:00 Monday CDT.
+    expect(columns[0]![0]).toMatchObject({ bottomHour: 24 });
+    expect(columns[0]![0]!.topHour).toBeCloseTo(22);
+    expect(columns[1]![0]!.bottomHour).toBeCloseTo(7);
+  });
+
+  it('puts the current-time line on the wall-clock time too', () => {
+    const fall = fiveDays(CHICAGO, new Date('2026-11-01T18:00:00Z'));
+    // 18:00Z on the 1st is 12:00 noon CST, 13 real hours after midnight.
+    expect(nowHour(fall[0]!, new Date('2026-11-01T18:00:00Z'))).toBeCloseTo(12);
+  });
+});
+
 describe('room for a 48 px target', () => {
   const back2back = [event('First', '2026-09-29T14:00:00Z', '2026-09-29T14:30:00Z'), event('Second', '2026-09-29T14:30:00Z', '2026-09-29T15:00:00Z')];
 
@@ -172,7 +209,7 @@ describe('room for a 48 px target', () => {
 
   it('does not change where an event is drawn, only its lane', () => {
     const { columns } = place(back2back, days, 82);
-    expect(columns[0]![0]!.bottom - columns[0]![0]!.top).toBeCloseTo(0.5 / 24);
+    expect(columns[0]![0]!.bottomHour - columns[0]![0]!.topHour).toBeCloseTo(0.5);
   });
 });
 
@@ -243,12 +280,12 @@ describe('the grid', () => {
   });
 
   it('widens to take in the current time', () => {
-    expect(visibleHours([], 0.1)).toEqual({ startHour: 2, endHour: 22 });
+    expect(visibleHours([], 2.4)).toEqual({ startHour: 2, endHour: 22 });
   });
 
   it('places the current-time line only inside today', () => {
-    expect(nowFraction(days[0]!, NOW)).toBeCloseTo(10.5 / 24);
-    expect(nowFraction(days[1]!, NOW)).toBeNull();
+    expect(nowHour(days[0]!, NOW)).toBeCloseTo(10.5);
+    expect(nowHour(days[1]!, NOW)).toBeNull();
   });
 });
 

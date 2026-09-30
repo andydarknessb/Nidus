@@ -29,6 +29,9 @@ export type SyncDeps = {
   fetch: typeof fetch;
   // Epoch milliseconds; injectable so the window and last_synced_at are testable.
   now?: () => number;
+  // Sync only this Household's accounts. The scheduled run leaves it unset (every Household);
+  // the tests set it so they never touch another run's accounts on a shared local stack.
+  householdId?: string;
 };
 
 export type SyncSummary = { accounts: number; calendars: number; events: number; errors: string[] };
@@ -42,11 +45,18 @@ const MAX_DESCRIPTION = 8000;
 
 // Recurring events are stored as occurrences inside this window only (PLAN.md: Calendar).
 export function syncWindow(nowMs: number): { timeMin: string; timeMax: string } {
-  const min = new Date(nowMs);
-  min.setUTCMonth(min.getUTCMonth() - 1);
-  const max = new Date(nowMs);
-  max.setUTCMonth(max.getUTCMonth() + 6);
-  return { timeMin: min.toISOString(), timeMax: max.toISOString() };
+  return { timeMin: addMonths(nowMs, -1), timeMax: addMonths(nowMs, 6) };
+}
+
+// `ms` moved by whole calendar months (UTC), stopping at the end of a shorter month rather than
+// spilling into the next: Mar 31 less a month is Feb 28, not Mar 3.
+function addMonths(ms: number, months: number): string {
+  const at = new Date(ms);
+  const target = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + months, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(at.getUTCDate(), lastDay));
+  target.setUTCHours(at.getUTCHours(), at.getUTCMinutes(), at.getUTCSeconds(), at.getUTCMilliseconds());
+  return target.toISOString();
 }
 
 type GoogleEvent = {
@@ -224,11 +234,9 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
   const nowMs = (deps.now ?? Date.now)();
   const summary: SyncSummary = { accounts: 0, calendars: 0, events: 0, errors: [] };
 
-  const { data: accounts, error } = await deps.admin
-    .from('calendar_accounts')
-    .select('id, household_id, vault_secret_id')
-    .eq('status', 'active')
-    .returns<Account[]>();
+  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id').eq('status', 'active');
+  if (deps.householdId) query = query.eq('household_id', deps.householdId);
+  const { data: accounts, error } = await query.returns<Account[]>();
   if (error || !accounts) {
     summary.errors.push('could not list calendar accounts');
     return summary;

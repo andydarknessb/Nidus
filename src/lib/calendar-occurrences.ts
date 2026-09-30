@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { dayStartMs } from '../../supabase/functions/_shared/zoned-time.ts';
+import { dayStartMs, offsetMs } from '../../supabase/functions/_shared/zoned-time.ts';
 import { householdDay } from './routines';
 
 export { dayStartMs };
@@ -46,6 +46,7 @@ export async function loadOccurrences(client: SupabaseClient, from: Date, to: Da
 // ---- Household Timezone arithmetic ------------------------------------------------
 
 const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
 // An event of no length still needs something to tap.
 export const MIN_EVENT_MINUTES = 15;
 
@@ -62,7 +63,15 @@ export type WallDay = {
   // The start of the next day, so the day's length is right on a DST change.
   endMs: number;
   isToday: boolean;
+  timezone: string;
 };
+
+// An instant as hours on the day's wall clock (0 to 24): what the hour lines and labels show. On a
+// 23 or 25 hour day this is not the share of the day that has passed, so positions never use the
+// latter. (On a 25 hour day the repeated hour lands on the same place twice.)
+export function wallHour(ms: number, day: WallDay): number {
+  return (ms - day.startMs + offsetMs(ms, day.timezone) - offsetMs(day.startMs, day.timezone)) / HOUR_MS;
+}
 
 // Today and the next four days in the Household Timezone.
 export function fiveDays(timezone: string, now: Date = new Date()): WallDay[] {
@@ -75,6 +84,7 @@ export function fiveDays(timezone: string, now: Date = new Date()): WallDay[] {
       startMs: dayStartMs(date, timezone),
       endMs: dayStartMs(addDays(date, 1), timezone),
       isToday: index === 0,
+      timezone,
     };
   });
 }
@@ -91,12 +101,12 @@ export type AllDayBar = {
   row: number;
 };
 
-// A timed event in one day's column. top and bottom are fractions of that day (0 to 1);
+// A timed event in one day's column. topHour and bottomHour are wall-clock hours (0 to 24);
 // lane and lanes place events that overlap side by side.
 export type TimedBlock = {
   occurrence: Occurrence;
-  top: number;
-  bottom: number;
+  topHour: number;
+  bottomHour: number;
   lane: number;
   lanes: number;
   continuesBefore: boolean;
@@ -174,7 +184,6 @@ function assignLanes(blocks: TimedBlock[], startsMs: Map<TimedBlock, [number, nu
 }
 
 function placeTimed(occurrences: Occurrence[], day: WallDay, minMinutes: number): TimedBlock[] {
-  const length = day.endMs - day.startMs;
   const blocks: TimedBlock[] = [];
   const spans = new Map<TimedBlock, [number, number]>();
   for (const occurrence of occurrences) {
@@ -185,8 +194,8 @@ function placeTimed(occurrences: Occurrence[], day: WallDay, minMinutes: number)
     const shownEnd = Math.min(end, day.endMs);
     const block: TimedBlock = {
       occurrence,
-      top: (shownStart - day.startMs) / length,
-      bottom: (shownEnd - day.startMs) / length,
+      topHour: wallHour(shownStart, day),
+      bottomHour: wallHour(shownEnd, day),
       lane: 0,
       lanes: 1,
       continuesBefore: start < day.startMs,
@@ -215,23 +224,23 @@ export type HourRange = { startHour: number; endHour: number };
 
 // The hours the grid shows: 6 am to 10 pm, widened only when an event (or the current
 // time) falls outside, so nothing the wall should show is ever off the grid.
-export function visibleHours(columnBlocks: TimedBlock[][], nowFraction: number | null): HourRange {
+export function visibleHours(columnBlocks: TimedBlock[][], nowAt: number | null): HourRange {
   let startHour = 6;
   let endHour = 22;
   const consider = (top: number, bottom: number) => {
-    startHour = Math.min(startHour, Math.floor(top * 24));
-    endHour = Math.max(endHour, Math.ceil(bottom * 24));
+    startHour = Math.min(startHour, Math.floor(top));
+    endHour = Math.max(endHour, Math.ceil(bottom));
   };
-  for (const column of columnBlocks) for (const block of column) consider(block.top, block.bottom);
-  if (nowFraction !== null) consider(nowFraction, nowFraction);
+  for (const column of columnBlocks) for (const block of column) consider(block.topHour, block.bottomHour);
+  if (nowAt !== null) consider(nowAt, nowAt);
   return { startHour: Math.max(0, startHour), endHour: Math.min(24, endHour) };
 }
 
-// Where the current time falls in today's column, as a fraction of the day; null if `now`
-// is not within the day.
-export function nowFraction(day: WallDay, now: Date): number | null {
+// Where the current time falls in today's column, as a wall-clock hour; null if `now` is not
+// within the day.
+export function nowHour(day: WallDay, now: Date): number | null {
   const at = now.getTime();
-  return at >= day.startMs && at < day.endMs ? (at - day.startMs) / (day.endMs - day.startMs) : null;
+  return at >= day.startMs && at < day.endMs ? wallHour(at, day) : null;
 }
 
 // ---- Words --------------------------------------------------------------------------
