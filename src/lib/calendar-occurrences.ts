@@ -173,7 +173,7 @@ function assignLanes(blocks: TimedBlock[], startsMs: Map<TimedBlock, [number, nu
   close();
 }
 
-function placeTimed(occurrences: Occurrence[], day: WallDay): TimedBlock[] {
+function placeTimed(occurrences: Occurrence[], day: WallDay, minMinutes: number): TimedBlock[] {
   const length = day.endMs - day.startMs;
   const blocks: TimedBlock[] = [];
   const spans = new Map<TimedBlock, [number, number]>();
@@ -193,18 +193,22 @@ function placeTimed(occurrences: Occurrence[], day: WallDay): TimedBlock[] {
       continuesAfter: end > day.endMs,
     };
     blocks.push(block);
-    spans.set(block, [shownStart, shownEnd]);
+    // Lanes are given for the room a block takes on screen (at least minMinutes), so a short event
+    // that is drawn tall enough to tap never sits on top of the one that follows it.
+    spans.set(block, [shownStart, Math.max(shownEnd, shownStart + minMinutes * MINUTE_MS)]);
   }
   assignLanes(blocks, spans);
   return blocks;
 }
 
 // Puts every occurrence where it belongs on the five columns: all-day events in the band
-// (a multi-day one spanning its columns), timed events in each day they touch.
-export function place(occurrences: Occurrence[], days: WallDay[]): Placement {
+// (a multi-day one spanning its columns), timed events in each day they touch. minMinutes is
+// how long an event must be to fill a 48 px target on the current grid: events closer together
+// than that go side by side rather than under one another.
+export function place(occurrences: Occurrence[], days: WallDay[], minMinutes = 0): Placement {
   const allDay = occurrences.filter((occurrence) => occurrence.is_all_day);
   const timed = occurrences.filter((occurrence) => !occurrence.is_all_day);
-  return { allDay: placeAllDay(allDay, days), columns: days.map((day) => placeTimed(timed, day)) };
+  return { allDay: placeAllDay(allDay, days), columns: days.map((day) => placeTimed(timed, day, minMinutes)) };
 }
 
 export type HourRange = { startHour: number; endHour: number };

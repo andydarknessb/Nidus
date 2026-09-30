@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   fiveDays,
   formatClock,
@@ -25,6 +25,9 @@ const RETRY_MS = 5_000;
 const CLOCK_MS = 30_000;
 // Events with no colour (a whole-Household calendar) still need an edge to read against.
 const NEUTRAL = '#d4d4d8';
+// The smallest a tappable event may be drawn (48 px, CLAUDE.md), and the grid padding above and below the columns.
+const MIN_TARGET_PX = 48;
+const GRID_PADDING_PX = 24;
 const GRID = 'grid grid-cols-[4.5rem_repeat(5,minmax(0,1fr))]';
 
 function hourLabel(hour: number): string {
@@ -43,6 +46,19 @@ export function FiveDayCalendar({ timezone }: { timezone: string }) {
   const [occurrences, setOccurrences] = useState<Occurrence[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<Occurrence | null>(null);
+  // The height of the time grid, so events can be given room for a 48 px target.
+  const grid = useRef<HTMLDivElement>(null);
+  const [gridPx, setGridPx] = useState(640);
+
+  useEffect(() => {
+    const element = grid.current;
+    if (!element) return;
+    const measure = () => setGridPx(Math.max(element.clientHeight - GRID_PADDING_PX, 1));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), CLOCK_MS);
@@ -80,9 +96,10 @@ export function FiveDayCalendar({ timezone }: { timezone: string }) {
   }, [timezone, today]);
 
   const days = fiveDays(timezone, now);
-  const { allDay, columns } = place(occurrences ?? [], days);
   const todayFraction = nowFraction(days[0]!, now);
-  const { startHour, endHour } = visibleHours(columns, todayFraction);
+  const { startHour, endHour } = visibleHours(place(occurrences ?? [], days).columns, todayFraction);
+  const minMinutes = (MIN_TARGET_PX / (gridPx / (endHour - startHour))) * 60;
+  const { allDay, columns } = place(occurrences ?? [], days, minMinutes);
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, index) => startHour + index);
 
   return (
@@ -99,7 +116,7 @@ export function FiveDayCalendar({ timezone }: { timezone: string }) {
         </p>
       )}
       {allDay.length > 0 && <AllDayBand bars={allDay} onOpen={setOpen} />}
-      <div className={`${GRID} min-h-0 flex-1`}>
+      <div ref={grid} className={`${GRID} min-h-0 flex-1`}>
         <div className="relative my-3" aria-hidden>
           {hours.slice(1, -1).map((hour) => (
             <span key={hour} className="absolute right-2 -translate-y-1/2 text-base" style={{ top: `${((hour - startHour) / (endHour - startHour)) * 100}%` }}>

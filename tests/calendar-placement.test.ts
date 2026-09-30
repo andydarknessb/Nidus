@@ -63,6 +63,12 @@ describe('the five days', () => {
     expect(dayStartMs('2026-11-02', CHICAGO)).toBe(Date.parse('2026-11-02T06:00:00Z'));
   });
 
+  it('start a day at its first instant when a zone skips midnight', () => {
+    // Santiago's clocks jump from 00:00 to 01:00 on 2026-09-06, so that day starts at 01:00 (-03).
+    expect(dayStartMs('2026-09-06', 'America/Santiago')).toBe(Date.parse('2026-09-06T04:00:00Z'));
+    expect(dayStartMs('2026-09-05', 'America/Santiago')).toBe(Date.parse('2026-09-05T04:00:00Z'));
+  });
+
   it('add whole days to a date across month and year ends', () => {
     expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
     expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
@@ -141,6 +147,32 @@ describe('placing timed events', () => {
       [0, 1],
       [0, 1],
     ]);
+  });
+});
+
+describe('room for a 48 px target', () => {
+  const back2back = [event('First', '2026-09-29T14:00:00Z', '2026-09-29T14:30:00Z'), event('Second', '2026-09-29T14:30:00Z', '2026-09-29T15:00:00Z')];
+
+  it('puts short back-to-back events side by side when they are drawn taller than they last', () => {
+    // 82 minutes is what 48 px takes on a grid of about 35 px per hour.
+    const { columns } = place(back2back, days, 82);
+    expect(columns[0]!.map((block) => [block.lane, block.lanes])).toEqual([
+      [0, 2],
+      [1, 2],
+    ]);
+  });
+
+  it('leaves events that are far enough apart in one lane', () => {
+    const { columns } = place([back2back[0]!, event('Later', '2026-09-29T17:00:00Z', '2026-09-29T17:30:00Z')], days, 82);
+    expect(columns[0]!.map((block) => [block.lane, block.lanes])).toEqual([
+      [0, 1],
+      [0, 1],
+    ]);
+  });
+
+  it('does not change where an event is drawn, only its lane', () => {
+    const { columns } = place(back2back, days, 82);
+    expect(columns[0]![0]!.bottom - columns[0]![0]!.top).toBeCloseTo(0.5 / 24);
   });
 });
 

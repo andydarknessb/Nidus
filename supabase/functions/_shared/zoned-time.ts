@@ -25,5 +25,20 @@ export function dayStartMs(date: string, timezone: string): number {
   const [year, month, day] = date.split('-').map(Number) as [number, number, number];
   const wall = Date.UTC(year, month - 1, day);
   const first = wall - offsetMs(wall, timezone);
-  return wall - offsetMs(first, timezone);
+  const start = wall - offsetMs(first, timezone);
+  if (localDate(start, timezone) === date) return start;
+  // Midnight does not exist that day (a few zones, such as Santiago, change their clocks at
+  // midnight): the day begins at the first instant whose local date is `date`.
+  let low = wall - 15 * 3_600_000;
+  let high = wall + 15 * 3_600_000;
+  while (high - low > 1000) {
+    const middle = Math.floor((low + high) / 2000) * 1000;
+    if (localDate(middle, timezone) < date) low = middle;
+    else high = middle;
+  }
+  return high;
+}
+
+function localDate(timestamp: number, timezone: string): string {
+  return new Date(timestamp + offsetMs(timestamp, timezone)).toISOString().slice(0, 10);
 }

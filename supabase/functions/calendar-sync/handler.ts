@@ -170,7 +170,7 @@ async function replace(deps: SyncDeps, calendarId: string, rows: EventRow[], syn
     p_events: rows,
     p_sync_token: syncToken,
   });
-  if (error) throw new SyncFailure(`could not store events (${error.message})`);
+  if (error) throw new SyncFailure('could not store events');
 }
 
 // Syncs one Calendar Account. Never throws: its outcome is on the account row and in `summary`.
