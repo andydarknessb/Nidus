@@ -404,6 +404,13 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/calendar-connect/index.ts"
 
+# pg_cron posts here every five minutes (public.invoke_calendar_sync). There is no user session,
+# so the gateway cannot demand a JWT; the function checks the x-sync-secret header itself.
+[functions.calendar-sync]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/calendar-sync/index.ts"
+
 [analytics]
 enabled = true
 port = 54327
