@@ -76,8 +76,9 @@ describe('synced_events', () => {
 
     for (const client of [asAnonymous(), await asHouseholdAccount(account), device.client]) {
       const { error } = await client.rpc('replace_synced_events', { p_mirrored_calendar_id: calendarId, p_events: forged, p_sync_token: 'forged' });
-      expect(error).not.toBeNull();
-      expect((await client.rpc('invoke_calendar_sync')).error).not.toBeNull();
+      // 42501: refused for want of permission, not a missing function or a bad argument.
+      expect(error?.code).toBe('42501');
+      expect((await client.rpc('invoke_calendar_sync')).error?.code).toBe('42501');
     }
 
     const { data } = await asServiceRole().from('synced_events').select('title').eq('mirrored_calendar_id', calendarId);

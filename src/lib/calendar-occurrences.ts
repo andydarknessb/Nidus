@@ -68,9 +68,13 @@ export type WallDay = {
 
 // An instant as hours on the day's wall clock (0 to 24): what the hour lines and labels show. On a
 // 23 or 25 hour day this is not the share of the day that has passed, so positions never use the
-// latter. (On a 25 hour day the repeated hour lands on the same place twice.)
+// latter. Measured from the wall clock's own midnight, so a day that skips midnight (Santiago)
+// starts at hour 1. On a 25 hour day the repeated hour maps to the same place twice; placeTimed
+// keeps such blocks from disappearing or overlapping.
 export function wallHour(ms: number, day: WallDay): number {
-  return (ms - day.startMs + offsetMs(ms, day.timezone) - offsetMs(day.startMs, day.timezone)) / HOUR_MS;
+  const [year, month, date] = day.date.split('-').map(Number) as [number, number, number];
+  const hour = (ms + offsetMs(ms, day.timezone) - Date.UTC(year, month - 1, date)) / HOUR_MS;
+  return Math.min(Math.max(hour, 0), 24);
 }
 
 // Today and the next four days in the Household Timezone.
@@ -192,19 +196,23 @@ function placeTimed(occurrences: Occurrence[], day: WallDay, minMinutes: number)
     if (!(start < day.endMs && end > day.startMs)) continue;
     const shownStart = Math.max(start, day.startMs);
     const shownEnd = Math.min(end, day.endMs);
+    const topHour = wallHour(shownStart, day);
+    // Across the repeated hour of a 25 hour day the wall clock runs backwards: never end above the start.
+    const bottomHour = Math.max(wallHour(shownEnd, day), topHour);
     const block: TimedBlock = {
       occurrence,
-      topHour: wallHour(shownStart, day),
-      bottomHour: wallHour(shownEnd, day),
+      topHour,
+      bottomHour,
       lane: 0,
       lanes: 1,
       continuesBefore: start < day.startMs,
       continuesAfter: end > day.endMs,
     };
     blocks.push(block);
-    // Lanes are given for the room a block takes on screen (at least minMinutes), so a short event
-    // that is drawn tall enough to tap never sits on top of the one that follows it.
-    spans.set(block, [shownStart, Math.max(shownEnd, shownStart + minMinutes * MINUTE_MS)]);
+    // Lanes are given in the grid's own hours, for the room a block takes on screen (at least
+    // minMinutes), so a short event drawn tall enough to tap never sits on top of the one that
+    // follows it, and two events the wall clock draws on the same spot never share a lane.
+    spans.set(block, [topHour, Math.max(bottomHour, topHour + minMinutes / 60)]);
   }
   assignLanes(blocks, spans);
   return blocks;

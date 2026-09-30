@@ -13,6 +13,7 @@ import {
 
 const CHICAGO = 'America/Chicago';
 const TOKYO = 'Asia/Tokyo';
+const SANTIAGO = 'America/Santiago';
 
 let counter = 0;
 function event(title: string, startsAt: string, endsAt: string, allDay = false): Occurrence {
@@ -178,6 +179,42 @@ describe('daylight saving days', () => {
     expect(columns[0]![0]).toMatchObject({ bottomHour: 24 });
     expect(columns[0]![0]!.topHour).toBeCloseTo(22);
     expect(columns[1]![0]!.bottomHour).toBeCloseTo(7);
+  });
+
+  it('keeps events that the repeated hour draws on the same spot out of one lane', () => {
+    const fall = fiveDays(CHICAGO, new Date('2026-11-01T18:00:00Z'));
+    // A: 00:00 to 01:59 CDT. B: 01:00 to 02:00 CST, an hour later in real time but the same wall-clock hour.
+    const { columns } = place([event('A', '2026-11-01T05:00:00Z', '2026-11-01T06:59:00Z'), event('B', '2026-11-01T07:00:00Z', '2026-11-01T08:00:00Z')], fall);
+    const byTitle = Object.fromEntries(columns[0]!.map((block) => [block.occurrence.title, block]));
+    expect(byTitle['A']).toMatchObject({ lanes: 2 });
+    expect(byTitle['B']).toMatchObject({ lanes: 2 });
+    expect(byTitle['A']!.lane).not.toBe(byTitle['B']!.lane);
+  });
+
+  it('never draws a block upside down across the repeated hour', () => {
+    const fall = fiveDays(CHICAGO, new Date('2026-11-01T18:00:00Z'));
+    // 01:30 CDT to 01:15 CST: the wall clock goes backwards.
+    const { columns } = place([event('Across', '2026-11-01T06:30:00Z', '2026-11-01T07:15:00Z')], fall);
+    const block = columns[0]![0]!;
+    expect(block.bottomHour).toBeGreaterThanOrEqual(block.topHour);
+  });
+
+  it('counts hours from the wall clock on a day that skips midnight', () => {
+    // Santiago's clocks jump 00:00 to 01:00 on Sun 2026-09-06: that day starts at 01:00, 04:00Z.
+    const skipped = fiveDays(SANTIAGO, new Date('2026-09-06T15:00:00Z'));
+    expect(skipped[0]!.date).toBe('2026-09-06');
+    const { columns } = place([event('Breakfast', '2026-09-06T11:00:00Z', '2026-09-06T12:00:00Z')], skipped);
+    // 08:00 to 09:00 local (-03).
+    expect(columns[0]![0]!.topHour).toBeCloseTo(8);
+    expect(columns[0]![0]!.bottomHour).toBeCloseTo(9);
+    expect(nowHour(skipped[0]!, new Date('2026-09-06T15:00:00Z'))).toBeCloseTo(12);
+  });
+
+  it('does not run past the bottom of the day before a skipped midnight', () => {
+    const before = fiveDays(SANTIAGO, new Date('2026-09-05T15:00:00Z'));
+    const { columns } = place([event('Late', '2026-09-06T01:00:00Z', '2026-09-06T05:00:00Z')], before);
+    // 22:00 Saturday to past midnight: the Saturday block ends at 24, not 25.
+    expect(columns[0]![0]!.bottomHour).toBe(24);
   });
 
   it('puts the current-time line on the wall-clock time too', () => {
