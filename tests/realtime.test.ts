@@ -122,7 +122,8 @@ describe('Realtime change feed', () => {
     await seen;
   });
 
-  it('never delivers another Household\'s changes', async () => {
+  // Inserts and updates only: a delete carries no Household and is delivered to every subscriber (see the migration).
+  it('never delivers another Household\'s inserts or updates', async () => {
     const mine = await setUp();
     const other = await setUp();
     const feed = await openFeed(mine.kitchen.client);
