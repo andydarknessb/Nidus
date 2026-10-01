@@ -121,7 +121,7 @@ export function PagedCalendar({
   onHome: () => void;
 }) {
   const now = useNow(timezone);
-  const window =pagingWindow(timezone, now);
+  const window = pagingWindow(timezone, now);
   const today = householdDay(timezone, now).date;
   const anchor = pageStart(view, clampToWindow(date ?? today, window));
   const days = pageDays(view, anchor, timezone, now);

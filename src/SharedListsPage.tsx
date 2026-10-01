@@ -112,7 +112,8 @@ function useItems(listId: string) {
       // Put the old order back now; the read that follows the write replaces it with what the
       // database holds (some of the writes may have landed) once the connection allows.
       publish(() => before);
-      fail('Could not reorder. Showing the list as it is saved.');
+      // The words hold whether or not that read gets through, so they never claim what is saved.
+      fail('Could not reorder. The order may not be saved. Check your connection.');
     }
   }
 

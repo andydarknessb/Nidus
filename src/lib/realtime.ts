@@ -98,8 +98,9 @@ export function openChangeFeed(client: SupabaseClient, options: { debounceMs?: n
       if (state === 'SUBSCRIBED') {
         channelState = 'online';
         markReady();
-        // Changes made while the feed was down were never heard: read everything again once it is back.
-        if (wasLive) pokeAll();
+        // A change made before the feed went live (between a screen's first read and now) or while it
+        // was down was never heard: read everything again each time it comes live, the first included.
+        pokeAll();
         wasLive = true;
       } else {
         channelState = wasLive ? 'offline' : 'connecting';
