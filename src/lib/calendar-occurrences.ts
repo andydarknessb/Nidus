@@ -183,6 +183,18 @@ export function wallPath(view: CalendarView, date: string): string {
   return `/${view}?date=${date}`;
 }
 
+// The date the rail opens `view` on, so Day and Week keep the date the wall is on. From the home
+// screen that is today's page; from a paged view it is the page holding that view's date, except
+// that Day opens today whenever the page being left holds today. It returns the page's own anchor,
+// so a page already open is the same address and a tap adds no step for Back. Everything goes
+// through pageStart, so a month view needs only its own anchor there, not a change here.
+export function railDate(view: CalendarView, route: WallRoute, today: string): string {
+  if (route.view === 'home') return pageStart(view, today);
+  const date = route.date ?? today;
+  const leavingToday = pageStart(route.view, date) === pageStart(route.view, today);
+  return pageStart(view, view === 'day' && leavingToday ? today : date);
+}
+
 export function clampToWindow(date: string, window: PagingWindow): string {
   return date < window.first ? window.first : date > window.last ? window.last : date;
 }
@@ -351,7 +363,8 @@ export function formatClock(ms: number, timezone: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
 }
 
-function formatDate(ms: number, timezone: string): string {
+// "Thu, Oct 1": the date as the details sheet and the header show it.
+export function formatDate(ms: number, timezone: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(ms));
 }
 

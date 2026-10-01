@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { formatClock, formatDate } from '../src/lib/calendar-occurrences';
 import { msUntilHouseholdMidnight, watchHouseholdDay } from '../src/lib/household-day';
 import type { HouseholdDay } from '../src/lib/routines';
 
@@ -80,5 +81,39 @@ describe('watchHouseholdDay', () => {
     stop();
     vi.advanceTimersByTime(3600_000);
     expect(days).toEqual([]);
+  });
+});
+
+describe('the header clock', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // The time and date the header shows at this instant, in the Household Timezone.
+  const header = (timezone: string) => `${formatClock(Date.now(), timezone)} ${formatDate(Date.now(), timezone)}`;
+
+  it('turns its date at Household midnight with no reload', () => {
+    // 04:59:50 UTC, already Oct 1 there: a header on UTC's date would be a day early.
+    vi.setSystemTime(at('2026-09-30T23:59:50'));
+    const shown = [header(CHICAGO)];
+    // useNow hands the header a new instant when the Household day changes.
+    const stop = watchHouseholdDay(CHICAGO, () => shown.push(header(CHICAGO)));
+
+    vi.advanceTimersByTime(9_000);
+    expect(shown).toEqual(['11:59 PM Wed, Sep 30']);
+    vi.advanceTimersByTime(1_500);
+    expect(shown).toEqual(['11:59 PM Wed, Sep 30', '12:00 AM Thu, Oct 1']);
+    stop();
+  });
+
+  it('follows the Household Timezone either side of UTC', () => {
+    // 15:00 UTC is midnight in Tokyo and 10:00 in Chicago.
+    vi.setSystemTime(new Date('2026-09-30T14:59:50Z'));
+    expect([header('Asia/Tokyo'), header(CHICAGO)]).toEqual(['11:59 PM Wed, Sep 30', '9:59 AM Wed, Sep 30']);
+    vi.advanceTimersByTime(11_000);
+    expect([header('Asia/Tokyo'), header(CHICAGO)]).toEqual(['12:00 AM Thu, Oct 1', '10:00 AM Wed, Sep 30']);
   });
 });

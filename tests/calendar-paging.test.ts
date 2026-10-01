@@ -8,8 +8,10 @@ import {
   paging,
   pagingWindow,
   parseWallRoute,
+  railDate,
   wallPath,
   weekStart,
+  type WallRoute,
 } from '../src/lib/calendar-occurrences';
 
 const CHICAGO = 'America/Chicago';
@@ -149,6 +151,50 @@ describe('wall routes', () => {
 
   it('writes the address back', () => {
     expect(wallPath('week', '2026-09-27')).toBe('/week?date=2026-09-27');
+  });
+});
+
+describe('railDate', () => {
+  // Thu Oct 1, 2026, in the week of Sep 27 to Oct 3.
+  const today = '2026-10-01';
+  const page = (view: 'week' | 'day', date: string | null): WallRoute => ({ view, date });
+
+  it('opens today\'s page from the home screen', () => {
+    expect(railDate('day', { view: 'home' }, today)).toBe('2026-10-01');
+    expect(railDate('week', { view: 'home' }, today)).toBe('2026-09-27');
+  });
+
+  it('from a week that holds today, opens Day on today and Week on that week', () => {
+    expect(railDate('day', page('week', '2026-09-27'), today)).toBe('2026-10-01');
+    expect(railDate('week', page('week', '2026-09-27'), today)).toBe('2026-09-27');
+    // Any date on the page is the same page: a week reached by a Wednesday still holds today.
+    expect(railDate('day', page('week', '2026-09-30'), today)).toBe('2026-10-01');
+    expect(railDate('day', page('week', '2026-12-27'), '2027-01-01')).toBe('2027-01-01');
+  });
+
+  it('from a week that does not hold today, keeps that week for Day and for Week', () => {
+    expect(railDate('day', page('week', '2026-10-11'), today)).toBe('2026-10-11');
+    expect(railDate('week', page('week', '2026-10-11'), today)).toBe('2026-10-11');
+    expect(railDate('day', page('week', '2026-09-13'), today)).toBe('2026-09-13');
+  });
+
+  it('from a day, opens Week on the week holding it and Day on the same day', () => {
+    expect(railDate('week', page('day', '2026-10-14'), today)).toBe('2026-10-11');
+    expect(railDate('day', page('day', '2026-10-14'), today)).toBe('2026-10-14');
+    expect(railDate('week', page('day', '2026-10-01'), today)).toBe('2026-09-27');
+    expect(railDate('day', page('day', '2026-10-01'), today)).toBe('2026-10-01');
+  });
+
+  it('reads a page with no date as today\'s', () => {
+    expect(railDate('day', page('week', null), today)).toBe('2026-10-01');
+    expect(railDate('week', page('week', null), today)).toBe('2026-09-27');
+    expect(railDate('week', page('day', null), today)).toBe('2026-09-27');
+  });
+
+  it('week to week is the same address, so a tap adds no step for Back', () => {
+    for (const date of ['2026-09-27', '2026-10-11', '2026-08-30']) {
+      expect(wallPath('week', railDate('week', page('week', date), today))).toBe(wallPath('week', date));
+    }
   });
 });
 

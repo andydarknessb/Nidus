@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { Calendar1, CalendarRange, House, ListChecks, type LucideIcon } from 'lucide-react';
+import { useEffect, useState, type ComponentProps } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
@@ -7,11 +8,12 @@ import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { ConnectionBadge } from './components/ConnectionBadge';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { useChangeTick } from './lib/change-feed';
-import { parseWallRoute, wallPath, weekStart, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
+import { formatClock, formatDate, parseWallRoute, railDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
 import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { supabase } from './lib/supabase';
+import { useNow } from './lib/wall-hooks';
 import { RoutinesRail } from './RoutinesPage';
 import { PinnedListRail, WallListsScreen } from './SharedListsPage';
 
@@ -134,8 +136,6 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
   );
 }
 
-// The landscape home screen: the five-day calendar on the left; the right rail
-// holds today's Routines above the pinned Shared List, and the other lists open from the header.
 // The "last synced N hours ago" badge: nothing while every Calendar Account is within an hour,
 // so a healthy wall stays clean. A failed read keeps what the wall last knew.
 function SyncBadge() {
@@ -189,6 +189,67 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
   return [route, (view, date) => go(wallPath(view, date)), () => go('/')];
 }
 
+// One entry of the rail: an icon over a word, at least 64 px square. The current one is marked by a
+// bar down its edge and a filled ground as well as `aria-current`, so it never rests on colour alone.
+function RailEntry({ icon: Icon, label, current = false, ...props }: { icon: LucideIcon; label: string; current?: boolean } & ComponentProps<'button'>) {
+  return (
+    <button
+      type="button"
+      aria-current={current ? 'page' : undefined}
+      className={`relative flex min-h-16 min-w-16 flex-col items-center justify-center gap-1 rounded-lg text-base font-medium disabled:opacity-50 ${current ? 'bg-muted' : ''}`}
+      {...props}
+    >
+      {current && <span aria-hidden className="absolute inset-y-2 left-0 w-1 rounded-full bg-foreground" />}
+      <Icon aria-hidden className="size-7 shrink-0" />
+      {label}
+    </button>
+  );
+}
+
+// The rail down the left side: Home, Day, Week and Lists. Day and Week keep the date the wall is on
+// (railDate), read at the tap so one just after Household midnight is right, and wait for the
+// Household Timezone. Lists opens the Lists screen over this one rather than going anywhere.
+function WallRail({
+  route,
+  timezone,
+  onOpen,
+  onHome,
+  onLists,
+}: {
+  route: WallRoute;
+  timezone: string | null;
+  onOpen: (view: CalendarView, date: string) => void;
+  onHome: () => void;
+  onLists: () => void;
+}) {
+  const open = (view: CalendarView) => {
+    if (timezone) onOpen(view, railDate(view, route, householdDay(timezone).date));
+  };
+  return (
+    <nav aria-label="Wall sections" className="row-span-2 flex flex-col gap-2 rounded-xl border border-border p-2">
+      <RailEntry icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
+      <RailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
+      <RailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
+      <RailEntry icon={ListChecks} label="Lists" aria-haspopup="dialog" onClick={onLists} />
+    </nav>
+  );
+}
+
+// The time, large, and the date beside it, in the Household Timezone. useNow redraws it within half a
+// minute and the moment Household midnight passes, so the date turns with no reload.
+function WallClock({ timezone }: { timezone: string }) {
+  const now = useNow(timezone).getTime();
+  return (
+    <p className="flex shrink-0 items-baseline gap-3">
+      <span className="text-5xl font-semibold tabular-nums">{formatClock(now, timezone)}</span>
+      <span className="text-2xl">{formatDate(now, timezone)}</span>
+    </p>
+  );
+}
+
+// The landscape wall: a navigation rail down the left, then the header over the screen. The home
+// screen is the five-day calendar on the left and, on its right rail, today's Routines above the
+// pinned Shared List; the other lists open from the navigation rail.
 function HomeShell() {
   const [route, openView, openHome] = useWallRoute();
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
@@ -227,38 +288,27 @@ function HomeShell() {
   const today = timezone ? householdDay(timezone).date : null;
 
   return (
-    <main className="grid h-svh grid-rows-[auto_minmax(0,1fr)] gap-6 p-8">
-      <header className="flex items-center justify-between gap-4">
-        <h1 className="text-3xl font-semibold">{name}</h1>
-        <div className="flex items-center gap-4">
+    <main className="grid h-svh grid-cols-[5.5rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
+      <WallRail route={route} timezone={timezone} onOpen={openView} onHome={openHome} onLists={() => setListsOpen(true)} />
+      <header className="flex min-h-12 items-center gap-6">
+        <h1 className="min-w-0 truncate text-3xl font-semibold">{name}</h1>
+        {timezone && <WallClock timezone={timezone} />}
+        <div className="ml-auto flex shrink-0 items-center gap-4">
           <ConnectionBadge />
           <SyncBadge />
-          {route.view === 'home' && today && (
-            <>
-              <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => openView('week', weekStart(today))}>
-                Week
-              </button>
-              <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => openView('day', today)}>
-                Day
-              </button>
-            </>
-          )}
           {timezone && (
             <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setAdding(true)}>
               Add event
             </button>
           )}
-          <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setListsOpen(true)}>
-            Lists
-          </button>
         </div>
       </header>
       {route.view !== 'home' && timezone ? (
-        <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} onHome={openHome} />
+        <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} />
       ) : (
-      <div className="grid min-h-0 grid-cols-[1fr_24rem] gap-6">
-        {timezone ? <FiveDayCalendar timezone={timezone} version={added} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
-        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
+      <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
+        {timezone ? <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
+        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
           {timezone ? (
             <RoutinesRail timezone={timezone} />
           ) : (
