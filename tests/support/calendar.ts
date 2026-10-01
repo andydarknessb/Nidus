@@ -56,11 +56,18 @@ export type EventInput = {
 };
 
 // Puts Synced Events into a Mirrored Calendar the way the sync does (replace_synced_events).
-export async function arrangeEvents(calendarId: string, events: EventInput[]): Promise<void> {
+// `syncToken` and `fullSyncAt` arrange a calendar the sync has already read once, so the next
+// run is an incremental one.
+export async function arrangeEvents(
+  calendarId: string,
+  events: EventInput[],
+  options: { syncToken?: string | null; fullSyncAt?: string | null } = {},
+): Promise<void> {
   const { error } = await asServiceRole().rpc('replace_synced_events', {
     p_mirrored_calendar_id: calendarId,
     p_events: events.map((event) => ({ description: null, location: null, is_all_day: false, ...event })),
-    p_sync_token: null,
+    p_sync_token: options.syncToken ?? null,
+    p_synced_at: options.fullSyncAt ?? null,
   });
   if (error) throw error;
 }

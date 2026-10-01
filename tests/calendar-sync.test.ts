@@ -7,7 +7,7 @@ import {
   type SyncSummary,
 } from '../supabase/functions/calendar-sync/handler';
 import { arrangeCalendar, arrangeEvents } from './support/calendar';
-import { asServiceRole, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
+import { asHouseholdAccount, asServiceRole, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
 const SECRET = 'sync-secret-that-is-long-enough-to-matter';
 const NOW = Date.parse('2026-09-30T12:00:00Z');
@@ -30,6 +30,9 @@ type FakeOptions = {
   refreshTokens?: Record<string, boolean>;
   pageSize?: number;
   syncToken?: string;
+  // What an incremental request (one carrying a sync token) gets back, keyed by that token: the
+  // changed events and the next token, or an HTTP failure status (410: the token expired).
+  incremental?: Record<string, { items: GoogleEvent[]; nextSyncToken?: string } | number>;
 };
 
 type Call = { url: URL; init?: RequestInit };
@@ -50,6 +53,15 @@ function fakeGoogle(options: FakeOptions): { fetch: typeof fetch; calls: Call[] 
     const match = /\/calendars\/([^/]+)\/events$/.exec(url.pathname);
     if (!match) return Promise.resolve(new Response('unexpected', { status: 500 }));
     const calendarId = decodeURIComponent(match[1]!);
+    const given = url.searchParams.get('syncToken');
+    if (given !== null) {
+      // Google refuses a delta that also names a window.
+      if (url.searchParams.has('timeMin') || url.searchParams.has('timeMax')) return Promise.resolve(new Response('{}', { status: 400 }));
+      const delta = options.incremental?.[given];
+      if (delta === undefined) return Promise.resolve(new Response('{}', { status: 410 }));
+      if (typeof delta === 'number') return Promise.resolve(new Response('{}', { status: delta }));
+      return Promise.resolve(Response.json({ items: delta.items, nextSyncToken: delta.nextSyncToken ?? 'sync-token-next' }));
+    }
     const events = options.events[calendarId];
     if (events === undefined) return Promise.resolve(new Response('{}', { status: 404 }));
     if (typeof events === 'number') return Promise.resolve(new Response('{}', { status: events }));
@@ -310,16 +322,304 @@ describe('syncing again', () => {
     expect(await rowsOf(calendarId)).toEqual([]);
   });
 
-  it('clears a calendar that is no longer selected, and never asks Google for it', async () => {
+  it('never asks Google for a calendar that is not selected', async () => {
     const account = await arrange();
-    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal', selected: false });
-    await arrangeEvents(calendarId, [{ google_event_id: 'old', title: 'Old', starts_at: '2026-10-05T14:00:00Z', ends_at: '2026-10-05T15:00:00Z' }]);
+    await arrangeCalendar(account, { googleCalendarId: 'cal', selected: false });
     const google = fakeGoogle({ events: { cal: [standup] } });
 
     await syncOk(deps(account, google));
 
-    expect(await rowsOf(calendarId)).toEqual([]);
     expect(google.calls.filter((call) => call.url.pathname.endsWith('/events'))).toEqual([]);
+  });
+});
+
+const OCT_5_AFTERNOON = '2026-10-05T14:00:00Z';
+const ISO_NOW = new Date(NOW).toISOString();
+const EARLIER_TODAY = new Date(NOW - 2 * 60 * 60 * 1000).toISOString();
+
+function stored(id: string, title: string, startsAt = OCT_5_AFTERNOON) {
+  return { google_event_id: id, title, starts_at: startsAt, ends_at: new Date(Date.parse(startsAt) + 3600_000).toISOString() };
+}
+
+function timed(id: string, summary: string, start: string, end: string): GoogleEvent {
+  return { id, summary, start: { dateTime: start }, end: { dateTime: end } };
+}
+
+async function calendarState(calendarId: string) {
+  const { data, error } = await asServiceRole()
+    .from('mirrored_calendars')
+    .select('sync_token, last_full_sync_at')
+    .eq('id', calendarId)
+    .single<{ sync_token: string | null; last_full_sync_at: string | null }>();
+  if (error) throw error;
+  return data;
+}
+
+function eventCalls(google: { calls: Call[] }): Call[] {
+  return google.calls.filter((call) => call.url.pathname.endsWith('/events'));
+}
+
+describe('an incremental sync', () => {
+  it('asks only for changes since the sync token, with no window', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(calendarId, [stored('a', 'A')], { syncToken: 'tok-1', fullSyncAt: EARLIER_TODAY });
+    const google = fakeGoogle({ events: { cal: [] }, incremental: { 'tok-1': { items: [], nextSyncToken: 'tok-2' } } });
+
+    await syncOk(deps(account, google));
+
+    const [request, ...rest] = eventCalls(google);
+    expect(rest).toEqual([]);
+    expect(request!.url.searchParams.get('syncToken')).toBe('tok-1');
+    expect(request!.url.searchParams.get('singleEvents')).toBe('true');
+    expect(request!.url.searchParams.has('timeMin')).toBe(false);
+    expect(request!.url.searchParams.has('timeMax')).toBe(false);
+    expect((await calendarState(calendarId)).sync_token).toBe('tok-2');
+    expect(await rowsOf(calendarId)).toHaveLength(1);
+  });
+
+  it('moves and renames an event in place, adds a new one and removes a cancelled one, leaving the rest', async () => {
+    const account = await arrange();
+    const { calendarId, accountId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(calendarId, [stored('move', 'Dentist'), stored('cancel', 'Piano'), stored('same', 'Untouched', '2026-10-07T14:00:00Z')], {
+      syncToken: 'tok-1',
+      fullSyncAt: EARLIER_TODAY,
+    });
+    const before = await rowsOf(calendarId);
+    const google = fakeGoogle({
+      events: {},
+      incremental: {
+        'tok-1': {
+          nextSyncToken: 'tok-2',
+          items: [
+            timed('move', 'Dentist (new time)', '2026-10-06T10:00:00-05:00', '2026-10-06T11:00:00-05:00'),
+            { id: 'cancel', status: 'cancelled' },
+            timed('fresh', 'Soccer', '2026-10-08T17:00:00-05:00', '2026-10-08T18:00:00-05:00'),
+          ],
+        },
+      },
+    });
+
+    const summary = await syncOk(deps(account, google));
+
+    const rows = await rowsOf(calendarId);
+    expect(rows.map((row) => [row.google_event_id, row.title, row.starts_at])).toEqual([
+      ['move', 'Dentist (new time)', '2026-10-06T15:00:00+00:00'],
+      ['same', 'Untouched', '2026-10-07T14:00:00+00:00'],
+      ['fresh', 'Soccer', '2026-10-08T22:00:00+00:00'],
+    ]);
+    expect(rows.find((row) => row.google_event_id === 'move')!.id).toBe(before.find((row) => row.google_event_id === 'move')!.id);
+    expect(rows.find((row) => row.google_event_id === 'same')!.id).toBe(before.find((row) => row.google_event_id === 'same')!.id);
+    expect(summary).toMatchObject({ accounts: 1, calendars: 1, errors: [] });
+    expect(new Date((await accountOf(accountId)).last_synced_at!).getTime()).toBe(NOW);
+  });
+
+  it('removes one cancelled occurrence of a recurring event and keeps the others', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(
+      calendarId,
+      ['20261005', '20261012', '20261019'].map((day) => stored(`swim_${day}T220000Z`, 'Swim practice', `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6)}T22:00:00Z`)),
+      { syncToken: 'tok-1', fullSyncAt: EARLIER_TODAY },
+    );
+    const google = fakeGoogle({ events: {}, incremental: { 'tok-1': { items: [{ id: 'swim_20261012T220000Z', status: 'cancelled' }] } } });
+
+    await syncOk(deps(account, google));
+
+    expect((await rowsOf(calendarId)).map((row) => row.google_event_id)).toEqual(['swim_20261005T220000Z', 'swim_20261019T220000Z']);
+  });
+
+  it('removes an event that moved outside the window, and ignores a new one outside it', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(calendarId, [stored('kept', 'Kept'), stored('leaves', 'Leaves')], { syncToken: 'tok-1', fullSyncAt: EARLIER_TODAY });
+    const google = fakeGoogle({
+      events: {},
+      incremental: {
+        'tok-1': {
+          items: [
+            timed('leaves', 'Leaves', '2027-09-01T10:00:00Z', '2027-09-01T11:00:00Z'),
+            timed('years-away', 'Far off', '2029-01-01T10:00:00Z', '2029-01-01T11:00:00Z'),
+            timed('long-ago', 'Long ago', '2024-01-01T10:00:00Z', '2024-01-01T11:00:00Z'),
+          ],
+        },
+      },
+    });
+
+    await syncOk(deps(account, google));
+
+    expect((await rowsOf(calendarId)).map((row) => row.google_event_id)).toEqual(['kept']);
+  });
+
+  it('reads every page of a delta before it stores the new token', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(calendarId, [stored('a', 'A')], { syncToken: 'tok-1', fullSyncAt: EARLIER_TODAY });
+    const items = Array.from({ length: 5 }, (_, index) => timed(`n${index}`, `New ${index}`, `2026-10-1${index}T10:00:00Z`, `2026-10-1${index}T11:00:00Z`));
+    const google = fakeGoogle({ events: {}, pageSize: 2, incremental: { 'tok-1': { items, nextSyncToken: 'tok-9' } } });
+
+    await syncOk(deps(account, google));
+
+    expect(await rowsOf(calendarId)).toHaveLength(6);
+    expect((await calendarState(calendarId)).sync_token).toBe('tok-9');
+  });
+
+  it('keeps the old rows and the old token when the delta fails, so the next run tries it again', async () => {
+    const account = await arrange();
+    const { calendarId, accountId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(calendarId, [stored('a', 'A')], { syncToken: 'tok-1', fullSyncAt: EARLIER_TODAY });
+
+    const summary = await syncOk(deps(account, fakeGoogle({ events: {}, incremental: { 'tok-1': 503 } })));
+
+    expect((await rowsOf(calendarId)).map((row) => row.google_event_id)).toEqual(['a']);
+    expect((await calendarState(calendarId)).sync_token).toBe('tok-1');
+    expect(summary.errors).toHaveLength(1);
+    expect((await accountOf(accountId)).last_error).toMatch(/503/);
+  });
+
+  it('reads the whole calendar again once a day, to pick up occurrences that slid into the window', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    const yesterday = new Date(NOW - 25 * 60 * 60 * 1000).toISOString();
+    await arrangeEvents(calendarId, [stored('old', 'Old')], { syncToken: 'tok-1', fullSyncAt: yesterday });
+    const google = fakeGoogle({ events: { cal: [standup] }, syncToken: 'tok-fresh', incremental: { 'tok-1': { items: [] } } });
+
+    await syncOk(deps(account, google));
+
+    const [request] = eventCalls(google);
+    expect(request!.url.searchParams.has('syncToken')).toBe(false);
+    expect(request!.url.searchParams.has('timeMin')).toBe(true);
+    expect((await rowsOf(calendarId)).map((row) => row.google_event_id)).toEqual(['standup']);
+    const state = await calendarState(calendarId);
+    expect(state.sync_token).toBe('tok-fresh');
+    expect(new Date(state.last_full_sync_at!).getTime()).toBe(NOW);
+  });
+
+  it('does a full sync, not a delta, for a calendar that has no sync token yet', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    const google = fakeGoogle({ events: { cal: [standup] }, syncToken: 'tok-first' });
+
+    await syncOk(deps(account, google));
+
+    expect(eventCalls(google)[0]!.url.searchParams.has('syncToken')).toBe(false);
+    expect(await calendarState(calendarId)).toMatchObject({ sync_token: 'tok-first' });
+  });
+});
+
+describe('when Google says the sync token is gone (410)', () => {
+  it('clears the token and replaces the calendar with a full read, in one go', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(calendarId, [stored('stale', 'Stale'), stored('standup', 'Old title')], { syncToken: 'expired', fullSyncAt: EARLIER_TODAY });
+    const google = fakeGoogle({ events: { cal: [standup] }, syncToken: 'tok-after-410', incremental: { expired: 410 } });
+
+    const summary = await syncOk(deps(account, google));
+
+    const [delta, full, ...rest] = eventCalls(google);
+    expect(rest).toEqual([]);
+    expect(delta!.url.searchParams.get('syncToken')).toBe('expired');
+    expect(full!.url.searchParams.has('syncToken')).toBe(false);
+    expect(full!.url.searchParams.get('timeMin')).toBe('2026-08-30T12:00:00.000Z');
+    expect((await rowsOf(calendarId)).map((row) => [row.google_event_id, row.title])).toEqual([['standup', 'Standup']]);
+    expect(await calendarState(calendarId)).toMatchObject({ sync_token: 'tok-after-410' });
+    expect(summary).toMatchObject({ calendars: 1, errors: [] });
+  });
+
+  it('never leaves the wall a partly emptied calendar: if the full read fails too, every old row is still there and the token is cleared', async () => {
+    const account = await arrange();
+    const { calendarId, accountId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(calendarId, [stored('a', 'A'), stored('b', 'B')], { syncToken: 'expired', fullSyncAt: EARLIER_TODAY });
+    // The delta says 410; then the full read of the same calendar fails.
+    const base = fakeGoogle({ events: { cal: 503 }, incremental: { expired: 410 } });
+
+    const summary = await syncOk(deps(account, base));
+
+    expect((await rowsOf(calendarId)).map((row) => row.google_event_id)).toEqual(['a', 'b']);
+    expect((await calendarState(calendarId)).sync_token).toBeNull();
+    expect(summary.errors).toHaveLength(1);
+    expect((await accountOf(accountId)).last_error).toMatch(/503/);
+  });
+
+  it('replaces a calendar that is empty in Google by emptying it, in the same transaction as the token', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(calendarId, [stored('a', 'A')], { syncToken: 'expired', fullSyncAt: EARLIER_TODAY });
+
+    await syncOk(deps(account, fakeGoogle({ events: { cal: [] }, syncToken: 'tok-new', incremental: { expired: 410 } })));
+
+    expect(await rowsOf(calendarId)).toEqual([]);
+    expect((await calendarState(calendarId)).sync_token).toBe('tok-new');
+  });
+});
+
+describe('deselecting and reselecting a Mirrored Calendar', () => {
+  it('removes its events the moment the Household Account deselects it, with no sync run', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(calendarId, [stored('a', 'A'), stored('b', 'B')], { syncToken: 'tok-1', fullSyncAt: EARLIER_TODAY });
+    const phone = await asHouseholdAccount(account);
+
+    const { error } = await phone.from('mirrored_calendars').update({ selected: false }).eq('id', calendarId);
+
+    expect(error).toBeNull();
+    expect(await rowsOf(calendarId)).toEqual([]);
+    expect(await calendarState(calendarId)).toEqual({ sync_token: null, last_full_sync_at: null });
+  });
+
+  it('keeps the other calendars events when one is deselected', async () => {
+    const account = await arrange();
+    const first = await arrangeCalendar(account, { googleCalendarId: 'one', email: 'one@example.test' });
+    const second = await arrangeCalendar(account, { googleCalendarId: 'two', email: 'two@example.test' });
+    await arrangeEvents(first.calendarId, [stored('a', 'A')]);
+    await arrangeEvents(second.calendarId, [stored('b', 'B')]);
+
+    await asServiceRole().from('mirrored_calendars').update({ selected: false }).eq('id', first.calendarId);
+
+    expect(await rowsOf(first.calendarId)).toEqual([]);
+    expect(await rowsOf(second.calendarId)).toHaveLength(1);
+  });
+
+  it('does a full sync of the calendar on the next run after it is reselected', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    await arrangeEvents(calendarId, [stored('a', 'A')], { syncToken: 'tok-1', fullSyncAt: EARLIER_TODAY });
+    const phone = await asHouseholdAccount(account);
+    await phone.from('mirrored_calendars').update({ selected: false }).eq('id', calendarId);
+    await phone.from('mirrored_calendars').update({ selected: true }).eq('id', calendarId);
+    const google = fakeGoogle({ events: { cal: [standup] }, syncToken: 'tok-again', incremental: { 'tok-1': { items: [] } } });
+
+    await syncOk(deps(account, google));
+
+    const [request, ...rest] = eventCalls(google);
+    expect(rest).toEqual([]);
+    expect(request!.url.searchParams.has('syncToken')).toBe(false);
+    expect((await rowsOf(calendarId)).map((row) => row.google_event_id)).toEqual(['standup']);
+  });
+
+  it('does not let a sync that began before the deselect write its events after it', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal', selected: true });
+    await asServiceRole().from('mirrored_calendars').update({ selected: false }).eq('id', calendarId);
+
+    // What a sync would do with events it fetched while the calendar was still selected.
+    const { error } = await asServiceRole().rpc('replace_synced_events', {
+      p_mirrored_calendar_id: calendarId,
+      p_events: [{ ...stored('late', 'Late'), description: null, location: null, is_all_day: false }],
+      p_sync_token: 'late-token',
+      p_synced_at: ISO_NOW,
+    });
+    const { error: deltaError } = await asServiceRole().rpc('apply_synced_event_changes', {
+      p_mirrored_calendar_id: calendarId,
+      p_upserts: [{ ...stored('late', 'Late'), description: null, location: null, is_all_day: false }],
+      p_deleted_ids: [],
+      p_sync_token: 'late-token',
+    });
+
+    expect(error).toBeNull();
+    expect(deltaError).toBeNull();
+    expect(await rowsOf(calendarId)).toEqual([]);
+    expect((await calendarState(calendarId)).sync_token).toBeNull();
   });
 });
 
@@ -352,6 +652,50 @@ describe('when Google says no', () => {
     expect(await rowsOf(broken.calendarId)).toEqual([]);
     expect(await rowsOf(fine.calendarId)).toHaveLength(1);
     expect(await accountOf(fine.accountId)).toMatchObject({ status: 'active' });
+  });
+
+  it('marks an account needs_reauth when Google refuses the refresh token during an incremental run too', async () => {
+    const account = await arrange();
+    const { calendarId, accountId } = await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'revoked' });
+    await arrangeEvents(calendarId, [stored('kept', 'Kept')], { syncToken: 'tok-1', fullSyncAt: EARLIER_TODAY });
+
+    await syncOk(deps(account, fakeGoogle({ events: {}, refreshTokens: { revoked: false }, incremental: { 'tok-1': { items: [] } } })));
+
+    expect(await accountOf(accountId)).toMatchObject({ status: 'needs_reauth' });
+    expect((await rowsOf(calendarId)).map((row) => row.google_event_id)).toEqual(['kept']);
+    expect((await calendarState(calendarId)).sync_token).toBe('tok-1');
+  });
+
+  it('reconnecting a needs_reauth account updates its Vault secret in place, keeps its calendars and choices, and resumes syncing', async () => {
+    const account = await arrange();
+    const email = 'parent@example.test';
+    const { calendarId, accountId } = await arrangeCalendar(account, { googleCalendarId: 'cal', email, refreshToken: 'revoked', color: '#3b82f6' });
+    await arrangeEvents(calendarId, [stored('kept', 'Kept')], { syncToken: 'tok-1', fullSyncAt: EARLIER_TODAY });
+    const google = fakeGoogle({ events: { cal: [standup] }, refreshTokens: { revoked: false, renewed: true }, incremental: { 'tok-1': { items: [], nextSyncToken: 'tok-2' } } });
+    await syncOk(deps(account, google));
+    const admin = asServiceRole();
+    const secretOf = async () => {
+      const { data } = await admin.from('calendar_accounts').select('vault_secret_id').eq('id', accountId).single<{ vault_secret_id: string }>();
+      return data!.vault_secret_id;
+    };
+    const secretBefore = await secretOf();
+    expect(await accountOf(accountId)).toMatchObject({ status: 'needs_reauth' });
+
+    const { data: sameAccount, error } = await admin.rpc('store_calendar_account', { p_household_id: account.household.id, p_google_email: email, p_refresh_token: 'renewed' });
+
+    expect(error).toBeNull();
+    expect(sameAccount).toBe(accountId);
+    expect(await secretOf()).toBe(secretBefore);
+    expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: null });
+    const { data: calendar } = await admin.from('mirrored_calendars').select('selected, color').eq('id', calendarId).single();
+    expect(calendar).toEqual({ selected: true, color: '#3b82f6' });
+
+    await syncOk(deps(account, google));
+
+    expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: null });
+    const tokenCalls = google.calls.filter((call) => String(call.url) === GOOGLE_TOKEN_URL);
+    expect(new URLSearchParams(String(tokenCalls.at(-1)!.init?.body)).get('refresh_token')).toBe('renewed');
+    expect((await calendarState(calendarId)).sync_token).toBe('tok-2');
   });
 
   it('keeps the previous events of a calendar Google fails to return, and syncs its sibling', async () => {

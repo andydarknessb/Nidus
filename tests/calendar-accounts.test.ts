@@ -11,10 +11,15 @@ import {
   type ConnectDeps,
 } from '../supabase/functions/calendar-connect/handler';
 import {
+  SYNC_STALE_MS,
   calendarsOfAccount,
+  formatAge,
+  lastSyncedText,
   loadCalendarAccounts,
   loadMirroredCalendars,
+  loadSyncFreshness,
   removeCalendarAccount,
+  staleSyncBadge,
   updateMirroredCalendar,
   type MirroredCalendar,
 } from '../src/lib/calendar-accounts';
@@ -492,5 +497,108 @@ describe('removing a Calendar Account', () => {
     households = households.filter((existing) => existing !== account);
 
     expect((await admin.rpc('calendar_secret_exists', { p_secret_id: row!.vault_secret_id })).data).toBe(false);
+  });
+});
+
+describe('reconnecting an account that needs reauth', () => {
+  it('sends the parent to Google with that account offered first, and only for a settings flow', async () => {
+    const account = await arrange();
+    const d = deps(fakeGoogle({ email: 'parent@example.com' }));
+    const jwt = await jwtOf(account);
+    const start = async (body: Record<string, unknown>) => {
+      const response = await handleCalendarConnect(
+        new Request(`${env.functionUrl}/start`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+        d,
+      );
+      return new URL(((await response.json()) as { url: string }).url);
+    };
+
+    expect((await start({ kind: 'settings', google_email: 'parent@example.com' })).searchParams.get('login_hint')).toBe('parent@example.com');
+    expect((await start({ kind: 'settings' })).searchParams.has('login_hint')).toBe(false);
+    expect((await start({ kind: 'settings', google_email: 42 })).searchParams.has('login_hint')).toBe(false);
+    expect((await start({ kind: 'link', google_email: 'parent@example.com' })).searchParams.has('login_hint')).toBe(false);
+  });
+
+  it('turns a needs_reauth account active again, keeping its calendars and their choices', async () => {
+    const account = await arrange();
+    const id = await connect(account, 'parent@example.com', 'first-token');
+    const admin = asServiceRole();
+    const phone = await asHouseholdAccount(account);
+    const [family] = (await loadMirroredCalendars(phone)).filter((calendar) => calendar.name === 'Family');
+    await updateMirroredCalendar(phone, family!.id, { selected: true, profile_id: null, color: PROFILE_PALETTE[0].hex });
+    await admin.from('calendar_accounts').update({ status: 'needs_reauth', last_error: 'Google no longer accepts this account. Reconnect it in settings.' }).eq('id', id);
+
+    await connect(account, 'parent@example.com', 'second-token');
+
+    const [row] = await loadCalendarAccounts(phone);
+    expect(row).toMatchObject({ id, status: 'active', last_error: null });
+    const [after] = (await loadMirroredCalendars(phone)).filter((calendar) => calendar.name === 'Family');
+    expect(after).toMatchObject({ id: family!.id, selected: true, color: PROFILE_PALETTE[0].hex });
+  });
+});
+
+describe('how fresh the mirror is', () => {
+  const NOW = Date.parse('2026-09-30T12:00:00Z');
+  const ago = (ms: number) => new Date(NOW - ms).toISOString();
+  const MINUTE = 60_000;
+  const HOUR = 60 * MINUTE;
+
+  it('words an age by its largest whole unit', () => {
+    expect(formatAge(30_000)).toBe('just now');
+    expect(formatAge(MINUTE)).toBe('1 minute ago');
+    expect(formatAge(59 * MINUTE)).toBe('59 minutes ago');
+    expect(formatAge(HOUR)).toBe('1 hour ago');
+    expect(formatAge(5 * HOUR + 40 * MINUTE)).toBe('5 hours ago');
+    expect(formatAge(24 * HOUR)).toBe('1 day ago');
+    expect(formatAge(72 * HOUR)).toBe('3 days ago');
+  });
+
+  it('says when an account was last synced, or that it has not been', () => {
+    expect(lastSyncedText(ago(5 * MINUTE), NOW)).toBe('Last synced 5 minutes ago');
+    expect(lastSyncedText(null, NOW)).toBe('Not synced yet');
+  });
+
+  it('shows no badge while every account is within an hour', () => {
+    expect(staleSyncBadge([], NOW)).toBeNull();
+    expect(staleSyncBadge([{ last_synced_at: ago(5 * MINUTE), created_at: ago(30 * 24 * HOUR) }], NOW)).toBeNull();
+    expect(staleSyncBadge([{ last_synced_at: ago(SYNC_STALE_MS), created_at: ago(30 * 24 * HOUR) }], NOW)).toBeNull();
+  });
+
+  it('shows how far behind the account that is furthest behind is, once it is more than an hour', () => {
+    const fresh = { last_synced_at: ago(2 * MINUTE), created_at: ago(30 * 24 * HOUR) };
+    expect(staleSyncBadge([{ last_synced_at: ago(SYNC_STALE_MS + 1), created_at: ago(30 * 24 * HOUR) }], NOW)).toBe('Last synced 1 hour ago');
+    expect(staleSyncBadge([fresh, { last_synced_at: ago(3 * HOUR + 10 * MINUTE), created_at: ago(30 * 24 * HOUR) }], NOW)).toBe('Last synced 3 hours ago');
+    expect(
+      staleSyncBadge(
+        [
+          { last_synced_at: ago(2 * HOUR), created_at: ago(30 * 24 * HOUR) },
+          { last_synced_at: ago(26 * HOUR), created_at: ago(30 * 24 * HOUR) },
+        ],
+        NOW,
+      ),
+    ).toBe('Last synced 1 day ago');
+  });
+
+  it('counts an account that has never synced from when it was connected', () => {
+    expect(staleSyncBadge([{ last_synced_at: null, created_at: ago(10 * MINUTE) }], NOW)).toBeNull();
+    expect(staleSyncBadge([{ last_synced_at: null, created_at: ago(2 * HOUR) }], NOW)).toBe('Not synced yet');
+  });
+
+  it('is readable by a Device, only for its own Household', async () => {
+    const account = await arrange();
+    const other = await arrange();
+    await connect(account, 'parent@example.com');
+    await connect(other, 'someone@example.com');
+    const device = await asDevice(account);
+    tablets.push(device);
+
+    const rows = await loadSyncFreshness(device.client);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ last_synced_at: null, created_at: expect.any(String) });
   });
 });
