@@ -1,23 +1,29 @@
 import { ArrowDown, ArrowUp, Check, Circle } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Household } from './lib/household';
-import { loadProfiles, movedIds, nextSortOrder, type Profile } from './lib/profiles';
+import { loadProfiles, nextSortOrder, type Profile } from './lib/profiles';
 import {
+  TIME_OF_DAY_GROUPS,
   WEEKDAYS,
   archiveRoutine,
   completeRoutine,
   createRoutine,
   groupByProfile,
+  groupByTimeOfDay,
   householdDay,
   loadCompletions,
   loadRoutines,
   maskOf,
+  movedIdsInGroup,
   reorderRoutines,
   tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
+  updateRoutine,
   isScheduledOn,
   type Routine,
+  type RoutineInput,
+  type TimeOfDay,
 } from './lib/routines';
 import { useRefetchOn } from './lib/change-feed';
 import { watchHouseholdDay } from './lib/household-day';
@@ -28,6 +34,8 @@ const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 const quiet = `${action} border border-border`;
 const iconAction = 'inline-flex size-12 shrink-0 items-center justify-center rounded-lg border border-border disabled:opacity-40';
+// The small heading over a group of Routines (Morning, Afternoon, Evening, Any time): the same on the Routines rail and on the phone.
+const timeHeading = 'text-base font-medium text-muted-foreground';
 
 // Changes heard from the server normally refresh the rail at once; this slow read is the
 // backstop for a change that was missed while the connection was down.
@@ -116,37 +124,47 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
         </p>
       )}
       {loaded && groups.length === 0 && <p className="text-base">Nothing scheduled today.</p>}
-      {groups.map(({ profile, routines }) => (
-        <section key={profile.id} aria-labelledby={`routines-${profile.id}`} className="flex flex-col gap-2">
-          <h3 id={`routines-${profile.id}`} className="flex items-center gap-2 text-xl font-semibold" style={{ color: profile.color }}>
-            <span aria-hidden className="size-4 shrink-0 rounded-full" style={{ backgroundColor: profile.color }} />
-            {profile.name}
-          </h3>
-          <ul className="flex flex-col gap-2">
-            {routines.map((routine) => {
-              const checked = done.has(routine.id);
-              return (
-                <li key={routine.id}>
-                  <button
-                    type="button"
-                    aria-pressed={checked}
-                    onClick={() => void toggle(routine)}
-                    className="flex min-h-14 w-full items-center gap-3 rounded-lg border-2 px-3 text-left text-lg"
-                    style={
-                      checked
-                        ? { backgroundColor: profile.color, borderColor: profile.color, color: '#09090b' }
-                        : { borderColor: profile.color }
-                    }
-                  >
-                    {checked ? <Check aria-hidden className="size-6 shrink-0" /> : <Circle aria-hidden className="size-6 shrink-0" />}
-                    <span className={checked ? 'line-through decoration-2' : ''}>{routine.title}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
+      {groups.map(({ profile, routines }) => {
+        const times = groupByTimeOfDay(routines);
+        // A Profile whose Routines are all Any time reads as the Routines rail always has: no headings.
+        const headed = times.some((time) => time.value !== null);
+        return (
+          <section key={profile.id} aria-labelledby={`routines-${profile.id}`} className="flex flex-col gap-2">
+            <h3 id={`routines-${profile.id}`} className="flex items-center gap-2 text-xl font-semibold" style={{ color: profile.color }}>
+              <span aria-hidden className="size-4 shrink-0 rounded-full" style={{ backgroundColor: profile.color }} />
+              {profile.name}
+            </h3>
+            {times.map((time) => (
+              <Fragment key={time.label}>
+                {headed && <h4 className={timeHeading}>{time.label}</h4>}
+                <ul className="flex flex-col gap-2">
+                  {time.routines.map((routine) => {
+                    const checked = done.has(routine.id);
+                    return (
+                      <li key={routine.id}>
+                        <button
+                          type="button"
+                          aria-pressed={checked}
+                          onClick={() => void toggle(routine)}
+                          className="flex min-h-14 w-full items-center gap-3 rounded-lg border-2 px-3 text-left text-lg"
+                          style={
+                            checked
+                              ? { backgroundColor: profile.color, borderColor: profile.color, color: '#09090b' }
+                              : { borderColor: profile.color }
+                          }
+                        >
+                          {checked ? <Check aria-hidden className="size-6 shrink-0" /> : <Circle aria-hidden className="size-6 shrink-0" />}
+                          <span className={checked ? 'line-through decoration-2' : ''}>{routine.title}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Fragment>
+            ))}
+          </section>
+        );
+      })}
     </aside>
   );
 }
@@ -155,37 +173,71 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
 
 const allDays = maskOf(WEEKDAYS.map((weekday) => weekday.bit));
 
-function scheduleSummary(mask: number): string {
-  if (mask === allDays) return 'Every day';
-  return WEEKDAYS.filter((weekday) => isScheduledOn(mask, weekday.bit))
-    .map((weekday) => weekday.short)
-    .join(', ');
+// The days, then the time of day when the Routine has one: "Mon, Tue · Morning". Non-breaking
+// spaces keep a wrapped line from ending on the dot.
+function scheduleSummary(mask: number, timeOfDay: TimeOfDay | null): string {
+  const days =
+    mask === allDays
+      ? 'Every day'
+      : WEEKDAYS.filter((weekday) => isScheduledOn(mask, weekday.bit))
+          .map((weekday) => weekday.short)
+          .join(', ');
+  const time = TIME_OF_DAY_GROUPS.find((group) => group.value !== null && group.value === timeOfDay);
+  return time ? `${days}\u00a0·\u00a0${time.label}` : days;
 }
 
 // Monday first on screen; the bits stay Sunday = 0.
 const weekOrder = [...WEEKDAYS.slice(1), WEEKDAYS[0]];
 
-function NewRoutineForm({ profile, onCreate }: { profile: Profile; onCreate: (title: string, mask: number) => Promise<boolean> }) {
-  const [title, setTitle] = useState('');
-  const [mask, setMask] = useState(allDays);
+// The Time of day choices as the select lists them: Any time, the default, first.
+const timeOfDayChoices = [...TIME_OF_DAY_GROUPS.slice(-1), ...TIME_OF_DAY_GROUPS.slice(0, -1)];
+
+// One form for adding a Routine and for editing one: a title, the days and a time of day.
+// Given a Routine it starts from that Routine and offers Cancel; without one it starts blank
+// and, once the Routine is added, blank again.
+function RoutineForm({
+  profile,
+  routine,
+  onSave,
+  onCancel,
+}: {
+  profile: Profile;
+  routine?: Routine;
+  onSave: (input: RoutineInput) => Promise<boolean>;
+  onCancel?: () => void;
+}) {
+  const [title, setTitle] = useState(routine?.title ?? '');
+  const [mask, setMask] = useState(routine?.days_of_week ?? allDays);
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay | null>(routine?.time_of_day ?? null);
+  // What the labels name, so no two forms on the page share a label.
+  const about = routine ? routine.title : `${profile.name}'s new Routine`;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!title.trim() || mask === 0) return;
-    if (await onCreate(title, mask)) {
+    if ((await onSave({ title, days_of_week: mask, time_of_day: timeOfDay })) && !routine) {
       setTitle('');
       setMask(allDays);
+      setTimeOfDay(null);
     }
   }
 
   return (
     <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-3">
       <label className="flex flex-col gap-2 text-base">
-        New Routine for {profile.name}
-        <input className={field} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} placeholder="Feed the dog" required />
+        {routine ? `Title for ${routine.title}` : `New Routine for ${profile.name}`}
+        <input
+          className={field}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={100}
+          placeholder="Feed the dog"
+          required
+          autoFocus={routine !== undefined}
+        />
       </label>
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-base">Days for {profile.name}&apos;s new Routine</legend>
+        <legend className="text-base">Days for {about}</legend>
         <div className="flex flex-wrap gap-2">
           {weekOrder.map((weekday) => (
             <label
@@ -204,9 +256,30 @@ function NewRoutineForm({ profile, onCreate }: { profile: Profile; onCreate: (ti
           ))}
         </div>
       </fieldset>
-      <button type="submit" className={`${action} bg-primary text-primary-foreground disabled:opacity-40`} disabled={mask === 0}>
-        Add Routine
-      </button>
+      <label className="flex flex-col gap-2 text-base">
+        Time of day for {about}
+        <select
+          className={field}
+          value={timeOfDay ?? ''}
+          onChange={(e) => setTimeOfDay(TIME_OF_DAY_GROUPS.find((group) => group.value === e.target.value)?.value ?? null)}
+        >
+          {timeOfDayChoices.map((choice) => (
+            <option key={choice.label} value={choice.value ?? ''}>
+              {choice.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="flex gap-3">
+        <button type="submit" className={`${action} flex-1 bg-primary text-primary-foreground disabled:opacity-40`} disabled={mask === 0}>
+          {routine ? 'Save' : 'Add Routine'}
+        </button>
+        {onCancel && (
+          <button type="button" className={quiet} onClick={onCancel}>
+            Cancel
+          </button>
+        )}
+      </div>
       {mask === 0 && <p className="text-base">Pick at least one day.</p>}
     </form>
   );
@@ -217,6 +290,7 @@ export function RoutinesPage({ household }: { household: Household }) {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [problem, setProblem] = useState('');
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [focusNext, setFocusNext] = useState<string | null>(null);
 
   // Moves focus once the element it names is on screen; the swap unmounts whatever had it.
@@ -255,6 +329,19 @@ export function RoutinesPage({ household }: { household: Household }) {
     return ok;
   }
 
+  // Save and Cancel both end on the row's Edit button, which the swap back has just put on screen.
+  function stopEditing(id: string) {
+    setEditing(null);
+    setFocusNext(`edit-${id}`);
+  }
+
+  // A failed save keeps the form open, with what was typed, and says so in the status line.
+  async function save(id: string, input: RoutineInput): Promise<boolean> {
+    const ok = await change(() => updateRoutine(supabase, id, input), 'Could not save that Routine. Check the name and days, then try again.');
+    if (ok) stopEditing(id);
+    return ok;
+  }
+
   const ofProfile = (profileId: string) => routines.filter((routine) => routine.profile_id === profileId);
 
   return (
@@ -271,6 +358,9 @@ export function RoutinesPage({ household }: { household: Household }) {
 
       {profiles?.map((profile) => {
         const own = ofProfile(profile.id);
+        // The groups, their order and the heading rule are the Routines rail's, so the phone never lists an order the Wall does not show.
+        const times = groupByTimeOfDay(own);
+        const headed = times.some((time) => time.value !== null);
         return (
           <section key={profile.id} aria-labelledby={`profile-${profile.id}`} className="flex flex-col gap-3 rounded-lg border border-border p-3">
             <h2 id={`profile-${profile.id}`} tabIndex={-1} className="flex items-center gap-2 text-xl font-semibold" style={{ color: profile.color }}>
@@ -278,75 +368,97 @@ export function RoutinesPage({ household }: { household: Household }) {
               {profile.name}
             </h2>
             {own.length === 0 && <p className="text-base">No Routines yet.</p>}
-            <ul className="flex flex-col gap-3">
-              {own.map((routine, index) => (
-                <li key={routine.id} className="flex flex-col gap-2 rounded-lg border border-border p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1">
-                      <p className="text-base font-medium">{routine.title}</p>
-                      <p className="text-base">{scheduleSummary(routine.days_of_week)}</p>
-                    </div>
-                    <button
-                      type="button"
-                      className={iconAction}
-                      aria-label={`Move ${routine.title} up`}
-                      disabled={index === 0}
-                      onClick={() =>
-                        void change(() => reorderRoutines(supabase, movedIds(own.map((r) => r.id), routine.id, -1)), 'Could not reorder Routines. Try again.')
-                      }
-                    >
-                      <ArrowUp aria-hidden className="size-5" />
-                    </button>
-                    <button
-                      type="button"
-                      className={iconAction}
-                      aria-label={`Move ${routine.title} down`}
-                      disabled={index === own.length - 1}
-                      onClick={() =>
-                        void change(() => reorderRoutines(supabase, movedIds(own.map((r) => r.id), routine.id, 1)), 'Could not reorder Routines. Try again.')
-                      }
-                    >
-                      <ArrowDown aria-hidden className="size-5" />
-                    </button>
-                  </div>
-                  {confirming === routine.id ? (
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        autoFocus
-                        className={`${action} flex-1 border-2 border-destructive bg-primary text-primary-foreground`}
-                        onClick={() => {
-                          setConfirming(null);
-                          setFocusNext(`profile-${profile.id}`);
-                          void change(() => archiveRoutine(supabase, routine.id), 'Could not archive that Routine. Try again.');
-                        }}
-                      >
-                        Archive {routine.title}
-                      </button>
-                      <button
-                        type="button"
-                        className={quiet}
-                        onClick={() => {
-                          setConfirming(null);
-                          setFocusNext(`archive-${routine.id}`);
-                        }}
-                      >
-                        Keep it
-                      </button>
-                    </div>
-                  ) : (
-                    <button type="button" id={`archive-${routine.id}`} className={quiet} aria-label={`Archive ${routine.title}`} onClick={() => setConfirming(routine.id)}>
-                      Archive
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <NewRoutineForm
+            {times.map((time) => (
+              <Fragment key={time.label}>
+                {headed && <h3 className={timeHeading}>{time.label}</h3>}
+                <ul className="flex flex-col gap-3">
+                  {time.routines.map((routine, index) => (
+                    <li key={routine.id} className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                      {editing === routine.id ? (
+                        <RoutineForm profile={profile} routine={routine} onSave={(input) => save(routine.id, input)} onCancel={() => stopEditing(routine.id)} />
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1">
+                              <p className="text-base font-medium">{routine.title}</p>
+                              <p className="text-base">{scheduleSummary(routine.days_of_week, routine.time_of_day)}</p>
+                            </div>
+                            <button
+                              type="button"
+                              className={iconAction}
+                              aria-label={`Move ${routine.title} up`}
+                              disabled={index === 0}
+                              onClick={() =>
+                                void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder Routines. Try again.')
+                              }
+                            >
+                              <ArrowUp aria-hidden className="size-5" />
+                            </button>
+                            <button
+                              type="button"
+                              className={iconAction}
+                              aria-label={`Move ${routine.title} down`}
+                              disabled={index === time.routines.length - 1}
+                              onClick={() =>
+                                void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder Routines. Try again.')
+                              }
+                            >
+                              <ArrowDown aria-hidden className="size-5" />
+                            </button>
+                          </div>
+                          {confirming === routine.id ? (
+                            <div className="flex gap-3">
+                              <button
+                                type="button"
+                                autoFocus
+                                className={`${action} flex-1 border-2 border-destructive bg-primary text-primary-foreground`}
+                                onClick={() => {
+                                  setConfirming(null);
+                                  setFocusNext(`profile-${profile.id}`);
+                                  void change(() => archiveRoutine(supabase, routine.id), 'Could not archive that Routine. Try again.');
+                                }}
+                              >
+                                Archive {routine.title}
+                              </button>
+                              <button
+                                type="button"
+                                className={quiet}
+                                onClick={() => {
+                                  setConfirming(null);
+                                  setFocusNext(`archive-${routine.id}`);
+                                }}
+                              >
+                                Keep it
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex gap-3">
+                              <button type="button" id={`edit-${routine.id}`} className={`${quiet} flex-1`} aria-label={`Edit ${routine.title}`} onClick={() => setEditing(routine.id)}>
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                id={`archive-${routine.id}`}
+                                className={`${quiet} flex-1`}
+                                aria-label={`Archive ${routine.title}`}
+                                onClick={() => setConfirming(routine.id)}
+                              >
+                                Archive
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Fragment>
+            ))}
+            <RoutineForm
               profile={profile}
-              onCreate={(title, mask) =>
+              onSave={(input) =>
                 change(
-                  () => createRoutine(supabase, household.id, profile.id, { title, days_of_week: mask }, nextSortOrder(own)).then(() => undefined),
+                  () => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined),
                   'Could not add that Routine. Check the name and days, then try again.',
                 )
               }

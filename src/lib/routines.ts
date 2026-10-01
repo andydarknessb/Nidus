@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { byPosition, type Profile } from './profiles';
+import { byPosition, movedIds, type Profile } from './profiles';
 
 // Routines and Routine Completions (CONTEXT.md). Every function takes the client
 // so the same code runs in the app (the global client) and in tests (a Household
@@ -9,17 +9,23 @@ import { byPosition, type Profile } from './profiles';
 // Routine Completion exists for today's Household date, so at Household midnight
 // the wall reads unchecked again with nothing to reset.
 
+// When in the day a Routine belongs. A Routine with none (null) is any time.
+export type TimeOfDay = 'morning' | 'afternoon' | 'evening';
+
 export type Routine = {
   id: string;
   profile_id: string;
   title: string;
   // Bit n set: scheduled on weekday n, Sunday = 0 (the order of Date#getDay).
   days_of_week: number;
+  time_of_day: TimeOfDay | null;
   sort_order: number;
   archived_at: string | null;
 };
 
-export type RoutineInput = { title: string; days_of_week: number };
+// What a Household Account chooses when it makes or edits a Routine. Leaving out time_of_day
+// is the same as null: any time.
+export type RoutineInput = { title: string; days_of_week: number; time_of_day?: TimeOfDay | null };
 
 // A calendar day in the Household Timezone: 'YYYY-MM-DD' and its weekday (Sunday = 0).
 export type HouseholdDay = { date: string; weekday: number };
@@ -34,7 +40,16 @@ export const WEEKDAYS = [
   { bit: 6, name: 'Saturday', short: 'Sat' },
 ] as const;
 
-const columns = 'id, profile_id, title, days_of_week, sort_order, archived_at';
+// The groups a Profile's Routines fall into, in the order the day happens, with their words.
+// Any time (null) is last: it is not a part of the day.
+export const TIME_OF_DAY_GROUPS: readonly { value: TimeOfDay | null; label: string }[] = [
+  { value: 'morning', label: 'Morning' },
+  { value: 'afternoon', label: 'Afternoon' },
+  { value: 'evening', label: 'Evening' },
+  { value: null, label: 'Any time' },
+];
+
+const columns = 'id, profile_id, title, days_of_week, time_of_day, sort_order, archived_at';
 
 // ---- Pure helpers -------------------------------------------------------------
 
@@ -76,6 +91,24 @@ export function groupByProfile(profiles: Profile[], routines: Routine[]): Profil
     .filter((group) => group.routines.length > 0);
 }
 
+export type TimeOfDayRoutines = { value: TimeOfDay | null; label: string; routines: Routine[] };
+
+// Routines under Morning, Afternoon, Evening and Any time, in that order, each group in its
+// Routines' own order. A group with nothing in it is left out.
+export function groupByTimeOfDay(routines: Routine[]): TimeOfDayRoutines[] {
+  return TIME_OF_DAY_GROUPS
+    .map((group) => ({ ...group, routines: byPosition(routines.filter((routine) => routine.time_of_day === group.value)) }))
+    .filter((group) => group.routines.length > 0);
+}
+
+// A Profile's Routine ids in the order the phone lists them (grouped by time of day) once `id`
+// has moved `offset` places inside its own group. A Routine never crosses into another group,
+// and at the edge of its group the order stays as it was. The whole list is what gets written,
+// so sort_order always equals the order on screen.
+export function movedIdsInGroup(routines: Routine[], id: string, offset: number): string[] {
+  return groupByTimeOfDay(routines).flatMap((group) => movedIds(group.routines.map((routine) => routine.id), id, offset));
+}
+
 // ---- Household Account writes; Household Account or Device reads ----------------
 
 // Unarchived Routines, every Profile, in order. Archived ones have no screen.
@@ -99,11 +132,31 @@ export async function createRoutine(
 ): Promise<Routine> {
   const { data, error } = await client
     .from('routines')
-    .insert({ household_id: householdId, profile_id: profileId, title: input.title.trim(), days_of_week: input.days_of_week, sort_order: sortOrder })
+    .insert({
+      household_id: householdId,
+      profile_id: profileId,
+      title: input.title.trim(),
+      days_of_week: input.days_of_week,
+      time_of_day: input.time_of_day ?? null,
+      sort_order: sortOrder,
+    })
     .select(columns)
     .single();
   if (error) throw error;
   return data as Routine;
+}
+
+// Writes a Routine's title, days and time of day; its position, owner and Routine Completions
+// stay as they are. Row-level security refuses a Device, or another Household's account, by
+// matching no row rather than by raising, so the row is asked for back and none means refused.
+export async function updateRoutine(client: SupabaseClient, id: string, input: RoutineInput): Promise<void> {
+  const { data, error } = await client
+    .from('routines')
+    .update({ title: input.title.trim(), days_of_week: input.days_of_week, time_of_day: input.time_of_day ?? null })
+    .eq('id', id)
+    .select('id');
+  if (error) throw error;
+  if (data.length === 0) throw new Error('No Routine was updated.');
 }
 
 // Archiving keeps the Routine and every Completion; it just leaves the wall.
