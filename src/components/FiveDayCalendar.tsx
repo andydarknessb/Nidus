@@ -20,6 +20,9 @@ import {
   type TimedBlock,
   type WallDay,
 } from '../lib/calendar-occurrences';
+import { useChangeTick } from '../lib/change-feed';
+import { watchHouseholdDay } from '../lib/household-day';
+import { OCCURRENCE_TABLES } from '../lib/realtime';
 import { householdDay, WEEKDAYS } from '../lib/routines';
 import { supabase } from '../lib/supabase';
 import { EventDetails } from './EventDetails';
@@ -75,19 +78,25 @@ function NativeMark({ occurrence }: { occurrence: Occurrence }) {
   return occurrence.source === 'native' ? <Pin aria-hidden data-testid="native-mark" className="mr-1 inline size-4 shrink-0 align-text-bottom" /> : null;
 }
 
-function useNow(): Date {
+// The clock, ticking along and also the instant Household midnight passes, so the day columns
+// and the calendar's read span move on at midnight, not up to a tick later.
+function useNow(timezone: string): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), CLOCK_MS);
-    return () => clearInterval(id);
-  }, []);
+    const stop = watchHouseholdDay(timezone, () => setNow(new Date()));
+    return () => {
+      clearInterval(id);
+      stop();
+    };
+  }, [timezone]);
   return now;
 }
 
 // The home screen: today and the next four days. `version` changes when the screen around the
 // calendar has written an event, so the calendar reads again at once.
 export function FiveDayCalendar({ timezone, version = 0 }: { timezone: string; version?: number }) {
-  const now = useNow();
+  const now = useNow(timezone);
   return <CalendarGrid timezone={timezone} now={now} days={fiveDays(timezone, now)} version={version} />;
 }
 
@@ -111,7 +120,7 @@ export function PagedCalendar({
   onNavigate: (view: CalendarView, date: string) => void;
   onHome: () => void;
 }) {
-  const now = useNow();
+  const now = useNow(timezone);
   const window = pagingWindow(timezone, now);
   const today = householdDay(timezone, now).date;
   const anchor = pageStart(view, clampToWindow(date ?? today, window));
@@ -182,6 +191,8 @@ function CalendarGrid({ timezone, now, days, version }: { timezone: string; now:
   // (the day rolls over, the Household Timezone changes, a page is turned), and on a timer for new events.
   const fromMs = days[0]!.startMs;
   const toMs = days[days.length - 1]!.endMs;
+  // Read again the moment an event, a calendar or a Profile's colour changes anywhere in the Household.
+  const changes = useChangeTick(OCCURRENCE_TABLES);
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -207,7 +218,7 @@ function CalendarGrid({ timezone, now, days, version }: { timezone: string; now:
       live = false;
       clearTimeout(timer);
     };
-  }, [fromMs, toMs, version, edits]);
+  }, [fromMs, toMs, version, edits, changes]);
 
   const todayColumn = days.find((day) => day.isToday);
   const todayHour = todayColumn ? nowHour(todayColumn, now) : null;

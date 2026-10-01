@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import { ChangeFeedProvider } from './components/ChangeFeedProvider';
+import { ConnectionBadge } from './components/ConnectionBadge';
 import { EventsPage } from './EventsPage';
 import { RoutinesPage } from './RoutinesPage';
 import { SettingsPage } from './SettingsPage';
@@ -77,7 +79,10 @@ export function AdminApp() {
   const onHousehold = !onLists && !onRoutines && !onEvents;
 
   return (
-    <>
+    <ChangeFeedProvider>
+      <div className="mx-auto flex max-w-md justify-end px-4">
+        <ConnectionBadge />
+      </div>
       <nav aria-label="Settings sections" className="mx-auto flex max-w-md flex-wrap gap-2 px-4 pt-4">
         <a href="/settings" aria-current={onHousehold ? 'page' : undefined} className={navLink}>
           Household
@@ -108,6 +113,6 @@ export function AdminApp() {
           }}
         />
       )}
-    </>
+    </ChangeFeedProvider>
   );
 }

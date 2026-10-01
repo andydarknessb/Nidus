@@ -14,6 +14,9 @@ import {
   type Profile,
 } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
+import { useRefetchOn } from '@/lib/change-feed';
+
+const PROFILE_TABLES = ['profiles'] as const;
 
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
@@ -102,6 +105,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  useRefetchOn(PROFILE_TABLES, () => void refresh());
 
   // Runs a write, then reloads so the screen shows what is saved either way.
   async function change(write: () => Promise<void>, failure: string): Promise<boolean> {

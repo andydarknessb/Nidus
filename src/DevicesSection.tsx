@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice, type Device } from './lib/device';
 import { lastSeenLabel } from './lib/device-format';
+import { useRefetchOn } from './lib/change-feed';
+
+const DEVICE_TABLES = ['devices'] as const;
 
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
@@ -43,6 +46,7 @@ export function DevicesSection() {
     const id = setInterval(() => void refresh(), 30_000);
     return () => clearInterval(id);
   }, [refresh]);
+  useRefetchOn(DEVICE_TABLES, () => void refresh());
 
   async function pair(event: FormEvent) {
     event.preventDefault();

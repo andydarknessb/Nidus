@@ -6,6 +6,9 @@ import type { Household } from './lib/household';
 import { loadUpcomingNativeEvents } from './lib/native-events';
 import { householdDay } from './lib/routines';
 import { supabase } from './lib/supabase';
+import { useRefetchOn } from './lib/change-feed';
+
+const EVENT_TABLES = ['native_events', 'native_event_profiles', 'profiles'] as const;
 
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 
@@ -30,6 +33,7 @@ export function EventsPage({ household }: { household: Household }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  useRefetchOn(EVENT_TABLES, () => void refresh());
 
   return (
     <main className="mx-auto flex min-h-svh max-w-md flex-col gap-6 p-4">

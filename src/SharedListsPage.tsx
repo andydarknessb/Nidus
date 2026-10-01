@@ -23,6 +23,13 @@ import {
   type SharedList,
 } from './lib/shared-lists';
 import type { Household } from './lib/household';
+import { useChangeTick, useRefetchOn } from './lib/change-feed';
+import { createSyncedReader, type SyncedReader } from './lib/synced-reader';
+
+// What each read here listens to. The pinned list is a column of the Household.
+const ITEM_TABLES = ['list_items'] as const;
+const ITEM_REFRESH_MS = 30_000;
+const LIST_TABLES = ['shared_lists', 'households'] as const;
 
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
@@ -44,20 +51,36 @@ function useItems(listId: string) {
   }, []);
   const fail = (problem: string) => setState((prev) => ({ ...prev, problem }));
 
+  // Reads and this screen's own writes take turns (see synced-reader.ts): a change another
+  // device made while a tap is in flight is read once the tap has landed.
+  const reader = useRef<SyncedReader | null>(null);
+
   useEffect(() => {
-    let live = true;
     setState({ items: [], loaded: false, problem: '' });
-    loadItems(supabase, listId)
-      .then((items) => live && setState({ items, loaded: true, problem: '' }))
-      .catch(() => live && setState({ items: [], loaded: true, problem: 'Could not load this list. Check your connection.' }));
+    const next = createSyncedReader(
+      () => loadItems(supabase, listId),
+      // The message of a failed write stays until the next action; a read does not clear it.
+      (items) => setState((prev) => ({ items, loaded: true, problem: prev.problem })),
+      // Items already shown stay when a later read fails; the header says the connection is gone.
+      () => setState((prev) => (prev.loaded ? prev : { items: [], loaded: true, problem: 'Could not load this list. Check your connection.' })),
+    );
+    reader.current = next;
+    next.refresh();
+    // The backstop for a change missed while the connection was down.
+    const id = setInterval(() => next.refresh(), ITEM_REFRESH_MS);
     return () => {
-      live = false;
+      next.dispose();
+      clearInterval(id);
+      reader.current = null;
     };
   }, [listId]);
+  useRefetchOn(ITEM_TABLES, () => reader.current?.refresh());
+
+  const guarded = <T,>(work: () => Promise<T>): Promise<T> => (reader.current ? reader.current.write(work) : work());
 
   async function add(text: string): Promise<boolean> {
     try {
-      const created = await addItem(supabase, listId, text, nextSortOrder(state.items));
+      const created = await guarded(() => addItem(supabase, listId, text, nextSortOrder(state.items)));
       if (current.current === listId) setState((prev) => ({ ...prev, items: [...prev.items, created], problem: '' }));
       return true;
     } catch {
@@ -67,14 +90,14 @@ function useItems(listId: string) {
   }
 
   async function toggle(item: ListItem) {
-    const stuck = await crossOptimistically(publish, item.id, item.crossed_at === null, state.items, () =>
-      setCrossed(supabase, item.id, item.crossed_at === null),
+    const stuck = await guarded(() =>
+      crossOptimistically(publish, item.id, item.crossed_at === null, state.items, () => setCrossed(supabase, item.id, item.crossed_at === null)),
     );
     fail(stuck ? '' : 'Could not update that item. It has been put back.');
   }
 
   async function clear() {
-    const stuck = await clearOptimistically(publish, state.items, () => clearCompleted(supabase, listId));
+    const stuck = await guarded(() => clearOptimistically(publish, state.items, () => clearCompleted(supabase, listId)));
     fail(stuck ? '' : 'Could not clear completed items. They have been put back.');
   }
 
@@ -83,17 +106,14 @@ function useItems(listId: string) {
     const ids = movedIds(before.map((item) => item.id), id, offset);
     publish((rows) => byPosition(ids.map((itemId, index) => ({ ...rows.find((row) => row.id === itemId)!, sort_order: index }))));
     try {
-      await reorderItems(supabase, ids);
+      await guarded(() => reorderItems(supabase, ids));
       fail('');
     } catch {
-      // Some of the writes may have landed, so show what the database holds, not the snapshot.
-      try {
-        const held = await loadItems(supabase, listId);
-        if (current.current === listId) setState({ items: held, loaded: true, problem: 'Could not reorder. Showing the list as it is saved.' });
-      } catch {
-        publish(() => before);
-        fail('Could not reorder. Check your connection and reload.');
-      }
+      // Put the old order back now; the read that follows the write replaces it with what the
+      // database holds (some of the writes may have landed) once the connection allows.
+      publish(() => before);
+      // The words hold whether or not that read gets through, so they never claim what is saved.
+      fail('Could not reorder. The order may not be saved. Check your connection.');
     }
   }
 
@@ -182,21 +202,26 @@ function ListItems({ listId, reorderable }: { listId: string; reorderable: boole
 export function PinnedListRail() {
   const [pinned, setPinned] = useState<SharedList | null | undefined>(undefined);
   const [failed, setFailed] = useState(false);
+  const changes = useChangeTick(LIST_TABLES);
 
   useEffect(() => {
     let live = true;
     Promise.all([loadPinnedListId(supabase), loadLists(supabase)])
-      .then(([pinnedId, lists]) => live && setPinned(lists.find((list) => list.id === pinnedId) ?? null))
+      .then(([pinnedId, lists]) => {
+        if (!live) return;
+        setPinned(lists.find((list) => list.id === pinnedId) ?? null);
+        setFailed(false);
+      })
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, []);
+  }, [changes]);
 
   return (
     <aside aria-label="Pinned list" className="flex min-h-0 flex-col gap-4 rounded-xl border border-border p-4">
       {pinned === undefined && !failed && <p className="text-base">Loading</p>}
-      {failed && (
+      {failed && pinned === undefined && (
         <p role="alert" className="text-base">
           Could not load lists. Check your connection.
         </p>
@@ -226,15 +251,20 @@ export function WallListsScreen({ onClose }: { onClose: () => void }) {
     return () => opener?.focus();
   }, []);
 
+  const changes = useChangeTick(LIST_TABLES);
   useEffect(() => {
     let live = true;
     Promise.all([loadPinnedListId(supabase), loadLists(supabase)])
-      .then(([pinnedId, lists]) => live && setOthers(lists.filter((list) => list.id !== pinnedId)))
+      .then(([pinnedId, lists]) => {
+        if (!live) return;
+        setOthers(lists.filter((list) => list.id !== pinnedId));
+        setFailed(false);
+      })
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, []);
+  }, [changes]);
 
   return (
     <div
@@ -258,7 +288,7 @@ export function WallListsScreen({ onClose }: { onClose: () => void }) {
           {open ? 'Back to lists' : 'Close'}
         </button>
       </header>
-      {failed && (
+      {failed && others === null && (
         <p role="alert" className="text-xl">
           Could not load lists. Check your connection.
         </p>
@@ -303,6 +333,7 @@ export function SharedListsPage({ household }: { household: Household }) {
       setProblem('Could not load lists. Check your connection.');
     }
   }, []);
+  useRefetchOn(LIST_TABLES, () => void refresh());
 
   useEffect(() => {
     void refresh();
