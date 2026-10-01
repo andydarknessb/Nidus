@@ -167,7 +167,8 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const go = (path: string) => {
-    window.history.pushState(null, '', path);
+    // Today while already on today's page changes nothing: no extra step for Back.
+    if (path !== window.location.pathname + window.location.search) window.history.pushState(null, '', path);
     setRoute(read());
   };
   return [route, (view, date) => go(wallPath(view, date)), () => go('/')];

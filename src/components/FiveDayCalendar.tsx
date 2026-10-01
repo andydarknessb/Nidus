@@ -91,6 +91,9 @@ export function PagedCalendar({
   const days = pageDays(view, anchor, timezone, now);
   const { previous, next } = paging(view, anchor, window);
   const label = view === 'week' ? 'week' : 'day';
+  // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it.
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => heading.current?.focus(), [view, anchor]);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -107,19 +110,21 @@ export function PagedCalendar({
         <button type="button" className={PAGE_BUTTON} disabled={next === null} onClick={() => next && onNavigate(view, next)}>
           Next {label}
         </button>
-        <h2 className="ml-2 text-2xl font-semibold">{describePage(days)}</h2>
+        <h2 ref={heading} tabIndex={-1} className="ml-2 text-2xl font-semibold outline-none">{describePage(days)}</h2>
         <button type="button" className={`${PAGE_BUTTON} ml-auto`} onClick={() => onNavigate(view === 'week' ? 'day' : 'week', view === 'week' ? today : anchor)}>
           {view === 'week' ? 'Day view' : 'Week view'}
         </button>
       </nav>
-      {(previous === null || next === null) && (
-        <p role="status" className="text-lg">
-          {previous === null
-            ? 'This is as far back as the calendar goes. It keeps one month of past events.'
-            : 'This is as far ahead as the calendar goes. It keeps six months of upcoming events.'}
-        </p>
-      )}
-      <CalendarGrid timezone={timezone} now={now} days={days} />
+      {/* Always mounted, so a screen reader announces the text when it appears. */}
+      <p role="status" className="text-lg empty:hidden">
+        {previous === null
+          ? 'This is as far back as the calendar goes. It keeps one month of past events.'
+          : next === null
+            ? 'This is as far ahead as the calendar goes. It keeps six months of upcoming events.'
+            : ''}
+      </p>
+      {/* Keyed on the page so a turned page never shows the last page's events, and a failed read says so. */}
+      <CalendarGrid key={days[0]!.date} timezone={timezone} now={now} days={days} />
     </div>
   );
 }
@@ -182,7 +187,7 @@ function CalendarGrid({ timezone, now, days }: { timezone: string; now: Date; da
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, index) => startHour + index);
 
   return (
-    <section aria-label="Calendar" className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border">
+    <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border">
       <div style={columnsStyle} className="grid border-b border-border">
         <div />
         {days.map((day) => (
