@@ -19,32 +19,31 @@ import {
   isScheduledOn,
   type Routine,
 } from './lib/routines';
+import { useRefetchOn } from './lib/change-feed';
+import { watchHouseholdDay } from './lib/household-day';
 import { supabase } from './lib/supabase';
+import { createSyncedReader, type SyncedReader } from './lib/synced-reader';
 
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 const quiet = `${action} border border-border`;
 const iconAction = 'inline-flex size-12 shrink-0 items-center justify-center rounded-lg border border-border disabled:opacity-40';
 
-// How often the wall checks whether Household midnight has passed, and re-reads
-// Routines and completions so edits from the phone and ticks from another tablet show up.
-const DAY_CHECK_MS = 15_000;
+// Changes heard from the server normally refresh the rail at once; this slow read is the
+// backstop for a change that was missed while the connection was down.
 const REFRESH_MS = 30_000;
+const ROUTINE_TABLES = ['routines', 'routine_completions', 'profiles'] as const;
 
 // ---- The wall: today's Routines on the home screen's rail ---------------------------
 
 type Today = { date: string; routines: Routine[]; profiles: Profile[]; done: Set<string> };
 
-// The current Household date, re-read on a timer so the wall rolls over at Household midnight.
+// The current Household date, moved on by a timer keyed to Household midnight.
 function useHouseholdDay(timezone: string) {
   const [day, setDay] = useState(() => householdDay(timezone));
   useEffect(() => {
     setDay(householdDay(timezone));
-    const id = setInterval(() => {
-      const next = householdDay(timezone);
-      setDay((prev) => (prev.date === next.date ? prev : next));
-    }, DAY_CHECK_MS);
-    return () => clearInterval(id);
+    return watchHouseholdDay(timezone, setDay);
   }, [timezone]);
   return day;
 }
@@ -56,34 +55,33 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
   const [loaded, setLoaded] = useState<Today | null>(null);
   const [problem, setProblem] = useState('');
   const [failed, setFailed] = useState(false);
-  // Ticks in flight: a refresh landing meanwhile would show the stale answer over the tap.
-  const writing = useRef(0);
-  // Bumped when a tick starts and again when it ends: a read that began before either is stale.
-  const epoch = useRef(0);
+  // Reads and the taps made here take turns: a read never lands over a tap in flight, and one
+  // follows each tap, so a change from another tablet that arrived meanwhile is shown too.
+  const reader = useRef<SyncedReader | null>(null);
 
   useEffect(() => {
-    let live = true;
     const date = day.date;
-    async function read() {
-      if (writing.current > 0) return;
-      const started = epoch.current;
-      try {
+    const next = createSyncedReader(
+      async () => {
         const [profiles, routines, completed] = await Promise.all([loadProfiles(supabase), loadRoutines(supabase), loadCompletions(supabase, date)]);
-        if (live && writing.current === 0 && epoch.current === started) {
-          setLoaded({ date, profiles, routines, done: new Set(completed) });
-          setFailed(false);
-        }
-      } catch {
-        if (live) setFailed(true);
-      }
-    }
-    void read();
-    const id = setInterval(() => void read(), REFRESH_MS);
+        return { date, profiles, routines, done: new Set(completed) };
+      },
+      (today) => {
+        setLoaded(today);
+        setFailed(false);
+      },
+      () => setFailed(true),
+    );
+    reader.current = next;
+    next.refresh();
+    const id = setInterval(() => next.refresh(), REFRESH_MS);
     return () => {
-      live = false;
+      next.dispose();
       clearInterval(id);
+      reader.current = null;
     };
   }, [day.date]);
+  useRefetchOn(ROUTINE_TABLES, () => reader.current?.refresh());
 
   // Loaded for another day (midnight just passed): everything reads unchecked until the new day arrives.
   const done = loaded && loaded.date === day.date ? loaded.done : new Set<string>();
@@ -94,24 +92,20 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
     const checking = !done.has(routine.id);
     const publish = (update: (ids: Set<string>) => Set<string>) =>
       setLoaded((prev) => (prev && prev.date === date ? { ...prev, done: update(prev.done) } : prev));
-    writing.current += 1;
-    epoch.current += 1;
-    try {
-      const stuck = await tickOptimistically(publish, routine.id, checking, () =>
+    const tap = () =>
+      tickOptimistically(publish, routine.id, checking, () =>
         checking ? completeRoutine(supabase, routine.id, date) : uncompleteRoutine(supabase, routine.id, date),
       );
-      setProblem(stuck ? '' : 'Could not save that tick. It has been put back.');
-    } finally {
-      writing.current -= 1;
-      epoch.current += 1;
-    }
+    const stuck = await (reader.current ? reader.current.write(tap) : tap());
+    setProblem(stuck ? '' : 'Could not save that tick. It has been put back.');
   }
 
   return (
     <aside aria-label="Today's Routines" className="flex min-h-0 flex-col gap-4 overflow-y-auto rounded-xl border border-border p-4">
       <h2 className="text-2xl font-semibold">Routines</h2>
       {loaded === null && !failed && <p className="text-base">Loading</p>}
-      {failed && (
+      {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
+      {failed && loaded === null && (
         <p role="alert" className="text-base">
           Could not load Routines. Check your connection.
         </p>
@@ -245,6 +239,7 @@ export function RoutinesPage({ household }: { household: Household }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  useRefetchOn(ROUTINE_TABLES, () => void refresh());
 
   // Runs one change, then reloads so the screen shows what the database holds.
   async function change(work: () => Promise<void>, failure: string): Promise<boolean> {

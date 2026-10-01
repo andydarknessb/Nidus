@@ -3,7 +3,10 @@ import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
 import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
+import { ChangeFeedProvider } from './components/ChangeFeedProvider';
+import { ConnectionBadge } from './components/ConnectionBadge';
 import { NativeEventSheet } from './components/NativeEventSheet';
+import { useChangeTick } from './lib/change-feed';
 import { parseWallRoute, wallPath, weekStart, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
 import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
@@ -23,6 +26,10 @@ const HOUSEHOLD_REFRESH_MS = 30_000;
 const HOUSEHOLD_RETRY_MS = 5_000;
 // How often the wall re-reads how fresh the mirror is, and re-words the badge as time passes.
 const SYNC_FRESHNESS_MS = 60_000;
+
+// What each read on the wall listens to: a change to any of these tables reads it again.
+const HOUSEHOLD_TABLES = ['households'] as const;
+const SYNC_TABLES = ['calendar_accounts', 'mirrored_calendars'] as const;
 
 type WallState = { kind: 'connecting' } | { kind: 'unpaired'; pairing: PairingCode } | { kind: 'paired' };
 
@@ -86,7 +93,13 @@ export function WallPage() {
     };
   }, []);
 
-  if (state.kind === 'paired') return <HomeShell />;
+  if (state.kind === 'paired') {
+    return (
+      <ChangeFeedProvider>
+        <HomeShell />
+      </ChangeFeedProvider>
+    );
+  }
   if (state.kind === 'unpaired') return <PairingScreen pairing={state.pairing} />;
   return (
     <main className="flex min-h-svh items-center justify-center p-8">
@@ -128,6 +141,7 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
 function SyncBadge() {
   const [accounts, setAccounts] = useState<SyncFreshness[]>([]);
   const [now, setNow] = useState(() => Date.now());
+  const changes = useChangeTick(SYNC_TABLES);
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -147,7 +161,7 @@ function SyncBadge() {
       live = false;
       clearTimeout(timer);
     };
-  }, []);
+  }, [changes]);
   const badge = staleSyncBadge(accounts, now);
   if (!badge) return null;
   return (
@@ -183,6 +197,7 @@ function HomeShell() {
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(0);
+  const householdChanges = useChangeTick(HOUSEHOLD_TABLES);
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -205,7 +220,7 @@ function HomeShell() {
       live = false;
       clearTimeout(timer);
     };
-  }, []);
+  }, [householdChanges]);
   const name = view.household?.name ?? '';
   const timezone = view.household?.timezone ?? null;
 
@@ -216,6 +231,7 @@ function HomeShell() {
       <header className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-semibold">{name}</h1>
         <div className="flex items-center gap-4">
+          <ConnectionBadge />
           <SyncBadge />
           {route.view === 'home' && today && (
             <>

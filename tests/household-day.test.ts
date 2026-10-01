@@ -62,18 +62,15 @@ describe('watchHouseholdDay', () => {
     expect(days.map((day) => day.date)).toEqual(['2026-10-01']);
   });
 
-  it('follows a changed Household Timezone from the new zone\'s midnight', () => {
-    vi.setSystemTime(new Date('2026-10-01T04:59:50Z')); // 23:59:50 on Sep 30 in Chicago
-    const days: string[] = [];
-    const stop = watchHouseholdDay('Asia/Tokyo', (day) => days.push(day.date)); // already Oct 1 in Tokyo
-    vi.advanceTimersByTime(30_000);
-    expect(days).toEqual([]);
-    stop();
-
+  it('rolls over at the Household Timezone\'s midnight, whatever the machine\'s zone says', () => {
+    vi.setSystemTime(new Date('2026-09-30T14:59:50Z')); // 23:59:50 in Tokyo, 09:59:50 in Chicago
+    const tokyo: string[] = [];
     const chicago: string[] = [];
+    watchHouseholdDay('Asia/Tokyo', (day) => tokyo.push(day.date));
     watchHouseholdDay(CHICAGO, (day) => chicago.push(day.date));
-    vi.advanceTimersByTime(11_000);
-    expect(chicago).toEqual(['2026-10-01']);
+    vi.advanceTimersByTime(30_000);
+    expect(tokyo).toEqual(['2026-10-01']);
+    expect(chicago).toEqual([]);
   });
 
   it('stops when told to', () => {

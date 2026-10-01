@@ -12,6 +12,9 @@ import {
 } from '@/lib/calendar-accounts';
 import { PROFILE_PALETTE, loadProfiles, type Profile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
+import { useRefetchOn } from '@/lib/change-feed';
+
+const CALENDAR_TABLES = ['calendar_accounts', 'mirrored_calendars', 'profiles'] as const;
 
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
@@ -113,6 +116,7 @@ export function CalendarAccountsSection() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  useRefetchOn(CALENDAR_TABLES, () => void refresh());
 
   useEffect(() => {
     const id = setInterval(() => {
