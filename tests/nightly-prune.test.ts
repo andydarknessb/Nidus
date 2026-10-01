@@ -38,15 +38,21 @@ describe('nightly prune', () => {
     await arrangeEvents(calendarId, [
       { google_event_id: 'two-months-ago', title: 'Old', starts_at: ago(61 * DAY + HOUR), ends_at: ago(61 * DAY) },
       { google_event_id: 'yesterday', title: 'Recent', starts_at: ago(DAY + HOUR), ends_at: ago(DAY) },
+      // Near the one-month cutoff, and a long event that began before it but is still running.
+      { google_event_id: 'twenty-five-days-ago', title: 'Edge', starts_at: ago(25 * DAY + HOUR), ends_at: ago(25 * DAY) },
+      { google_event_id: 'still-running', title: 'Long', starts_at: ago(40 * DAY), ends_at: new Date(Date.now() + DAY).toISOString() },
     ]);
 
     const oldTablet = await asTablet();
     const liveTablet = await asTablet();
-    tablets.push(oldTablet, liveTablet);
+    const recentTablet = await asTablet();
+    tablets.push(oldTablet, liveTablet, recentTablet);
     const admin = asServiceRole();
     const { error: arrangeError } = await admin.from('pairing_requests').insert([
       { code: 'EXPRD2', device_auth_user_id: oldTablet.authUserId, expires_at: ago(2 * HOUR) },
       { code: 'KEEP22', device_auth_user_id: liveTablet.authUserId, expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() },
+      // Expired, but inside the one-hour margin a claim in flight relies on.
+      { code: 'WARM22', device_auth_user_id: recentTablet.authUserId, expires_at: ago(30 * 60 * 1000) },
     ]);
     expect(arrangeError).toBeNull();
 
@@ -54,13 +60,13 @@ describe('nightly prune', () => {
     expect(error).toBeNull();
 
     const { data: events } = await admin.from('synced_events').select('google_event_id').eq('mirrored_calendar_id', calendarId);
-    expect(events?.map((e) => e.google_event_id)).toEqual(['yesterday']);
+    expect(events?.map((e) => e.google_event_id).sort()).toEqual(['still-running', 'twenty-five-days-ago', 'yesterday']);
 
     const { data: codes } = await admin
       .from('pairing_requests')
       .select('code')
-      .in('code', ['EXPRD2', 'KEEP22']);
-    expect(codes?.map((c) => c.code)).toEqual(['KEEP22']);
+      .in('code', ['EXPRD2', 'KEEP22', 'WARM22']);
+    expect(codes?.map((c) => c.code).sort()).toEqual(['KEEP22', 'WARM22']);
   });
 
   it('refuses a Household Account, a Device and a visitor', async () => {
