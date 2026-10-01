@@ -31,12 +31,17 @@ const SYNC_FRESHNESS_MS = 60_000;
 const HOUSEHOLD_TABLES = ['households'] as const;
 const SYNC_TABLES = ['calendar_accounts', 'mirrored_calendars'] as const;
 
-type WallState = { kind: 'connecting' } | { kind: 'unpaired'; pairing: PairingCode } | { kind: 'paired' };
+// owner: a Household Account is looking at the Wall (it may open Settings); a Device never is.
+type WallState = { kind: 'connecting' } | { kind: 'unpaired'; pairing: PairingCode } | { kind: 'paired'; owner: boolean };
 
 // One anonymous sign-in at a time, so a remount (StrictMode) never mints two sessions.
 let pendingSignIn: ReturnType<typeof supabase.auth.signInAnonymously> | undefined;
 
+// Set once the owner leaves for /settings: the poll loop must not mint a new anonymous session while the old one is signed out.
+let leaving = false;
+
 async function ensureSession(): Promise<Session> {
+  if (leaving) throw new Error('leaving the Wall');
   const { data } = await supabase.auth.getSession();
   if (data.session) return data.session;
   pendingSignIn ??= supabase.auth.signInAnonymously().finally(() => {
@@ -47,8 +52,9 @@ async function ensureSession(): Promise<Session> {
   return signedIn.session;
 }
 
-// The wall: the tablet's only screen. Unpaired, it shows a Pairing Code; paired,
-// the home screen shell. It never offers a way into administration.
+// The Wall: a Device's only screen, and a Household Account's view of its calendar. An unpaired
+// Device shows a Pairing Code; otherwise the home screen shell. Only a Household Account is
+// offered a way into administration.
 export function WallPage() {
   const [state, setState] = useState<WallState>({ kind: 'connecting' });
 
@@ -60,13 +66,13 @@ export function WallPage() {
     async function step(): Promise<number> {
       const session = await ensureSession();
       if (!isDeviceSession(session)) {
-        // A Household Account landed on the wall (the Google sign-in redirect): send it to settings.
-        window.location.replace('/settings');
+        // A Household Account sees the Wall too, but is no Device: it writes no heartbeat.
+        if (live) setState((prev) => (prev.kind === 'paired' && prev.owner ? prev : { kind: 'paired', owner: true }));
         return HEARTBEAT_MS;
       }
       if (await touchDevice()) {
         pairing = undefined;
-        if (live) setState((prev) => (prev.kind === 'paired' ? prev : { kind: 'paired' }));
+        if (live) setState((prev) => (prev.kind === 'paired' && !prev.owner ? prev : { kind: 'paired', owner: false }));
         return HEARTBEAT_MS;
       }
       // Never paired, or revoked: show a code that still has time on it.
@@ -96,7 +102,7 @@ export function WallPage() {
   if (state.kind === 'paired') {
     return (
       <ChangeFeedProvider>
-        <HomeShell />
+        <HomeShell owner={state.owner} />
       </ChangeFeedProvider>
     );
   }
@@ -130,6 +136,18 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
       <p role="timer" className="text-2xl">
         {remaining > 0 ? `Code expires in ${formatCountdown(remaining)}` : 'Getting a new code'}
       </p>
+      {/* This tablet is not paired yet, so dropping its anonymous session loses nothing, and /settings then offers the Google sign-in instead of the Device dead end. */}
+      <a
+        href="/settings"
+        className="inline-flex min-h-12 items-center text-lg underline"
+        onClick={(event) => {
+          event.preventDefault();
+          leaving = true;
+          void supabase.auth.signOut().finally(() => window.location.assign('/settings'));
+        }}
+      >
+        Own this Household? Sign in
+      </a>
     </main>
   );
 }
@@ -189,7 +207,7 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
   return [route, (view, date) => go(wallPath(view, date)), () => go('/')];
 }
 
-function HomeShell() {
+function HomeShell({ owner }: { owner: boolean }) {
   const [route, openView, openHome] = useWallRoute();
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
@@ -251,6 +269,11 @@ function HomeShell() {
           <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setListsOpen(true)}>
             Lists
           </button>
+          {owner && (
+            <a href="/settings" className="inline-flex min-h-12 items-center rounded-lg border border-border px-6 text-lg font-medium">
+              Settings
+            </a>
+          )}
         </div>
       </header>
       {route.view !== 'home' && timezone ? (
