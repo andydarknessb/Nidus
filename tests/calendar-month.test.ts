@@ -5,6 +5,7 @@ import {
   dayOccurrences,
   describeCell,
   describeMonth,
+  formatCompactClock,
   linesPerCell,
   monthWeeks,
   pagingWindow,
@@ -452,6 +453,26 @@ describe('days beyond the window', () => {
     expect(days).toHaveLength(16);
     expect(days[0]).toBe('2026-08-30');
     expect(days[days.length - 1]).toBe('2026-09-14');
+  });
+});
+
+describe('the time on a month line', () => {
+  const at = (iso: string, timezone: string) => formatCompactClock(Date.parse(iso), timezone);
+
+  it('drops ":00" on the hour and keeps the minutes otherwise', () => {
+    expect(at('2026-09-29T15:00:00Z', CHICAGO)).toBe('10 AM');
+    expect(at('2026-09-29T14:30:00Z', CHICAGO)).toBe('9:30 AM');
+    expect(at('2026-09-29T14:05:00Z', CHICAGO)).toBe('9:05 AM');
+    expect(at('2026-09-29T17:00:00Z', CHICAGO)).toBe('12 PM');
+    expect(at('2026-09-30T05:00:00Z', CHICAGO)).toBe('12 AM');
+    expect(at('2026-09-30T04:59:00Z', CHICAGO)).toBe('11:59 PM');
+  });
+
+  it('reads the time in the Household Timezone, minutes included', () => {
+    // 15:30Z is half past ten in Chicago but on the hour in Kolkata (UTC+5:30), and 15:00Z is midnight in Tokyo.
+    expect(at('2026-09-29T15:30:00Z', CHICAGO)).toBe('10:30 AM');
+    expect(at('2026-09-29T15:30:00Z', KOLKATA)).toBe('9 PM');
+    expect(at('2026-09-29T15:00:00Z', TOKYO)).toBe('12 AM');
   });
 });
 

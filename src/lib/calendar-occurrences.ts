@@ -490,6 +490,12 @@ export function formatClock(ms: number, timezone: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
 }
 
+// "10 AM" on the hour and "9:30 AM" otherwise: the time without its ":00", for a month line, which has
+// room for little else than a few letters of the title after it.
+export function formatCompactClock(ms: number, timezone: string): string {
+  return formatClock(ms, timezone).replace(':00', '');
+}
+
 // "Thu, Oct 1": the date as the details sheet and the header show it.
 export function formatDate(ms: number, timezone: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(ms));

@@ -5,7 +5,7 @@ import {
   cellLines,
   dayOccurrences,
   describeCell,
-  formatClock,
+  formatCompactClock,
   linesPerCell,
   monthWeeks,
   type Occurrence,
@@ -203,12 +203,12 @@ function DayCell({
   );
 }
 
-// One occurrence on a day: its colour edge, the pin of a Native Event, the start time of a timed one and its
-// title, cut short with an ellipsis. A timed event that began on an earlier day only continues, so it shows no
-// time, as in the week view.
+// One occurrence on a day: its colour edge, the pin of a Native Event, the start time of a timed one (with no
+// ":00" on the hour, to leave room for the title) and the title, cut short with an ellipsis. A timed event
+// that began on an earlier day only continues, so it shows no time, as in the week view.
 function EventLine({ occurrence, day, timezone }: { occurrence: Occurrence; day: WallDay; timezone: string }) {
   const start = Date.parse(occurrence.starts_at);
-  const time = !occurrence.is_all_day && start >= day.startMs ? formatClock(start, timezone) : null;
+  const time = !occurrence.is_all_day && start >= day.startMs ? formatCompactClock(start, timezone) : null;
   return (
     <span className="mx-1 mb-0.5 flex h-5.5 shrink-0 items-center gap-1 rounded-sm border-l-4 px-1 text-base leading-5 text-foreground" style={tint(occurrence)}>
       {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="size-4 shrink-0" />}
