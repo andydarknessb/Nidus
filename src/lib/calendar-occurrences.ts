@@ -12,7 +12,9 @@ export { dayStartMs };
 export type Occurrence = {
   source: 'synced' | 'native';
   id: string;
-  calendar_id: string;
+  // The Mirrored Calendar a Synced Event came from; null for a Native Event, which has none.
+  calendar_id: string | null;
+  // A Native Event's is "Nidus".
   calendar_name: string;
   title: string;
   description: string | null;
@@ -22,12 +24,19 @@ export type Occurrence = {
   starts_at: string;
   ends_at: string;
   is_all_day: boolean;
+  // The first of profile_ids, which is all a Synced Event has; null for the whole Household.
   profile_id: string | null;
   // The calendar's colour, else its Profile's; null for a whole-Household calendar with neither.
+  // For a Native Event, its first Profile's colour.
   color: string | null;
+  // Every Profile the occurrence is attributed to, in the Profiles' own order, and their colours;
+  // empty for the whole Household.
+  profile_ids: string[];
+  colors: string[];
 };
 
-const columns = 'source, id, calendar_id, calendar_name, title, description, location, starts_at, ends_at, is_all_day, profile_id, color';
+const columns =
+  'source, id, calendar_id, calendar_name, title, description, location, starts_at, ends_at, is_all_day, profile_id, color, profile_ids, colors';
 
 // Household Account or Device. Everything that overlaps [from, to), in start order.
 export async function loadOccurrences(client: SupabaseClient, from: Date, to: Date): Promise<Occurrence[]> {
