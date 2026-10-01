@@ -5,6 +5,7 @@ import {
   clampToWindow,
   describePage,
   holdsToday,
+  mealsPath,
   navigationRailDate,
   pageDays,
   pageStart,
@@ -154,14 +155,45 @@ describe('wall routes', () => {
     expect(parseWallRoute('/day', '?date=2026-10-02')).toEqual({ view: 'day', date: '2026-10-02' });
   });
 
+  it('reads the Meals screen and the week it is anchored on from the address', () => {
+    expect(parseWallRoute('/meals', '?date=2026-10-04')).toEqual({ view: 'meals', date: '2026-10-04' });
+    expect(parseWallRoute('/meals', '?date=2026-10-07&other=1')).toEqual({ view: 'meals', date: '2026-10-07' });
+  });
+
   it('falls back to today for a missing or bad date', () => {
     expect(parseWallRoute('/week', '')).toEqual({ view: 'week', date: null });
     expect(parseWallRoute('/day', '?date=tomorrow')).toEqual({ view: 'day', date: null });
     expect(parseWallRoute('/day', '?date=2026-02-31')).toEqual({ view: 'day', date: null });
   });
 
+  it('reads Meals with no date, or a bad one, as this week', () => {
+    expect(parseWallRoute('/meals', '')).toEqual({ view: 'meals', date: null });
+    expect(parseWallRoute('/meals', '?date=')).toEqual({ view: 'meals', date: null });
+    expect(parseWallRoute('/meals', '?date=next-week')).toEqual({ view: 'meals', date: null });
+    expect(parseWallRoute('/meals', '?date=2026-02-31')).toEqual({ view: 'meals', date: null });
+    expect(parseWallRoute('/meals', '?date=2026-1-4')).toEqual({ view: 'meals', date: null });
+  });
+
+  it('keeps every other address on the home screen', () => {
+    expect(parseWallRoute('/meal', '?date=2026-10-04')).toEqual({ view: 'home' });
+    expect(parseWallRoute('/meals/', '')).toEqual({ view: 'home' });
+    expect(parseWallRoute('/settings', '')).toEqual({ view: 'home' });
+  });
+
   it('writes the address back', () => {
     expect(wallPath('week', '2026-09-27')).toBe('/week?date=2026-09-27');
+  });
+
+  it('writes the Meals address: none for this week, the anchor otherwise', () => {
+    expect(mealsPath(null)).toBe('/meals');
+    expect(mealsPath('2026-10-04')).toBe('/meals?date=2026-10-04');
+  });
+
+  it('reads back the Meals address it writes', () => {
+    for (const date of [null, '2026-10-04', '2027-03-28']) {
+      const [pathname = '', query] = mealsPath(date).split('?');
+      expect(parseWallRoute(pathname, query ? `?${query}` : '')).toEqual({ view: 'meals', date });
+    }
   });
 });
 
@@ -242,9 +274,10 @@ describe('holdsToday', () => {
   });
 
   it('is true for any screen that is not a calendar view, even one with a date in its address', () => {
-    // Meals will be a screen like this: its address carries a date, but it is not a page of the calendar.
-    const meals = { view: 'meals', date: '2026-10-11' } as unknown as WallRoute;
+    // Meals is a screen like this: its address carries a date, but it is not a page of the calendar.
+    const meals: WallRoute = { view: 'meals', date: '2026-10-11' };
     expect(holdsToday(meals, TODAY)).toBe(true);
+    expect(holdsToday({ view: 'meals', date: null }, TODAY)).toBe(true);
   });
 });
 
@@ -277,8 +310,9 @@ describe('wallDate', () => {
   });
 
   it('is today on a screen that is not a calendar view, even one with a date in its address', () => {
-    const meals = { view: 'meals', date: '2026-10-11' } as unknown as WallRoute;
+    const meals: WallRoute = { view: 'meals', date: '2026-10-11' };
     expect(wallDate(meals, TODAY)).toBe('2026-10-01');
+    expect(wallDate({ view: 'meals', date: null }, TODAY)).toBe('2026-10-01');
   });
 });
 
@@ -335,9 +369,13 @@ describe('navigationRailDate', () => {
   });
 
   it('leaving a screen that is not a calendar view opens today\'s page, even with a date in its address', () => {
-    const meals = { view: 'meals', date: '2026-10-11' } as unknown as WallRoute;
+    // Meals paged to another week (Oct 11 to 17) still opens Day and Week on today's page.
+    const meals: WallRoute = { view: 'meals', date: '2026-10-11' };
     expect(navigationRailDate('day', meals, TODAY)).toBe('2026-10-01');
     expect(navigationRailDate('week', meals, TODAY)).toBe('2026-09-27');
+    // And Meals on this week, which has no date in its address, does the same.
+    expect(navigationRailDate('day', { view: 'meals', date: null }, TODAY)).toBe('2026-10-01');
+    expect(navigationRailDate('week', { view: 'meals', date: null }, TODAY)).toBe('2026-09-27');
   });
 
   it('week to week and day to day are the same address, so a tap adds no step for Back', () => {

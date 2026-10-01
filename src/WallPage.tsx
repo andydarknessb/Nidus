@@ -1,4 +1,4 @@
-import { Calendar1, CalendarRange, House, ListChecks, Plus, type LucideIcon } from 'lucide-react';
+import { Calendar1, CalendarRange, House, ListChecks, Plus, Utensils, type LucideIcon } from 'lucide-react';
 import { useEffect, useState, type ComponentProps } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
@@ -8,12 +8,13 @@ import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { ConnectionBadge } from './components/ConnectionBadge';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { useChangeTick } from './lib/change-feed';
-import { formatClock, formatDate, navigationRailDate, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
+import { formatClock, formatDate, mealsPath, navigationRailDate, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
 import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { supabase } from './lib/supabase';
 import { useNow } from './lib/wall-hooks';
+import { MealsScreen, TodaysMealsCard } from './MealsPage';
 import { RoutinesRail } from './RoutinesPage';
 import { PinnedListRail, WallListsScreen } from './SharedListsPage';
 
@@ -173,7 +174,7 @@ function SyncBadge() {
 
 // Which screen the address names. The wall pages with pushState rather than reloading, so a tap
 // never drops the session or the Routines rail, and Back returns to the previous page.
-function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void] {
+function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void, (date: string | null) => void] {
   const read = () => parseWallRoute(window.location.pathname, window.location.search);
   const [route, setRoute] = useState<WallRoute>(read);
   useEffect(() => {
@@ -186,7 +187,7 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
     if (path !== window.location.pathname + window.location.search) window.history.pushState(null, '', path);
     setRoute(read());
   };
-  return [route, (view, date) => go(wallPath(view, date)), () => go('/')];
+  return [route, (view, date) => go(wallPath(view, date)), () => go('/'), (date) => go(mealsPath(date))];
 }
 
 // One entry of the navigation rail: an icon over a word, at least 64 px square. The current one is
@@ -207,18 +208,20 @@ function NavigationRailEntry({ icon: Icon, label, current = false, className = '
   );
 }
 
-// The navigation rail down the left side: Home, Day, Week and Lists, and at its foot Add event. Day and
-// Week keep the date the wall is on (navigationRailDate), read at the tap so one just after Household
-// midnight is right, and wait for the Household Timezone. Lists opens the Lists screen over this one
-// rather than going anywhere. Add event is an action, not a section: it is never the current entry,
-// opens the Native Event sheet, and is drawn as the primary action. Its column is its whole width,
-// border and padding included, and must stay at most 90 px: the five day columns at 1280 px need
+// The navigation rail down the left side: Home, Day, Week, Meals and Lists, and at its foot Add event.
+// Day and Week keep the date the wall is on (navigationRailDate), read at the tap so one just after
+// Household midnight is right, and wait for the Household Timezone. Meals always opens this week, with
+// no date in its address, so it needs no Household Timezone to open. Lists opens the Lists screen over
+// this one rather than going anywhere. Add event is an action, not a section: it is never the current
+// entry, opens the Native Event sheet, and is drawn as the primary action. Its column is its whole
+// width, border and padding included, and must stay at most 90 px: the five day columns at 1280 px need
 // 140 px each. The longest labels still to come (Routines, Settings) fit in it.
 function NavigationRail({
   route,
   timezone,
   onOpen,
   onHome,
+  onMeals,
   onLists,
   onAdd,
 }: {
@@ -226,6 +229,7 @@ function NavigationRail({
   timezone: string | null;
   onOpen: (view: CalendarView, date: string) => void;
   onHome: () => void;
+  onMeals: () => void;
   onLists: () => void;
   onAdd: () => void;
 }) {
@@ -237,6 +241,7 @@ function NavigationRail({
       <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
       <NavigationRailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
       <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
+      <NavigationRailEntry icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={onMeals} />
       <NavigationRailEntry icon={ListChecks} label="Lists" aria-haspopup="dialog" onClick={onLists} />
       <NavigationRailEntry icon={Plus} label="Add event" aria-haspopup="dialog" disabled={!timezone} onClick={onAdd} className="mt-auto bg-primary text-primary-foreground" />
     </nav>
@@ -259,7 +264,7 @@ function WallClock({ timezone }: { timezone: string }) {
 // screen is the five-day calendar on the left and, on its right rail, today's Routines above the
 // pinned Shared List; the other lists open from the navigation rail.
 function HomeShell() {
-  const [route, openView, openHome] = useWallRoute();
+  const [route, openView, openHome, openMeals] = useWallRoute();
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   const [listsOpen, setListsOpen] = useState(false);
@@ -297,7 +302,15 @@ function HomeShell() {
 
   return (
     <main className="grid h-svh grid-cols-[5.5rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
-      <NavigationRail route={route} timezone={timezone} onOpen={openView} onHome={openHome} onLists={() => setListsOpen(true)} onAdd={() => setAdding(true)} />
+      <NavigationRail
+        route={route}
+        timezone={timezone}
+        onOpen={openView}
+        onHome={openHome}
+        onMeals={() => openMeals(null)}
+        onLists={() => setListsOpen(true)}
+        onAdd={() => setAdding(true)}
+      />
       <header className="flex min-h-12 items-center gap-6">
         <h1 className="min-w-0 truncate text-3xl font-semibold">{name}</h1>
         {timezone && <WallClock timezone={timezone} />}
@@ -306,7 +319,10 @@ function HomeShell() {
           <SyncBadge />
         </div>
       </header>
-      {route.view !== 'home' && timezone ? (
+      {route.view === 'meals' ? (
+        // Meals is a screen of its own, not a calendar view: it takes the same slot, and before the Household is read it is empty.
+        timezone ? <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} /> : <section aria-label="Meals" className="rounded-xl border border-border" />
+      ) : route.view !== 'home' && timezone ? (
         <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} />
       ) : route.view !== 'home' ? (
         // A calendar page before the Household is read: the empty calendar alone, not the home layout
@@ -315,19 +331,26 @@ function HomeShell() {
       ) : (
       <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
         {timezone ? <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
-        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
-          {timezone ? (
-            <RoutinesRail timezone={timezone} />
-          ) : (
-            <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4">
-              {view.failed && (
-                <p role="alert" className="text-base">
-                  Could not load Routines. Check your connection.
-                </p>
-              )}
-            </aside>
-          )}
-          <PinnedListRail />
+        <div className="flex min-h-0 flex-col gap-4">
+          {/* Today's meals take the height they need, and nothing at all when none is planned, so the Routines
+              rail and the pinned list then share the right rail exactly as before. The two keep 13 rem each
+              (the pinned list's controls and an item need that): past it the card shrinks and scrolls, so
+              the wall never does. */}
+          {timezone && <TodaysMealsCard timezone={timezone} />}
+          <div className="grid min-h-[27rem] flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
+            {timezone ? (
+              <RoutinesRail timezone={timezone} />
+            ) : (
+              <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4">
+                {view.failed && (
+                  <p role="alert" className="text-base">
+                    Could not load Routines. Check your connection.
+                  </p>
+                )}
+              </aside>
+            )}
+            <PinnedListRail />
+          </div>
         </div>
       </div>
       )}

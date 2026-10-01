@@ -1,12 +1,12 @@
 import { Plus } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { clampToWindow, dayStartMs, describePage, pageDays, pageStart, paging, pagingWindow, type WallDay } from './lib/calendar-occurrences';
+import { dayStartMs, describePage, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
 import { useChangeTick } from './lib/change-feed';
 import { dialogKeys } from './lib/dialog';
-import { watchHouseholdDay } from './lib/household-day';
 import { loadMeals, mealGrid, setMeal, type Meal, type MealSlot } from './lib/meals';
-import { householdDay, WEEKDAYS } from './lib/routines';
+import { WEEKDAYS } from './lib/routines';
 import { supabase } from './lib/supabase';
+import { useHouseholdDay } from './lib/wall-hooks';
 
 // Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the home screen's
 // card of today's. Written by a Household Account or a Device, whichever session `supabase` holds.
@@ -22,16 +22,6 @@ const PAGE_BUTTON = 'min-h-12 rounded-lg border border-border px-6 text-lg font-
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-lg text-foreground';
 const action = 'min-h-12 rounded-lg px-6 text-lg font-medium';
 const quiet = `${action} border border-border disabled:opacity-40`;
-
-// Today's Household date, moved on at Household midnight with no refresh.
-function useToday(timezone: string): string {
-  const [today, setToday] = useState(() => householdDay(timezone).date);
-  useEffect(() => {
-    setToday(householdDay(timezone).date);
-    return watchHouseholdDay(timezone, (day) => setToday(day.date));
-  }, [timezone]);
-  return today;
-}
 
 // The Meals from `from` to `to` (Household dates), read again when a Meal changes anywhere in the
 // Household, when `saves` goes up (a save made here) and every minute, or after five seconds when
@@ -72,16 +62,16 @@ function dayLabel(day: WallDay): string {
 
 // ---- The Meals screen: a week by slot ------------------------------------------------
 
-// The week the screen is on: `date` is the page's anchor (null for today), pulled into the window
-// the calendar pages within and snapped to its Sunday, as the week view does.
-export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; date: string | null; onNavigate: (date: string) => void }) {
-  const today = useToday(timezone);
-  // The page is laid out from the start of today, so its window, its days and the mark on today agree.
+// The week the screen is on: `date` is the page's anchor (null for this week, which the screen then
+// follows as the weeks turn), pulled into the window the calendar pages within and snapped to its
+// Sunday, as the week view does. `onNavigate` opens another week by its Sunday, or this week by null.
+export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; date: string | null; onNavigate: (date: string | null) => void }) {
+  const today = useHouseholdDay(timezone).date;
+  // The page is laid out from the start of today, so its days and the mark on today agree.
   const now = new Date(dayStartMs(today, timezone));
-  const window = pagingWindow(timezone, now);
-  const anchor = pageStart('week', clampToWindow(date ?? today, window));
+  const anchor = pageStart('week', shownDate(date, today));
   const days = pageDays('week', anchor, timezone, now);
-  const { previous, next } = paging('week', anchor, window);
+  const { previous, next } = paging('week', anchor, pagingWindowAround(today));
   // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), [anchor]);
@@ -92,7 +82,7 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
         <button type="button" className={PAGE_BUTTON} disabled={previous === null} onClick={() => previous && onNavigate(previous)}>
           Previous week
         </button>
-        <button type="button" className={PAGE_BUTTON} onClick={() => onNavigate(pageStart('week', today))}>
+        <button type="button" className={PAGE_BUTTON} onClick={() => onNavigate(null)}>
           Today
         </button>
         <button type="button" className={PAGE_BUTTON} disabled={next === null} onClick={() => next && onNavigate(next)}>
@@ -310,7 +300,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
 // read, so a Household that plans no meals never sees an empty card. It moves on to the new day
 // at Household midnight and reads that day's Meals, with no reload.
 export function TodaysMealsCard({ timezone }: { timezone: string }) {
-  const today = useToday(timezone);
+  const today = useHouseholdDay(timezone).date;
   // Keyed on the day, so yesterday's Meals are never shown as today's.
   return <TodaysMeals key={today} date={today} />;
 }
@@ -321,7 +311,8 @@ function TodaysMeals({ date }: { date: string }) {
   if (planned.length === 0) return null;
 
   return (
-    <aside aria-label="Today's meals" className="flex flex-col gap-2 rounded-xl border border-border p-4">
+    // Free to shrink and scroll: the right rail gives the Routines rail and the pinned list their room first.
+    <aside aria-label="Today's meals" className="flex min-h-0 flex-col gap-2 overflow-y-auto rounded-xl border border-border p-4">
       <h2 className="text-2xl font-semibold">Today&apos;s meals</h2>
       <ul className="flex flex-col gap-1 text-lg">
         {planned.map(({ slot, label, title }) => (
