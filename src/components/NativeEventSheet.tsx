@@ -53,6 +53,12 @@ export function NativeEventSheet({
     return () => opener?.focus();
   }, []);
 
+  // A button that had focus may go (Keep it) or be disabled (saving): focus then falls to the page
+  // behind, and Escape and Tab would no longer reach the sheet. Put it back on the sheet.
+  useEffect(() => {
+    if (!dialog.current?.contains(document.activeElement)) dialog.current?.focus();
+  }, [confirming, busy]);
+
   useEffect(() => {
     let live = true;
     loadProfiles(supabase)

@@ -294,6 +294,19 @@ describe('the Native Event form', () => {
     expect(input).toMatchObject({ starts_at: '2026-11-02T20:00:00.000Z' });
   });
 
+  it('is right on the day of a daylight saving change itself', () => {
+    const at = (date: string, time: string, zone = CHICAGO) => (eventFormToInput({ ...form, date, startTime: time, endTime: '23:00' }, zone) as NativeEventInput).starts_at;
+    // Spring forward (Chicago, 2027-03-14): 02:30 does not exist, and moves on to 03:30 CDT, never back.
+    expect(at('2027-03-14', '01:30')).toBe('2027-03-14T07:30:00.000Z');
+    expect(at('2027-03-14', '02:30')).toBe('2027-03-14T08:30:00.000Z');
+    expect(at('2027-03-14', '03:30')).toBe('2027-03-14T08:30:00.000Z');
+    // The same in a zone east of UTC (Berlin, 2027-03-28).
+    expect(at('2027-03-28', '02:30', 'Europe/Berlin')).toBe('2027-03-28T01:30:00.000Z');
+    // Fall back (Chicago, 2026-11-01): 01:30 happens twice, and the first is meant.
+    expect(at('2026-11-01', '01:30')).toBe('2026-11-01T06:30:00.000Z');
+    expect(at('2026-11-01', '02:30')).toBe('2026-11-01T08:30:00.000Z');
+  });
+
   it('makes an all-day event the Household day, ending at the next midnight', () => {
     expect(eventFormToInput({ ...form, allDay: true }, CHICAGO)).toMatchObject({
       starts_at: '2026-10-08T05:00:00.000Z',
