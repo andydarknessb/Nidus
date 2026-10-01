@@ -12,15 +12,16 @@ import { supabase } from './lib/supabase';
 // card of today's. Written by a Household Account or a Device, whichever session `supabase` holds.
 
 // A change heard from the server reads at once; this slow read is the backstop for one that was
-// missed while the connection was down.
+// missed while the connection was down. A read that failed is tried again sooner, as the calendar's is.
 const REFRESH_MS = 60_000;
+const RETRY_MS = 5_000;
 // What each read here listens to: a Meal changed anywhere in the Household.
 const MEAL_TABLES = ['meals'] as const;
 
 const PAGE_BUTTON = 'min-h-12 rounded-lg border border-border px-6 text-lg font-medium disabled:opacity-50';
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-lg text-foreground';
 const action = 'min-h-12 rounded-lg px-6 text-lg font-medium';
-const quiet = `${action} border border-border`;
+const quiet = `${action} border border-border disabled:opacity-40`;
 
 // Today's Household date, moved on at Household midnight with no refresh.
 function useToday(timezone: string): string {
@@ -33,8 +34,9 @@ function useToday(timezone: string): string {
 }
 
 // The Meals from `from` to `to` (Household dates), read again when a Meal changes anywhere in the
-// Household, when `saves` goes up (a save made here) and every minute. A failed read keeps what is
-// shown. Callers are keyed on the span, so a turned page never shows the last page's Meals.
+// Household, when `saves` goes up (a save made here) and every minute, or after five seconds when
+// the last read failed. `meals` is null until a read has landed; a failed read keeps what is shown.
+// Callers are keyed on the span, so a turned page never shows the last page's Meals.
 function useMeals(from: string, to: string, saves = 0): { meals: Meal[] | null; failed: boolean } {
   const [read, setRead] = useState<{ meals: Meal[] | null; failed: boolean }>({ meals: null, failed: false });
   const changes = useChangeTick(MEAL_TABLES);
@@ -43,13 +45,15 @@ function useMeals(from: string, to: string, saves = 0): { meals: Meal[] | null; 
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     async function load() {
+      let delay = REFRESH_MS;
       try {
         const meals = await loadMeals(supabase, from, to);
         if (live) setRead({ meals, failed: false });
       } catch {
         if (live) setRead((prev) => ({ ...prev, failed: true }));
+        delay = RETRY_MS;
       }
-      if (live) timer = setTimeout(() => void load(), REFRESH_MS);
+      if (live) timer = setTimeout(() => void load(), delay);
     }
 
     void load();
@@ -117,11 +121,14 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
 type Editing = { date: string; slot: MealSlot; heading: string; meal: Meal | null };
 
 // A heading row of days over a row for each slot. Each cell is one button, at least 48 px tall,
-// that opens the sheet; the rows share the height the screen has.
+// that opens the sheet; the rows share the height the screen has. Until the Meals have been read
+// (and after a first read that failed) the cells are disabled and show nothing, since a cell that
+// looked empty and could be tapped would invite writing over a Meal that is only not read yet.
 function MealsGrid({ days }: { days: WallDay[] }) {
   const [saves, setSaves] = useState(0);
   const [editing, setEditing] = useState<Editing | null>(null);
   const { meals, failed } = useMeals(days[0]!.date, days[days.length - 1]!.date, saves);
+  const known = meals !== null;
   const rows = mealGrid(meals ?? [], days.map((day) => day.date));
   const template: CSSProperties = {
     gridTemplateColumns: `8rem repeat(${days.length}, minmax(0, 1fr))`,
@@ -130,13 +137,14 @@ function MealsGrid({ days }: { days: WallDay[] }) {
 
   return (
     <section aria-label="Meals" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border">
-      {failed && meals === null && (
+      {failed && !known && (
         <p role="alert" className="p-4 text-xl">
           Could not load meals. Check your connection.
         </p>
       )}
       <div style={template} className="grid min-h-0 flex-1 overflow-y-auto">
-        <div />
+        {/* The first read's own line, in the corner so the grid does not shift when it lands. */}
+        <div className="flex items-center px-3 text-lg">{!known && !failed ? 'Loading' : null}</div>
         {days.map((day) => (
           <DayHeading key={day.date} day={day} />
         ))}
@@ -150,19 +158,22 @@ function MealsGrid({ days }: { days: WallDay[] }) {
                 <button
                   key={day.date}
                   type="button"
+                  disabled={!known}
                   onClick={() => setEditing({ date: day.date, slot: row.slot, heading, meal })}
                   // The inset ring stays inside the cell, where the scrolling grid cannot clip it.
                   className={`flex min-h-12 w-full items-center justify-center border-t border-l border-border px-2 py-2 text-center text-lg leading-snug focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-foreground ${day.isToday ? 'bg-muted/60' : ''}`}
                 >
-                  {/* The name a screen reader hears: "Dinner, Thu 1: Tacos", or "nothing planned". */}
-                  <span className="sr-only">{`${heading}: `}</span>
+                  {/* The name a screen reader hears: "Dinner, Thu 1: Tacos", or "nothing planned"; while the Meals are unknown, just "Dinner, Thu 1". */}
+                  <span className="sr-only">{known ? `${heading}: ` : heading}</span>
                   {meal ? (
-                    <span className="min-w-0 wrap-anywhere">{meal.title}</span>
+                    <span className="line-clamp-3 min-w-0 wrap-anywhere">{meal.title}</span>
                   ) : (
-                    <>
-                      <Plus aria-hidden className="size-6 shrink-0" />
-                      <span className="sr-only">nothing planned</span>
-                    </>
+                    known && (
+                      <>
+                        <Plus aria-hidden className="size-6 shrink-0" />
+                        <span className="sr-only">nothing planned</span>
+                      </>
+                    )
                   )}
                 </button>
               );
@@ -198,27 +209,39 @@ function DayHeading({ day }: { day: WallDay }) {
   );
 }
 
-// Plans one cell, or clears it: a small sheet with one text field. Focus moves in on open and back
-// to the cell on close; Escape and the backdrop close it without writing. A blank field is a clear.
+// Plans one cell, or clears it: a small sheet with one text field. Focus moves onto the field on
+// open, so the tablet's keyboard comes up at once, and back to the cell on close; Escape and the
+// backdrop close it without writing. A blank field is a clear.
 function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
   const dialog = useRef<HTMLFormElement>(null);
+  const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing.meal?.title ?? '');
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
-    dialog.current?.focus();
+    input.current?.focus();
     return () => opener?.focus();
   }, []);
 
-  // A button that had focus is disabled while saving: focus then falls to the page behind, and
-  // Escape and Tab would no longer reach the sheet. Put it back on the sheet.
+  // A button that had focus is disabled while saving: focus then falls to the page behind (the
+  // browser lets it go a moment after this runs, so a disabled button still counts as lost), and
+  // Escape and Tab would no longer reach the sheet. Put it on the sheet, not the field, so a tapped
+  // Save does not bring the keyboard back up.
   useEffect(() => {
-    if (!dialog.current?.contains(document.activeElement)) dialog.current?.focus();
+    const active = document.activeElement;
+    if (!dialog.current?.contains(active) || (active instanceof HTMLButtonElement && active.disabled)) dialog.current?.focus();
   }, [busy]);
 
+  // A save in flight holds the sheet open, so a late save never closes some other sheet and a
+  // failed one never reports to a sheet that is gone.
+  const close = () => {
+    if (!busy) onClose();
+  };
+
   async function write(next: string) {
+    setProblem('');
     setBusy(true);
     try {
       await setMeal(supabase, editing.date, editing.slot, next);
@@ -238,7 +261,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
     <div
       className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-background/90 p-4 sm:items-center sm:p-8"
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) close();
       }}
     >
       <form
@@ -249,7 +272,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
         tabIndex={-1}
         noValidate
         onSubmit={submit}
-        onKeyDown={(event) => dialogKeys(event, onClose)}
+        onKeyDown={(event) => dialogKeys(event, close)}
         className="flex w-full max-w-lg flex-col gap-5 rounded-xl border-2 border-border bg-card p-6 outline-none"
       >
         <h2 id="meal-sheet-title" className="text-3xl font-semibold">
@@ -257,7 +280,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
         </h2>
         <label className="flex flex-col gap-2 text-lg">
           Meal
-          <input className={field} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+          <input ref={input} className={field} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
         </label>
         <p role="alert" className="min-h-6 text-lg empty:hidden">
           {problem}
@@ -271,7 +294,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
               Clear
             </button>
           )}
-          <button type="button" className={quiet} onClick={onClose}>
+          <button type="button" className={quiet} disabled={busy} onClick={close}>
             Cancel
           </button>
         </div>
@@ -304,7 +327,7 @@ function TodaysMeals({ date }: { date: string }) {
         {planned.map(({ slot, label, title }) => (
           <li key={slot} className="flex gap-3">
             <span className="w-28 shrink-0 font-semibold">{label}</span>
-            <span className="min-w-0 wrap-anywhere">{title}</span>
+            <span className="line-clamp-3 min-w-0 wrap-anywhere">{title}</span>
           </li>
         ))}
       </ul>

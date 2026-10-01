@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { openChangeFeed, type ChangeFeed, type WatchedTable } from '../src/lib/realtime';
+import { setMeal } from '../src/lib/meals';
 import { PROFILE_PALETTE, createProfile, updateProfile } from '../src/lib/profiles';
 import { completeRoutine, createRoutine, householdDay, uncompleteRoutine } from '../src/lib/routines';
 import { addItem, createList } from '../src/lib/shared-lists';
@@ -128,10 +129,13 @@ describe('Realtime change feed', () => {
     const other = await setUp();
     const feed = await openFeed(mine.kitchen.client);
     let heard = 0;
-    feed.watch(['routines', 'profiles', 'list_items', 'routine_completions'], () => (heard += 1));
+    feed.watch(['routines', 'profiles', 'list_items', 'routine_completions', 'meals'], () => (heard += 1));
 
     await createRoutine(other.phone, other.account.household.id, other.profile.id, { title: 'Theirs', days_of_week: 127 }, 0);
     await updateProfile(other.phone, other.profile.id, { name: 'Elsewhere', color: PROFILE_PALETTE[0].hex, avatar_url: null });
+    // A Meal set, then changed (an insert, then an update).
+    await setMeal(other.phone, today, 'dinner', 'Theirs');
+    await setMeal(other.phone, today, 'dinner', 'Theirs, changed');
     await new Promise((resolve) => setTimeout(resolve, 2_000));
     expect(heard).toBe(0);
   });

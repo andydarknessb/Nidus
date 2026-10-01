@@ -138,6 +138,46 @@ describe('meals', () => {
     expect(await stored(account)).toEqual([{ meal_date: DAY, slot: 'lunch', title: 'Soup' }]);
   });
 
+  it('trims whitespace of every kind from the ends of a title, and only the ends', async () => {
+    const account = await arrange();
+    const phone = await asHouseholdAccount(account);
+    const device = await arrangeDevice(account);
+    // Past the helper, which trims first: the database trims the ends itself.
+    const plan = async (client: SupabaseClient, slot: MealSlot, title: string) => {
+      const { error } = await client.rpc('set_meal', { p_meal_date: DAY, p_slot: slot, p_title: title });
+      expect(error).toBeNull();
+    };
+
+    await plan(phone, 'breakfast', '\t\n Oatmeal \r\n\t');
+    await plan(device.client, 'lunch', '\f\u000bSoup\u000b\f');
+    await plan(phone, 'dinner', ' \tMac and\tcheese\n with\n peas \n');
+    // Letters are never trimmed, whichever way the whitespace is written.
+    await plan(device.client, 'snack', 'veggie curry v');
+
+    expect(await stored(account)).toEqual([
+      { meal_date: DAY, slot: 'breakfast', title: 'Oatmeal' },
+      { meal_date: DAY, slot: 'dinner', title: 'Mac and\tcheese\n with\n peas' },
+      { meal_date: DAY, slot: 'lunch', title: 'Soup' },
+      { meal_date: DAY, slot: 'snack', title: 'veggie curry v' },
+    ]);
+  });
+
+  it('holds the 200 character limit to the trimmed title', async () => {
+    const account = await arrange();
+    const phone = await asHouseholdAccount(account);
+
+    // Two hundred characters and a trailing newline are two hundred once trimmed.
+    const fits = await phone.rpc('set_meal', { p_meal_date: DAY, p_slot: 'dinner', p_title: `${'x'.repeat(200)}\n` });
+    expect(fits.error).toBeNull();
+    const [row] = await stored(account);
+    expect(row?.title).toHaveLength(200);
+
+    // Two hundred and one are too many, however they are wrapped.
+    const tooLong = await phone.rpc('set_meal', { p_meal_date: DAY, p_slot: 'lunch', p_title: `\t${'x'.repeat(201)}\n` });
+    expect(tooLong.error).toMatchObject({ code: '23514' });
+    expect(await stored(account)).toHaveLength(1);
+  });
+
   it('refuses an unknown slot and a title over 200 characters, and keeps what the slot held', async () => {
     const account = await arrange();
     const phone = await asHouseholdAccount(account);
@@ -270,7 +310,7 @@ function mealsChanged(feed: ChangeFeed, waitMs = 8_000): Promise<void> {
 }
 
 describe('meals on the Realtime change feed', () => {
-  it('tells another screen of the Household when a Meal is set, changed or cleared', async () => {
+  it('tells another screen of the Household when a Meal is set or changed', async () => {
     const account = await arrange();
     const phone = await asHouseholdAccount(account);
     const device = await arrangeDevice(account);
@@ -278,17 +318,19 @@ describe('meals on the Realtime change feed', () => {
     feeds.push(feed);
     await feed.ready;
 
-    for (const title of ['Tacos', 'Lasagne', '']) {
+    for (const title of ['Tacos', 'Lasagne']) {
       const seen = mealsChanged(feed);
       await setMeal(phone, DAY, 'dinner', title);
       await seen;
     }
   });
 
-  // A delete is the one change Realtime sends without asking row-level security, so what it carries
-  // is what can leave the Household (20261008000001_realtime.sql). That is the primary key, and with
-  // id the only one it is an opaque id: never a Meal's title, date or slot.
-  it('sends a delete as the id alone', async () => {
+  // A delete is the one change Realtime sends without asking row-level security: to every subscriber
+  // of the table, in any Household (20261008000001_realtime.sql), and the local stack is shared. So
+  // this listens for the delete of this Meal by its id and ignores every other. What the delete
+  // carries is what can leave the Household: the primary key, and with id the only one an opaque id,
+  // never a Meal's title, date or slot.
+  it('tells another screen when a Meal is cleared, and sends the delete as the id alone', async () => {
     const account = await arrange();
     const phone = await asHouseholdAccount(account);
     const device = await arrangeDevice(account);
@@ -297,9 +339,10 @@ describe('meals on the Realtime change feed', () => {
 
     const channel = device.client.channel(`meals-deletes-${Math.random().toString(36).slice(2)}`, { config: { postgres_changes_options: { wait: true } } });
     const deleted = new Promise<unknown>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('no delete heard within 8 s')), 8_000);
+      const timer = setTimeout(() => reject(new Error('no delete of this Meal heard within 8 s')), 8_000);
       channel
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'meals' }, (payload) => {
+          if (payload.old.id !== meal!.id) return;
           clearTimeout(timer);
           resolve(payload.old);
         })

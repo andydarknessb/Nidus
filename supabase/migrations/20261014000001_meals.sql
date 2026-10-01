@@ -50,8 +50,10 @@ create policy "principals clear their household's meals"
 
 -- ---- One call to plan or clear a slot ----------------------------------------------------
 -- A blank (null, empty or whitespace-only) title clears the Household's Meal for the date and
--- slot; anything else plans it, replacing the title if the slot already holds one. One statement
--- either way, so two screens saving the same slot at once leave one Meal and never a duplicate.
+-- slot; anything else plans it, replacing the title if the slot already holds one, with the
+-- whitespace trimmed from its ends (btrim alone strips only spaces, so the set is named: space,
+-- tab, newline, carriage return, form feed and vertical tab, written \x0b). One statement either
+-- way, so two screens saving the same slot at once leave one Meal and never a duplicate.
 -- security invoker: the policies and column grants above stay the one authority on what the
 -- caller may write. Raises 42501 for a caller of no Household (an unpaired tablet) before it
 -- looks at the title, so a blank title from one is refused and never a quiet no-op.
@@ -75,7 +77,7 @@ begin
   end if;
 
   insert into public.meals (household_id, meal_date, slot, title)
-  values (v_household_id, p_meal_date, p_slot, btrim(p_title))
+  values (v_household_id, p_meal_date, p_slot, btrim(p_title, E' \t\n\r\f\x0b'))
   on conflict (household_id, meal_date, slot) do update set title = excluded.title;
 end;
 $$;

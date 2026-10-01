@@ -33,7 +33,7 @@ export async function setMeal(client: SupabaseClient, date: string, slot: MealSl
   if (error) throw error;
 }
 
-export type MealRow = { slot: MealSlot; label: string; cells: (Meal | null)[] };
+type MealRow = { slot: MealSlot; label: string; cells: (Meal | null)[] };
 
 // The Meals as the grid draws them: a row for each slot in order, and in it one cell for each of
 // `dates`, in the order given, holding that day's Meal or null where nothing is planned.
