@@ -208,7 +208,8 @@ function DayCell({
 }) {
   // A day of the neighbouring month is dimmed with the muted colour, which is AAA on the page ground (7.59:1) but
   // not on today's lifted one (6.55:1), so today keeps the full colour wherever it falls. The same goes for a day
-  // beyond the window: the muted colour is 6.06:1 against the lines of its hatch, the full colour 15.23:1.
+  // beyond the window: against the lighter colour of its hatch, the lines (rgb 34 34 36 as rendered), the muted
+  // colour is 6.05:1 and the full colour 15.22:1.
   const dim = !inMonth && !beyond && !day.isToday ? 'text-muted-foreground' : '';
   // The date's line is shorter than its row so that today's underline sits inside the row, above the first line.
   const date = (
