@@ -1,18 +1,18 @@
 import { Pin } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
-  clampToWindow,
+  canOpenDay,
   describePage,
   fiveDays,
   formatClock,
   describeWhen,
-  loadOccurrences,
   nowHour,
   pageDays,
   pageStart,
   paging,
   pagingWindow,
   place,
+  shownDate,
   visibleHours,
   type AllDayBar,
   type CalendarView,
@@ -20,29 +20,26 @@ import {
   type TimedBlock,
   type WallDay,
 } from '../lib/calendar-occurrences';
-import { useChangeTick } from '../lib/change-feed';
-import { watchHouseholdDay } from '../lib/household-day';
-import { OCCURRENCE_TABLES } from '../lib/realtime';
 import { householdDay, WEEKDAYS } from '../lib/routines';
-import { supabase } from '../lib/supabase';
+import { useNow, useOccurrences } from '../lib/wall-hooks';
 import { EventDetails } from './EventDetails';
 import { NativeEventSheet } from './NativeEventSheet';
 
 // The home screen's calendar: today and the next four days as columns in the Household
 // Timezone. An all-day band on top (multi-day events span their columns), timed events
 // positioned by time below, a line at the current time and today's column lifted. Tapping an
-// event opens its details.
-const REFRESH_MS = 60_000;
-const RETRY_MS = 5_000;
-const CLOCK_MS = 30_000;
+// event opens its details, and tapping a day's heading opens that day.
+
 // Events with no colour (a whole-Household calendar) still need an edge to read against.
 const NEUTRAL = '#d4d4d8';
 // The smallest a tappable event may be drawn (48 px, CLAUDE.md), and the grid padding above and below the columns.
 const MIN_TARGET_PX = 48;
 const GRID_PADDING_PX = 24;
-// The hour gutter and one column per day: five on the home screen, seven in a week, one in a day.
+// The hour gutter and one column per day: five on the home screen, seven in a week, one in a day. The
+// gutter is 4 rem, room for "10 AM" and no more, so that beside the navigation rail the five days
+// clear 140 px at 1280 px.
 function gridColumns(count: number): CSSProperties {
-  return { gridTemplateColumns: `4.5rem repeat(${count}, minmax(0, 1fr))` };
+  return { gridTemplateColumns: `4rem repeat(${count}, minmax(0, 1fr))` };
 }
 
 function hourLabel(hour: number): string {
@@ -78,52 +75,43 @@ function NativeMark({ occurrence }: { occurrence: Occurrence }) {
   return occurrence.source === 'native' ? <Pin aria-hidden data-testid="native-mark" className="mr-1 inline size-4 shrink-0 align-text-bottom" /> : null;
 }
 
-// The clock, ticking along and also the instant Household midnight passes, so the day columns
-// and the calendar's read span move on at midnight, not up to a tick later.
-function useNow(timezone: string): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), CLOCK_MS);
-    const stop = watchHouseholdDay(timezone, () => setNow(new Date()));
-    return () => {
-      clearInterval(id);
-      stop();
-    };
-  }, [timezone]);
-  return now;
-}
-
 // The home screen: today and the next four days. `version` changes when the screen around the
 // calendar has written an event, so the calendar reads again at once.
-export function FiveDayCalendar({ timezone, version = 0 }: { timezone: string; version?: number }) {
+export function FiveDayCalendar({
+  timezone,
+  version = 0,
+  onNavigate,
+}: {
+  timezone: string;
+  version?: number;
+  onNavigate: (view: CalendarView, date: string) => void;
+}) {
   const now = useNow(timezone);
-  return <CalendarGrid timezone={timezone} now={now} days={fiveDays(timezone, now)} version={version} />;
+  return <CalendarGrid timezone={timezone} now={now} days={fiveDays(timezone, now)} version={version} onOpenDay={(date) => onNavigate('day', date)} />;
 }
 
 const PAGE_BUTTON = 'min-h-12 rounded-lg border border-border px-6 text-lg font-medium disabled:opacity-50';
 
 // The week and day views: the same grid as the home screen with a header to page back and forward
-// within the synced window, jump to today and return to the home screen. `date` is the page's
-// anchor (null for today); a date outside the window is pulled to its nearest end.
+// within the synced window and jump to today. `date` is the page's anchor (null for today); a date
+// outside the window is pulled to its nearest end.
 export function PagedCalendar({
   timezone,
   view,
   date,
   version = 0,
   onNavigate,
-  onHome,
 }: {
   timezone: string;
   view: CalendarView;
   date: string | null;
   version?: number;
   onNavigate: (view: CalendarView, date: string) => void;
-  onHome: () => void;
 }) {
   const now = useNow(timezone);
   const window = pagingWindow(timezone, now);
   const today = householdDay(timezone, now).date;
-  const anchor = pageStart(view, clampToWindow(date ?? today, window));
+  const anchor = pageStart(view, shownDate(date, today));
   const days = pageDays(view, anchor, timezone, now);
   const { previous, next } = paging(view, anchor, window);
   const label = view === 'week' ? 'week' : 'day';
@@ -134,9 +122,6 @@ export function PagedCalendar({
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <nav aria-label="Calendar paging" className="flex flex-wrap items-center gap-4">
-        <button type="button" className={PAGE_BUTTON} onClick={onHome}>
-          Home
-        </button>
         <button type="button" className={PAGE_BUTTON} disabled={previous === null} onClick={() => previous && onNavigate(view, previous)}>
           Previous {label}
         </button>
@@ -147,9 +132,6 @@ export function PagedCalendar({
           Next {label}
         </button>
         <h2 ref={heading} tabIndex={-1} className="ml-2 text-2xl font-semibold outline-none">{describePage(days)}</h2>
-        <button type="button" className={`${PAGE_BUTTON} ml-auto`} onClick={() => onNavigate(view === 'week' ? 'day' : 'week', view === 'week' ? today : anchor)}>
-          {view === 'week' ? 'Day view' : 'Week view'}
-        </button>
       </nav>
       {/* Always mounted, so a screen reader announces the text when it appears. */}
       <p role="status" className="text-lg empty:hidden">
@@ -159,16 +141,36 @@ export function PagedCalendar({
             ? 'This is as far ahead as the calendar goes. It keeps six months of upcoming events.'
             : ''}
       </p>
-      {/* Keyed on the page so a turned page never shows the last page's events, and a failed read says so. */}
-      <CalendarGrid key={days[0]!.date} timezone={timezone} now={now} days={days} version={version} />
+      {/* Keyed on the view and the page, so a turned page, or the other view starting on the same day, never shows the last page's events, and a failed read says so. */}
+      <CalendarGrid
+        key={`${view}:${days[0]!.date}`}
+        timezone={timezone}
+        now={now}
+        days={days}
+        version={version}
+        // A week's day headings open that day; on a day page the heading is only a heading.
+        onOpenDay={view === 'week' ? (day) => onNavigate('day', day) : null}
+      />
     </div>
   );
 }
 
-function CalendarGrid({ timezone, now, days, version }: { timezone: string; now: Date; days: WallDay[]; version: number }) {
+function CalendarGrid({
+  timezone,
+  now,
+  days,
+  version,
+  onOpenDay,
+}: {
+  timezone: string;
+  now: Date;
+  days: WallDay[];
+  version: number;
+  onOpenDay: ((date: string) => void) | null;
+}) {
   const columnsStyle = gridColumns(days.length);
-  const [occurrences, setOccurrences] = useState<Occurrence[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  // A day outside the paging window would open its nearest end instead, so it is only a heading.
+  const pageWindow = pagingWindow(timezone, now);
   const [open, setOpen] = useState<Occurrence | null>(null);
   // A Native Event being edited, and a count of the edits made here, so the read runs again after one.
   const [editing, setEditing] = useState<Occurrence | null>(null);
@@ -187,38 +189,8 @@ function CalendarGrid({ timezone, now, days, version }: { timezone: string; now:
     return () => observer.disconnect();
   }, []);
 
-  // The span to read: from the first day's start to the last day's end. Read again when it changes
-  // (the day rolls over, the Household Timezone changes, a page is turned), and on a timer for new events.
-  const fromMs = days[0]!.startMs;
-  const toMs = days[days.length - 1]!.endMs;
-  // Read again the moment an event, a calendar or a Profile's colour changes anywhere in the Household.
-  const changes = useChangeTick(OCCURRENCE_TABLES);
-  useEffect(() => {
-    let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function read() {
-      let delay = REFRESH_MS;
-      try {
-        const rows = await loadOccurrences(supabase, new Date(fromMs), new Date(toMs));
-        if (live) {
-          setOccurrences(rows);
-          setFailed(false);
-        }
-      } catch {
-        // Keep what the wall shows and try again sooner.
-        if (live) setFailed(true);
-        delay = RETRY_MS;
-      }
-      if (live) timer = setTimeout(() => void read(), delay);
-    }
-
-    void read();
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [fromMs, toMs, version, edits, changes]);
+  // An edit made here counts into `version`, so it reads again like an event added around the calendar.
+  const { occurrences, failed } = useOccurrences(days, version + edits);
 
   const todayColumn = days.find((day) => day.isToday);
   const todayHour = todayColumn ? nowHour(todayColumn, now) : null;
@@ -232,7 +204,7 @@ function CalendarGrid({ timezone, now, days, version }: { timezone: string; now:
       <div style={columnsStyle} className="grid border-b border-border">
         <div />
         {days.map((day) => (
-          <DayHeading key={day.date} day={day} />
+          <DayHeading key={day.date} day={day} onOpen={onOpenDay && canOpenDay(day.date, pageWindow) ? onOpenDay : null} />
         ))}
       </div>
       {failed && occurrences === null && (
@@ -297,15 +269,39 @@ function CalendarGrid({ timezone, now, days, version }: { timezone: string; now:
   );
 }
 
-function DayHeading({ day }: { day: WallDay }) {
-  return (
-    <h2
-      aria-current={day.isToday ? 'date' : undefined}
-      className={`flex items-baseline justify-center gap-2 border-l border-border px-2 py-3 text-2xl font-semibold ${day.isToday ? 'bg-muted/60 underline decoration-4 underline-offset-8' : ''}`}
-    >
-      <span>{WEEKDAYS[day.weekday]!.short}</span>
-      <span>{Number(day.date.slice(8))}</span>
+// A day's heading. Where that day can be opened (the home screen and the week view) it holds a
+// button that opens it and fills the cell, so the whole heading is the target; on the day view
+// itself it is only a heading.
+function DayHeading({ day, onOpen }: { day: WallDay; onOpen: ((date: string) => void) | null }) {
+  const weekday = WEEKDAYS[day.weekday]!.short;
+  const date = Number(day.date.slice(8));
+  const words = (
+    <>
+      <span>{weekday}</span>
+      <span>{date}</span>
       {day.isToday && <span className="sr-only">(today)</span>}
+    </>
+  );
+  const cell = `border-l border-border ${day.isToday ? 'bg-muted/60' : ''}`;
+  const text = `flex items-baseline justify-center gap-2 px-2 py-3 text-2xl font-semibold ${day.isToday ? 'underline decoration-4 underline-offset-8' : ''}`;
+  if (!onOpen) {
+    return (
+      <h2 aria-current={day.isToday ? 'date' : undefined} className={`${cell} ${text}`}>
+        {words}
+      </h2>
+    );
+  }
+  return (
+    <h2 className={cell}>
+      <button
+        type="button"
+        aria-current={day.isToday ? 'date' : undefined}
+        aria-label={`${weekday} ${date}${day.isToday ? ' (today)' : ''}, open day`}
+        onClick={() => onOpen(day.date)}
+        className={`${text} min-h-12 w-full`}
+      >
+        {words}
+      </button>
     </h2>
   );
 }
