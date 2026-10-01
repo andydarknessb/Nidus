@@ -11,9 +11,13 @@ import {
   type Occurrence,
   type WallDay,
 } from '../src/lib/calendar-occurrences';
+import { householdDay } from '../src/lib/routines';
 
 const CHICAGO = 'America/Chicago';
 const TOKYO = 'Asia/Tokyo';
+const SANTIAGO = 'America/Santiago';
+const LONDON = 'Europe/London';
+const KOLKATA = 'Asia/Kolkata';
 
 // Thu Oct 1, 2026, 10:00 in Chicago (CDT, UTC-5).
 const NOW = new Date('2026-10-01T15:00:00Z');
@@ -158,6 +162,75 @@ describe('the month grid', () => {
     expect(thursday(TOKYO).date).toBe('2026-10-01');
     expect(thursday(TOKYO).startMs).toBe(Date.parse('2026-09-30T15:00:00Z'));
     expect(thursday(CHICAGO).startMs).toBe(Date.parse('2026-10-01T05:00:00Z'));
+  });
+});
+
+describe('the month grid in other zones', () => {
+  // A day is the run of instants from its own midnight to the next one's, whatever the zone does to its clocks.
+  const grid = (month: string, timezone: string) => monthWeeks(month, timezone, TODAY).flat();
+  const odd = (days: WallDay[]) => days.filter((day) => hours(day) !== 24).map((day) => [day.date, hours(day)]);
+  const continuous = (days: WallDay[]) => days.slice(0, -1).every((day, index) => day.endMs === days[index + 1]!.startMs);
+  const sundayFirst = (month: string, timezone: string) => monthWeeks(month, timezone, TODAY).every((week) => week.map((day) => day.weekday).join() === '0,1,2,3,4,5,6');
+  const startOf = (days: WallDay[], date: string) => days.find((day) => day.date === date)!.startMs;
+
+  it('has a day that starts at 01:00, 23 hours long, where Santiago skips its midnight', () => {
+    // On Sunday 2026-09-06 Santiago's clocks go from Saturday 23:59 (-04) straight to Sunday 01:00 (-03): that
+    // Sunday has no midnight, so it begins at the first instant that is on it.
+    const days = grid('2026-09-01', SANTIAGO);
+    expect(startOf(days, '2026-09-06')).toBe(Date.parse('2026-09-06T04:00:00Z'));
+    expect(days.find((day) => day.date === '2026-09-06')!.endMs).toBe(Date.parse('2026-09-07T03:00:00Z'));
+    // The Saturday before has its own midnight (-04) and is a whole 24 hours, ending where the skipped day begins.
+    expect(startOf(days, '2026-09-05')).toBe(Date.parse('2026-09-05T04:00:00Z'));
+    expect(odd(days)).toEqual([['2026-09-06', 23]]);
+    expect(continuous(days)).toBe(true);
+    expect(sundayFirst('2026-09-01', SANTIAGO)).toBe(true);
+  });
+
+  it('has a 25 hour Saturday where Santiago turns its clocks back', () => {
+    // On Saturday 2026-04-04 the clocks go from 23:59 (-03) back to 23:00 (-04): the day's last hour happens twice.
+    const days = grid('2026-04-01', SANTIAGO);
+    expect(odd(days)).toEqual([['2026-04-04', 25]]);
+    expect(startOf(days, '2026-04-05')).toBe(Date.parse('2026-04-05T04:00:00Z'));
+    expect(continuous(days)).toBe(true);
+    expect(sundayFirst('2026-04-01', SANTIAGO)).toBe(true);
+  });
+
+  it('has a 23 hour Sunday where London goes forward and a 25 hour one where it goes back', () => {
+    // 2026-03-29: 01:00 GMT becomes 02:00 BST. 2026-10-25: 02:00 BST becomes 01:00 GMT. Either way the Sunday
+    // begins at its own midnight, which in summer is 23:00 UTC the evening before.
+    const spring = grid('2026-03-01', LONDON);
+    expect(odd(spring)).toEqual([['2026-03-29', 23]]);
+    expect(startOf(spring, '2026-03-29')).toBe(Date.parse('2026-03-29T00:00:00Z'));
+    expect(startOf(spring, '2026-03-30')).toBe(Date.parse('2026-03-29T23:00:00Z'));
+    const autumn = grid('2026-10-01', LONDON);
+    expect(odd(autumn)).toEqual([['2026-10-25', 25]]);
+    expect(startOf(autumn, '2026-10-25')).toBe(Date.parse('2026-10-24T23:00:00Z'));
+    expect(startOf(autumn, '2026-10-26')).toBe(Date.parse('2026-10-26T00:00:00Z'));
+    expect(continuous(spring) && continuous(autumn)).toBe(true);
+    // The weekdays are the zone's, not UTC's, which put every summer midnight on the day before.
+    expect(sundayFirst('2026-03-01', LONDON) && sundayFirst('2026-10-01', LONDON)).toBe(true);
+  });
+
+  it('keeps every day of every month of the window between its own two midnights, in any zone', () => {
+    const months = ['2026-09-01', '2026-10-01', '2026-11-01', '2026-12-01', '2027-01-01', '2027-02-01', '2027-03-01', '2027-04-01'];
+    for (const timezone of [CHICAGO, TOKYO, SANTIAGO, LONDON, KOLKATA]) {
+      for (const month of months) {
+        const weeks = monthWeeks(month, timezone, TODAY);
+        const days = weeks.flat();
+        const where = `${timezone} ${month}`;
+        expect(weeks.length, where).toBeGreaterThanOrEqual(4);
+        expect(weeks.length, where).toBeLessThanOrEqual(6);
+        expect(days.length, where).toBe(weeks.length * 7);
+        expect(sundayFirst(month, timezone), where).toBe(true);
+        expect(continuous(days), where).toBe(true);
+        for (const day of days) {
+          expect([23, 24, 25], `${where} ${day.date}`).toContain(hours(day));
+          // The first instant and the last one of the day are both on the day's own date.
+          expect(householdDay(timezone, new Date(day.startMs)).date, `${where} ${day.date} start`).toBe(day.date);
+          expect(householdDay(timezone, new Date(day.endMs - 1)).date, `${where} ${day.date} end`).toBe(day.date);
+        }
+      }
+    }
   });
 });
 
