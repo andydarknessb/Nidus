@@ -1,15 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
   addMonths,
+  canOpenDay,
   clampToWindow,
   describePage,
+  holdsToday,
+  navigationRailDate,
   pageDays,
   pageStart,
   paging,
   pagingWindow,
+  pagingWindowAround,
   parseWallRoute,
+  shownDate,
+  wallDate,
   wallPath,
   weekStart,
+  type CalendarView,
+  type WallRoute,
 } from '../src/lib/calendar-occurrences';
 
 const CHICAGO = 'America/Chicago';
@@ -53,6 +61,11 @@ describe('pagingWindow', () => {
     const now = new Date('2026-09-30T16:00:00Z');
     expect(pagingWindow(TOKYO, now).first).toBe('2026-09-01');
     expect(pagingWindow(CHICAGO, now).first).toBe('2026-08-30');
+  });
+
+  it('is the window around a Household date, once today is already known', () => {
+    expect(pagingWindowAround('2026-09-30')).toEqual({ first: '2026-08-30', last: '2027-03-30' });
+    expect(pagingWindowAround('2026-10-01')).toEqual({ first: '2026-09-01', last: '2027-04-01' });
   });
 });
 
@@ -149,6 +162,192 @@ describe('wall routes', () => {
 
   it('writes the address back', () => {
     expect(wallPath('week', '2026-09-27')).toBe('/week?date=2026-09-27');
+  });
+});
+
+// Thu Oct 1, 2026, in the week of Sep 27 to Oct 3; the week of Oct 11 to 17 does not hold it. The
+// paging window around it runs from Tue Sep 1, 2026 to Thu Apr 1, 2027, so the week of Aug 30 to
+// Sep 5 and the week of Mar 28 to Apr 3 each straddle one end of it.
+const TODAY = '2026-10-01';
+const page = (view: CalendarView, date: string | null): WallRoute => ({ view, date });
+
+describe('shownDate', () => {
+  it('is today when the address has no date, and the address\'s date inside the window', () => {
+    expect(shownDate(null, TODAY)).toBe('2026-10-01');
+    expect(shownDate('2026-10-11', TODAY)).toBe('2026-10-11');
+    expect(shownDate('2026-09-01', TODAY)).toBe('2026-09-01');
+    expect(shownDate('2027-04-01', TODAY)).toBe('2027-04-01');
+  });
+
+  it('is the nearest end of the window for an address outside it', () => {
+    expect(shownDate('2020-01-01', TODAY)).toBe('2026-09-01');
+    expect(shownDate('2026-08-30', TODAY)).toBe('2026-09-01');
+    expect(shownDate('2027-04-02', TODAY)).toBe('2027-04-01');
+    expect(shownDate('2030-01-01', TODAY)).toBe('2027-04-01');
+  });
+});
+
+describe('canOpenDay', () => {
+  const window = pagingWindowAround(TODAY);
+
+  it('is true for a day inside the window, both ends included', () => {
+    expect(canOpenDay('2026-09-01', window)).toBe(true);
+    expect(canOpenDay('2026-10-01', window)).toBe(true);
+    expect(canOpenDay('2027-04-01', window)).toBe(true);
+  });
+
+  it('is false for a day outside it, which would open its nearest end instead', () => {
+    // The week of Aug 30 shows two days before the window and the week of Mar 28 two after it.
+    expect(canOpenDay('2026-08-30', window)).toBe(false);
+    expect(canOpenDay('2026-08-31', window)).toBe(false);
+    expect(canOpenDay('2027-04-02', window)).toBe(false);
+    expect(canOpenDay('2027-04-03', window)).toBe(false);
+    expect(canOpenDay('2020-01-01', window)).toBe(false);
+  });
+});
+
+describe('holdsToday', () => {
+  it('is true on the home screen, which starts at today', () => {
+    expect(holdsToday({ view: 'home' }, TODAY)).toBe(true);
+  });
+
+  it('is true for a week that holds today, whichever of its dates the address carries', () => {
+    expect(holdsToday(page('week', '2026-09-27'), TODAY)).toBe(true);
+    expect(holdsToday(page('week', '2026-09-30'), TODAY)).toBe(true);
+    expect(holdsToday(page('week', '2026-10-03'), TODAY)).toBe(true);
+    expect(holdsToday(page('week', '2026-12-27'), '2027-01-01')).toBe(true);
+  });
+
+  it('is false for a week that does not', () => {
+    expect(holdsToday(page('week', '2026-09-20'), TODAY)).toBe(false);
+    expect(holdsToday(page('week', '2026-10-04'), TODAY)).toBe(false);
+  });
+
+  it('is true for a day only when it is today', () => {
+    expect(holdsToday(page('day', '2026-10-01'), TODAY)).toBe(true);
+    expect(holdsToday(page('day', '2026-09-30'), TODAY)).toBe(false);
+    expect(holdsToday(page('day', '2026-10-02'), TODAY)).toBe(false);
+  });
+
+  it('reads a page with no date as today\'s', () => {
+    expect(holdsToday(page('week', null), TODAY)).toBe(true);
+    expect(holdsToday(page('day', null), TODAY)).toBe(true);
+  });
+
+  it('is false for an address outside the window, which shows the page at the end of it', () => {
+    expect(holdsToday(page('week', '2020-01-01'), TODAY)).toBe(false);
+    expect(holdsToday(page('day', '2020-01-01'), TODAY)).toBe(false);
+    expect(holdsToday(page('week', '2030-01-01'), TODAY)).toBe(false);
+    expect(holdsToday(page('day', '2030-01-01'), TODAY)).toBe(false);
+  });
+
+  it('is true for any screen that is not a calendar view, even one with a date in its address', () => {
+    // Meals will be a screen like this: its address carries a date, but it is not a page of the calendar.
+    const meals = { view: 'meals', date: '2026-10-11' } as unknown as WallRoute;
+    expect(holdsToday(meals, TODAY)).toBe(true);
+  });
+});
+
+describe('wallDate', () => {
+  it('is today on the home screen', () => {
+    expect(wallDate({ view: 'home' }, TODAY)).toBe('2026-10-01');
+  });
+
+  it('is today, not the first day, on a page that holds today', () => {
+    // The current week is anchored on its Sunday, but the wall is on today.
+    expect(wallDate(page('week', '2026-09-27'), TODAY)).toBe('2026-10-01');
+    expect(wallDate(page('day', '2026-10-01'), TODAY)).toBe('2026-10-01');
+    expect(wallDate(page('week', null), TODAY)).toBe('2026-10-01');
+  });
+
+  it('is the first day of a page that does not hold today', () => {
+    expect(wallDate(page('week', '2026-10-04'), TODAY)).toBe('2026-10-04');
+    expect(wallDate(page('week', '2026-09-13'), TODAY)).toBe('2026-09-13');
+    expect(wallDate(page('day', '2026-10-02'), TODAY)).toBe('2026-10-02');
+    // An address that names a day in the middle of a week is still on that week's first day.
+    expect(wallDate(page('week', '2026-10-14'), TODAY)).toBe('2026-10-11');
+  });
+
+  it('is on the page shown when the address is outside the window', () => {
+    // Before the window the page shown is the one holding Sep 1, after it the one holding Apr 1.
+    expect(wallDate(page('week', '2020-01-01'), TODAY)).toBe('2026-08-30');
+    expect(wallDate(page('day', '2020-01-01'), TODAY)).toBe('2026-09-01');
+    expect(wallDate(page('week', '2030-01-01'), TODAY)).toBe('2027-03-28');
+    expect(wallDate(page('day', '2030-01-01'), TODAY)).toBe('2027-04-01');
+  });
+
+  it('is today on a screen that is not a calendar view, even one with a date in its address', () => {
+    const meals = { view: 'meals', date: '2026-10-11' } as unknown as WallRoute;
+    expect(wallDate(meals, TODAY)).toBe('2026-10-01');
+  });
+});
+
+describe('navigationRailDate', () => {
+  it('opens today\'s page from the home screen', () => {
+    expect(navigationRailDate('day', { view: 'home' }, TODAY)).toBe('2026-10-01');
+    expect(navigationRailDate('week', { view: 'home' }, TODAY)).toBe('2026-09-27');
+  });
+
+  it('from a week that holds today, opens Day on today and Week on the same page', () => {
+    expect(navigationRailDate('day', page('week', '2026-09-27'), TODAY)).toBe('2026-10-01');
+    expect(navigationRailDate('week', page('week', '2026-09-27'), TODAY)).toBe('2026-09-27');
+    expect(navigationRailDate('day', page('week', '2026-12-27'), '2027-01-01')).toBe('2027-01-01');
+  });
+
+  it('from a week that does not hold today, opens Day on that week\'s first day and Week on the same page', () => {
+    expect(navigationRailDate('day', page('week', '2026-10-11'), TODAY)).toBe('2026-10-11');
+    expect(navigationRailDate('week', page('week', '2026-10-11'), TODAY)).toBe('2026-10-11');
+    expect(navigationRailDate('day', page('week', '2026-09-13'), TODAY)).toBe('2026-09-13');
+    expect(navigationRailDate('day', page('week', '2026-10-14'), TODAY)).toBe('2026-10-11');
+  });
+
+  it('from the day that is today, opens Week on this week and Day on today', () => {
+    expect(navigationRailDate('week', page('day', '2026-10-01'), TODAY)).toBe('2026-09-27');
+    expect(navigationRailDate('day', page('day', '2026-10-01'), TODAY)).toBe('2026-10-01');
+  });
+
+  it('from a day that is not today, opens Week on the week holding it and Day on the same day', () => {
+    expect(navigationRailDate('week', page('day', '2026-10-14'), TODAY)).toBe('2026-10-11');
+    expect(navigationRailDate('day', page('day', '2026-10-14'), TODAY)).toBe('2026-10-14');
+    // Yesterday is on this week too.
+    expect(navigationRailDate('week', page('day', '2026-09-30'), TODAY)).toBe('2026-09-27');
+  });
+
+  it('reads a page with no date as today\'s', () => {
+    expect(navigationRailDate('day', page('week', null), TODAY)).toBe('2026-10-01');
+    expect(navigationRailDate('week', page('week', null), TODAY)).toBe('2026-09-27');
+    expect(navigationRailDate('week', page('day', null), TODAY)).toBe('2026-09-27');
+  });
+
+  it('before the window, works on the page shown: the one holding the first day of the window', () => {
+    // An address long before the window (Back into old history) shows the week of Aug 30 or Tue Sep 1.
+    expect(navigationRailDate('day', page('week', '2020-01-01'), TODAY)).toBe('2026-09-01');
+    expect(navigationRailDate('week', page('week', '2020-01-01'), TODAY)).toBe('2026-08-30');
+    expect(navigationRailDate('day', page('day', '2020-01-01'), TODAY)).toBe('2026-09-01');
+    expect(navigationRailDate('week', page('day', '2020-01-01'), TODAY)).toBe('2026-08-30');
+  });
+
+  it('after the window, works on the page shown: the one holding the last day of the window', () => {
+    expect(navigationRailDate('day', page('week', '2030-01-01'), TODAY)).toBe('2027-03-28');
+    expect(navigationRailDate('week', page('week', '2030-01-01'), TODAY)).toBe('2027-03-28');
+    expect(navigationRailDate('day', page('day', '2030-01-01'), TODAY)).toBe('2027-04-01');
+    expect(navigationRailDate('week', page('day', '2030-01-01'), TODAY)).toBe('2027-03-28');
+  });
+
+  it('leaving a screen that is not a calendar view opens today\'s page, even with a date in its address', () => {
+    const meals = { view: 'meals', date: '2026-10-11' } as unknown as WallRoute;
+    expect(navigationRailDate('day', meals, TODAY)).toBe('2026-10-01');
+    expect(navigationRailDate('week', meals, TODAY)).toBe('2026-09-27');
+  });
+
+  it('week to week and day to day are the same address, so a tap adds no step for Back', () => {
+    // Including the weeks that straddle an end of the window, and the days at its ends.
+    for (const date of ['2026-09-27', '2026-10-11', '2026-08-30', '2027-03-28']) {
+      expect(wallPath('week', navigationRailDate('week', page('week', date), TODAY))).toBe(wallPath('week', date));
+    }
+    for (const date of ['2026-10-14', '2026-09-01', '2027-04-01']) {
+      expect(wallPath('day', navigationRailDate('day', page('day', date), TODAY))).toBe(wallPath('day', date));
+    }
   });
 });
 
