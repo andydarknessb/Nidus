@@ -250,10 +250,12 @@ export function holdsToday(route: WallRoute, today: string): boolean {
 }
 
 // The Household date the wall is on: today when the page shown holds it, otherwise the page's first
-// day. Add event starts on it, and the navigation rail opens its views from it.
+// day, or the window's first day when the page starts before it (the Sunday of the first week, the 1st of
+// the first month): the grids mark those days as beyond the range, and an event added there is one the
+// wall could not show. Add event starts on it, and the navigation rail opens its views from it.
 export function wallDate(route: WallRoute, today: string): string {
   if (!isCalendarRoute(route) || holdsToday(route, today)) return today;
-  return pageStart(route.view, shownDate(route.date, today));
+  return shownDate(pageStart(route.view, shownDate(route.date, today)), today);
 }
 
 // The date the navigation rail opens `view` on, so each of its views keeps the date the wall is on:

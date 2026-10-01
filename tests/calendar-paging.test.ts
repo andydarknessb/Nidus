@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addDays,
   addMonths,
   canOpenDay,
   clampToWindow,
@@ -361,11 +362,34 @@ describe('wallDate', () => {
   });
 
   it('is on the page shown when the address is outside the window', () => {
-    // Before the window the page shown is the one holding Sep 1, after it the one holding Apr 1.
-    expect(wallDate(page('week', '2020-01-01'), TODAY)).toBe('2026-08-30');
+    // Before the window the page shown is the one holding Sep 1, after it the one holding Apr 1; the day is the
+    // first of that page inside the window.
+    expect(wallDate(page('week', '2020-01-01'), TODAY)).toBe('2026-09-01');
     expect(wallDate(page('day', '2020-01-01'), TODAY)).toBe('2026-09-01');
     expect(wallDate(page('week', '2030-01-01'), TODAY)).toBe('2027-03-28');
     expect(wallDate(page('day', '2030-01-01'), TODAY)).toBe('2027-04-01');
+  });
+
+  it('is the first day of the window on the first page, not the Sunday or the 1st before it', () => {
+    // The week of Aug 30 starts two days before a window that starts on Sep 1, and the grid marks them beyond
+    // the range, so Add event does not open on one.
+    expect(wallDate(page('week', '2026-08-30'), TODAY)).toBe('2026-09-01');
+    expect(wallDate(page('week', '2026-09-03'), TODAY)).toBe('2026-09-01');
+    // A window that starts on Sep 15 (today Oct 15) leaves the first 14 days of the month beyond it.
+    expect(wallDate(page('month', '2026-09-01'), MID_MONTH)).toBe('2026-09-15');
+    expect(wallDate(page('month', '2026-09-20'), MID_MONTH)).toBe('2026-09-15');
+    expect(wallDate(page('month', '2020-01-01'), MID_MONTH)).toBe('2026-09-15');
+  });
+
+  it('is never a day beyond the window, on any page of any view', () => {
+    for (const today of [TODAY, MID_MONTH, '2026-03-31', '2027-01-31']) {
+      const window = pagingWindowAround(today);
+      for (let date = addDays(window.first, -40); date <= addDays(window.last, 40); date = addDays(date, 1)) {
+        for (const view of ['day', 'week', 'month'] as const) {
+          expect(canOpenDay(wallDate(page(view, date), today), window), `${view} ${date} with today ${today}`).toBe(true);
+        }
+      }
+    }
   });
 
   it('is today on a screen that is not a calendar view, even one with a date in its address', () => {
