@@ -1,13 +1,20 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
+  clampToWindow,
+  describePage,
   fiveDays,
   formatClock,
   describeWhen,
   loadOccurrences,
   nowHour,
+  pageDays,
+  pageStart,
+  paging,
+  pagingWindow,
   place,
   visibleHours,
   type AllDayBar,
+  type CalendarView,
   type Occurrence,
   type TimedBlock,
   type WallDay,
@@ -28,7 +35,10 @@ const NEUTRAL = '#d4d4d8';
 // The smallest a tappable event may be drawn (48 px, CLAUDE.md), and the grid padding above and below the columns.
 const MIN_TARGET_PX = 48;
 const GRID_PADDING_PX = 24;
-const GRID = 'grid grid-cols-[4.5rem_repeat(5,minmax(0,1fr))]';
+// The hour gutter and one column per day: five on the home screen, seven in a week, one in a day.
+function gridColumns(count: number): CSSProperties {
+  return { gridTemplateColumns: `4.5rem repeat(${count}, minmax(0, 1fr))` };
+}
 
 function hourLabel(hour: number): string {
   return `${hour % 12 || 12} ${hour % 24 < 12 ? 'AM' : 'PM'}`;
@@ -41,8 +51,81 @@ function tint(color: string | null): CSSProperties {
   return { borderLeftColor: edge, backgroundColor: `color-mix(in srgb, ${edge} 24%, #18181b)` };
 }
 
-export function FiveDayCalendar({ timezone }: { timezone: string }) {
+function useNow(): Date {
   const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), CLOCK_MS);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
+// The home screen: today and the next four days.
+export function FiveDayCalendar({ timezone }: { timezone: string }) {
+  const now = useNow();
+  return <CalendarGrid timezone={timezone} now={now} days={fiveDays(timezone, now)} />;
+}
+
+const PAGE_BUTTON = 'min-h-12 rounded-lg border border-border px-6 text-lg font-medium disabled:opacity-50';
+
+// The week and day views: the same grid as the home screen with a header to page back and forward
+// within the synced window, jump to today and return to the home screen. `date` is the page's
+// anchor (null for today); a date outside the window is pulled to its nearest end.
+export function PagedCalendar({
+  timezone,
+  view,
+  date,
+  onNavigate,
+  onHome,
+}: {
+  timezone: string;
+  view: CalendarView;
+  date: string | null;
+  onNavigate: (view: CalendarView, date: string) => void;
+  onHome: () => void;
+}) {
+  const now = useNow();
+  const window = pagingWindow(timezone, now);
+  const today = householdDay(timezone, now).date;
+  const anchor = pageStart(view, clampToWindow(date ?? today, window));
+  const days = pageDays(view, anchor, timezone, now);
+  const { previous, next } = paging(view, anchor, window);
+  const label = view === 'week' ? 'week' : 'day';
+
+  return (
+    <div className="flex min-h-0 flex-col gap-4">
+      <nav aria-label="Calendar paging" className="flex flex-wrap items-center gap-4">
+        <button type="button" className={PAGE_BUTTON} onClick={onHome}>
+          Home
+        </button>
+        <button type="button" className={PAGE_BUTTON} disabled={previous === null} onClick={() => previous && onNavigate(view, previous)}>
+          Previous {label}
+        </button>
+        <button type="button" className={PAGE_BUTTON} onClick={() => onNavigate(view, pageStart(view, today))}>
+          Today
+        </button>
+        <button type="button" className={PAGE_BUTTON} disabled={next === null} onClick={() => next && onNavigate(view, next)}>
+          Next {label}
+        </button>
+        <h2 className="ml-2 text-2xl font-semibold">{describePage(days)}</h2>
+        <button type="button" className={`${PAGE_BUTTON} ml-auto`} onClick={() => onNavigate(view === 'week' ? 'day' : 'week', view === 'week' ? today : anchor)}>
+          {view === 'week' ? 'Day view' : 'Week view'}
+        </button>
+      </nav>
+      {(previous === null || next === null) && (
+        <p role="status" className="text-lg">
+          {previous === null
+            ? 'This is as far back as the calendar goes. It keeps one month of past events.'
+            : 'This is as far ahead as the calendar goes. It keeps six months of upcoming events.'}
+        </p>
+      )}
+      <CalendarGrid timezone={timezone} now={now} days={days} />
+    </div>
+  );
+}
+
+function CalendarGrid({ timezone, now, days }: { timezone: string; now: Date; days: WallDay[] }) {
+  const columnsStyle = gridColumns(days.length);
   const [occurrences, setOccurrences] = useState<Occurrence[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<Occurrence | null>(null);
@@ -60,13 +143,10 @@ export function FiveDayCalendar({ timezone }: { timezone: string }) {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), CLOCK_MS);
-    return () => clearInterval(id);
-  }, []);
-
-  const today = householdDay(timezone, now).date;
-  // Read again when the Household's day or timezone changes, and on a timer for new events.
+  // The span to read: from the first day's start to the last day's end. Read again when it changes
+  // (the day rolls over, the Household Timezone changes, a page is turned), and on a timer for new events.
+  const fromMs = days[0]!.startMs;
+  const toMs = days[days.length - 1]!.endMs;
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -74,8 +154,7 @@ export function FiveDayCalendar({ timezone }: { timezone: string }) {
     async function read() {
       let delay = REFRESH_MS;
       try {
-        const span = fiveDays(timezone, new Date());
-        const rows = await loadOccurrences(supabase, new Date(span[0]!.startMs), new Date(span[4]!.endMs));
+        const rows = await loadOccurrences(supabase, new Date(fromMs), new Date(toMs));
         if (live) {
           setOccurrences(rows);
           setFailed(false);
@@ -93,10 +172,10 @@ export function FiveDayCalendar({ timezone }: { timezone: string }) {
       live = false;
       clearTimeout(timer);
     };
-  }, [timezone, today]);
+  }, [fromMs, toMs]);
 
-  const days = fiveDays(timezone, now);
-  const todayHour = nowHour(days[0]!, now);
+  const todayColumn = days.find((day) => day.isToday);
+  const todayHour = todayColumn ? nowHour(todayColumn, now) : null;
   const { startHour, endHour } = visibleHours(place(occurrences ?? [], days).columns, todayHour);
   const minMinutes = (MIN_TARGET_PX / (gridPx / (endHour - startHour))) * 60;
   const { allDay, columns } = place(occurrences ?? [], days, minMinutes);
@@ -104,7 +183,7 @@ export function FiveDayCalendar({ timezone }: { timezone: string }) {
 
   return (
     <section aria-label="Calendar" className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border">
-      <div className={`${GRID} border-b border-border`}>
+      <div style={columnsStyle} className="grid border-b border-border">
         <div />
         {days.map((day) => (
           <DayHeading key={day.date} day={day} />
@@ -115,8 +194,8 @@ export function FiveDayCalendar({ timezone }: { timezone: string }) {
           Could not load the calendar. Check your connection.
         </p>
       )}
-      {allDay.length > 0 && <AllDayBand bars={allDay} onOpen={setOpen} />}
-      <div ref={grid} className={`${GRID} min-h-0 flex-1`}>
+      {allDay.length > 0 && <AllDayBand bars={allDay} columnsStyle={columnsStyle} onOpen={setOpen} />}
+      <div ref={grid} style={columnsStyle} className="grid min-h-0 flex-1">
         <div className="relative my-3" aria-hidden>
           {hours.slice(1, -1).map((hour) => (
             <span key={hour} className="absolute right-2 -translate-y-1/2 text-base" style={{ top: `${((hour - startHour) / (endHour - startHour)) * 100}%` }}>
@@ -163,9 +242,9 @@ function DayHeading({ day }: { day: WallDay }) {
   );
 }
 
-function AllDayBand({ bars, onOpen }: { bars: AllDayBar[]; onOpen: (occurrence: Occurrence) => void }) {
+function AllDayBand({ bars, columnsStyle, onOpen }: { bars: AllDayBar[]; columnsStyle: CSSProperties; onOpen: (occurrence: Occurrence) => void }) {
   return (
-    <div className={`${GRID} max-h-[30%] auto-rows-min gap-y-1 overflow-y-auto border-b border-border py-1`}>
+    <div style={columnsStyle} className="grid max-h-[30%] auto-rows-min gap-y-1 overflow-y-auto border-b border-border py-1">
       {bars.map((bar) => (
         <button
           key={bar.occurrence.id}

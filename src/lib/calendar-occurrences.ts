@@ -146,6 +146,34 @@ export function paging(view: CalendarView, anchor: string, window: PagingWindow)
   };
 }
 
+// A page's title: "Wed, Sep 30, 2026" for a day, "Sep 27 to Oct 3, 2026" for a week. Calendar dates
+// carry no zone, so they are formatted in UTC.
+export function describePage(days: WallDay[]): string {
+  const format = (date: string, options: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...options }).format(new Date(`${date}T00:00:00Z`));
+  const first = days[0]!.date;
+  const last = days[days.length - 1]!.date;
+  if (first === last) return format(first, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const sameYear = first.slice(0, 4) === last.slice(0, 4);
+  return `${format(first, sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })} to ${format(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+}
+
+// The wall's routes: "/" is the home screen, "/week" and "/day" the secondary views, each anchored
+// by "?date=YYYY-MM-DD" (today when it is missing or not a date).
+export type WallRoute = { view: 'home' } | { view: CalendarView; date: string | null };
+
+export function parseWallRoute(pathname: string, search: string): WallRoute {
+  const view = pathname === '/week' ? 'week' : pathname === '/day' ? 'day' : null;
+  if (!view) return { view: 'home' };
+  const date = new URLSearchParams(search).get('date');
+  const valid = date !== null && /^\d{4}-\d{2}-\d{2}$/.test(date) && addDays(date, 0) === date;
+  return { view, date: valid ? date : null };
+}
+
+export function wallPath(view: CalendarView, date: string): string {
+  return `/${view}?date=${date}`;
+}
+
 export function clampToWindow(date: string, window: PagingWindow): string {
   return date < window.first ? window.first : date > window.last ? window.last : date;
 }

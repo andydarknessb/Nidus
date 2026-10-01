@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   addMonths,
   clampToWindow,
+  describePage,
   pageDays,
   pageStart,
   paging,
   pagingWindow,
+  parseWallRoute,
+  wallPath,
   weekStart,
 } from '../src/lib/calendar-occurrences';
 
@@ -118,6 +121,34 @@ describe('paging', () => {
     // The week of Mar 28 holds Mar 30, the last day: it is the last week.
     expect(paging('week', '2027-03-28', window).next).toBeNull();
     expect(paging('week', '2027-03-21', window).next).toBe('2027-03-28');
+  });
+});
+
+describe('describePage', () => {
+  const now = new Date('2026-09-30T15:00:00Z');
+
+  it('names a day and a week, with the year where the range crosses one', () => {
+    expect(describePage(pageDays('day', '2026-09-30', CHICAGO, now))).toBe('Wed, Sep 30, 2026');
+    expect(describePage(pageDays('week', '2026-09-27', CHICAGO, now))).toBe('Sep 27 to Oct 3, 2026');
+    expect(describePage(pageDays('week', '2026-12-27', CHICAGO, now))).toBe('Dec 27, 2026 to Jan 2, 2027');
+  });
+});
+
+describe('wall routes', () => {
+  it('reads the view and the date from the address', () => {
+    expect(parseWallRoute('/', '')).toEqual({ view: 'home' });
+    expect(parseWallRoute('/week', '?date=2026-09-30')).toEqual({ view: 'week', date: '2026-09-30' });
+    expect(parseWallRoute('/day', '?date=2026-10-02')).toEqual({ view: 'day', date: '2026-10-02' });
+  });
+
+  it('falls back to today for a missing or bad date', () => {
+    expect(parseWallRoute('/week', '')).toEqual({ view: 'week', date: null });
+    expect(parseWallRoute('/day', '?date=tomorrow')).toEqual({ view: 'day', date: null });
+    expect(parseWallRoute('/day', '?date=2026-02-31')).toEqual({ view: 'day', date: null });
+  });
+
+  it('writes the address back', () => {
+    expect(wallPath('week', '2026-09-27')).toBe('/week?date=2026-09-27');
   });
 });
 
