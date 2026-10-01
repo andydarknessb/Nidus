@@ -1,5 +1,5 @@
 import { Calendar1, CalendarRange, House, ListChecks, type LucideIcon } from 'lucide-react';
-import { useEffect, useState, type ComponentProps } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
@@ -7,11 +7,13 @@ import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
 import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { ConnectionBadge } from './components/ConnectionBadge';
 import { NativeEventSheet } from './components/NativeEventSheet';
+import { ProfileChips } from './components/ProfileChips';
 import { useChangeTick } from './lib/change-feed';
 import { formatClock, formatDate, navigationRailDate, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
 import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
+import { createProfileFilter, PressedProfilesContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useNow } from './lib/wall-hooks';
 import { RoutinesRail } from './RoutinesPage';
@@ -259,6 +261,12 @@ function HomeShell() {
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   const [listsOpen, setListsOpen] = useState(false);
+  // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
+  // A tap redraws the chips and, through the context, every calendar view; the chips prune it when the
+  // Profiles change.
+  const [filter] = useState(createProfileFilter);
+  const pressed = useSyncExternalStore(filter.subscribe, filter.pressed);
+  useEffect(() => () => filter.dispose(), [filter]);
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(0);
@@ -290,44 +298,51 @@ function HomeShell() {
   const timezone = view.household?.timezone ?? null;
 
   const today = timezone ? householdDay(timezone).date : null;
+  // The Profile chips and Add event are for the calendar screens. Every screen the shell has is one; a
+  // screen that is not (Routines, Meals) turns them off here.
+  const onCalendar = true;
 
   return (
     <main className="grid h-svh grid-cols-[5.5rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
       <NavigationRail route={route} timezone={timezone} onOpen={openView} onHome={openHome} onLists={() => setListsOpen(true)} />
       <header className="flex min-h-12 items-center gap-6">
-        <h1 className="min-w-0 truncate text-3xl font-semibold">{name}</h1>
+        {/* Short of room, the name truncates first (shrink-8) and the chips scroll in what is left. */}
+        <h1 className="min-w-0 shrink-8 truncate text-3xl font-semibold">{name}</h1>
         {timezone && <WallClock timezone={timezone} />}
+        {onCalendar && <ProfileChips filter={filter} pressed={pressed} />}
         <div className="ml-auto flex shrink-0 items-center gap-4">
           <ConnectionBadge />
           <SyncBadge />
-          {timezone && (
+          {onCalendar && timezone && (
             <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setAdding(true)}>
               Add event
             </button>
           )}
         </div>
       </header>
-      {route.view !== 'home' && timezone ? (
-        <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} />
-      ) : (
-      <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
-        {timezone ? <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
-        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
-          {timezone ? (
-            <RoutinesRail timezone={timezone} />
-          ) : (
-            <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4">
-              {view.failed && (
-                <p role="alert" className="text-base">
-                  Could not load Routines. Check your connection.
-                </p>
+      <PressedProfilesContext.Provider value={pressed}>
+        {route.view !== 'home' && timezone ? (
+          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} />
+        ) : (
+          <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
+            {timezone ? <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
+            <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
+              {timezone ? (
+                <RoutinesRail timezone={timezone} />
+              ) : (
+                <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4">
+                  {view.failed && (
+                    <p role="alert" className="text-base">
+                      Could not load Routines. Check your connection.
+                    </p>
+                  )}
+                </aside>
               )}
-            </aside>
-          )}
-          <PinnedListRail />
-        </div>
-      </div>
-      )}
+              <PinnedListRail />
+            </div>
+          </div>
+        )}
+      </PressedProfilesContext.Provider>
       {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
       {adding && timezone && today && (
         <NativeEventSheet
