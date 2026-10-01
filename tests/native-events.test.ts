@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadOccurrences, type Occurrence } from '../src/lib/calendar-occurrences';
-import { deleteNativeEvent, saveNativeEvent, type NativeEventInput } from '../src/lib/native-events';
+import {
+  blankEventForm,
+  deleteNativeEvent,
+  eventFormFromOccurrence,
+  eventFormToInput,
+  saveNativeEvent,
+  type NativeEventInput,
+} from '../src/lib/native-events';
 import { PROFILE_PALETTE, createProfile, deleteProfile, type Profile } from '../src/lib/profiles';
 import { arrangeCalendar, arrangeEvents } from './support/calendar';
 import {
@@ -259,5 +266,102 @@ describe('calendar_occurrences attribution of Native Events', () => {
       ['native', 'Plumber'],
     ]);
     expect(rows[0]).toMatchObject({ calendar_id: calendarId, profile_ids: [] });
+  });
+});
+
+// The sheet's form, in the Household Timezone and never the machine's.
+describe('the Native Event form', () => {
+  const CHICAGO = 'America/Chicago';
+  const form = { ...blankEventForm('2026-10-08'), title: ' Plumber ', startTime: '14:00', endTime: '15:30' };
+
+  it('turns wall-clock times into instants in the Household Timezone', () => {
+    expect(eventFormToInput(form, CHICAGO)).toEqual({
+      title: 'Plumber',
+      location: null,
+      notes: null,
+      starts_at: '2026-10-08T19:00:00.000Z',
+      ends_at: '2026-10-08T20:30:00.000Z',
+      is_all_day: false,
+      profile_ids: [],
+    });
+    // The same wall time in another zone is another instant: nothing reads the machine's zone.
+    expect(eventFormToInput(form, 'Pacific/Auckland')).toMatchObject({ starts_at: '2026-10-08T01:00:00.000Z' });
+  });
+
+  it('keeps the wall clock across a daylight saving change', () => {
+    // Chicago went back from CDT to CST on 2026-11-01.
+    const input = eventFormToInput({ ...form, ...{ date: '2026-11-02' } }, CHICAGO);
+    expect(input).toMatchObject({ starts_at: '2026-11-02T20:00:00.000Z' });
+  });
+
+  it('makes an all-day event the Household day, ending at the next midnight', () => {
+    expect(eventFormToInput({ ...form, allDay: true }, CHICAGO)).toMatchObject({
+      starts_at: '2026-10-08T05:00:00.000Z',
+      ends_at: '2026-10-09T05:00:00.000Z',
+      is_all_day: true,
+    });
+    // On a 25 hour day the next midnight is 25 hours on.
+    expect(eventFormToInput({ ...blankEventForm('2026-11-01'), title: 'Clocks', allDay: true }, CHICAGO)).toMatchObject({
+      starts_at: '2026-11-01T05:00:00.000Z',
+      ends_at: '2026-11-02T06:00:00.000Z',
+    });
+  });
+
+  it('keeps blank optional fields as none and trims the rest', () => {
+    expect(eventFormToInput({ ...form, location: '  ', notes: ' Key under the pot ', profileIds: ['a', 'b'] }, CHICAGO)).toMatchObject({
+      location: null,
+      notes: 'Key under the pot',
+      profile_ids: ['a', 'b'],
+    });
+  });
+
+  it('says what is wrong instead of saving', () => {
+    expect(eventFormToInput({ ...form, title: '  ' }, CHICAGO)).toEqual({ problem: 'Give the event a title.' });
+    expect(eventFormToInput({ ...form, date: '' }, CHICAGO)).toEqual({ problem: 'Pick a date.' });
+    expect(eventFormToInput({ ...form, startTime: '' }, CHICAGO)).toEqual({ problem: 'Pick a start and end time, or choose all day.' });
+    expect(eventFormToInput({ ...form, endTime: '13:00' }, CHICAGO)).toEqual({ problem: 'The event must end after it starts.' });
+    // All day needs no times.
+    expect(eventFormToInput({ ...form, allDay: true, startTime: '', endTime: '' }, CHICAGO)).toHaveProperty('is_all_day', true);
+  });
+
+  it('fills the form from an occurrence, as the Household sees it', () => {
+    const occurrence = {
+      source: 'native',
+      id: 'n1',
+      calendar_id: null,
+      calendar_name: 'Nidus',
+      title: 'Plumber',
+      description: 'Key under the pot',
+      location: '12 Elm St',
+      starts_at: '2026-10-08T19:00:00+00:00',
+      ends_at: '2026-10-08T20:30:00+00:00',
+      is_all_day: false,
+      profile_id: 'a',
+      color: '#fff',
+      profile_ids: ['a', 'b'],
+      colors: ['#fff', '#000'],
+    } satisfies Occurrence;
+    const filled = eventFormFromOccurrence(occurrence, CHICAGO);
+    expect(filled).toEqual({
+      title: 'Plumber',
+      date: '2026-10-08',
+      allDay: false,
+      startTime: '14:00',
+      endTime: '15:30',
+      location: '12 Elm St',
+      notes: 'Key under the pot',
+      profileIds: ['a', 'b'],
+    });
+    // Saving it unchanged writes the same instants back.
+    expect(eventFormToInput(filled, CHICAGO)).toMatchObject({ starts_at: '2026-10-08T19:00:00.000Z', ends_at: '2026-10-08T20:30:00.000Z' });
+  });
+
+  it('fills an all-day event with no times', () => {
+    const filled = eventFormFromOccurrence(
+      { ...({} as Occurrence), title: 'Trip', description: null, location: null, starts_at: '2026-10-08T05:00:00Z', ends_at: '2026-10-09T05:00:00Z', is_all_day: true, profile_ids: [] },
+      CHICAGO,
+    );
+    expect(filled).toMatchObject({ date: '2026-10-08', allDay: true });
+    expect(eventFormToInput(filled, CHICAGO)).toMatchObject({ starts_at: '2026-10-08T05:00:00.000Z', ends_at: '2026-10-09T05:00:00.000Z' });
   });
 });

@@ -35,14 +35,14 @@ export type Occurrence = {
   colors: string[];
 };
 
-const columns =
+export const occurrenceColumns =
   'source, id, calendar_id, calendar_name, title, description, location, starts_at, ends_at, is_all_day, profile_id, color, profile_ids, colors';
 
 // Household Account or Device. Everything that overlaps [from, to), in start order.
 export async function loadOccurrences(client: SupabaseClient, from: Date, to: Date): Promise<Occurrence[]> {
   const { data, error } = await client
     .from('calendar_occurrences')
-    .select(columns)
+    .select(occurrenceColumns)
     .lt('starts_at', to.toISOString())
     // Inclusive so an event of no length at `from` is kept; placement is the exact overlap test.
     .gte('ends_at', from.toISOString())
