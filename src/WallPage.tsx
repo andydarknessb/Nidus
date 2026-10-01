@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
+import { FiveDayCalendar } from './components/FiveDayCalendar';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { supabase } from './lib/supabase';
 import { RoutinesRail } from './RoutinesPage';
@@ -114,7 +115,7 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
   );
 }
 
-// The landscape home screen: the calendar columns come later; the right rail
+// The landscape home screen: the five-day calendar on the left; the right rail
 // holds today's Routines above the pinned Shared List, and the other lists open from the header.
 function HomeShell() {
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
@@ -155,7 +156,7 @@ function HomeShell() {
         </button>
       </header>
       <div className="grid min-h-0 grid-cols-[1fr_24rem] gap-6">
-        <section aria-label="Home" className="rounded-xl border border-border" />
+        {timezone ? <FiveDayCalendar timezone={timezone} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
         <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
           {timezone ? (
             <RoutinesRail timezone={timezone} />
