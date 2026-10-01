@@ -26,6 +26,9 @@ import { useOccurrences } from '../lib/wall-hooks';
 const CELL_HEAD_REM = 2.25;
 const CELL_LINE_REM = 1.5;
 const BEYOND_RANGE = "Beyond the calendar's range";
+// The ground of a day beyond the window: thin diagonal lines in the border colour, so that "beyond the
+// calendar's range" is told by a mark and not by colour alone. Used nowhere else.
+const HATCH = 'bg-[repeating-linear-gradient(135deg,transparent_0_6px,var(--border)_6px_8px)]';
 
 // `anchor` is the 1st of the month shown. `version` changes when the screen around the calendar has written
 // an event, so every week reads again at once.
@@ -203,16 +206,17 @@ function DayCell({
   timezone: string;
   onOpen: (date: string) => void;
 }) {
-  // A day of the neighbouring month, or beyond the window, is dimmed with the muted colour, which is AAA on the
-  // page ground but not on today's lifted one, so today keeps the full colour wherever it falls.
-  const dim = (inMonth && !beyond) || day.isToday ? '' : 'text-muted-foreground';
+  // A day of the neighbouring month is dimmed with the muted colour, which is AAA on the page ground (7.59:1) but
+  // not on today's lifted one (6.55:1), so today keeps the full colour wherever it falls. The same goes for a day
+  // beyond the window: the muted colour is 6.06:1 against the lines of its hatch, the full colour 15.23:1.
+  const dim = !inMonth && !beyond && !day.isToday ? 'text-muted-foreground' : '';
   // The date's line is shorter than its row so that today's underline sits inside the row, above the first line.
   const date = (
     <span className={`h-7 shrink-0 px-1 text-lg leading-6 font-semibold ${day.isToday ? 'underline decoration-4 underline-offset-2' : ''}`}>{Number(day.date.slice(8))}</span>
   );
   if (beyond) {
     return (
-      <div className={`flex min-h-0 flex-col overflow-hidden pt-1 ${dim}`}>
+      <div className={`flex min-h-0 flex-col overflow-hidden pt-1 ${HATCH}`}>
         {date}
         <span className="sr-only">{BEYOND_RANGE}</span>
       </div>
