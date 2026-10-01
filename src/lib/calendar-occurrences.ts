@@ -168,7 +168,8 @@ export function describePage(days: WallDay[]): string {
 }
 
 // The wall's routes: "/" is the home screen, "/week" and "/day" the secondary views, each anchored
-// by "?date=YYYY-MM-DD" (today when it is missing or not a date).
+// by "?date=YYYY-MM-DD" (today when it is missing or not a date). A route with no `date` at all is a
+// screen that is not a page of the calendar (so far only the home screen), and counts as today's.
 export type WallRoute = { view: 'home' } | { view: CalendarView; date: string | null };
 
 export function parseWallRoute(pathname: string, search: string): WallRoute {
@@ -183,16 +184,29 @@ export function wallPath(view: CalendarView, date: string): string {
   return `/${view}?date=${date}`;
 }
 
-// The date the rail opens `view` on, so Day and Week keep the date the wall is on. From the home
-// screen that is today's page; from a paged view it is the page holding that view's date, except
-// that Day opens today whenever the page being left holds today. It returns the page's own anchor,
-// so a page already open is the same address and a tap adds no step for Back. Everything goes
-// through pageStart, so a month view needs only its own anchor there, not a change here.
-export function railDate(view: CalendarView, route: WallRoute, today: string): string {
-  if (route.view === 'home') return pageStart(view, today);
-  const date = route.date ?? today;
-  const leavingToday = pageStart(route.view, date) === pageStart(route.view, today);
-  return pageStart(view, view === 'day' && leavingToday ? today : date);
+// Whether the page `route` shows holds `today`. A screen with no calendar date (the home screen now,
+// Routines and Meals later) is today's page, so it always does. A paged view holds it when today falls
+// on its page, which each view decides through its own anchor (pageStart): a day when it is today, a
+// week when today is in it, and a month, once there is one, when today is in that month.
+export function holdsToday(route: WallRoute, today: string): boolean {
+  if (!('date' in route)) return true;
+  return pageStart(route.view, route.date ?? today) === pageStart(route.view, today);
+}
+
+// The Household date the wall is on: today when the page shown holds it, otherwise the page's first
+// day. Add event starts on it, and the navigation rail opens its views from it.
+export function wallDate(route: WallRoute, today: string): string {
+  if (!('date' in route) || holdsToday(route, today)) return today;
+  return pageStart(route.view, route.date ?? today);
+}
+
+// The date the navigation rail opens `view` on, so each of its views keeps the date the wall is on:
+// the page holding today when the page being left holds it (a screen with no calendar date always
+// does), otherwise the page holding the left page's date. It returns the page's own anchor, so a page
+// already open is the same address and a tap adds no step for Back. Everything goes through
+// pageStart, so a month view is one more anchor there, and a screen with no date is already covered.
+export function navigationRailDate(view: CalendarView, route: WallRoute, today: string): string {
+  return pageStart(view, wallDate(route, today));
 }
 
 export function clampToWindow(date: string, window: PagingWindow): string {

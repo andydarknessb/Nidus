@@ -8,7 +8,7 @@ import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { ConnectionBadge } from './components/ConnectionBadge';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { useChangeTick } from './lib/change-feed';
-import { formatClock, formatDate, parseWallRoute, railDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
+import { formatClock, formatDate, navigationRailDate, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
 import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
@@ -189,9 +189,10 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
   return [route, (view, date) => go(wallPath(view, date)), () => go('/')];
 }
 
-// One entry of the rail: an icon over a word, at least 64 px square. The current one is marked by a
-// bar down its edge and a filled ground as well as `aria-current`, so it never rests on colour alone.
-function RailEntry({ icon: Icon, label, current = false, ...props }: { icon: LucideIcon; label: string; current?: boolean } & ComponentProps<'button'>) {
+// One entry of the navigation rail: an icon over a word, at least 64 px square. The current one is
+// marked by a bar down its edge and a filled ground as well as `aria-current`, so it never rests on
+// colour alone.
+function NavigationRailEntry({ icon: Icon, label, current = false, ...props }: { icon: LucideIcon; label: string; current?: boolean } & ComponentProps<'button'>) {
   return (
     <button
       type="button"
@@ -206,10 +207,13 @@ function RailEntry({ icon: Icon, label, current = false, ...props }: { icon: Luc
   );
 }
 
-// The rail down the left side: Home, Day, Week and Lists. Day and Week keep the date the wall is on
-// (railDate), read at the tap so one just after Household midnight is right, and wait for the
-// Household Timezone. Lists opens the Lists screen over this one rather than going anywhere.
-function WallRail({
+// The navigation rail down the left side: Home, Day, Week and Lists. Day and Week keep the date the
+// wall is on (navigationRailDate), read at the tap so one just after Household midnight is right, and
+// wait for the Household Timezone. Lists opens the Lists screen over this one rather than going
+// anywhere. Its column is its whole width, border and padding included, and must stay at most 90 px:
+// the five day columns at 1280 px need 140 px each. The longest labels still to come (Routines,
+// Settings) fit in it.
+function NavigationRail({
   route,
   timezone,
   onOpen,
@@ -223,14 +227,14 @@ function WallRail({
   onLists: () => void;
 }) {
   const open = (view: CalendarView) => {
-    if (timezone) onOpen(view, railDate(view, route, householdDay(timezone).date));
+    if (timezone) onOpen(view, navigationRailDate(view, route, householdDay(timezone).date));
   };
   return (
-    <nav aria-label="Wall sections" className="row-span-2 flex flex-col gap-2 rounded-xl border border-border p-2">
-      <RailEntry icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
-      <RailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
-      <RailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
-      <RailEntry icon={ListChecks} label="Lists" aria-haspopup="dialog" onClick={onLists} />
+    <nav aria-label="Wall sections" className="row-span-2 flex flex-col gap-2 rounded-xl border border-border p-1.5">
+      <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
+      <NavigationRailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
+      <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
+      <NavigationRailEntry icon={ListChecks} label="Lists" aria-haspopup="dialog" onClick={onLists} />
     </nav>
   );
 }
@@ -272,7 +276,7 @@ function HomeShell() {
       }
       if (!live) return;
       setView((prev) => householdViewAfter(prev, outcome));
-      // After a failed read retry sooner, so the rail appears once the connection is back.
+      // After a failed read retry sooner, so the Routines rail appears once the connection is back.
       timer = setTimeout(() => void read(), 'household' in outcome ? HOUSEHOLD_REFRESH_MS : HOUSEHOLD_RETRY_MS);
     }
 
@@ -289,7 +293,7 @@ function HomeShell() {
 
   return (
     <main className="grid h-svh grid-cols-[5.5rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
-      <WallRail route={route} timezone={timezone} onOpen={openView} onHome={openHome} onLists={() => setListsOpen(true)} />
+      <NavigationRail route={route} timezone={timezone} onOpen={openView} onHome={openHome} onLists={() => setListsOpen(true)} />
       <header className="flex min-h-12 items-center gap-6">
         <h1 className="min-w-0 truncate text-3xl font-semibold">{name}</h1>
         {timezone && <WallClock timezone={timezone} />}
@@ -328,8 +332,8 @@ function HomeShell() {
       {adding && timezone && today && (
         <NativeEventSheet
           timezone={timezone}
-          // The day the wall is on: the paged view's day, else today.
-          date={route.view !== 'home' && route.date ? route.date : today}
+          // The day the wall is on: today when the page shown holds it, else that page's first day.
+          date={wallDate(route, today)}
           onClose={() => setAdding(false)}
           onSaved={() => {
             setAdding(false);
