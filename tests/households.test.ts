@@ -14,13 +14,13 @@ describe('households', () => {
     await Promise.all(arranged.splice(0).map(destroyHousehold));
   });
 
-  it('an anonymous visitor reads zero households', async () => {
+  it('refuses a client with no session at the table grant', async () => {
     arranged.push(await createHousehold('The Andersons'));
 
     const { data, error } = await asAnonymous().from('households').select('id');
 
-    expect(error).toBeNull();
-    expect(data).toEqual([]);
+    expect(error?.code).toBe('42501');
+    expect(data).toBeNull();
   });
 
   it('a Household Account reads its own Household and nobody else\'s', async () => {

@@ -14,7 +14,7 @@ Settled in the design grilling on 2026-09-24. Vocabulary lives in [CONTEXT.md](.
 - **Routines**: per Profile, days-of-week schedule. "Checked" = a Routine Completion exists for today's Household date, so there is no reset job.
 - **Shared Lists**: many named lists, text-only items, crossed items stay struck until "clear completed" deletes them. One list is pinned to the home screen (Household setting, default Groceries).
 - **Native Events**: no recurrence in v1; zero-or-more Profiles, zero = household.
-- **Realtime**: subscribe to the household's tables; on any change, refetch the affected query. No surgical cache updates.
+- **Realtime**: subscribe to the household's tables; on any change, refetch the affected query. No surgical cache updates. Deletes are the one exception: Realtime applies no row-level policy to a delete, so it is delivered to every subscriber of the table, in any Household, carrying the primary key and timing only, never a column; the frontend reads nothing from the payload. Accepted for v1; a second Household on the same hosted project is the trigger to move the change feed to Broadcast on private per-Household topics.
 - **Home screen**: today + next 4 days as columns; right rail with today's Routines grouped by Profile and the pinned Shared List. Week and day views are secondary. Dark theme always; night dimming and screensaver belong to Fully Kiosk.
 - **Timezone**: one Household Timezone; all display, date and reset logic uses it.
 - **Dropped from v1**: Profile PIN, chores with rollover, meal planner, inbound email AI, media screensaver, month/agenda views, Microsoft and iCloud providers, two-way sync, Next.js, NestJS/Redis/BullMQ/Socket.io.
