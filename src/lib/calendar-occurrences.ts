@@ -77,20 +77,77 @@ export function wallHour(ms: number, day: WallDay): number {
   return Math.min(Math.max(hour, 0), 24);
 }
 
+function wallDays(dates: string[], today: string, timezone: string): WallDay[] {
+  return dates.map((date) => ({
+    date,
+    weekday: householdDay(timezone, new Date(dayStartMs(date, timezone))).weekday,
+    startMs: dayStartMs(date, timezone),
+    endMs: dayStartMs(addDays(date, 1), timezone),
+    isToday: date === today,
+    timezone,
+  }));
+}
+
 // Today and the next four days in the Household Timezone.
 export function fiveDays(timezone: string, now: Date = new Date()): WallDay[] {
   const today = householdDay(timezone, now).date;
-  return Array.from({ length: 5 }, (_, index) => {
-    const date = addDays(today, index);
-    return {
-      date,
-      weekday: householdDay(timezone, new Date(dayStartMs(date, timezone))).weekday,
-      startMs: dayStartMs(date, timezone),
-      endMs: dayStartMs(addDays(date, 1), timezone),
-      isToday: index === 0,
-      timezone,
-    };
-  });
+  return wallDays(Array.from({ length: 5 }, (_, index) => addDays(today, index)), today, timezone);
+}
+
+// ---- Week and day views -------------------------------------------------------------
+
+export type CalendarView = 'week' | 'day';
+
+// The week runs Sunday to Saturday, as WEEKDAYS does.
+export function weekStart(date: string): string {
+  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
+  return addDays(date, -new Date(Date.UTC(year, month - 1, day)).getUTCDay());
+}
+
+// `date` moved by whole calendar months, stopping at the end of a shorter month (Mar 31 less a
+// month is Feb 28), the way the sync window is cut.
+export function addMonths(date: string, months: number): string {
+  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
+  const lastDay = new Date(Date.UTC(year, month - 1 + months + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month - 1 + months, Math.min(day, lastDay))).toISOString().slice(0, 10);
+}
+
+// The first and last Household dates the wall can page to: the mirror holds a month back and six
+// months ahead of today (PLAN.md: Calendar), so nothing beyond them has events to show.
+export type PagingWindow = { first: string; last: string };
+
+export function pagingWindow(timezone: string, now: Date = new Date()): PagingWindow {
+  const today = householdDay(timezone, now).date;
+  return { first: addMonths(today, -1), last: addMonths(today, 6) };
+}
+
+// The date a page is anchored on: the Sunday of a week page, the day itself on a day page.
+export function pageStart(view: CalendarView, date: string): string {
+  return view === 'week' ? weekStart(date) : date;
+}
+
+// The seven days of a week page, or the one day of a day page, in the Household Timezone.
+export function pageDays(view: CalendarView, anchor: string, timezone: string, now: Date = new Date()): WallDay[] {
+  const first = pageStart(view, anchor);
+  const today = householdDay(timezone, now).date;
+  return wallDays(Array.from({ length: view === 'week' ? 7 : 1 }, (_, index) => addDays(first, index)), today, timezone);
+}
+
+// The anchors of the pages either side of `anchor`, or null at the end of the window: a page is
+// reachable while any of its days falls inside it, so a week that only partly overlaps is kept.
+export function paging(view: CalendarView, anchor: string, window: PagingWindow): { previous: string | null; next: string | null } {
+  const length = view === 'week' ? 7 : 1;
+  const current = pageStart(view, anchor);
+  const previous = addDays(current, -length);
+  const next = addDays(current, length);
+  return {
+    previous: addDays(previous, length - 1) >= window.first ? previous : null,
+    next: next <= window.last ? next : null,
+  };
+}
+
+export function clampToWindow(date: string, window: PagingWindow): string {
+  return date < window.first ? window.first : date > window.last ? window.last : date;
 }
 
 // ---- Placement ----------------------------------------------------------------------
