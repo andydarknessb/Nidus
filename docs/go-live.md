@@ -25,7 +25,7 @@ Two OAuth clients, both type Web application, in the same project as `docs/googl
 1. Create a project and note the database password and the project reference.
 2. Database, Extensions: confirm `pg_cron`, `pg_net` and `supabase_vault` are enabled. The migrations ask for them, so this is only a check.
 3. Authentication, Providers, Google: turn it on with the sign-in client's ID and secret.
-4. Authentication, URL Configuration: Site URL `https://<site>`, and add `https://<site>` to the redirect URLs.
+4. Authentication, URL Configuration: Site URL `https://<site>`, and add `https://<site>/**` to the redirect URLs.
 
 ## 4. Push the migrations
 

@@ -37,7 +37,11 @@ type WallState = { kind: 'connecting' } | { kind: 'unpaired'; pairing: PairingCo
 // One anonymous sign-in at a time, so a remount (StrictMode) never mints two sessions.
 let pendingSignIn: ReturnType<typeof supabase.auth.signInAnonymously> | undefined;
 
+// Set once the owner leaves for /settings: the poll loop must not mint a new anonymous session while the old one is signed out.
+let leaving = false;
+
 async function ensureSession(): Promise<Session> {
+  if (leaving) throw new Error('leaving the Wall');
   const { data } = await supabase.auth.getSession();
   if (data.session) return data.session;
   pendingSignIn ??= supabase.auth.signInAnonymously().finally(() => {
@@ -138,6 +142,7 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
         className="inline-flex min-h-12 items-center text-lg underline"
         onClick={(event) => {
           event.preventDefault();
+          leaving = true;
           void supabase.auth.signOut().finally(() => window.location.assign('/settings'));
         }}
       >
