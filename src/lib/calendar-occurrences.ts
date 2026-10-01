@@ -103,9 +103,9 @@ export function fiveDays(timezone: string, now: Date = new Date()): WallDay[] {
   return wallDays(Array.from({ length: 5 }, (_, index) => addDays(today, index)), today, timezone);
 }
 
-// ---- Week and day views -------------------------------------------------------------
+// ---- Week, day and month views ---------------------------------------------------------
 
-export type CalendarView = 'week' | 'day';
+export type CalendarView = 'week' | 'day' | 'month';
 
 // The week runs Sunday to Saturday, as WEEKDAYS does.
 export function weekStart(date: string): string {
@@ -146,50 +146,78 @@ export function shownDate(date: string | null, today: string): string {
 }
 
 // Whether a day can be opened as itself. A day outside the window opens its nearest end instead, so
-// the week view's days beyond the window are headings, not buttons; the month view will do the same.
+// the week view's days beyond the window are headings and the month view's are plain cells, not buttons.
 export function canOpenDay(date: string, window: PagingWindow): boolean {
   return clampToWindow(date, window) === date;
 }
 
-// The date a page is anchored on: the Sunday of a week page, the day itself on a day page.
+// The date a page is anchored on: the Sunday of a week page, the 1st of a month page, the day itself
+// on a day page.
 export function pageStart(view: CalendarView, date: string): string {
-  return view === 'week' ? weekStart(date) : date;
+  return view === 'week' ? weekStart(date) : view === 'month' ? `${date.slice(0, 8)}01` : date;
 }
 
-// The seven days of a week page, or the one day of a day page, in the Household Timezone.
-export function pageDays(view: CalendarView, anchor: string, timezone: string, now: Date = new Date()): WallDay[] {
+// The seven days of a week page, or the one day of a day page, in the Household Timezone. A month page
+// is a grid of weeks: see monthWeeks.
+export function pageDays(view: 'week' | 'day', anchor: string, timezone: string, now: Date = new Date()): WallDay[] {
   const first = pageStart(view, anchor);
   const today = householdDay(timezone, now).date;
   return wallDays(Array.from({ length: view === 'week' ? 7 : 1 }, (_, index) => addDays(first, index)), today, timezone);
 }
 
+// The weeks of a month page: whole Sunday-to-Saturday weeks from the one holding the 1st to the one
+// holding the last day, four to six of them, each seven days in the Household Timezone. The days either
+// side of the month belong to its neighbours and are only shown. It takes today's date, not the instant,
+// because building 42 days is slow enough that the screen builds them once a day, not on every tick.
+export function monthWeeks(anchor: string, timezone: string, today: string): WallDay[][] {
+  const first = pageStart('month', anchor);
+  const last = addDays(addMonths(first, 1), -1);
+  const weeks: WallDay[][] = [];
+  for (let start = weekStart(first); start <= last; start = addDays(start, 7)) {
+    weeks.push(wallDays(Array.from({ length: 7 }, (_, index) => addDays(start, index)), today, timezone));
+  }
+  return weeks;
+}
+
+// The anchor of the page `count` pages on from the page anchored on `anchor`.
+function pageBy(view: CalendarView, anchor: string, count: number): string {
+  return view === 'month' ? addMonths(anchor, count) : addDays(anchor, count * (view === 'week' ? 7 : 1));
+}
+
 // The anchors of the pages either side of `anchor`, or null at the end of the window: a page is
-// reachable while any of its days falls inside it, so a week that only partly overlaps is kept.
+// reachable while any of its days falls inside it, so a week or a month that only partly overlaps is kept.
 export function paging(view: CalendarView, anchor: string, window: PagingWindow): { previous: string | null; next: string | null } {
-  const length = view === 'week' ? 7 : 1;
   const current = pageStart(view, anchor);
-  const previous = addDays(current, -length);
-  const next = addDays(current, length);
+  const previous = pageBy(view, current, -1);
+  const next = pageBy(view, current, 1);
   return {
-    previous: addDays(previous, length - 1) >= window.first ? previous : null,
+    // The page before ends on the day before this one starts.
+    previous: addDays(current, -1) >= window.first ? previous : null,
     next: next <= window.last ? next : null,
   };
 }
 
-// A page's title: "Wed, Sep 30, 2026" for a day, "Sep 27 to Oct 3, 2026" for a week. Calendar dates
-// carry no zone, so they are formatted in UTC.
-export function describePage(days: WallDay[]): string {
-  const format = (date: string, options: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...options }).format(new Date(`${date}T00:00:00Z`));
-  const first = days[0]!.date;
-  const last = days[days.length - 1]!.date;
-  if (first === last) return format(first, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-  const sameYear = first.slice(0, 4) === last.slice(0, 4);
-  return `${format(first, sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })} to ${format(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+// A calendar date ('YYYY-MM-DD') in words. Calendar dates carry no zone, so they are formatted in UTC.
+function formatCalendarDate(date: string, options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...options }).format(new Date(`${date}T00:00:00Z`));
 }
 
-// The wall's routes: "/" is the home screen, "/week" and "/day" the secondary views, "/meals" the
-// Meals screen and "/routines" the Routines chart. The calendar views and Meals are anchored by
+// A page's title: "Wed, Sep 30, 2026" for a day, "Sep 27 to Oct 3, 2026" for a week.
+export function describePage(days: WallDay[]): string {
+  const first = days[0]!.date;
+  const last = days[days.length - 1]!.date;
+  if (first === last) return formatCalendarDate(first, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const sameYear = first.slice(0, 4) === last.slice(0, 4);
+  return `${formatCalendarDate(first, sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })} to ${formatCalendarDate(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+}
+
+// A month page's title: "October 2026".
+export function describeMonth(date: string): string {
+  return formatCalendarDate(date, { month: 'long', year: 'numeric' });
+}
+
+// The wall's routes: "/" is the home screen, "/week", "/day" and "/month" the secondary views, "/meals"
+// the Meals screen and "/routines" the Routines chart. The calendar views and Meals are anchored by
 // "?date=YYYY-MM-DD" (today's page, or for Meals this week, when it is missing or not a date); the
 // Routines chart is always today's. Only the calendar views keep a date; any other screen (the home
 // screen, Meals, the Routines chart) is today's page when it is left.
@@ -197,7 +225,7 @@ export type WallRoute = { view: 'home' } | { view: 'routines' } | { view: Calend
 
 export function parseWallRoute(pathname: string, search: string): WallRoute {
   if (pathname === '/routines') return { view: 'routines' };
-  const view = pathname === '/week' ? 'week' : pathname === '/day' ? 'day' : pathname === '/meals' ? 'meals' : null;
+  const view = (['day', 'week', 'month', 'meals'] as const).find((candidate) => pathname === `/${candidate}`);
   if (!view) return { view: 'home' };
   const date = new URLSearchParams(search).get('date');
   const valid = date !== null && /^\d{4}-\d{2}-\d{2}$/.test(date) && addDays(date, 0) === date;
@@ -222,34 +250,37 @@ export function mealsPageDate(week: string, today: string): string | null {
 }
 
 // Whether `route` is a page of the calendar, which keeps a date. Every other screen is today's page
-// when it is left, whatever its address carries (Meals has a date and is still one of these). A
-// month view is added here.
+// when it is left, whatever its address carries (Meals has a date and is still one of these).
 function isCalendarRoute(route: WallRoute): route is Extract<WallRoute, { view: CalendarView }> {
-  return route.view === 'day' || route.view === 'week';
+  return route.view === 'day' || route.view === 'week' || route.view === 'month';
 }
 
 // Whether the page `route` shows holds `today`. A screen that is not a calendar view is today's page,
 // so it always does. A calendar page holds it when today falls on the page its address shows, which
 // each view decides through its own anchor (pageStart): a day when it is today, a week when today is
-// in it, and a month, once there is one, when today is in that month.
+// in it, and a month when today is in that month, not when it only shows today as a dimmed day of the
+// month beside it.
 export function holdsToday(route: WallRoute, today: string): boolean {
   if (!isCalendarRoute(route)) return true;
   return pageStart(route.view, shownDate(route.date, today)) === pageStart(route.view, today);
 }
 
 // The Household date the wall is on: today when the page shown holds it, otherwise the page's first
-// day. Add event starts on it, and the navigation rail opens its views from it.
+// day, or the window's first day when the page starts before it (the Sunday of the first week, the 1st of
+// the first month): the grids mark those days as beyond the range, and an event added there is one the
+// wall could not show. Add event starts on it, and the navigation rail opens its views from it.
 export function wallDate(route: WallRoute, today: string): string {
   if (!isCalendarRoute(route) || holdsToday(route, today)) return today;
-  return pageStart(route.view, shownDate(route.date, today));
+  return shownDate(pageStart(route.view, shownDate(route.date, today)), today);
 }
 
 // The date the navigation rail opens `view` on, so each of its views keeps the date the wall is on:
 // the page holding today when the page being left holds it (a screen that is not a calendar view
 // always does), otherwise the page holding the left page's date. It returns the page's own anchor as
-// it is shown (the Sunday for Week, a day inside the window for Day), so a page already open is the
-// same address and a tap adds no step for Back. Everything goes through pageStart, so a month view is
-// one more anchor there and one more calendar view above, and other screens are already covered.
+// it is shown (the Sunday for Week, the 1st for Month, a day inside the window for Day), so a page
+// already open is the same address and a tap adds no step for Back. Everything goes through
+// pageStart, so a month is one more anchor there and one more calendar view above, and other screens
+// are already covered.
 export function navigationRailDate(view: CalendarView, route: WallRoute, today: string): string {
   return pageStart(view, shownDate(wallDate(route, today), today));
 }
@@ -289,10 +320,24 @@ function endOf(occurrence: Occurrence): number {
   return occurrence.is_all_day ? end : Math.max(end, startOf(occurrence) + MIN_EVENT_MINUTES * MINUTE_MS);
 }
 
+// Whether the span from `start` to `end` is on `day`: it starts before the day ends and ends after the day
+// starts, so one ending exactly at midnight is not on the next day. A span of no length overlaps nothing,
+// so it is on the day its instant falls in.
+function spanIsOn(start: number, end: number, day: WallDay): boolean {
+  if (end <= start) return start >= day.startMs && start < day.endMs;
+  return start < day.endMs && end > day.startMs;
+}
+
+// Whether `occurrence` is on `day` as the time grid draws it, an event of no length being given
+// MIN_EVENT_MINUTES (endOf) so that it has something to tap.
+function occursOn(occurrence: Occurrence, day: WallDay): boolean {
+  return spanIsOn(startOf(occurrence), endOf(occurrence), day);
+}
+
 function placeAllDay(occurrences: Occurrence[], days: WallDay[]): AllDayBar[] {
   const bars: AllDayBar[] = [];
   for (const occurrence of occurrences) {
-    const covered = days.flatMap((day, index) => (startOf(occurrence) < day.endMs && endOf(occurrence) > day.startMs ? [index] : []));
+    const covered = days.flatMap((day, index) => (occursOn(occurrence, day) ? [index] : []));
     if (covered.length === 0) continue;
     const first = covered[0]!;
     const last = covered[covered.length - 1]!;
@@ -352,9 +397,9 @@ function placeTimed(occurrences: Occurrence[], day: WallDay, minMinutes: number)
   const blocks: TimedBlock[] = [];
   const spans = new Map<TimedBlock, [number, number]>();
   for (const occurrence of occurrences) {
+    if (!occursOn(occurrence, day)) continue;
     const start = startOf(occurrence);
     const end = endOf(occurrence);
-    if (!(start < day.endMs && end > day.startMs)) continue;
     const shownStart = Math.max(start, day.startMs);
     const shownEnd = Math.min(end, day.endMs);
     const topHour = wallHour(shownStart, day);
@@ -412,10 +457,59 @@ export function nowHour(day: WallDay, now: Date): number | null {
   return at >= day.startMs && at < day.endMs ? wallHour(at, day) : null;
 }
 
+// ---- Month cells --------------------------------------------------------------------
+
+// The occurrences on `day` in the order a month cell lists them: all-day first, then by start, then by
+// title. A multi-day event is on every day it covers, by the overlap test place uses but on what the event
+// really lasts: the padding that gives a short event something to tap in the time grid must not carry one
+// in a day's last quarter hour onto the next day.
+export function dayOccurrences(occurrences: Occurrence[], day: WallDay): Occurrence[] {
+  return occurrences
+    .filter((occurrence) => spanIsOn(startOf(occurrence), Date.parse(occurrence.ends_at), day))
+    .sort((a, b) => Number(b.is_all_day) - Number(a.is_all_day) || startOf(a) - startOf(b) || a.title.localeCompare(b.title));
+}
+
+// What a cell shows: the occurrences that get a line of their own, and the words for the rest.
+export type CellLines = { shown: Occurrence[]; more: string | null };
+
+// What a cell shows when `lines` lines fit: every occurrence if they all do; otherwise all but the last
+// line's worth, and "+N more" on that line with N counting the ones left out; and when only one line
+// fits, just the count.
+export function cellLines(occurrences: Occurrence[], lines: number): CellLines {
+  if (occurrences.length <= lines) return { shown: occurrences, more: null };
+  if (lines <= 1) return { shown: [], more: eventCount(occurrences.length) };
+  const shown = occurrences.slice(0, lines - 1);
+  return { shown, more: `+${occurrences.length - shown.length} more` };
+}
+
+// How many lines of `linePx` fit in a day cell `rowPx` tall once `headPx` is taken for its padding and its
+// date: at least one, so a cell can always say how many events it holds.
+export function linesPerCell(rowPx: number, headPx: number, linePx: number): number {
+  return Math.max(1, Math.floor((rowPx - headPx) / linePx));
+}
+
 // ---- Words --------------------------------------------------------------------------
+
+// "no events", "1 event", "3 events".
+function eventCount(count: number): string {
+  return count === 0 ? 'no events' : count === 1 ? '1 event' : `${count} events`;
+}
+
+// What a screen reader hears of a month cell: "Thursday, October 1, 3 events". Until its day has been read
+// there is no count to give, and "no events" would call a day free that may not be.
+export function describeCell(date: string, count: number | null): string {
+  const day = formatCalendarDate(date, { weekday: 'long', month: 'long', day: 'numeric' });
+  return count === null ? day : `${day}, ${eventCount(count)}`;
+}
 
 export function formatClock(ms: number, timezone: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
+}
+
+// "10 AM" on the hour and "9:30 AM" otherwise: the time without its ":00", for a month line, which has
+// room for little else than a few letters of the title after it.
+export function formatCompactClock(ms: number, timezone: string): string {
+  return formatClock(ms, timezone).replace(':00', '');
 }
 
 // "Thu, Oct 1": the date as the details sheet and the header show it.

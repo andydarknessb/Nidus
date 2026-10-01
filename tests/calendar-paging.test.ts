@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addDays,
   addMonths,
   canOpenDay,
   clampToWindow,
@@ -7,6 +8,7 @@ import {
   holdsToday,
   mealsPageDate,
   mealsPath,
+  monthWeeks,
   navigationRailDate,
   pageDays,
   pageStart,
@@ -82,6 +84,14 @@ describe('pageStart and pageDays', () => {
     expect(days.filter((day) => day.isToday).map((day) => day.date)).toEqual(['2026-09-30']);
   });
 
+  it('a month page starts on the 1st, whichever date of the month names it', () => {
+    expect(pageStart('month', '2026-10-01')).toBe('2026-10-01');
+    expect(pageStart('month', '2026-10-17')).toBe('2026-10-01');
+    expect(pageStart('month', '2026-10-31')).toBe('2026-10-01');
+    expect(pageStart('month', '2026-12-31')).toBe('2026-12-01');
+    expect(pageStart('month', '2028-02-29')).toBe('2028-02-01');
+  });
+
   it('a day page is one day, today or not', () => {
     expect(pageStart('day', '2026-10-02')).toBe('2026-10-02');
     expect(pageDays('day', '2026-10-02', CHICAGO, now).map((day) => [day.date, day.isToday])).toEqual([['2026-10-02', false]]);
@@ -137,6 +147,39 @@ describe('paging', () => {
     expect(paging('week', '2027-03-28', window).next).toBeNull();
     expect(paging('week', '2027-03-21', window).next).toBe('2027-03-28');
   });
+
+  it('pages a month by one month, from whichever date of it names it', () => {
+    expect(paging('month', '2026-10-01', window)).toEqual({ previous: '2026-09-01', next: '2026-11-01' });
+    expect(paging('month', '2026-10-17', window)).toEqual({ previous: '2026-09-01', next: '2026-11-01' });
+    expect(paging('month', '2026-12-01', window).next).toBe('2027-01-01');
+    expect(paging('month', '2027-01-01', window).previous).toBe('2026-12-01');
+  });
+
+  it('stops going back once the previous month is wholly before the window', () => {
+    // The window starts on Aug 30, so August holds its last two days and can be paged to; July cannot.
+    expect(paging('month', '2026-09-01', window).previous).toBe('2026-08-01');
+    expect(paging('month', '2026-08-01', window).previous).toBeNull();
+    expect(paging('month', '2026-08-17', window).previous).toBeNull();
+    // Its last day alone is enough, and a window that starts the day after is not.
+    expect(paging('month', '2026-09-01', { first: '2026-08-31', last: '2027-03-30' }).previous).toBe('2026-08-01');
+    expect(paging('month', '2026-09-01', { first: '2026-09-01', last: '2027-03-30' }).previous).toBeNull();
+  });
+
+  it('stops going forward once the next month starts after the window', () => {
+    // The window ends on Mar 30, so March holds it and is the last month.
+    expect(paging('month', '2027-02-01', window).next).toBe('2027-03-01');
+    expect(paging('month', '2027-03-01', window).next).toBeNull();
+    // A window that ends on the 1st of a month holds that month, but not the one after.
+    const toFirst = { first: '2026-09-01', last: '2027-04-01' };
+    expect(paging('month', '2027-03-01', toFirst).next).toBe('2027-04-01');
+    expect(paging('month', '2027-04-01', toFirst).next).toBeNull();
+  });
+
+  it('pages months from September to April when today is Oct 1', () => {
+    const real = pagingWindow(CHICAGO, new Date('2026-10-01T15:00:00Z'));
+    expect(paging('month', '2026-09-01', real)).toEqual({ previous: null, next: '2026-10-01' });
+    expect(paging('month', '2027-04-01', real)).toEqual({ previous: '2027-03-01', next: null });
+  });
 });
 
 describe('describePage', () => {
@@ -156,6 +199,11 @@ describe('wall routes', () => {
     expect(parseWallRoute('/day', '?date=2026-10-02')).toEqual({ view: 'day', date: '2026-10-02' });
   });
 
+  it('reads a month, anchored by whichever date of it the address carries', () => {
+    expect(parseWallRoute('/month', '?date=2026-10-01')).toEqual({ view: 'month', date: '2026-10-01' });
+    expect(parseWallRoute('/month', '?date=2026-10-17')).toEqual({ view: 'month', date: '2026-10-17' });
+  });
+
   it('reads the Meals screen and the week it is anchored on from the address', () => {
     expect(parseWallRoute('/meals', '?date=2026-10-04')).toEqual({ view: 'meals', date: '2026-10-04' });
     expect(parseWallRoute('/meals', '?date=2026-10-07&other=1')).toEqual({ view: 'meals', date: '2026-10-07' });
@@ -170,6 +218,13 @@ describe('wall routes', () => {
     expect(parseWallRoute('/week', '')).toEqual({ view: 'week', date: null });
     expect(parseWallRoute('/day', '?date=tomorrow')).toEqual({ view: 'day', date: null });
     expect(parseWallRoute('/day', '?date=2026-02-31')).toEqual({ view: 'day', date: null });
+    expect(parseWallRoute('/month', '')).toEqual({ view: 'month', date: null });
+    expect(parseWallRoute('/month', '?date=October')).toEqual({ view: 'month', date: null });
+    expect(parseWallRoute('/month', '?date=2026-02-31')).toEqual({ view: 'month', date: null });
+  });
+
+  it('knows no other path as a view', () => {
+    expect(parseWallRoute('/months', '?date=2026-10-01')).toEqual({ view: 'home' });
   });
 
   it('reads Meals with no date, or a bad one, as this week', () => {
@@ -188,6 +243,7 @@ describe('wall routes', () => {
 
   it('writes the address back', () => {
     expect(wallPath('week', '2026-09-27')).toBe('/week?date=2026-09-27');
+    expect(wallPath('month', '2026-10-01')).toBe('/month?date=2026-10-01');
   });
 
   it('writes the Meals address: none for this week, the anchor otherwise', () => {
@@ -207,6 +263,8 @@ describe('wall routes', () => {
 // paging window around it runs from Tue Sep 1, 2026 to Thu Apr 1, 2027, so the week of Aug 30 to
 // Sep 5 and the week of Mar 28 to Apr 3 each straddle one end of it.
 const TODAY = '2026-10-01';
+// Thu Oct 15, 2026: today in the middle of its month, so that the 1st and today are not the same date.
+const MID_MONTH = '2026-10-15';
 const page = (view: CalendarView, date: string | null): WallRoute => ({ view, date });
 
 describe('shownDate', () => {
@@ -296,6 +354,28 @@ describe('holdsToday', () => {
   it('reads a page with no date as today\'s', () => {
     expect(holdsToday(page('week', null), TODAY)).toBe(true);
     expect(holdsToday(page('day', null), TODAY)).toBe(true);
+    expect(holdsToday(page('month', null), TODAY)).toBe(true);
+  });
+
+  it('is true for a month that holds today, whichever of its dates the address carries', () => {
+    expect(holdsToday(page('month', '2026-10-01'), TODAY)).toBe(true);
+    expect(holdsToday(page('month', '2026-10-17'), TODAY)).toBe(true);
+    expect(holdsToday(page('month', '2026-10-31'), TODAY)).toBe(true);
+    expect(holdsToday(page('month', '2026-12-01'), '2026-12-31')).toBe(true);
+  });
+
+  it('is false for a month that does not', () => {
+    expect(holdsToday(page('month', '2026-11-01'), TODAY)).toBe(false);
+    expect(holdsToday(page('month', '2026-12-01'), '2027-01-01')).toBe(false);
+    // The same month a year on is another month.
+    expect(holdsToday(page('month', '2027-10-01'), TODAY)).toBe(false);
+  });
+
+  it('is false for a month that only shows today as a dimmed day of the one beside it', () => {
+    // The grid for September runs on to Saturday Oct 3, so it shows today, but the page is September's.
+    const shown = monthWeeks('2026-09-01', CHICAGO, TODAY).flat();
+    expect(shown.find((day) => day.isToday)?.date).toBe(TODAY);
+    expect(holdsToday(page('month', '2026-09-01'), TODAY)).toBe(false);
   });
 
   it('is false for an address outside the window, which shows the page at the end of it', () => {
@@ -337,12 +417,48 @@ describe('wallDate', () => {
     expect(wallDate(page('week', '2026-10-14'), TODAY)).toBe('2026-10-11');
   });
 
+  it('is today, not the 1st, on a month that holds today', () => {
+    expect(wallDate(page('month', '2026-10-01'), MID_MONTH)).toBe('2026-10-15');
+    expect(wallDate(page('month', '2026-10-28'), MID_MONTH)).toBe('2026-10-15');
+    expect(wallDate(page('month', null), MID_MONTH)).toBe('2026-10-15');
+  });
+
+  it('is the 1st of a month that does not hold today, however the address names it', () => {
+    expect(wallDate(page('month', '2026-11-01'), MID_MONTH)).toBe('2026-11-01');
+    expect(wallDate(page('month', '2026-11-17'), MID_MONTH)).toBe('2026-11-01');
+    // A month that only shows today as a dimmed day is still on its own 1st.
+    expect(wallDate(page('month', '2026-09-01'), TODAY)).toBe('2026-09-01');
+  });
+
   it('is on the page shown when the address is outside the window', () => {
-    // Before the window the page shown is the one holding Sep 1, after it the one holding Apr 1.
-    expect(wallDate(page('week', '2020-01-01'), TODAY)).toBe('2026-08-30');
+    // Before the window the page shown is the one holding Sep 1, after it the one holding Apr 1; the day is the
+    // first of that page inside the window.
+    expect(wallDate(page('week', '2020-01-01'), TODAY)).toBe('2026-09-01');
     expect(wallDate(page('day', '2020-01-01'), TODAY)).toBe('2026-09-01');
     expect(wallDate(page('week', '2030-01-01'), TODAY)).toBe('2027-03-28');
     expect(wallDate(page('day', '2030-01-01'), TODAY)).toBe('2027-04-01');
+  });
+
+  it('is the first day of the window on the first page, not the Sunday or the 1st before it', () => {
+    // The week of Aug 30 starts two days before a window that starts on Sep 1, and the grid marks them beyond
+    // the range, so Add event does not open on one.
+    expect(wallDate(page('week', '2026-08-30'), TODAY)).toBe('2026-09-01');
+    expect(wallDate(page('week', '2026-09-03'), TODAY)).toBe('2026-09-01');
+    // A window that starts on Sep 15 (today Oct 15) leaves the first 14 days of the month beyond it.
+    expect(wallDate(page('month', '2026-09-01'), MID_MONTH)).toBe('2026-09-15');
+    expect(wallDate(page('month', '2026-09-20'), MID_MONTH)).toBe('2026-09-15');
+    expect(wallDate(page('month', '2020-01-01'), MID_MONTH)).toBe('2026-09-15');
+  });
+
+  it('is never a day beyond the window, on any page of any view', () => {
+    for (const today of [TODAY, MID_MONTH, '2026-03-31', '2027-01-31']) {
+      const window = pagingWindowAround(today);
+      for (let date = addDays(window.first, -40); date <= addDays(window.last, 40); date = addDays(date, 1)) {
+        for (const view of ['day', 'week', 'month'] as const) {
+          expect(canOpenDay(wallDate(page(view, date), today), window), `${view} ${date} with today ${today}`).toBe(true);
+        }
+      }
+    }
   });
 
   it('is today on a screen that is not a calendar view, even one with a date in its address', () => {
@@ -431,6 +547,54 @@ describe('navigationRailDate', () => {
     for (const date of ['2026-10-14', '2026-09-01', '2027-04-01']) {
       expect(wallPath('day', navigationRailDate('day', page('day', date), TODAY))).toBe(wallPath('day', date));
     }
+  });
+
+  it('opens Month on this month from the home screen, and from a week or a day that holds today', () => {
+    expect(navigationRailDate('month', { view: 'home' }, TODAY)).toBe('2026-10-01');
+    // The week of Sep 27 to Oct 3 holds Thursday Oct 1 though it starts in September.
+    expect(navigationRailDate('month', page('week', '2026-09-27'), TODAY)).toBe('2026-10-01');
+    // And the week of Dec 27 holds Jan 1, so it is January that opens.
+    expect(navigationRailDate('month', page('week', '2026-12-27'), '2027-01-01')).toBe('2027-01-01');
+    expect(navigationRailDate('month', page('day', '2026-10-01'), TODAY)).toBe('2026-10-01');
+    expect(navigationRailDate('month', page('week', null), MID_MONTH)).toBe('2026-10-01');
+  });
+
+  it('opens Month on the month holding the left page\'s date when that page does not hold today', () => {
+    expect(navigationRailDate('month', page('week', '2026-11-08'), TODAY)).toBe('2026-11-01');
+    // A week is held by its first day, a Sunday, so the week of Nov 29 to Dec 5 is November's.
+    expect(navigationRailDate('month', page('week', '2026-11-29'), TODAY)).toBe('2026-11-01');
+    expect(navigationRailDate('month', page('day', '2026-12-25'), TODAY)).toBe('2026-12-01');
+  });
+
+  it('from the current month, opens Week on this week and Day on today', () => {
+    expect(navigationRailDate('week', page('month', '2026-10-01'), MID_MONTH)).toBe('2026-10-11');
+    expect(navigationRailDate('day', page('month', '2026-10-01'), MID_MONTH)).toBe('2026-10-15');
+    // The current month is one page whichever of its dates the address carries, or none.
+    expect(navigationRailDate('day', page('month', '2026-10-28'), MID_MONTH)).toBe('2026-10-15');
+    expect(navigationRailDate('week', page('month', null), MID_MONTH)).toBe('2026-10-11');
+    expect(navigationRailDate('day', page('month', null), MID_MONTH)).toBe('2026-10-15');
+  });
+
+  it('from another month, opens Week on the week holding its 1st and Day on its 1st', () => {
+    expect(navigationRailDate('day', page('month', '2026-12-01'), TODAY)).toBe('2026-12-01');
+    // Dec 1 is a Tuesday, so the week holding it starts on Sunday Nov 29.
+    expect(navigationRailDate('week', page('month', '2026-12-01'), TODAY)).toBe('2026-11-29');
+    // Nov 1 is a Sunday: the week holding it starts on the 1st itself.
+    expect(navigationRailDate('week', page('month', '2026-11-01'), TODAY)).toBe('2026-11-01');
+    expect(navigationRailDate('day', page('month', '2026-11-17'), TODAY)).toBe('2026-11-01');
+  });
+
+  it('from a month that only shows today as a dimmed day, opens Day on its own 1st, not on today', () => {
+    expect(navigationRailDate('day', page('month', '2026-09-01'), TODAY)).toBe('2026-09-01');
+    expect(navigationRailDate('week', page('month', '2026-09-01'), TODAY)).toBe('2026-08-30');
+  });
+
+  it('month to month is the same address, so a tap adds no step for Back', () => {
+    for (const date of ['2026-10-01', '2026-12-01', '2026-09-01']) {
+      expect(wallPath('month', navigationRailDate('month', page('month', date), TODAY))).toBe(wallPath('month', date));
+    }
+    // The address names a month by its 1st, whichever date of it the page was reached with.
+    expect(wallPath('month', navigationRailDate('month', page('month', '2026-12-17'), TODAY))).toBe('/month?date=2026-12-01');
   });
 });
 

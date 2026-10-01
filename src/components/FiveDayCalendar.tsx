@@ -2,6 +2,7 @@ import { Pin } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   canOpenDay,
+  describeMonth,
   describePage,
   fiveDays,
   formatClock,
@@ -20,10 +21,12 @@ import {
   type TimedBlock,
   type WallDay,
 } from '../lib/calendar-occurrences';
+import { tint } from '../lib/event-tint';
 import { householdDay, WEEKDAYS } from '../lib/routines';
 import { useNow, useOccurrences } from '../lib/wall-hooks';
 import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
 import { EventDetails } from './EventDetails';
+import { MonthGrid } from './MonthGrid';
 import { NativeEventSheet } from './NativeEventSheet';
 import { DayWeather } from './Weather';
 
@@ -32,8 +35,6 @@ import { DayWeather } from './Weather';
 // positioned by time below, a line at the current time and today's column lifted. Tapping an
 // event opens its details, and tapping a day's heading opens that day.
 
-// Events with no colour (a whole-Household calendar) still need an edge to read against.
-const NEUTRAL = '#d4d4d8';
 // The smallest a tappable event may be drawn (48 px, CLAUDE.md), and the grid padding above and below the columns.
 const MIN_TARGET_PX = 48;
 const GRID_PADDING_PX = 24;
@@ -46,25 +47,6 @@ function gridColumns(count: number): CSSProperties {
 
 function hourLabel(hour: number): string {
   return `${hour % 12 || 12} ${hour % 24 < 12 ? 'AM' : 'PM'}`;
-}
-
-// A tinted block in the event's colour: the colour is the edge and a wash, never the text, so
-// the words stay white on a dark ground whatever colour the Profile picked.
-// An event for several Profiles splits its edge into one stripe of each colour.
-function tint(occurrence: Occurrence): CSSProperties {
-  const edge = occurrence.color ?? NEUTRAL;
-  const wash = `color-mix(in srgb, ${edge} 24%, #18181b)`;
-  const { colors } = occurrence;
-  if (colors.length < 2) return { borderLeftColor: edge, backgroundColor: wash };
-  const stops = colors.map((color, index) => `${color} ${(index * 100) / colors.length}% ${((index + 1) * 100) / colors.length}%`).join(', ');
-  return {
-    borderLeftColor: 'transparent',
-    backgroundImage: `linear-gradient(to bottom, ${stops}), linear-gradient(${wash}, ${wash})`,
-    backgroundSize: '8px 100%, 100% 100%',
-    backgroundPosition: 'left top, left top',
-    backgroundRepeat: 'no-repeat',
-    backgroundOrigin: 'border-box',
-  };
 }
 
 // What a screen reader hears of an event beyond its title: where it came from.
@@ -110,9 +92,9 @@ export function FiveDayCalendar({
 
 const PAGE_BUTTON = 'min-h-12 rounded-lg border border-border px-6 text-lg font-medium disabled:opacity-50';
 
-// The week and day views: the same grid as the home screen with a header to page back and forward
-// within the synced window and jump to today. `date` is the page's anchor (null for today); a date
-// outside the window is pulled to its nearest end.
+// The week, day and month views: the same grid as the home screen (a month's is a grid of its own)
+// with a header to page back and forward within the synced window and jump to today. `date` is the
+// page's anchor (null for today); a date outside the window is pulled to its nearest end.
 export function PagedCalendar({
   timezone,
   view,
@@ -134,9 +116,9 @@ export function PagedCalendar({
   const window = pagingWindow(timezone, now);
   const today = householdDay(timezone, now).date;
   const anchor = pageStart(view, shownDate(date, today));
-  const days = pageDays(view, anchor, timezone, now);
+  // A week or a day is a run of days on the time grid; a month is a grid of weeks of its own.
+  const days = view === 'month' ? null : pageDays(view, anchor, timezone, now);
   const { previous, next } = paging(view, anchor, window);
-  const label = view === 'week' ? 'week' : 'day';
   // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), [view, anchor]);
@@ -145,15 +127,15 @@ export function PagedCalendar({
     <div className="flex min-h-0 flex-col gap-4">
       <nav aria-label="Calendar paging" className="flex flex-wrap items-center gap-4">
         <button type="button" className={PAGE_BUTTON} disabled={previous === null} onClick={() => previous && onNavigate(view, previous)}>
-          Previous {label}
+          Previous {view}
         </button>
         <button type="button" className={PAGE_BUTTON} onClick={() => onNavigate(view, pageStart(view, today))}>
           Today
         </button>
         <button type="button" className={PAGE_BUTTON} disabled={next === null} onClick={() => next && onNavigate(view, next)}>
-          Next {label}
+          Next {view}
         </button>
-        <h2 ref={heading} tabIndex={-1} className="ml-2 text-2xl font-semibold outline-none">{describePage(days)}</h2>
+        <h2 ref={heading} tabIndex={-1} className="ml-2 text-2xl font-semibold outline-none">{days ? describePage(days) : describeMonth(anchor)}</h2>
       </nav>
       {/* Always mounted, so a screen reader announces the text when it appears. */}
       <p role="status" className="text-lg empty:hidden">
@@ -164,17 +146,22 @@ export function PagedCalendar({
             : ''}
       </p>
       {/* Keyed on the view and the page, so a turned page, or the other view starting on the same day, never shows the last page's events, and a failed read says so. */}
-      <CalendarGrid
-        key={`${view}:${days[0]!.date}`}
-        timezone={timezone}
-        now={now}
-        days={days}
-        version={version}
-        // A week's day headings open that day; on a day page the heading is only a heading.
-        onOpenDay={view === 'week' ? (day) => onNavigate('day', day) : null}
-        forecast={forecast}
-        weatherOn={weatherOn}
-      />
+      {days ? (
+        <CalendarGrid
+          key={`${view}:${days[0]!.date}`}
+          timezone={timezone}
+          now={now}
+          days={days}
+          version={version}
+          // A week's day headings open that day; on a day page the heading is only a heading.
+          onOpenDay={view === 'week' ? (day) => onNavigate('day', day) : null}
+          forecast={forecast}
+          weatherOn={weatherOn}
+        />
+      ) : (
+        // The month's cells carry no weather: the spec puts it on the day headings of Home, Day and Week.
+        <MonthGrid key={`${view}:${anchor}`} timezone={timezone} today={today} anchor={anchor} window={window} version={version} onOpenDay={(day) => onNavigate('day', day)} />
+      )}
     </div>
   );
 }

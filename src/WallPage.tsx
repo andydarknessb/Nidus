@@ -1,4 +1,4 @@
-import { Calendar1, CalendarRange, ClipboardCheck, House, ListChecks, Plus, Settings, Utensils, type LucideIcon } from 'lucide-react';
+import { Calendar1, CalendarDays, CalendarRange, ClipboardCheck, House, ListChecks, Plus, Settings, Utensils, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
@@ -230,9 +230,9 @@ function NavigationRailEntry({ icon: Icon, label, current = false, className = '
   );
 }
 
-// The navigation rail down the left side: Home, Day, Week, Routines, Meals and Lists, and at its
-// foot Add event.
-// Day and Week keep the date the wall is on (navigationRailDate), read at the tap so one just after
+// The navigation rail down the left side: Home, Day, Week, Month, Routines, Meals and Lists, and at
+// its foot Add event.
+// Day, Week and Month keep the date the wall is on (navigationRailDate), read at the tap so one just after
 // Household midnight is right, and wait for the Household Timezone. Meals always opens this week, with
 // no date in its address, so it needs no Household Timezone to open. Lists opens the Lists screen over
 // this one rather than going anywhere. Add event is an action, not a section: it is never the current
@@ -269,6 +269,7 @@ function NavigationRail({
       <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
       <NavigationRailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
       <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
+      <NavigationRailEntry icon={CalendarDays} label="Month" current={route.view === 'month'} disabled={!timezone} onClick={() => open('month')} />
       <NavigationRailEntry icon={ClipboardCheck} label="Routines" current={route.view === 'routines'} onClick={onRoutines} />
       <NavigationRailEntry icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={onMeals} />
       <NavigationRailEntry icon={ListChecks} label="Lists" aria-haspopup="dialog" onClick={onLists} />
