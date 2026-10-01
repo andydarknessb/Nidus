@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   calendarsOfAccount,
+  lastSyncedText,
   loadCalendarAccounts,
   loadMirroredCalendars,
   removeCalendarAccount,
@@ -90,6 +91,8 @@ export function CalendarAccountsSection() {
   const [notice, setNotice] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  // Ticks each minute so "last synced N minutes ago" keeps up without a reload.
+  const [now, setNow] = useState(() => Date.now());
 
   const refresh = useCallback(async () => {
     try {
@@ -111,10 +114,29 @@ export function CalendarAccountsSection() {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNow(Date.now());
+      void refresh();
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
   async function connect() {
     setNotice(null);
     try {
       window.location.assign(await startCalendarConnect(supabase, 'settings'));
+    } catch {
+      setProblem('Could not start connecting to Google. Try again.');
+    }
+  }
+
+  // Reconnect an account that needs it: Google offers that account first, and the account's
+  // calendars, Profiles and colours are kept.
+  async function reconnect(email: string) {
+    setNotice(null);
+    try {
+      window.location.assign(await startCalendarConnect(supabase, 'settings', email));
     } catch {
       setProblem('Could not start connecting to Google. Try again.');
     }
@@ -195,7 +217,16 @@ export function CalendarAccountsSection() {
                 {STATUS_TEXT[account.status]}
                 {account.last_error ? `: ${account.last_error}` : ''}
               </p>
+              <p className="text-base">{lastSyncedText(account.last_synced_at, now)}</p>
             </div>
+            {account.status === 'needs_reauth' && (
+              <div className="flex flex-col gap-3">
+                <p className="text-base">Nothing is lost. Connecting again keeps this account’s calendars and your choices for them.</p>
+                <button type="button" className={`${action} bg-primary text-primary-foreground`} onClick={() => void reconnect(account.google_email)}>
+                  Connect {account.google_email} again
+                </button>
+              </div>
+            )}
             {own.length === 0 ? (
               <p className="text-base">This account has no calendars to choose from.</p>
             ) : (

@@ -7,9 +7,16 @@ The `calendar-sync` Edge Function mirrors every selected Mirrored Calendar into 
 For each Calendar Account whose status is `active`:
 
 1. Reads the refresh token from Vault and trades it for an access token. If Google says the token is revoked (`invalid_grant`) the account becomes `needs_reauth` and is skipped until the parent reconnects it.
-2. Fully syncs each **selected** Mirrored Calendar with `singleEvents=true` over a window of one month back to six months ahead, so recurring events arrive as separate occurrences. The rows are replaced in one transaction (`replace_synced_events`): changed occurrences update, gone or cancelled ones are deleted, and the returned sync token is stored on the calendar.
-3. Clears the events of calendars that are no longer selected.
-4. Sets `last_synced_at` and clears `last_error` on the account. If a calendar failed, the account keeps `last_error` and that calendar keeps its previous events; the others still sync.
+2. Syncs each **selected** Mirrored Calendar, in one of two ways:
+   - **Full read** (the first time, once a day, and after a 410): `singleEvents=true` over a window of one month back to six months ahead, so recurring events arrive as separate occurrences. The rows are replaced in one transaction (`replace_synced_events`): changed occurrences update, gone or cancelled ones are deleted, and the returned sync token and the time of the read are stored on the calendar. The daily full read is what brings in occurrences that slide into the window, which a delta never reports.
+   - **Incremental** (every other run): asks Google only for what changed since the stored sync token (no window; Google refuses one with a token). Moved and renamed events update in place, cancelled events and cancelled single occurrences are deleted, anything that moved outside the window is dropped, all in one transaction (`apply_synced_event_changes`).
+3. A 410 from Google on an incremental read means the sync token has expired: the token is cleared and that calendar is read in full. The old rows stay until the full read has succeeded, so the wall never shows a partly emptied calendar.
+4. Calendars that are not selected are not read. Un-selecting one removes its events (and its sync token) in the same statement, through a trigger, so the wall loses them at once rather than at the next run; selecting it again means a full read on the next run.
+5. Sets `last_synced_at` and clears `last_error` on the account. If a calendar failed, the account keeps `last_error` and that calendar keeps its previous events and token; the others still sync.
+
+Reconnecting an account that needs reauth (the "Connect again" button in settings) goes through `calendar-connect` like a first connection: it updates the Vault secret in place, sets the account `active` and keeps its Mirrored Calendars, Profiles and colours.
+
+Settings shows each account's status, last error and last-synced time. The wall shows a "Last synced N hours ago" badge only when an account is more than an hour behind.
 
 All-day events are stored as midnight-to-midnight in the Household Timezone; timed events keep their instant. The wall reads both through the `calendar_occurrences` view.
 
