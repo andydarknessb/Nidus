@@ -132,7 +132,15 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
       <p role="timer" className="text-2xl">
         {remaining > 0 ? `Code expires in ${formatCountdown(remaining)}` : 'Getting a new code'}
       </p>
-      <a href="/settings" className="inline-flex min-h-12 items-center text-lg underline">
+      {/* This tablet is not paired yet, so dropping its anonymous session loses nothing, and /settings then offers the Google sign-in instead of the Device dead end. */}
+      <a
+        href="/settings"
+        className="inline-flex min-h-12 items-center text-lg underline"
+        onClick={(event) => {
+          event.preventDefault();
+          void supabase.auth.signOut().finally(() => window.location.assign('/settings'));
+        }}
+      >
         Own this Household? Sign in
       </a>
     </main>
