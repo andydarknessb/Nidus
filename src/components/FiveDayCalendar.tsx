@@ -1,7 +1,7 @@
 import { Pin } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
-  clampToWindow,
+  canOpenDay,
   describePage,
   fiveDays,
   formatClock,
@@ -12,6 +12,7 @@ import {
   paging,
   pagingWindow,
   place,
+  shownDate,
   visibleHours,
   type AllDayBar,
   type CalendarView,
@@ -34,9 +35,11 @@ const NEUTRAL = '#d4d4d8';
 // The smallest a tappable event may be drawn (48 px, CLAUDE.md), and the grid padding above and below the columns.
 const MIN_TARGET_PX = 48;
 const GRID_PADDING_PX = 24;
-// The hour gutter and one column per day: five on the home screen, seven in a week, one in a day.
+// The hour gutter and one column per day: five on the home screen, seven in a week, one in a day. The
+// gutter is 4 rem, room for "10 AM" and no more, so that beside the navigation rail the five days
+// clear 140 px at 1280 px.
 function gridColumns(count: number): CSSProperties {
-  return { gridTemplateColumns: `4.5rem repeat(${count}, minmax(0, 1fr))` };
+  return { gridTemplateColumns: `4rem repeat(${count}, minmax(0, 1fr))` };
 }
 
 function hourLabel(hour: number): string {
@@ -108,7 +111,7 @@ export function PagedCalendar({
   const now = useNow(timezone);
   const window = pagingWindow(timezone, now);
   const today = householdDay(timezone, now).date;
-  const anchor = pageStart(view, clampToWindow(date ?? today, window));
+  const anchor = pageStart(view, shownDate(date, today));
   const days = pageDays(view, anchor, timezone, now);
   const { previous, next } = paging(view, anchor, window);
   const label = view === 'week' ? 'week' : 'day';
@@ -138,9 +141,9 @@ export function PagedCalendar({
             ? 'This is as far ahead as the calendar goes. It keeps six months of upcoming events.'
             : ''}
       </p>
-      {/* Keyed on the page so a turned page never shows the last page's events, and a failed read says so. */}
+      {/* Keyed on the view and the page, so a turned page, or the other view starting on the same day, never shows the last page's events, and a failed read says so. */}
       <CalendarGrid
-        key={days[0]!.date}
+        key={`${view}:${days[0]!.date}`}
         timezone={timezone}
         now={now}
         days={days}
@@ -166,6 +169,8 @@ function CalendarGrid({
   onOpenDay: ((date: string) => void) | null;
 }) {
   const columnsStyle = gridColumns(days.length);
+  // A day outside the paging window would open its nearest end instead, so it is only a heading.
+  const pageWindow = pagingWindow(timezone, now);
   const [open, setOpen] = useState<Occurrence | null>(null);
   // A Native Event being edited, and a count of the edits made here, so the read runs again after one.
   const [editing, setEditing] = useState<Occurrence | null>(null);
@@ -199,7 +204,7 @@ function CalendarGrid({
       <div style={columnsStyle} className="grid border-b border-border">
         <div />
         {days.map((day) => (
-          <DayHeading key={day.date} day={day} onOpen={onOpenDay} />
+          <DayHeading key={day.date} day={day} onOpen={onOpenDay && canOpenDay(day.date, pageWindow) ? onOpenDay : null} />
         ))}
       </div>
       {failed && occurrences === null && (

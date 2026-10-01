@@ -1,7 +1,7 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { loadOccurrences, type Occurrence, type WallDay } from './calendar-occurrences';
 import { useChangeTick } from './change-feed';
-import { watchHouseholdDay } from './household-day';
+import { watchHouseholdDay, watchMinute } from './household-day';
 import { filterOccurrences, PressedProfilesContext } from './profile-filter';
 import { OCCURRENCE_TABLES } from './realtime';
 import { supabase } from './supabase';
@@ -11,19 +11,18 @@ import { supabase } from './supabase';
 // The slow read that backs up the change feed, and the sooner one after a read that failed.
 const REFRESH_MS = 60_000;
 const RETRY_MS = 5_000;
-// How often the clock moves on by itself; Household midnight moves it on at once.
-const CLOCK_MS = 30_000;
 
-// The clock, ticking along and also the instant Household midnight passes, so the day columns
-// and the calendar's read span move on at midnight, not up to a tick later.
+// The clock, ticking at the start of each minute and also the instant Household midnight passes, so
+// a clock on the wall turns on the minute and the day columns and the calendar's read span move on
+// at midnight, not up to a tick later.
 export function useNow(timezone: string): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), CLOCK_MS);
-    const stop = watchHouseholdDay(timezone, () => setNow(new Date()));
+    const stopMinute = watchMinute(() => setNow(new Date()));
+    const stopDay = watchHouseholdDay(timezone, () => setNow(new Date()));
     return () => {
-      clearInterval(id);
-      stop();
+      stopMinute();
+      stopDay();
     };
   }, [timezone]);
   return now;
