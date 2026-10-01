@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
-import { FiveDayCalendar } from './components/FiveDayCalendar';
+import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
+import { parseWallRoute, wallPath, weekStart, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
+import { householdDay } from './lib/routines';
 import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { supabase } from './lib/supabase';
@@ -154,7 +156,26 @@ function SyncBadge() {
   );
 }
 
+// Which screen the address names. The wall pages with pushState rather than reloading, so a tap
+// never drops the session or the Routines rail, and Back returns to the previous page.
+function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void] {
+  const read = () => parseWallRoute(window.location.pathname, window.location.search);
+  const [route, setRoute] = useState<WallRoute>(read);
+  useEffect(() => {
+    const onPop = () => setRoute(read());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const go = (path: string) => {
+    // Today while already on today's page changes nothing: no extra step for Back.
+    if (path !== window.location.pathname + window.location.search) window.history.pushState(null, '', path);
+    setRoute(read());
+  };
+  return [route, (view, date) => go(wallPath(view, date)), () => go('/')];
+}
+
 function HomeShell() {
+  const [route, openView, openHome] = useWallRoute();
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   const [listsOpen, setListsOpen] = useState(false);
@@ -184,17 +205,32 @@ function HomeShell() {
   const name = view.household?.name ?? '';
   const timezone = view.household?.timezone ?? null;
 
+  const today = timezone ? householdDay(timezone).date : null;
+
   return (
     <main className="grid h-svh grid-rows-[auto_minmax(0,1fr)] gap-6 p-8">
       <header className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-semibold">{name}</h1>
         <div className="flex items-center gap-4">
           <SyncBadge />
+          {route.view === 'home' && today && (
+            <>
+              <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => openView('week', weekStart(today))}>
+                Week
+              </button>
+              <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => openView('day', today)}>
+                Day
+              </button>
+            </>
+          )}
           <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setListsOpen(true)}>
             Lists
           </button>
         </div>
       </header>
+      {route.view !== 'home' && timezone ? (
+        <PagedCalendar timezone={timezone} view={route.view} date={route.date} onNavigate={openView} onHome={openHome} />
+      ) : (
       <div className="grid min-h-0 grid-cols-[1fr_24rem] gap-6">
         {timezone ? <FiveDayCalendar timezone={timezone} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
         <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
@@ -212,6 +248,7 @@ function HomeShell() {
           <PinnedListRail />
         </div>
       </div>
+      )}
       {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
     </main>
   );
