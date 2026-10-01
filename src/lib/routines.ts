@@ -119,6 +119,26 @@ export function movedIdsInGroup(routines: Routine[], id: string, offset: number)
   return groupByTimeOfDay(routines).flatMap((group) => movedIds(group.routines.map((routine) => routine.id), id, offset));
 }
 
+export type RoutineProgress = { done: number; total: number };
+
+// How many of a Profile's Routines today are done, out of how many. `routines` are that Profile's
+// Routines today (todaysRoutines), so an archived Routine, one not scheduled today and a completion
+// of either are never counted, whatever `doneIds` holds.
+export function routineProgress(routines: Routine[], doneIds: ReadonlySet<string>): RoutineProgress {
+  return { done: routines.filter((routine) => doneIds.has(routine.id)).length, total: routines.length };
+}
+
+// Whether a tap finishes the Profile: it ticks (never unticks) a Routine and so takes the Profile's
+// Routines today from not all done to all done. `routines` are that Profile's Routines today and
+// `doneBefore` the ids done before the tap. The last tick of a Profile finishes it; a Profile with
+// no Routines today is never finished.
+export function tapFinishesProfile(routines: Routine[], doneBefore: ReadonlySet<string>, routineId: string, checked: boolean): boolean {
+  if (!checked) return false;
+  const before = routineProgress(routines, doneBefore);
+  const after = routineProgress(routines, new Set(doneBefore).add(routineId));
+  return before.done < before.total && after.done === after.total;
+}
+
 // ---- Household Account writes; Household Account or Device reads ----------------
 
 // Unarchived Routines, every Profile, in order. Archived ones have no screen.

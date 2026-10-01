@@ -1,7 +1,7 @@
-import { ArrowDown, ArrowUp, Check, Circle } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { ArrowDown, ArrowUp, Check, Circle, PartyPopper } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import type { Household } from './lib/household';
-import { loadProfiles, nextSortOrder, type Profile } from './lib/profiles';
+import { PROFILE_PALETTE, loadProfiles, nextSortOrder, type Profile } from './lib/profiles';
 import {
   TIME_OF_DAY_GROUPS,
   WEEKDAYS,
@@ -10,13 +10,14 @@ import {
   createRoutine,
   groupByProfile,
   groupByTimeOfDay,
-  householdDay,
   loadCompletions,
   loadRoutines,
   maskOf,
   movedIdsInGroup,
   reorderRoutines,
+  routineProgress,
   showsTimeOfDayHeadings,
+  tapFinishesProfile,
   tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
@@ -27,9 +28,9 @@ import {
   type TimeOfDay,
 } from './lib/routines';
 import { useRefetchOn } from './lib/change-feed';
-import { watchHouseholdDay } from './lib/household-day';
 import { supabase } from './lib/supabase';
 import { createSyncedReader, type SyncedReader } from './lib/synced-reader';
+import { useHouseholdDay } from './lib/wall-hooks';
 
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
@@ -43,27 +44,22 @@ const timeHeading = 'text-base font-medium text-muted-foreground';
 const REFRESH_MS = 30_000;
 const ROUTINE_TABLES = ['routines', 'routine_completions', 'profiles'] as const;
 
-// ---- The wall: today's Routines on the home screen's rail ---------------------------
+// ---- The wall: today's Routines, on the home screen's rail and on the Routines chart ----
 
 type Today = { date: string; routines: Routine[]; profiles: Profile[]; done: Set<string> };
 
-// The current Household date, moved on by a timer keyed to Household midnight.
-function useHouseholdDay(timezone: string) {
-  const [day, setDay] = useState(() => householdDay(timezone));
-  useEffect(() => {
-    setDay(householdDay(timezone));
-    return watchHouseholdDay(timezone, setDay);
-  }, [timezone]);
-  return day;
-}
-
-// Today's Routines under each Profile's name and colour. "Checked" is derived from the
-// completions of today's Household date: nothing resets at midnight, yesterday's just stop matching.
-export function RoutinesRail({ timezone }: { timezone: string }) {
+// Today's Routines for the one screen that shows them, the Routines rail on Home or the Routines
+// chart: the read and what keeps it current, the tick, and the celebration of a tap that finishes a
+// Profile. "Checked" is derived from the completions of today's Household date: nothing resets at
+// midnight, yesterday's just stop matching.
+function useRoutinesToday(timezone: string) {
   const day = useHouseholdDay(timezone);
   const [loaded, setLoaded] = useState<Today | null>(null);
   const [problem, setProblem] = useState('');
   const [failed, setFailed] = useState(false);
+  // The Profiles a tap here has just finished, each with a count that starts its burst again if it
+  // finishes twice, until the burst has played. A read, or a tick from another screen, adds none.
+  const [celebrating, setCelebrating] = useState<Record<string, number>>({});
   // Reads and the taps made here take turns: a read never lands over a tap in flight, and one
   // follows each tap, so a change from another tablet that arrived meanwhile is shown too.
   const reader = useRef<SyncedReader | null>(null);
@@ -96,9 +92,19 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
   const done = loaded && loaded.date === day.date ? loaded.done : new Set<string>();
   const groups = loaded ? groupByProfile(loaded.profiles, todaysRoutines(loaded.routines, day.weekday)) : [];
 
+  const endCelebration = (profileId: string) =>
+    setCelebrating((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => id !== profileId)));
+
   async function toggle(routine: Routine) {
     const date = day.date;
     const checking = !done.has(routine.id);
+    // Only the tick that finishes its Profile celebrates, and not for someone who asked for less
+    // motion: they get "All done" and no burst.
+    const own = groups.find((group) => group.profile.id === routine.profile_id)?.routines ?? [];
+    const finishing = tapFinishesProfile(own, done, routine.id, checking);
+    if (finishing && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setCelebrating((prev) => ({ ...prev, [routine.profile_id]: (prev[routine.profile_id] ?? 0) + 1 }));
+    }
     const publish = (update: (ids: Set<string>) => Set<string>) =>
       setLoaded((prev) => (prev && prev.date === date ? { ...prev, done: update(prev.done) } : prev));
     const tap = () =>
@@ -107,14 +113,21 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
       );
     const stuck = await (reader.current ? reader.current.write(tap) : tap());
     setProblem(stuck ? '' : 'Could not save that tick. It has been put back.');
+    // A tick that was put back finished nothing.
+    if (finishing && !stuck) endCelebration(routine.profile_id);
   }
 
+  return { loaded: loaded !== null, failed, problem, groups, done, toggle, celebrating, endCelebration };
+}
+
+// What a screen of today's Routines says besides the Routines: that they are loading, that they could
+// not be read, that a tick was put back, or that none is scheduled.
+function RoutinesNotices({ loaded, failed, problem, empty }: { loaded: boolean; failed: boolean; problem: string; empty: boolean }) {
   return (
-    <aside aria-label="Today's Routines" className="flex min-h-0 flex-col gap-4 overflow-y-auto rounded-xl border border-border p-4">
-      <h2 className="text-2xl font-semibold">Routines</h2>
-      {loaded === null && !failed && <p className="text-base">Loading</p>}
+    <>
+      {!loaded && !failed && <p className="text-base">Loading</p>}
       {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
-      {failed && loaded === null && (
+      {failed && !loaded && (
         <p role="alert" className="text-base">
           Could not load Routines. Check your connection.
         </p>
@@ -124,48 +137,212 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
           {problem}
         </p>
       )}
-      {loaded && groups.length === 0 && <p className="text-base">Nothing scheduled today.</p>}
-      {groups.map(({ profile, routines }) => {
-        const times = groupByTimeOfDay(routines);
-        const headed = showsTimeOfDayHeadings(routines);
-        return (
-          <section key={profile.id} aria-labelledby={`routines-${profile.id}`} className="flex flex-col gap-2">
-            <h3 id={`routines-${profile.id}`} className="flex items-center gap-2 text-xl font-semibold" style={{ color: profile.color }}>
-              <span aria-hidden className="size-4 shrink-0 rounded-full" style={{ backgroundColor: profile.color }} />
-              {profile.name}
-            </h3>
-            {times.map((time) => (
-              <Fragment key={time.label}>
-                {headed && <h4 className={timeHeading}>{time.label}</h4>}
-                <ul className="flex flex-col gap-2">
-                  {time.routines.map((routine) => {
-                    const checked = done.has(routine.id);
-                    return (
-                      <li key={routine.id}>
-                        <button
-                          type="button"
-                          aria-pressed={checked}
-                          onClick={() => void toggle(routine)}
-                          className="flex min-h-14 w-full items-center gap-3 rounded-lg border-2 px-3 text-left text-lg"
-                          style={
-                            checked
-                              ? { backgroundColor: profile.color, borderColor: profile.color, color: '#09090b' }
-                              : { borderColor: profile.color }
-                          }
-                        >
-                          {checked ? <Check aria-hidden className="size-6 shrink-0" /> : <Circle aria-hidden className="size-6 shrink-0" />}
-                          <span className={checked ? 'line-through decoration-2' : ''}>{routine.title}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </Fragment>
-            ))}
-          </section>
-        );
-      })}
+      {loaded && empty && <p className="text-base">Nothing scheduled today.</p>}
+    </>
+  );
+}
+
+// The pieces of one burst, one in each colour of the Profile palette: how far each flies sideways,
+// how far it rises first and how far it then falls (as a percentage of the group's width or height,
+// so a burst fills a short group and a tall one alike), and how far it turns (degrees). Fixed, so a
+// burst looks the same each time and a render stays pure. Each starts a little after the one before
+// it (index.css), so the last piece is the last to land.
+const CONFETTI = [
+  [-40, -18, 42, -380],
+  [28, -24, 52, 460],
+  [-16, -26, 36, 300],
+  [44, -14, 46, -520],
+  [-48, -12, 54, 410],
+  [10, -28, 40, -300],
+  [-30, -20, 58, 560],
+  [38, -24, 38, -440],
+  [-4, -16, 50, 340],
+  [48, -10, 56, -480],
+] as const;
+
+// A short burst of confetti over one Profile's group. It is drawn over the group but never in the way
+// of a tap or of the layout, hidden from assistive technology (the words "All done" say it), and
+// gone from the page once its last piece has landed.
+function Confetti({ onDone }: { onDone: () => void }) {
+  return (
+    <span aria-hidden className="confetti pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+      {CONFETTI.map(([sideways, rise, fall, turn], index) => (
+        <span
+          key={index}
+          className="confetti-piece"
+          style={
+            {
+              backgroundColor: PROFILE_PALETTE[index]?.hex,
+              '--sideways': sideways,
+              '--rise': rise,
+              '--fall': fall,
+              '--turn': `${turn}deg`,
+              '--delay': `${index * 20}ms`,
+            } as CSSProperties
+          }
+          onAnimationEnd={index === CONFETTI.length - 1 ? onDone : undefined}
+        />
+      ))}
+    </span>
+  );
+}
+
+// One Profile's Routines today: its colour and name, how far along it is (the count and a progress
+// bar, or "All done" with an icon once every one is ticked), then the Routines as buttons to tick,
+// under their time of day headings when the Profile uses them. The Routines rail shows it compact; on
+// the chart it is a column of its own, which scrolls on its own when its Routines do not fit.
+function ProfileGroup({
+  profile,
+  routines,
+  done,
+  onToggle,
+  burst,
+  onBurstEnd,
+  chart = false,
+}: {
+  profile: Profile;
+  routines: Routine[];
+  done: Set<string>;
+  onToggle: (routine: Routine) => Promise<void>;
+  // Set while a burst plays over this group; a new value plays it again.
+  burst: number | undefined;
+  onBurstEnd: () => void;
+  chart?: boolean;
+}) {
+  // A group always has a Routine today: groupByProfile leaves out the Profiles with none.
+  const { done: count, total } = routineProgress(routines, done);
+  const finished = count === total;
+  const times = groupByTimeOfDay(routines);
+  const headed = showsTimeOfDayHeadings(routines);
+  return (
+    <section
+      aria-labelledby={`routines-${profile.id}`}
+      className={chart ? 'relative flex min-h-0 min-w-64 flex-1 flex-col gap-3 rounded-xl border border-border p-4' : 'relative flex flex-col gap-2'}
+    >
+      <div className="flex flex-col gap-2">
+        {/* A name too long to share the line with the count drops it to a line of its own, rather than squeezing the name.
+            The count's room is as wide as "All done", so the heading wraps the same either way and nothing below it moves when one becomes the other. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h3
+            id={`routines-${profile.id}`}
+            className={`flex min-w-0 items-center gap-2 font-semibold ${chart ? 'text-2xl' : 'text-xl'}`}
+            style={{ color: profile.color }}
+          >
+            <span aria-hidden className="size-4 shrink-0 rounded-full" style={{ backgroundColor: profile.color }} />
+            <span className="min-w-0 break-words">{profile.name}</span>
+          </h3>
+          <span className={`ml-auto flex shrink-0 items-center justify-end gap-1.5 font-medium ${chart ? 'min-w-28 text-xl' : 'min-w-24 text-base'}`}>
+            {!finished && `${count} of ${total}`}
+            {/* Always on the page, so a screen reader hears "All done" when it appears and not when Routines load already done. */}
+            <span role="status" className="flex items-center gap-1.5">
+              {finished && (
+                <>
+                  <PartyPopper aria-hidden className="size-5 shrink-0" />
+                  All done
+                </>
+              )}
+            </span>
+          </span>
+        </div>
+        <div
+          role="progressbar"
+          aria-label={`${profile.name}: ${count} of ${total} ${total === 1 ? 'Routine' : 'Routines'} done`}
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={count}
+          className={`overflow-hidden rounded-full bg-muted ring-1 ring-muted-foreground/60 ${chart ? 'h-3' : 'h-2'}`}
+        >
+          <div className="h-full rounded-full" style={{ width: `${(count / total) * 100}%`, backgroundColor: profile.color }} />
+        </div>
+      </div>
+      <div className={chart ? '-m-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-1' : 'flex flex-col gap-2'}>
+        {times.map((time) => (
+          <Fragment key={time.label}>
+            {headed && <h4 className={timeHeading}>{time.label}</h4>}
+            <ul className="flex flex-col gap-2">
+              {time.routines.map((routine) => {
+                const checked = done.has(routine.id);
+                return (
+                  <li key={routine.id}>
+                    <button
+                      type="button"
+                      aria-pressed={checked}
+                      onClick={() => void onToggle(routine)}
+                      className="flex min-h-14 w-full items-center gap-3 rounded-lg border-2 px-3 text-left text-lg"
+                      style={
+                        checked
+                          ? { backgroundColor: profile.color, borderColor: profile.color, color: '#09090b' }
+                          : { borderColor: profile.color }
+                      }
+                    >
+                      {checked ? <Check aria-hidden className="size-6 shrink-0" /> : <Circle aria-hidden className="size-6 shrink-0" />}
+                      <span className={checked ? 'line-through decoration-2' : ''}>{routine.title}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </Fragment>
+        ))}
+      </div>
+      {burst !== undefined && <Confetti key={burst} onDone={onBurstEnd} />}
+    </section>
+  );
+}
+
+// Today's Routines under each Profile's name and colour: the home screen's right rail.
+export function RoutinesRail({ timezone }: { timezone: string }) {
+  const { loaded, failed, problem, groups, done, toggle, celebrating, endCelebration } = useRoutinesToday(timezone);
+
+  return (
+    <aside aria-label="Today's Routines" className="flex min-h-0 flex-col gap-4 overflow-y-auto rounded-xl border border-border p-4">
+      <h2 className="text-2xl font-semibold">Routines</h2>
+      <RoutinesNotices loaded={loaded} failed={failed} problem={problem} empty={groups.length === 0} />
+      {groups.map(({ profile, routines }) => (
+        <ProfileGroup
+          key={profile.id}
+          profile={profile}
+          routines={routines}
+          done={done}
+          onToggle={toggle}
+          burst={celebrating[profile.id]}
+          onBurstEnd={() => endCelebration(profile.id)}
+        />
+      ))}
     </aside>
+  );
+}
+
+// The Routines chart, a screen of its own: a column for each Profile that has Routines today, side by
+// side in the Profiles' order and filling the height, reading and ticking exactly as the Routines rail
+// does. Only when there are more Profiles than fit at a readable width does the row scroll sideways.
+export function RoutinesChart({ timezone }: { timezone: string }) {
+  const { loaded, failed, problem, groups, done, toggle, celebrating, endCelebration } = useRoutinesToday(timezone);
+  // Focus goes to the page's title on arrival, as on the calendar pages, rather than staying on the navigation rail.
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => heading.current?.focus(), []);
+
+  return (
+    <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-4">
+      <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="text-2xl font-semibold outline-none">
+        Routines
+      </h2>
+      <RoutinesNotices loaded={loaded} failed={failed} problem={problem} empty={groups.length === 0} />
+      <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto">
+        {groups.map(({ profile, routines }) => (
+          <ProfileGroup
+            key={profile.id}
+            chart
+            profile={profile}
+            routines={routines}
+            done={done}
+            onToggle={toggle}
+            burst={celebrating[profile.id]}
+            onBurstEnd={() => endCelebration(profile.id)}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 
