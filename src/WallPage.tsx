@@ -1,4 +1,4 @@
-import { Calendar1, CalendarRange, House, ListChecks, Plus, Utensils, type LucideIcon } from 'lucide-react';
+import { Calendar1, CalendarRange, House, ListChecks, Plus, Settings, Utensils, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
@@ -38,12 +38,17 @@ const SYNC_FRESHNESS_MS = 60_000;
 const HOUSEHOLD_TABLES = ['households'] as const;
 const SYNC_TABLES = ['calendar_accounts', 'mirrored_calendars'] as const;
 
-type WallState = { kind: 'connecting' } | { kind: 'unpaired'; pairing: PairingCode } | { kind: 'paired' };
+// owner: a Household Account is looking at the Wall (it may open Settings); a Device never is.
+type WallState = { kind: 'connecting' } | { kind: 'unpaired'; pairing: PairingCode } | { kind: 'paired'; owner: boolean };
 
 // One anonymous sign-in at a time, so a remount (StrictMode) never mints two sessions.
 let pendingSignIn: ReturnType<typeof supabase.auth.signInAnonymously> | undefined;
 
+// Set once the owner leaves for /settings: the poll loop must not mint a new anonymous session while the old one is signed out.
+let leaving = false;
+
 async function ensureSession(): Promise<Session> {
+  if (leaving) throw new Error('leaving the Wall');
   const { data } = await supabase.auth.getSession();
   if (data.session) return data.session;
   pendingSignIn ??= supabase.auth.signInAnonymously().finally(() => {
@@ -54,8 +59,9 @@ async function ensureSession(): Promise<Session> {
   return signedIn.session;
 }
 
-// The wall: the tablet's only screen. Unpaired, it shows a Pairing Code; paired,
-// the home screen shell. It never offers a way into administration.
+// The Wall: a Device's only screen, and a Household Account's view of its calendar. An unpaired
+// Device shows a Pairing Code; otherwise the home screen shell. Only a Household Account is
+// offered a way into administration.
 export function WallPage() {
   const [state, setState] = useState<WallState>({ kind: 'connecting' });
 
@@ -67,13 +73,13 @@ export function WallPage() {
     async function step(): Promise<number> {
       const session = await ensureSession();
       if (!isDeviceSession(session)) {
-        // A Household Account landed on the wall (the Google sign-in redirect): send it to settings.
-        window.location.replace('/settings');
+        // A Household Account sees the Wall too, but is no Device: it writes no heartbeat.
+        if (live) setState((prev) => (prev.kind === 'paired' && prev.owner ? prev : { kind: 'paired', owner: true }));
         return HEARTBEAT_MS;
       }
       if (await touchDevice()) {
         pairing = undefined;
-        if (live) setState((prev) => (prev.kind === 'paired' ? prev : { kind: 'paired' }));
+        if (live) setState((prev) => (prev.kind === 'paired' && !prev.owner ? prev : { kind: 'paired', owner: false }));
         return HEARTBEAT_MS;
       }
       // Never paired, or revoked: show a code that still has time on it.
@@ -103,7 +109,7 @@ export function WallPage() {
   if (state.kind === 'paired') {
     return (
       <ChangeFeedProvider>
-        <HomeShell />
+        <HomeShell owner={state.owner} />
       </ChangeFeedProvider>
     );
   }
@@ -137,6 +143,18 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
       <p role="timer" className="text-2xl">
         {remaining > 0 ? `Code expires in ${formatCountdown(remaining)}` : 'Getting a new code'}
       </p>
+      {/* This tablet is not paired yet, so dropping its anonymous session loses nothing, and /settings then offers the Google sign-in instead of the Device dead end. */}
+      <a
+        href="/settings"
+        className="inline-flex min-h-12 items-center text-lg underline"
+        onClick={(event) => {
+          event.preventDefault();
+          leaving = true;
+          void supabase.auth.signOut().finally(() => window.location.assign('/settings'));
+        }}
+      >
+        Own this Household? Sign in
+      </a>
     </main>
   );
 }
@@ -217,7 +235,8 @@ function NavigationRailEntry({ icon: Icon, label, current = false, className = '
 // Household midnight is right, and wait for the Household Timezone. Meals always opens this week, with
 // no date in its address, so it needs no Household Timezone to open. Lists opens the Lists screen over
 // this one rather than going anywhere. Add event is an action, not a section: it is never the current
-// entry, opens the Native Event sheet, and is drawn as the primary action. Its column is its whole
+// entry, opens the Native Event sheet, and is drawn as the primary action. Above it, for a Household
+// Account only, sits the link to Settings: a Device is never offered a way into administration. Its column is its whole
 // width, border and padding included, and must stay at most 90 px: the five day columns at 1280 px need
 // 140 px each. The longest labels still to come (Routines, Settings) fit in it.
 function NavigationRail({
@@ -228,6 +247,7 @@ function NavigationRail({
   onMeals,
   onLists,
   onAdd,
+  owner,
 }: {
   route: WallRoute;
   timezone: string | null;
@@ -236,6 +256,7 @@ function NavigationRail({
   onMeals: () => void;
   onLists: () => void;
   onAdd: () => void;
+  owner: boolean;
 }) {
   const open = (view: CalendarView) => {
     if (timezone) onOpen(view, navigationRailDate(view, route, householdDay(timezone).date));
@@ -247,7 +268,15 @@ function NavigationRail({
       <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
       <NavigationRailEntry icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={onMeals} />
       <NavigationRailEntry icon={ListChecks} label="Lists" aria-haspopup="dialog" onClick={onLists} />
-      <NavigationRailEntry icon={Plus} label="Add event" aria-haspopup="dialog" disabled={!timezone} onClick={onAdd} className="mt-auto bg-primary text-primary-foreground" />
+      <div className="mt-auto flex flex-col gap-2">
+        {owner && (
+          <a href="/settings" className="flex min-h-16 min-w-16 flex-col items-center justify-center gap-1 rounded-lg text-base font-medium">
+            <Settings aria-hidden className="size-7 shrink-0" />
+            Settings
+          </a>
+        )}
+        <NavigationRailEntry icon={Plus} label="Add event" aria-haspopup="dialog" disabled={!timezone} onClick={onAdd} className="bg-primary text-primary-foreground" />
+      </div>
     </nav>
   );
 }
@@ -267,7 +296,7 @@ function WallClock({ timezone }: { timezone: string }) {
 // The landscape wall: a navigation rail down the left, then the header over the screen. The home
 // screen is the five-day calendar on the left and, on its right rail, today's Routines above the
 // pinned Shared List; the other lists open from the navigation rail.
-function HomeShell() {
+function HomeShell({ owner }: { owner: boolean }) {
   const [route, openView, openHome, openMeals] = useWallRoute();
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
@@ -321,6 +350,7 @@ function HomeShell() {
   return (
     <main className="grid h-svh grid-cols-[5.5rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
       <NavigationRail
+        owner={owner}
         route={route}
         timezone={timezone}
         onOpen={openView}

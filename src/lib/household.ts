@@ -87,6 +87,6 @@ export function signInWithGoogle() {
   // Identity only: no calendar scope is requested (ADR 0002).
   return supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: window.location.origin },
+    options: { redirectTo: `${window.location.origin}/settings` },
   });
 }
