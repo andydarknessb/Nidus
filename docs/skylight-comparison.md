@@ -77,8 +77,8 @@ The last column is the ruling that became [spec 0002](specs/0002-skylight-gaps.m
 
 | Skylight | Nidus | Ruling |
 | --- | --- | --- |
-| Light theme only on the device: white ground, pastel fills, serif headings | Dark theme only, WCAG AAA | **Keep** Nidus's: the wall must not glow at night (PLAN.md) |
-| Left rail of icon-and-label tabs in landscape: Home, Calendar, Lists, Tasks, Rewards, Meals, Recipes, Photos, with Sleep and Settings at the foot | No navigation: header buttons for Week, Day and Lists, and a Home button inside the paged views | **Build** a left rail: Home, Day, Week, Month, Routines, Meals, Lists |
+| A light interface on the device (white ground, pastel fills, serif headings); no dark mode is documented | Dark theme only, WCAG AAA | **Keep** Nidus's: the wall must not glow at night (PLAN.md) |
+| Left rail of icon-and-label tabs in landscape: Home, Calendar, Lists, Tasks, Rewards, Meals, Recipes, Photos, with Sleep and Settings at the foot | No navigation: header buttons for Week, Day and Lists, and a Home button inside the paged views | **Build** a navigation rail on the left: Home, Day, Week, Month, Routines, Meals, Lists |
 | Information bar: date, time, weather; per-tab controls on the right | Household name, two status badges, buttons | **Build** the header: name, clock and date, weather, Profile chips, Add event |
 | A round "+" floating at the bottom right adds an event | "Add event" button in the header | **Have** |
 | Home screen with panes the family chooses (calendar, tasks, lists) | Home: five days, Routines rail, Pinned List | **Have**: Nidus's home screen is the settled version of the same idea |
@@ -90,7 +90,7 @@ The last column is the ruling that became [spec 0002](specs/0002-skylight-gaps.m
 - It keeps working through an outage: the last data stays on screen and it reconnects by itself.
 - It is dark, and every colour on it clears AAA contrast.
 - Lists reorder from the Wall and one list is pinned to the home screen.
-- Nothing is behind a subscription, and nothing leaves the Household's own Supabase project except the read from Google.
+- Nothing is behind a subscription, and the Household's data stays in its own Supabase project. Two reads go out: Google's calendars, and (from v2) the weather, for which each screen sends rounded coordinates to Open-Meteo.
 
 ## What v2 builds
 
