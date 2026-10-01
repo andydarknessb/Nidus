@@ -1,5 +1,5 @@
 import { Calendar1, CalendarRange, House, ListChecks, Plus, type LucideIcon } from 'lucide-react';
-import { useEffect, useState, type ComponentProps } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
@@ -7,11 +7,13 @@ import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
 import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { ConnectionBadge } from './components/ConnectionBadge';
 import { NativeEventSheet } from './components/NativeEventSheet';
+import { ProfileChips } from './components/ProfileChips';
 import { useChangeTick } from './lib/change-feed';
 import { formatClock, formatDate, navigationRailDate, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
 import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
+import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useNow } from './lib/wall-hooks';
 import { RoutinesRail } from './RoutinesPage';
@@ -263,6 +265,13 @@ function HomeShell() {
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   const [listsOpen, setListsOpen] = useState(false);
+  // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
+  // The context hands the pressed ids to every calendar view, and a way to clear it to the Native Event
+  // sheet; the chips prune it when the Profiles change.
+  const [filter] = useState(createProfileFilter);
+  const pressed = useSyncExternalStore(filter.subscribe, filter.pressed);
+  const filterView = useMemo(() => ({ pressed, clear: filter.clear }), [pressed, filter]);
+  useEffect(() => () => filter.dispose(), [filter]);
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(0);
@@ -294,6 +303,9 @@ function HomeShell() {
   const timezone = view.household?.timezone ?? null;
 
   const today = timezone ? householdDay(timezone).date : null;
+  // The Profile chips are for the calendar screens. Every screen the shell has is one; a screen that is
+  // not (Routines, Meals) turns them off here. They are hidden, not unmounted, so they keep their Profiles.
+  const onCalendar = true;
 
   return (
     <main className="grid h-svh grid-cols-[5.5rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
@@ -301,49 +313,52 @@ function HomeShell() {
       <header className="flex min-h-12 items-center gap-6">
         <h1 className="min-w-0 truncate text-3xl font-semibold">{name}</h1>
         {timezone && <WallClock timezone={timezone} />}
+        <ProfileChips filter={filter} pressed={pressed} hidden={!onCalendar} />
         <div className="ml-auto flex shrink-0 items-center gap-4">
           <ConnectionBadge />
           <SyncBadge />
         </div>
       </header>
-      {route.view !== 'home' && timezone ? (
-        <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} />
-      ) : route.view !== 'home' ? (
-        // A calendar page before the Household is read: the empty calendar alone, not the home layout
-        // under a navigation rail entry that marks Day or Week.
-        <section aria-label="Calendar" className="rounded-xl border border-border" />
-      ) : (
-      <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
-        {timezone ? <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
-        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
-          {timezone ? (
-            <RoutinesRail timezone={timezone} />
-          ) : (
-            <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4">
-              {view.failed && (
-                <p role="alert" className="text-base">
-                  Could not load Routines. Check your connection.
-                </p>
+      <ProfileFilterContext.Provider value={filterView}>
+        {route.view !== 'home' && timezone ? (
+          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} />
+        ) : route.view !== 'home' ? (
+          // A calendar page before the Household is read: the empty calendar alone, not the home layout
+          // under a navigation rail entry that marks Day or Week.
+          <section aria-label="Calendar" className="rounded-xl border border-border" />
+        ) : (
+          <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
+            {timezone ? <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
+            <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
+              {timezone ? (
+                <RoutinesRail timezone={timezone} />
+              ) : (
+                <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4">
+                  {view.failed && (
+                    <p role="alert" className="text-base">
+                      Could not load Routines. Check your connection.
+                    </p>
+                  )}
+                </aside>
               )}
-            </aside>
-          )}
-          <PinnedListRail />
-        </div>
-      </div>
-      )}
-      {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
-      {adding && timezone && today && (
-        <NativeEventSheet
-          timezone={timezone}
-          // The day the wall is on: today when the page shown holds it, else that page's first day.
-          date={wallDate(route, today)}
-          onClose={() => setAdding(false)}
-          onSaved={() => {
-            setAdding(false);
-            setAdded((count) => count + 1);
-          }}
-        />
-      )}
+              <PinnedListRail />
+            </div>
+          </div>
+        )}
+        {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
+        {adding && timezone && today && (
+          <NativeEventSheet
+            timezone={timezone}
+            // The day the wall is on: today when the page shown holds it, else that page's first day.
+            date={wallDate(route, today)}
+            onClose={() => setAdding(false)}
+            onSaved={() => {
+              setAdding(false);
+              setAdded((count) => count + 1);
+            }}
+          />
+        )}
+      </ProfileFilterContext.Provider>
     </main>
   );
 }

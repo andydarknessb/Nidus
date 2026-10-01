@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useContext, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Occurrence } from '../lib/calendar-occurrences';
 import { dialogKeys } from '../lib/dialog';
 import {
@@ -9,6 +9,7 @@ import {
   saveNativeEvent,
   type EventForm,
 } from '../lib/native-events';
+import { ProfileFilterContext } from '../lib/profile-filter';
 import { loadProfiles, type Profile } from '../lib/profiles';
 import { supabase } from '../lib/supabase';
 
@@ -21,7 +22,8 @@ const choice =
 // Creates a Native Event, or edits or deletes the one in `occurrence`. One sheet for the tablet
 // and the phone: 48 px targets throughout, and it scrolls when the screen is short. Written by a
 // Household Account or a Device, whichever session `supabase` holds. Focus moves in on open and
-// back to what opened it on close.
+// back to what opened it on close. On the Wall, a save or a delete clears the Profile filter, which
+// would otherwise hide the event just written (or the gap where it was).
 export function NativeEventSheet({
   timezone,
   date,
@@ -39,6 +41,7 @@ export function NativeEventSheet({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLFormElement>(null);
+  const { clear: clearFilter } = useContext(ProfileFilterContext);
   const [form, setForm] = useState<EventForm>(() => (occurrence ? eventFormFromOccurrence(occurrence, timezone) : blankEventForm(date)));
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [problem, setProblem] = useState('');
@@ -74,6 +77,7 @@ export function NativeEventSheet({
     setBusy(true);
     try {
       await work();
+      clearFilter();
       onSaved();
     } catch {
       setProblem(failure);
