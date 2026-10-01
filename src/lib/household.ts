@@ -1,8 +1,22 @@
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { browserTimezone } from './timezones';
+import { capPlace, type TemperatureUnit, type WeatherPlace } from './weather';
 
-export type Household = { id: string; name: string; timezone: string };
+export type Household = {
+  id: string;
+  name: string;
+  timezone: string;
+  // Where the weather is for and what it is called; all three are null while the weather is off.
+  weather_place: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  temperature_unit: TemperatureUnit;
+};
+
+// What every read of a Household asks for: one name wrong here and the Wall reads nothing at all.
+// Exported so a test can read with exactly this list.
+export const householdColumns = 'id, name, timezone, weather_place, latitude, longitude, temperature_unit';
 
 export function displayNameOf(session: Session): string {
   const meta = session.user.user_metadata as { full_name?: string; name?: string };
@@ -23,7 +37,7 @@ export async function ensureHousehold(session: Session): Promise<Household> {
 }
 
 export async function loadHousehold(): Promise<Household> {
-  const { data, error } = await supabase.from('households').select('id, name, timezone').single<Household>();
+  const { data, error } = await supabase.from('households').select(householdColumns).single<Household>();
   if (error) throw error;
   return data;
 }
@@ -43,7 +57,27 @@ export async function updateHousehold(id: string, changes: { name: string; timez
     .from('households')
     .update(changes)
     .eq('id', id)
-    .select('id, name, timezone')
+    .select(householdColumns)
+    .single<Household>();
+  if (error) throw error;
+  return data;
+}
+
+// Sets where the weather is for, or null to turn it off, and the unit it shows in. Household
+// Account only: a Device reads these columns and the database refuses its write. The place's words
+// are cut to what the column holds, and the database keeps the coordinates to two decimals, so the
+// Household returned has them rounded.
+export async function updateHouseholdWeather(id: string, weather: WeatherPlace | null, unit: TemperatureUnit): Promise<Household> {
+  const { data, error } = await supabase
+    .from('households')
+    .update({
+      weather_place: weather ? capPlace(weather.place) : null,
+      latitude: weather?.latitude ?? null,
+      longitude: weather?.longitude ?? null,
+      temperature_unit: unit,
+    })
+    .eq('id', id)
+    .select(householdColumns)
     .single<Household>();
   if (error) throw error;
   return data;
@@ -53,6 +87,6 @@ export function signInWithGoogle() {
   // Identity only: no calendar scope is requested (ADR 0002).
   return supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: window.location.origin },
+    options: { redirectTo: `${window.location.origin}/settings` },
   });
 }

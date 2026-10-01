@@ -96,6 +96,9 @@ export function AdminApp() {
         <a href="/settings/events" aria-current={onEvents ? 'page' : undefined} className={navLink}>
           Events
         </a>
+        <a href="/" className={navLink}>
+          Calendar
+        </a>
       </nav>
       {onLists ? (
         <SharedListsPage household={household} />

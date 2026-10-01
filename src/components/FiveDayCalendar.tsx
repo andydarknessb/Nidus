@@ -24,9 +24,11 @@ import {
 import { tint } from '../lib/event-tint';
 import { householdDay, WEEKDAYS } from '../lib/routines';
 import { useNow, useOccurrences } from '../lib/wall-hooks';
+import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
 import { EventDetails } from './EventDetails';
 import { MonthGrid } from './MonthGrid';
 import { NativeEventSheet } from './NativeEventSheet';
+import { DayWeather } from './Weather';
 
 // The home screen's calendar: today and the next four days as columns in the Household
 // Timezone. An all-day band on top (multi-day events span their columns), timed events
@@ -58,18 +60,34 @@ function NativeMark({ occurrence }: { occurrence: Occurrence }) {
 }
 
 // The home screen: today and the next four days. `version` changes when the screen around the
-// calendar has written an event, so the calendar reads again at once.
+// calendar has written an event, so the calendar reads again at once. `forecast` is the Household's
+// weather, read once by the screen around the calendar; `weatherOn` says the Household has a place,
+// so each day heading keeps a line for it (empty while there is no forecast, or none for that day).
 export function FiveDayCalendar({
   timezone,
   version = 0,
   onNavigate,
+  forecast = null,
+  weatherOn = false,
 }: {
   timezone: string;
   version?: number;
   onNavigate: (view: CalendarView, date: string) => void;
+  forecast?: Forecast | null;
+  weatherOn?: boolean;
 }) {
   const now = useNow(timezone);
-  return <CalendarGrid timezone={timezone} now={now} days={fiveDays(timezone, now)} version={version} onOpenDay={(date) => onNavigate('day', date)} />;
+  return (
+    <CalendarGrid
+      timezone={timezone}
+      now={now}
+      days={fiveDays(timezone, now)}
+      version={version}
+      onOpenDay={(date) => onNavigate('day', date)}
+      forecast={forecast}
+      weatherOn={weatherOn}
+    />
+  );
 }
 
 const PAGE_BUTTON = 'min-h-12 rounded-lg border border-border px-6 text-lg font-medium disabled:opacity-50';
@@ -83,12 +101,16 @@ export function PagedCalendar({
   date,
   version = 0,
   onNavigate,
+  forecast = null,
+  weatherOn = false,
 }: {
   timezone: string;
   view: CalendarView;
   date: string | null;
   version?: number;
   onNavigate: (view: CalendarView, date: string) => void;
+  forecast?: Forecast | null;
+  weatherOn?: boolean;
 }) {
   const now = useNow(timezone);
   const window = pagingWindow(timezone, now);
@@ -133,8 +155,11 @@ export function PagedCalendar({
           version={version}
           // A week's day headings open that day; on a day page the heading is only a heading.
           onOpenDay={view === 'week' ? (day) => onNavigate('day', day) : null}
+          forecast={forecast}
+          weatherOn={weatherOn}
         />
       ) : (
+        // The month's cells carry no weather: the spec puts it on the day headings of Home, Day and Week.
         <MonthGrid key={`${view}:${anchor}`} timezone={timezone} today={today} anchor={anchor} window={window} version={version} onOpenDay={(day) => onNavigate('day', day)} />
       )}
     </div>
@@ -147,12 +172,16 @@ function CalendarGrid({
   days,
   version,
   onOpenDay,
+  forecast,
+  weatherOn,
 }: {
   timezone: string;
   now: Date;
   days: WallDay[];
   version: number;
   onOpenDay: ((date: string) => void) | null;
+  forecast: Forecast | null;
+  weatherOn: boolean;
 }) {
   const columnsStyle = gridColumns(days.length);
   // A day outside the paging window would open its nearest end instead, so it is only a heading.
@@ -190,7 +219,15 @@ function CalendarGrid({
       <div style={columnsStyle} className="grid border-b border-border">
         <div />
         {days.map((day) => (
-          <DayHeading key={day.date} day={day} onOpen={onOpenDay && canOpenDay(day.date, pageWindow) ? onOpenDay : null} />
+          <DayHeading
+            key={day.date}
+            day={day}
+            onOpen={onOpenDay && canOpenDay(day.date, pageWindow) ? onOpenDay : null}
+            weather={forecastDay(forecast, day.date)}
+            room={weatherOn}
+            // One column is wide enough to hold the weather beside the day; several are not.
+            beside={days.length === 1}
+          />
         ))}
       </div>
       {failed && occurrences === null && (
@@ -255,10 +292,26 @@ function CalendarGrid({
   );
 }
 
-// A day's heading. Where that day can be opened (the home screen and the week view) it holds a
-// button that opens it and fills the cell, so the whole heading is the target; on the day view
-// itself it is only a heading.
-function DayHeading({ day, onOpen }: { day: WallDay; onOpen: ((date: string) => void) | null }) {
+// A day's heading cell: the heading and the day's weather, under it (beside it on a one-day page, which
+// is wide enough). Where that day can be opened (the home screen and the week view) the heading holds
+// a button that opens it and fills the heading, so the whole heading is the target; on the day view
+// itself it is only a heading. The weather is never inside the heading or its button, so the button's
+// name stays "Thu 1, open day". While the Household has a place (`room`) every cell keeps its line for
+// the weather, empty for a day the forecast does not cover, so the row is as tall before the forecast
+// arrives, or when a week is only partly covered, as it is after.
+function DayHeading({
+  day,
+  onOpen,
+  weather,
+  room,
+  beside,
+}: {
+  day: WallDay;
+  onOpen: ((date: string) => void) | null;
+  weather: ForecastDay | undefined;
+  room: boolean;
+  beside: boolean;
+}) {
   const weekday = WEEKDAYS[day.weekday]!.short;
   const date = Number(day.date.slice(8));
   const words = (
@@ -268,17 +321,9 @@ function DayHeading({ day, onOpen }: { day: WallDay; onOpen: ((date: string) => 
       {day.isToday && <span className="sr-only">(today)</span>}
     </>
   );
-  const cell = `border-l border-border ${day.isToday ? 'bg-muted/60' : ''}`;
   const text = `flex items-baseline justify-center gap-2 px-2 py-3 text-2xl font-semibold ${day.isToday ? 'underline decoration-4 underline-offset-8' : ''}`;
-  if (!onOpen) {
-    return (
-      <h2 aria-current={day.isToday ? 'date' : undefined} className={`${cell} ${text}`}>
-        {words}
-      </h2>
-    );
-  }
-  return (
-    <h2 className={cell}>
+  const heading = onOpen ? (
+    <h2>
       <button
         type="button"
         aria-current={day.isToday ? 'date' : undefined}
@@ -289,6 +334,23 @@ function DayHeading({ day, onOpen }: { day: WallDay; onOpen: ((date: string) => 
         {words}
       </button>
     </h2>
+  ) : (
+    <h2 aria-current={day.isToday ? 'date' : undefined} className={text}>
+      {words}
+    </h2>
+  );
+  return (
+    <div className={`border-l border-border ${day.isToday ? 'bg-muted/60' : ''} ${beside ? 'flex items-center justify-center gap-4' : ''}`}>
+      {heading}
+      {room &&
+        (beside ? (
+          <DayWeather day={weather} />
+        ) : (
+          <div className="flex h-7 items-center justify-center">
+            <DayWeather day={weather} />
+          </div>
+        ))}
+    </div>
   );
 }
 

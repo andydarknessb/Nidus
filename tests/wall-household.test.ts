@@ -1,7 +1,15 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Household, householdViewAfter as householdViewAfterFn } from '../src/lib/household';
 
-const home: Household = { id: 'h1', name: 'Home', timezone: 'America/Chicago' };
+const home: Household = {
+  id: 'h1',
+  name: 'Home',
+  timezone: 'America/Chicago',
+  weather_place: null,
+  latitude: null,
+  longitude: null,
+  temperature_unit: 'fahrenheit',
+};
 
 // household.ts builds the Supabase client on import; the pure decision under test
 // never calls it, so a placeholder URL and key are enough to load the module.
