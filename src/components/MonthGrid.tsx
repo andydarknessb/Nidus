@@ -71,7 +71,8 @@ export function MonthGrid({
 
   return (
     <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border">
-      <div className="grid grid-cols-7 divide-x divide-border border-b border-border">
+      {/* Every cell's name says its weekday already, so a screen reader need not hear the row of them first. */}
+      <div aria-hidden className="grid grid-cols-7 divide-x divide-border border-b border-border">
         {WEEKDAYS.map((weekday) => (
           <div key={weekday.bit} className="py-2 text-center text-lg font-semibold">
             {weekday.short}
