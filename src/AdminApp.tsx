@@ -80,7 +80,7 @@ export function AdminApp() {
 
   return (
     <ChangeFeedProvider>
-      <div className="mx-auto flex max-w-md justify-end px-4 pt-4 empty:hidden">
+      <div className="mx-auto flex max-w-md justify-end px-4">
         <ConnectionBadge />
       </div>
       <nav aria-label="Settings sections" className="mx-auto flex max-w-md flex-wrap gap-2 px-4 pt-4">

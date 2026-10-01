@@ -40,6 +40,8 @@ export type ChangeFeed = {
 
 // A burst of writes (a calendar sync lands hundreds of events) is one refetch, a moment later.
 const DEBOUNCE_MS = 150;
+// How long after the server closes the channel before a new one is opened.
+const REJOIN_MS = 5_000;
 
 type Watcher = { tables: ReadonlySet<WatchedTable>; onChange: () => void; timer: ReturnType<typeof setTimeout> | undefined };
 
@@ -74,25 +76,48 @@ export function openChangeFeed(client: SupabaseClient, options: { debounceMs?: n
     listeners.forEach((listener) => listener(next));
   };
 
-  let channel: RealtimeChannel = client.channel(`household-changes-${Math.random().toString(36).slice(2)}`);
-  for (const table of WATCHED_TABLES) {
-    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
-      for (const watcher of watchers) if (watcher.tables.has(table)) poke(watcher);
+  let channel: RealtimeChannel | undefined;
+  let rejoin: ReturnType<typeof setTimeout> | undefined;
+
+  // realtime-js retries a channel that errored or timed out, but a channel the server closed
+  // (its token expired, say) is dropped for good: open a fresh one.
+  const join = () => {
+    // wait: SUBSCRIBED only once the server's change subscription is really live, so a change
+    // made right after it (or after a catch-up read) is never missed.
+    let next: RealtimeChannel = client.channel(`household-changes-${Math.random().toString(36).slice(2)}`, {
+      config: { postgres_changes_options: { wait: true } },
     });
-  }
-  channel.subscribe((state) => {
-    if (closed) return;
-    if (state === 'SUBSCRIBED') {
-      channelState = 'online';
-      markReady();
-      // Changes made while the feed was down were never heard: read everything again once it is back.
-      if (wasLive) pokeAll();
-      wasLive = true;
-    } else {
-      channelState = wasLive ? 'offline' : 'connecting';
+    for (const table of WATCHED_TABLES) {
+      next = next.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+        for (const watcher of watchers) if (watcher.tables.has(table)) poke(watcher);
+      });
     }
-    update();
-  });
+    channel = next;
+    next.subscribe((state) => {
+      if (closed || channel !== next) return;
+      if (state === 'SUBSCRIBED') {
+        channelState = 'online';
+        markReady();
+        // Changes made while the feed was down were never heard: read everything again once it is back.
+        if (wasLive) pokeAll();
+        wasLive = true;
+      } else {
+        channelState = wasLive ? 'offline' : 'connecting';
+        if (state === 'CLOSED') {
+          clearTimeout(rejoin);
+          rejoin = setTimeout(() => {
+            if (closed) return;
+            // Forget it first, so the CLOSED that removing it reports is not heard as another loss.
+            channel = undefined;
+            void client.removeChannel(next);
+            join();
+          }, REJOIN_MS);
+        }
+      }
+      update();
+    });
+  };
+  join();
 
   const onNetwork = () => {
     networkUp = navigator.onLine;
@@ -129,7 +154,8 @@ export function openChangeFeed(client: SupabaseClient, options: { debounceMs?: n
         window.removeEventListener('online', onNetwork);
         window.removeEventListener('offline', onNetwork);
       }
-      void client.removeChannel(channel);
+      clearTimeout(rejoin);
+      if (channel) void client.removeChannel(channel);
     },
   };
 }

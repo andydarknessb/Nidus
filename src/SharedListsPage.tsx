@@ -28,6 +28,7 @@ import { createSyncedReader, type SyncedReader } from './lib/synced-reader';
 
 // What each read here listens to. The pinned list is a column of the Household.
 const ITEM_TABLES = ['list_items'] as const;
+const ITEM_REFRESH_MS = 30_000;
 const LIST_TABLES = ['shared_lists', 'households'] as const;
 
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
@@ -65,8 +66,11 @@ function useItems(listId: string) {
     );
     reader.current = next;
     next.refresh();
+    // The backstop for a change missed while the connection was down.
+    const id = setInterval(() => next.refresh(), ITEM_REFRESH_MS);
     return () => {
       next.dispose();
+      clearInterval(id);
       reader.current = null;
     };
   }, [listId]);
@@ -105,7 +109,9 @@ function useItems(listId: string) {
       await guarded(() => reorderItems(supabase, ids));
       fail('');
     } catch {
-      // Some of the writes may have landed, and the read that follows a write shows what the database holds.
+      // Put the old order back now; the read that follows the write replaces it with what the
+      // database holds (some of the writes may have landed) once the connection allows.
+      publish(() => before);
       fail('Could not reorder. Showing the list as it is saved.');
     }
   }
