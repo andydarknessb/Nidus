@@ -126,8 +126,29 @@ export function addMonths(date: string, months: number): string {
 export type PagingWindow = { first: string; last: string };
 
 export function pagingWindow(timezone: string, now: Date = new Date()): PagingWindow {
-  const today = householdDay(timezone, now).date;
+  return pagingWindowAround(householdDay(timezone, now).date);
+}
+
+// The same window around a Household date that is already known.
+export function pagingWindowAround(today: string): PagingWindow {
   return { first: addMonths(today, -1), last: addMonths(today, 6) };
+}
+
+export function clampToWindow(date: string, window: PagingWindow): string {
+  return date < window.first ? window.first : date > window.last ? window.last : date;
+}
+
+// The date a page's address puts it on, as the page shows it: the address's date (today when it has
+// none) pulled to the nearest end of the window. The page drawn and every rule about it read it here,
+// so they agree on an address outside the window (old history, a Wall left on a week for a month).
+export function shownDate(date: string | null, today: string): string {
+  return clampToWindow(date ?? today, pagingWindowAround(today));
+}
+
+// Whether a day can be opened as itself. A day outside the window opens its nearest end instead, so
+// the week view's days beyond the window are headings and the month view's are plain cells, not buttons.
+export function canOpenDay(date: string, window: PagingWindow): boolean {
+  return clampToWindow(date, window) === date;
 }
 
 // The date a page is anchored on: the Sunday of a week page, the 1st of a month page, the day itself
@@ -196,8 +217,8 @@ export function describeMonth(date: string): string {
 }
 
 // The wall's routes: "/" is the home screen, "/week", "/day" and "/month" the secondary views, each
-// anchored by "?date=YYYY-MM-DD" (today when it is missing or not a date). A route with no `date` at all
-// is a screen that is not a page of the calendar (so far only the home screen), and counts as today's.
+// anchored by "?date=YYYY-MM-DD" (today when it is missing or not a date). Only the calendar views keep
+// a date; any other screen (so far only the home screen) is today's page when it is left.
 export type WallRoute = { view: 'home' } | { view: CalendarView; date: string | null };
 
 export function parseWallRoute(pathname: string, search: string): WallRoute {
@@ -212,40 +233,38 @@ export function wallPath(view: CalendarView, date: string): string {
   return `/${view}?date=${date}`;
 }
 
-// Whether the page `route` shows holds `today`. A screen with no calendar date (the home screen now,
-// Routines and Meals later) is today's page, so it always does. A paged view holds it when today falls
-// on its page, which each view decides through its own anchor (pageStart): a day when it is today, a
-// week when today is in it, and a month when today is in that month, not when it only shows today as
-// a dimmed day of the month beside it.
+// Whether `route` is a page of the calendar, which keeps a date. Every other screen is today's page
+// when it is left, whatever its address carries (Meals will have a date and still be one of these).
+function isCalendarRoute(route: WallRoute): route is Extract<WallRoute, { view: CalendarView }> {
+  return route.view === 'day' || route.view === 'week' || route.view === 'month';
+}
+
+// Whether the page `route` shows holds `today`. A screen that is not a calendar view is today's page,
+// so it always does. A calendar page holds it when today falls on the page its address shows, which
+// each view decides through its own anchor (pageStart): a day when it is today, a week when today is
+// in it, and a month when today is in that month, not when it only shows today as a dimmed day of the
+// month beside it.
 export function holdsToday(route: WallRoute, today: string): boolean {
-  if (!('date' in route)) return true;
-  return pageStart(route.view, route.date ?? today) === pageStart(route.view, today);
+  if (!isCalendarRoute(route)) return true;
+  return pageStart(route.view, shownDate(route.date, today)) === pageStart(route.view, today);
 }
 
 // The Household date the wall is on: today when the page shown holds it, otherwise the page's first
 // day. Add event starts on it, and the navigation rail opens its views from it.
 export function wallDate(route: WallRoute, today: string): string {
-  if (!('date' in route) || holdsToday(route, today)) return today;
-  return pageStart(route.view, route.date ?? today);
+  if (!isCalendarRoute(route) || holdsToday(route, today)) return today;
+  return pageStart(route.view, shownDate(route.date, today));
 }
 
 // The date the navigation rail opens `view` on, so each of its views keeps the date the wall is on:
-// the page holding today when the page being left holds it (a screen with no calendar date always
-// does), otherwise the page holding the left page's date. It returns the page's own anchor, so a page
+// the page holding today when the page being left holds it (a screen that is not a calendar view
+// always does), otherwise the page holding the left page's date. It returns the page's own anchor as
+// it is shown (the Sunday for Week, the 1st for Month, a day inside the window for Day), so a page
 // already open is the same address and a tap adds no step for Back. Everything goes through
-// pageStart, so a month is just one more anchor there, and a screen with no date is already covered.
+// pageStart, so a month is one more anchor there and one more calendar view above, and other screens
+// are already covered.
 export function navigationRailDate(view: CalendarView, route: WallRoute, today: string): string {
-  return pageStart(view, wallDate(route, today));
-}
-
-export function clampToWindow(date: string, window: PagingWindow): string {
-  return date < window.first ? window.first : date > window.last ? window.last : date;
-}
-
-// Whether `date` lies beyond the window: a day the mirror holds nothing for, so the month view must
-// not show it as a free one.
-export function beyondWindow(date: string, window: PagingWindow): boolean {
-  return clampToWindow(date, window) !== date;
+  return pageStart(view, shownDate(wallDate(route, today), today));
 }
 
 // ---- Placement ----------------------------------------------------------------------

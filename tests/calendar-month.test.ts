@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  beyondWindow,
+  canOpenDay,
   cellLines,
   dayOccurrences,
   describeCell,
@@ -330,20 +330,13 @@ describe('how many lines fit', () => {
   });
 });
 
+// A day of the grid that canOpenDay refuses (its own tests are in calendar-paging.test.ts) is beyond the window.
 describe('days beyond the window', () => {
   const window = pagingWindow(CHICAGO, NOW);
-  const beyond = (month: string, within = window) => monthWeeks(month, CHICAGO, TODAY).flat().filter((day) => beyondWindow(day.date, within)).map((day) => day.date);
-
-  it('are the dates before its first date and after its last', () => {
-    expect(window).toEqual({ first: '2026-09-01', last: '2027-04-01' });
-    expect(beyondWindow('2026-09-01', window)).toBe(false);
-    expect(beyondWindow('2026-08-31', window)).toBe(true);
-    expect(beyondWindow('2027-04-01', window)).toBe(false);
-    expect(beyondWindow('2027-04-02', window)).toBe(true);
-    expect(beyondWindow('2026-12-25', window)).toBe(false);
-  });
+  const beyond = (month: string, within = window) => monthWeeks(month, CHICAGO, TODAY).flat().filter((day) => !canOpenDay(day.date, within)).map((day) => day.date);
 
   it('are none in a month wholly inside it', () => {
+    expect(window).toEqual({ first: '2026-09-01', last: '2027-04-01' });
     expect(beyond('2026-10-01')).toEqual([]);
   });
 

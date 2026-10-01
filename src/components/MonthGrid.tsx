@@ -1,7 +1,7 @@
 import { Pin } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  beyondWindow,
+  canOpenDay,
   cellLines,
   dayOccurrences,
   describeCell,
@@ -139,7 +139,7 @@ function WeekRow({
           key={day.date}
           day={day}
           inMonth={day.date.slice(0, 7) === anchor.slice(0, 7)}
-          beyond={beyondWindow(day.date, window)}
+          beyond={!canOpenDay(day.date, window)}
           occurrences={occurrences === null ? null : dayOccurrences(occurrences, day)}
           lines={lines}
           timezone={timezone}

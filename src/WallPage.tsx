@@ -1,4 +1,4 @@
-import { Calendar1, CalendarDays, CalendarRange, House, ListChecks, type LucideIcon } from 'lucide-react';
+import { Calendar1, CalendarDays, CalendarRange, House, ListChecks, Plus, type LucideIcon } from 'lucide-react';
 import { useEffect, useState, type ComponentProps } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
@@ -191,13 +191,13 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
 
 // One entry of the navigation rail: an icon over a word, at least 64 px square. The current one is
 // marked by a bar down its edge and a filled ground as well as `aria-current`, so it never rests on
-// colour alone.
-function NavigationRailEntry({ icon: Icon, label, current = false, ...props }: { icon: LucideIcon; label: string; current?: boolean } & ComponentProps<'button'>) {
+// colour alone. A word too long for one line wraps; the entry then grows taller, never wider.
+function NavigationRailEntry({ icon: Icon, label, current = false, className = '', ...props }: { icon: LucideIcon; label: string; current?: boolean } & ComponentProps<'button'>) {
   return (
     <button
       type="button"
       aria-current={current ? 'page' : undefined}
-      className={`relative flex min-h-16 min-w-16 flex-col items-center justify-center gap-1 rounded-lg text-base font-medium disabled:opacity-50 ${current ? 'bg-muted' : ''}`}
+      className={`relative flex min-h-16 min-w-16 flex-col items-center justify-center gap-1 rounded-lg text-base font-medium disabled:opacity-50 ${current ? 'bg-muted' : ''} ${className}`}
       {...props}
     >
       {current && <span aria-hidden className="absolute inset-y-2 left-0 w-1 rounded-full bg-foreground" />}
@@ -207,24 +207,27 @@ function NavigationRailEntry({ icon: Icon, label, current = false, ...props }: {
   );
 }
 
-// The navigation rail down the left side: Home, Day, Week, Month and Lists. Day, Week and Month keep the
-// date the wall is on (navigationRailDate), read at the tap so one just after Household midnight is right,
-// and wait for the Household Timezone. Lists opens the Lists screen over this one rather than going
-// anywhere. Its column is its whole width, border and padding included, and must stay at most 90 px:
-// the five day columns at 1280 px need 140 px each. The longest labels still to come (Routines,
-// Settings) fit in it.
+// The navigation rail down the left side: Home, Day, Week, Month and Lists, and at its foot Add event.
+// Day, Week and Month keep the date the wall is on (navigationRailDate), read at the tap so one just
+// after Household midnight is right, and wait for the Household Timezone. Lists opens the Lists screen
+// over this one rather than going anywhere. Add event is an action, not a section: it is never the
+// current entry, opens the Native Event sheet, and is drawn as the primary action. Its column is its
+// whole width, border and padding included, and must stay at most 90 px: the five day columns at
+// 1280 px need 140 px each. The longest labels still to come (Routines, Settings) fit in it.
 function NavigationRail({
   route,
   timezone,
   onOpen,
   onHome,
   onLists,
+  onAdd,
 }: {
   route: WallRoute;
   timezone: string | null;
   onOpen: (view: CalendarView, date: string) => void;
   onHome: () => void;
   onLists: () => void;
+  onAdd: () => void;
 }) {
   const open = (view: CalendarView) => {
     if (timezone) onOpen(view, navigationRailDate(view, route, householdDay(timezone).date));
@@ -236,12 +239,13 @@ function NavigationRail({
       <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
       <NavigationRailEntry icon={CalendarDays} label="Month" current={route.view === 'month'} disabled={!timezone} onClick={() => open('month')} />
       <NavigationRailEntry icon={ListChecks} label="Lists" aria-haspopup="dialog" onClick={onLists} />
+      <NavigationRailEntry icon={Plus} label="Add event" aria-haspopup="dialog" disabled={!timezone} onClick={onAdd} className="mt-auto bg-primary text-primary-foreground" />
     </nav>
   );
 }
 
-// The time, large, and the date beside it, in the Household Timezone. useNow redraws it within half a
-// minute and the moment Household midnight passes, so the date turns with no reload.
+// The time, large, and the date beside it, in the Household Timezone. useNow redraws it on each minute
+// and the moment Household midnight passes, so the minute turns on the minute and the date with no reload.
 function WallClock({ timezone }: { timezone: string }) {
   const now = useNow(timezone).getTime();
   return (
@@ -294,22 +298,21 @@ function HomeShell() {
 
   return (
     <main className="grid h-svh grid-cols-[5.5rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
-      <NavigationRail route={route} timezone={timezone} onOpen={openView} onHome={openHome} onLists={() => setListsOpen(true)} />
+      <NavigationRail route={route} timezone={timezone} onOpen={openView} onHome={openHome} onLists={() => setListsOpen(true)} onAdd={() => setAdding(true)} />
       <header className="flex min-h-12 items-center gap-6">
         <h1 className="min-w-0 truncate text-3xl font-semibold">{name}</h1>
         {timezone && <WallClock timezone={timezone} />}
         <div className="ml-auto flex shrink-0 items-center gap-4">
           <ConnectionBadge />
           <SyncBadge />
-          {timezone && (
-            <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setAdding(true)}>
-              Add event
-            </button>
-          )}
         </div>
       </header>
       {route.view !== 'home' && timezone ? (
         <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} />
+      ) : route.view !== 'home' ? (
+        // A calendar page before the Household is read: the empty calendar alone, not the home layout
+        // under a navigation rail entry that marks Day or Week.
+        <section aria-label="Calendar" className="rounded-xl border border-border" />
       ) : (
       <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
         {timezone ? <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
