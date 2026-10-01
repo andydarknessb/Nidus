@@ -9,3 +9,6 @@ supabase/.branches/
 *.log
 .DS_Store
 *.tsbuildinfo
+
+# Local Netlify folder
+.netlify
