@@ -1,11 +1,25 @@
+import { Pin } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { describeWhen, type Occurrence } from '../lib/calendar-occurrences';
+import { dialogKeys } from '../lib/dialog';
 
 // The details of one event, over the wall: title, when, where, notes and which calendar it
-// came from. Read-only (a Synced Event is never edited here). Focus moves in on open and back
-// to the tapped event on close; Escape, the backdrop and the button all close it.
-export function EventDetails({ occurrence, timezone, onClose }: { occurrence: Occurrence; timezone: string; onClose: () => void }) {
+// came from. A Synced Event is read-only (it is never edited here); a Native Event says it lives
+// only in Nidus and offers Edit when `onEdit` is given. Focus moves in on open and back to the
+// tapped event on close; Escape, the backdrop and the button all close it.
+export function EventDetails({
+  occurrence,
+  timezone,
+  onClose,
+  onEdit,
+}: {
+  occurrence: Occurrence;
+  timezone: string;
+  onClose: () => void;
+  onEdit?: () => void;
+}) {
   const dialog = useRef<HTMLDivElement>(null);
+  const native = occurrence.source === 'native';
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -26,38 +40,36 @@ export function EventDetails({ occurrence, timezone, onClose }: { occurrence: Oc
         aria-modal="true"
         aria-labelledby="event-details-title"
         tabIndex={-1}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') onClose();
-          if (event.key !== 'Tab') return;
-          // aria-modal: Tab and Shift+Tab stay inside the sheet instead of reaching the wall behind it.
-          const focusable = [...event.currentTarget.querySelectorAll<HTMLElement>('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])')];
-          const first = focusable[0];
-          const last = focusable[focusable.length - 1];
-          if (!first || !last) {
-            event.preventDefault();
-          } else if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) {
-            event.preventDefault();
-            last.focus();
-          } else if (!event.shiftKey && document.activeElement === last) {
-            event.preventDefault();
-            first.focus();
-          }
-        }}
+        // aria-modal: Tab and Shift+Tab stay inside the sheet instead of reaching the wall behind it.
+        onKeyDown={(event) => dialogKeys(event, onClose)}
         className="flex max-h-full w-full max-w-3xl flex-col gap-6 overflow-y-auto rounded-xl border-2 border-border bg-card p-8 outline-none"
       >
         <header className="flex items-start justify-between gap-6">
           <h2 id="event-details-title" className="text-4xl font-semibold break-words">
             {occurrence.title}
           </h2>
-          <button type="button" className="min-h-12 shrink-0 rounded-lg border border-border px-6 text-lg font-medium" onClick={onClose}>
-            Close
-          </button>
+          <div className="flex shrink-0 gap-3">
+            {native && onEdit && (
+              <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={onEdit}>
+                Edit
+              </button>
+            )}
+            <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </header>
+        {native && (
+          <p className="flex items-center gap-3 text-xl font-semibold">
+            <Pin aria-hidden className="size-6 shrink-0" />
+            Only in Nidus. It is not in Google Calendar.
+          </p>
+        )}
         <dl className="flex flex-col gap-5 text-2xl">
           <Detail label="When">{describeWhen(occurrence, timezone)}</Detail>
           {occurrence.location && <Detail label="Where">{occurrence.location}</Detail>}
           {occurrence.description && <Detail label="Notes">{occurrence.description}</Detail>}
-          <Detail label="Calendar">{occurrence.calendar_name}</Detail>
+          {!native && <Detail label="Calendar">{occurrence.calendar_name}</Detail>}
         </dl>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { Pin } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   clampToWindow,
@@ -22,6 +23,7 @@ import {
 import { householdDay, WEEKDAYS } from '../lib/routines';
 import { supabase } from '../lib/supabase';
 import { EventDetails } from './EventDetails';
+import { NativeEventSheet } from './NativeEventSheet';
 
 // The home screen's calendar: today and the next four days as columns in the Household
 // Timezone. An all-day band on top (multi-day events span their columns), timed events
@@ -46,9 +48,31 @@ function hourLabel(hour: number): string {
 
 // A tinted block in the event's colour: the colour is the edge and a wash, never the text, so
 // the words stay white on a dark ground whatever colour the Profile picked.
-function tint(color: string | null): CSSProperties {
-  const edge = color ?? NEUTRAL;
-  return { borderLeftColor: edge, backgroundColor: `color-mix(in srgb, ${edge} 24%, #18181b)` };
+// An event for several Profiles splits its edge into one stripe of each colour.
+function tint(occurrence: Occurrence): CSSProperties {
+  const edge = occurrence.color ?? NEUTRAL;
+  const wash = `color-mix(in srgb, ${edge} 24%, #18181b)`;
+  const { colors } = occurrence;
+  if (colors.length < 2) return { borderLeftColor: edge, backgroundColor: wash };
+  const stops = colors.map((color, index) => `${color} ${(index * 100) / colors.length}% ${((index + 1) * 100) / colors.length}%`).join(', ');
+  return {
+    borderLeftColor: 'transparent',
+    backgroundImage: `linear-gradient(to bottom, ${stops}), linear-gradient(${wash}, ${wash})`,
+    backgroundSize: '8px 100%, 100% 100%',
+    backgroundPosition: 'left top, left top',
+    backgroundRepeat: 'no-repeat',
+    backgroundOrigin: 'border-box',
+  };
+}
+
+// What a screen reader hears of an event beyond its title: where it came from.
+function source(occurrence: Occurrence): string {
+  return occurrence.source === 'native' ? 'only in Nidus' : occurrence.calendar_name;
+}
+
+// The mark on a Native Event, which lives only in Nidus: a pin, never colour alone.
+function NativeMark({ occurrence }: { occurrence: Occurrence }) {
+  return occurrence.source === 'native' ? <Pin aria-hidden data-testid="native-mark" className="mr-1 inline size-4 shrink-0 align-text-bottom" /> : null;
 }
 
 function useNow(): Date {
@@ -60,10 +84,11 @@ function useNow(): Date {
   return now;
 }
 
-// The home screen: today and the next four days.
-export function FiveDayCalendar({ timezone }: { timezone: string }) {
+// The home screen: today and the next four days. `version` changes when the screen around the
+// calendar has written an event, so the calendar reads again at once.
+export function FiveDayCalendar({ timezone, version = 0 }: { timezone: string; version?: number }) {
   const now = useNow();
-  return <CalendarGrid timezone={timezone} now={now} days={fiveDays(timezone, now)} />;
+  return <CalendarGrid timezone={timezone} now={now} days={fiveDays(timezone, now)} version={version} />;
 }
 
 const PAGE_BUTTON = 'min-h-12 rounded-lg border border-border px-6 text-lg font-medium disabled:opacity-50';
@@ -75,12 +100,14 @@ export function PagedCalendar({
   timezone,
   view,
   date,
+  version = 0,
   onNavigate,
   onHome,
 }: {
   timezone: string;
   view: CalendarView;
   date: string | null;
+  version?: number;
   onNavigate: (view: CalendarView, date: string) => void;
   onHome: () => void;
 }) {
@@ -124,16 +151,19 @@ export function PagedCalendar({
             : ''}
       </p>
       {/* Keyed on the page so a turned page never shows the last page's events, and a failed read says so. */}
-      <CalendarGrid key={days[0]!.date} timezone={timezone} now={now} days={days} />
+      <CalendarGrid key={days[0]!.date} timezone={timezone} now={now} days={days} version={version} />
     </div>
   );
 }
 
-function CalendarGrid({ timezone, now, days }: { timezone: string; now: Date; days: WallDay[] }) {
+function CalendarGrid({ timezone, now, days, version }: { timezone: string; now: Date; days: WallDay[]; version: number }) {
   const columnsStyle = gridColumns(days.length);
   const [occurrences, setOccurrences] = useState<Occurrence[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<Occurrence | null>(null);
+  // A Native Event being edited, and a count of the edits made here, so the read runs again after one.
+  const [editing, setEditing] = useState<Occurrence | null>(null);
+  const [edits, setEdits] = useState(0);
   // The height of the time grid, so events can be given room for a 48 px target.
   const grid = useRef<HTMLDivElement>(null);
   const [gridPx, setGridPx] = useState(640);
@@ -177,7 +207,7 @@ function CalendarGrid({ timezone, now, days }: { timezone: string; now: Date; da
       live = false;
       clearTimeout(timer);
     };
-  }, [fromMs, toMs]);
+  }, [fromMs, toMs, version, edits]);
 
   const todayColumn = days.find((day) => day.isToday);
   const todayHour = todayColumn ? nowHour(todayColumn, now) : null;
@@ -229,7 +259,29 @@ function CalendarGrid({ timezone, now, days }: { timezone: string; now: Date; da
           </div>
         ))}
       </div>
-      {open && <EventDetails occurrence={open} timezone={timezone} onClose={() => setOpen(null)} />}
+      {open && (
+        <EventDetails
+          occurrence={open}
+          timezone={timezone}
+          onClose={() => setOpen(null)}
+          onEdit={() => {
+            setEditing(open);
+            setOpen(null);
+          }}
+        />
+      )}
+      {editing && (
+        <NativeEventSheet
+          timezone={timezone}
+          date={days[0]!.date}
+          occurrence={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            setEdits((count) => count + 1);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -255,11 +307,14 @@ function AllDayBand({ bars, columnsStyle, onOpen }: { bars: AllDayBar[]; columns
           key={bar.occurrence.id}
           type="button"
           onClick={() => onOpen(bar.occurrence)}
-          aria-label={`${bar.occurrence.title}, ${bar.occurrence.calendar_name}, all day`}
+          aria-label={`${bar.occurrence.title}, ${source(bar.occurrence)}, all day`}
           className={`mx-1 flex min-h-12 items-center truncate border-l-8 px-3 text-left text-lg font-medium ${bar.continuesBefore ? 'rounded-l-none' : 'rounded-l-md'} ${bar.continuesAfter ? 'rounded-r-none' : 'rounded-r-md'}`}
-          style={{ ...tint(bar.occurrence.color), gridColumn: `${bar.startColumn + 2} / span ${bar.span}`, gridRow: bar.row + 1 }}
+          style={{ ...tint(bar.occurrence), gridColumn: `${bar.startColumn + 2} / span ${bar.span}`, gridRow: bar.row + 1 }}
         >
-          <span className="truncate">{bar.occurrence.title}</span>
+          <span className="truncate">
+            <NativeMark occurrence={bar.occurrence} />
+            {bar.occurrence.title}
+          </span>
         </button>
       ))}
     </div>
@@ -287,18 +342,21 @@ function EventBlock({
     <button
       type="button"
       onClick={() => onOpen(occurrence)}
-      aria-label={`${occurrence.title}, ${occurrence.calendar_name}, ${describeWhen(occurrence, timezone)}`}
+      aria-label={`${occurrence.title}, ${source(occurrence)}, ${describeWhen(occurrence, timezone)}`}
       // A short event is still a 48 px target, so it may run past its end on the grid.
       className="absolute z-[1] min-h-12 overflow-hidden rounded-md border-l-8 px-2 py-1 text-left text-lg leading-tight"
       style={{
-        ...tint(occurrence.color),
+        ...tint(occurrence),
         top: `${top}%`,
         height: `${bottom - top}%`,
         left: `calc(${(block.lane / block.lanes) * 100}% + 2px)`,
         width: `calc(${100 / block.lanes}% - 4px)`,
       }}
     >
-      <span className="block font-semibold break-words">{occurrence.title}</span>
+      <span className="block font-semibold break-words">
+        <NativeMark occurrence={occurrence} />
+        {occurrence.title}
+      </span>
       {!block.continuesBefore && <span className="block text-base">{formatClock(Date.parse(occurrence.starts_at), timezone)}</span>}
     </button>
   );

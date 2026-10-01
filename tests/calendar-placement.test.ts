@@ -31,6 +31,8 @@ function event(title: string, startsAt: string, endsAt: string, allDay = false):
     is_all_day: allDay,
     profile_id: null,
     color: null,
+    profile_ids: [],
+    colors: [],
   };
 }
 

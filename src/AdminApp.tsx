@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import { EventsPage } from './EventsPage';
 import { RoutinesPage } from './RoutinesPage';
 import { SettingsPage } from './SettingsPage';
 import { SharedListsPage } from './SharedListsPage';
@@ -72,7 +73,8 @@ export function AdminApp() {
 
   const onLists = window.location.pathname.startsWith('/settings/lists');
   const onRoutines = window.location.pathname.startsWith('/settings/routines');
-  const onHousehold = !onLists && !onRoutines;
+  const onEvents = window.location.pathname.startsWith('/settings/events');
+  const onHousehold = !onLists && !onRoutines && !onEvents;
 
   return (
     <>
@@ -86,9 +88,14 @@ export function AdminApp() {
         <a href="/settings/lists" aria-current={onLists ? 'page' : undefined} className={navLink}>
           Shared Lists
         </a>
+        <a href="/settings/events" aria-current={onEvents ? 'page' : undefined} className={navLink}>
+          Events
+        </a>
       </nav>
       {onLists ? (
         <SharedListsPage household={household} />
+      ) : onEvents ? (
+        <EventsPage household={household} />
       ) : onRoutines ? (
         <RoutinesPage household={household} />
       ) : (

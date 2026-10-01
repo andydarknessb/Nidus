@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
 import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
+import { NativeEventSheet } from './components/NativeEventSheet';
 import { parseWallRoute, wallPath, weekStart, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
 import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
@@ -179,6 +180,9 @@ function HomeShell() {
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   const [listsOpen, setListsOpen] = useState(false);
+  // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState(0);
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -223,16 +227,21 @@ function HomeShell() {
               </button>
             </>
           )}
+          {timezone && (
+            <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setAdding(true)}>
+              Add event
+            </button>
+          )}
           <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setListsOpen(true)}>
             Lists
           </button>
         </div>
       </header>
       {route.view !== 'home' && timezone ? (
-        <PagedCalendar timezone={timezone} view={route.view} date={route.date} onNavigate={openView} onHome={openHome} />
+        <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} onHome={openHome} />
       ) : (
       <div className="grid min-h-0 grid-cols-[1fr_24rem] gap-6">
-        {timezone ? <FiveDayCalendar timezone={timezone} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
+        {timezone ? <FiveDayCalendar timezone={timezone} version={added} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
         <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
           {timezone ? (
             <RoutinesRail timezone={timezone} />
@@ -250,6 +259,18 @@ function HomeShell() {
       </div>
       )}
       {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
+      {adding && timezone && today && (
+        <NativeEventSheet
+          timezone={timezone}
+          // The day the wall is on: the paged view's day, else today.
+          date={route.view !== 'home' && route.date ? route.date : today}
+          onClose={() => setAdding(false)}
+          onSaved={() => {
+            setAdding(false);
+            setAdded((count) => count + 1);
+          }}
+        />
+      )}
     </main>
   );
 }
