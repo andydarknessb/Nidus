@@ -29,7 +29,9 @@ function Glyph({ icon, className }: { icon: WeatherIcon; className: string }) {
 // date) is found by its date, so a forecast gone stale across midnight never offers yesterday's range
 // as today's. With no current reading (it was read too long ago, see forecastToShow) only the high
 // and low show, and with nothing to show at all, nothing. A screen reader hears one phrase, with the
-// condition in words, rather than a picture and bare numbers.
+// condition in words, rather than a picture and bare numbers. It is kept compact (the icon, the
+// temperature, and the high and low stacked small) and never shrinks, because the header also has to
+// hold the Household's name, the clock and date, the Profile chips and the badges.
 export function WeatherNow({ forecast, unit, today }: { forecast: Forecast | null; unit: TemperatureUnit; today: string }) {
   const day = forecastDay(forecast, today);
   const reading = forecast?.current ? { ...describeWeather(forecast.current.code, forecast.current.isDay), temperature: forecast.current.temperature } : null;
@@ -41,16 +43,17 @@ export function WeatherNow({ forecast, unit, today }: { forecast: Forecast | nul
     .filter(Boolean)
     .join(', ');
   return (
-    <div role="img" aria-label={heard} className="flex items-center gap-3">
+    <div role="img" aria-label={heard} className="flex shrink-0 items-center gap-2 whitespace-nowrap">
       {reading && (
         <>
-          <Glyph icon={reading.icon} className="size-9 shrink-0" />
-          <span className="text-3xl font-semibold">{reading.temperature}°</span>
+          <Glyph icon={reading.icon} className="size-8 shrink-0" />
+          <span className="text-3xl font-semibold tabular-nums">{reading.temperature}°</span>
         </>
       )}
       {day && (
-        <span className="text-lg">
-          H {day.high}° L {day.low}°
+        <span className="flex flex-col text-base leading-5">
+          <span>H {day.high}°</span>
+          <span>L {day.low}°</span>
         </span>
       )}
     </div>

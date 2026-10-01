@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CURRENT_MAX_AGE_MS,
   PLACE_MAX_LENGTH,
@@ -13,6 +13,7 @@ import {
   parseForecast,
   parsePlaces,
   readDelayMs,
+  requestInit,
   type WeatherIcon,
 } from '../src/lib/weather';
 
@@ -185,6 +186,46 @@ describe('describeWeather', () => {
   it('says Unknown, with the plain cloud, for a code it does not know', () => {
     for (const code of [-1, 4, 44, 100, 1.5, Number.NaN]) {
       expect(describeWeather(code), `code ${code}`).toEqual({ words: 'Unknown', icon: 'cloud' });
+    }
+  });
+});
+
+describe('requestInit', () => {
+  it('sends no cookies and no referrer, and gives the request a time limit', () => {
+    const init = requestInit();
+
+    expect(init.credentials).toBe('omit');
+    expect(init.referrerPolicy).toBe('no-referrer');
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(init.signal?.aborted).toBe(false);
+  });
+
+  it('makes the limit thirty seconds, started afresh for each request', () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      const first = requestInit();
+      const second = requestInit();
+
+      expect(timeout).toHaveBeenCalledTimes(2);
+      expect(timeout).toHaveBeenCalledWith(30_000);
+      expect(first.signal).not.toBe(second.signal);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  // AbortSignal.timeout is newer than some WebViews. A Wall that loses its weather entirely for want of
+  // it is worse than one that waits, so without it the request goes out with no limit.
+  it('still sends the question, with no limit, where the browser has no AbortSignal.timeout', () => {
+    const timeout = AbortSignal.timeout;
+    Object.defineProperty(AbortSignal, 'timeout', { value: undefined, configurable: true, writable: true });
+    try {
+      const init = requestInit();
+
+      expect('signal' in init).toBe(false);
+      expect(init).toMatchObject({ credentials: 'omit', referrerPolicy: 'no-referrer' });
+    } finally {
+      Object.defineProperty(AbortSignal, 'timeout', { value: timeout, configurable: true, writable: true });
     }
   });
 });

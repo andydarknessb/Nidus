@@ -218,11 +218,20 @@ export function describeWeather(code: number, isDay = true): { words: string; ic
 
 // ---- The network --------------------------------------------------------------------
 
-// One question to Open-Meteo and nothing else: no cookies and no referrer go with it, and it gets
-// thirty seconds, so a connection that leads nowhere cannot hold up the refresh loop or the
-// staleness check behind it.
+// What every request to Open-Meteo carries and nothing more: no cookies and no referrer, and a
+// thirty second limit, so a connection that leads nowhere cannot hold up the refresh loop or the
+// staleness check behind it. AbortSignal.timeout is newer than some WebViews; a Wall that loses its
+// weather entirely for want of it is worse than one that waits, so without it there is no limit.
+export function requestInit(): RequestInit {
+  return {
+    ...(typeof AbortSignal.timeout === 'function' ? { signal: AbortSignal.timeout(30_000) } : {}),
+    referrerPolicy: 'no-referrer',
+    credentials: 'omit',
+  };
+}
+
 async function getJson(url: string): Promise<unknown> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(30_000), referrerPolicy: 'no-referrer', credentials: 'omit' });
+  const response = await fetch(url, requestInit());
   if (!response.ok) throw new Error(`Open-Meteo answered ${response.status}`);
   return response.json();
 }
