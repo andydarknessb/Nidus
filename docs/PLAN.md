@@ -46,3 +46,27 @@ Synced and Native Events are separate tables, unioned in a read view `calendar_o
 2. **Calendar mirror** — consent flow, Mirrored Calendar selection, sync Edge Function + cron, five-day home view, week and day views.
 3. **Routines and lists** — Routines per Profile with completions, Shared Lists, Realtime refetch across devices.
 4. **On the wall** — hosted Supabase and Netlify, Fully Kiosk setup, stale-sync badge, nightly prune.
+
+## v2: closing the gaps with Skylight
+
+Settled on 2026-10-01 from the feature-by-feature comparison in [skylight-comparison.md](skylight-comparison.md). The spec is [0002](specs/0002-skylight-gaps.md).
+
+### Decisions
+
+- **Picked up from the v1 drop list**: the month view, and a meal plan cut down to free text per slot (no recipes, no AI).
+- **Still dropped**: Profile PIN, chores with rollover, stars and rewards, inbound email AI, media screensaver, Microsoft and iCloud providers, two-way sync, recurring Native Events (a repeating event belongs in Google).
+- **Shell**: a navigation rail on the left (Home, Day, Week, Month, Routines, Meals, Lists) and a header with the Household's name, the clock and date, the weather, the Profile filter and Add event. The home screen keeps its decision: today + 4 days and the right rail. Padding and gaps tighten so the rail does not cost the day columns their width.
+- **Month view**: Sunday-to-Saturday weeks, each day one button into the Day view, a few occurrences and "+N more". Paging stays inside the mirror's window.
+- **Profile filter**: toggle chips per Profile. A filtered Wall shows the pressed Profiles' occurrences and every whole-Household one. The filter is per screen, unsaved, and clears itself after two minutes: the Wall belongs to everyone.
+- **Routines**: an optional time of day (morning, afternoon, evening) groups them on the Wall; the phone edits a Routine in place. A full-screen chart shows a column per Profile with progress, and a tap that finishes a Profile's day plays a short celebration (none under reduced motion). No points, no streaks.
+- **Meals**: free text, one per slot (breakfast, lunch, dinner, snack) per Household date. A Device may write them, the same trust as a list item. Kept forever; the rows are tiny.
+- **Weather**: the Household stores a place (name, coordinates rounded to two decimals) and a temperature unit. The screen itself asks Open-Meteo for the forecast: no key, no server hop, nothing stored. If Nidus ever serves a second Household, move the fetch behind an Edge Function with a cache.
+- **Deploy order**: every v2 migration is additive and reaches the hosted project before the frontend that reads it is merged.
+
+### Tables
+
+```
+households            + weather_place, latitude, longitude, temperature_unit (fahrenheit|celsius)
+routines              + time_of_day (morning|afternoon|evening, null = any time)
+meals                 id, household_id, meal_date, slot (breakfast|lunch|dinner|snack), title   unique(household_id, meal_date, slot)
+```
