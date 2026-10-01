@@ -414,6 +414,15 @@ describe('how many lines fit', () => {
     expect(fit(116.9)).toBe(3);
   });
 
+  it('fits fewer lines when the text is larger, a cell drawn in rem growing with the root font size', () => {
+    // The month draws a cell as 2.25 rem above its lines and 1.5 rem for each, so both grow with the root size.
+    const at = (rootPx: number) => linesPerCell(118, 2.25 * rootPx, 1.5 * rootPx);
+    expect(at(16)).toBe(3);
+    expect(at(20)).toBe(2);
+    expect(at(24)).toBe(1);
+    expect(at(32)).toBe(1);
+  });
+
   it('is at least one, so a cell can always say how many events it holds', () => {
     expect(fit(32 + 24)).toBe(1);
     expect(fit(32 + 24 - 1)).toBe(1);

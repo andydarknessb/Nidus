@@ -20,10 +20,11 @@ import { useOccurrences } from '../lib/wall-hooks';
 // button that opens that day. It lists the day's occurrences a line each, as many as fit, and says how many
 // more there are. Events are not tappable here, the day is.
 
-// A day cell is drawn to these sizes so the lines measured to fit are the lines drawn: CELL_HEAD_PX above its
-// first line (its padding and its date, and the divider over its row) and CELL_LINE_PX for each line.
-const CELL_HEAD_PX = 36;
-const CELL_LINE_PX = 24;
+// A day cell is drawn to these sizes, in rem like the classes that draw it, so the lines measured to fit are the
+// lines drawn at any text size: CELL_HEAD_REM above its first line (its padding and its date, and the divider
+// over its row) and CELL_LINE_REM for each line. They are multiplied by the root font size when measuring.
+const CELL_HEAD_REM = 2.25;
+const CELL_LINE_REM = 1.5;
 const BEYOND_RANGE = "Beyond the calendar's range";
 
 // `anchor` is the 1st of the month shown. `version` changes when the screen around the calendar has written
@@ -53,21 +54,26 @@ export function MonthGrid({
       return unread ? [...current, week] : current.filter((other) => other !== week);
     });
   }, []);
-  // The height the week rows share, so the lines that fit a cell are measured, not guessed.
+  // The height the week rows share and the size of a rem, so the lines that fit a cell are measured, not
+  // guessed, at whatever text size the tablet is set to.
   const rows = useRef<HTMLDivElement>(null);
   const [rowsPx, setRowsPx] = useState(480);
+  const [remPx, setRemPx] = useState(16);
 
   useEffect(() => {
     const element = rows.current;
     if (!element) return;
-    const measure = () => setRowsPx(element.clientHeight);
+    const measure = () => {
+      setRowsPx(element.clientHeight);
+      setRemPx(parseFloat(getComputedStyle(document.documentElement).fontSize));
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
 
-  const lines = linesPerCell(rowsPx / weeks.length, CELL_HEAD_PX, CELL_LINE_PX);
+  const lines = linesPerCell(rowsPx / weeks.length, CELL_HEAD_REM * remPx, CELL_LINE_REM * remPx);
 
   return (
     <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border">
