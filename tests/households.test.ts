@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Household as AppHousehold } from '../src/lib/household';
 import {
   asAnonymous,
   asDevice,
@@ -82,6 +83,34 @@ describe('household weather', () => {
     const { data } = await asServiceRole().from('households').select(columns).eq('id', id).single();
     return data;
   }
+
+  // Every field of the app's Household type: one added to the type without its column, or a column
+  // without its field, fails here (and a field added to the type alone fails to compile).
+  const householdFields: Record<keyof AppHousehold, true> = {
+    id: true,
+    name: true,
+    timezone: true,
+    weather_place: true,
+    latitude: true,
+    longitude: true,
+    temperature_unit: true,
+  };
+
+  it("reads a Household with the app's own column list, as a Household Account and as a Device", async () => {
+    // household.ts builds the app's Supabase client on import; the column list needs none of it.
+    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+    const { householdColumns } = await import('../src/lib/household');
+    const { arranged, phone, id } = await household('The Andersons');
+    const wall = await device(arranged);
+
+    for (const [who, client] of [['Household Account', phone], ['Device', wall]] as const) {
+      const { data, error } = await client.from('households').select(householdColumns).eq('id', id).single();
+
+      expect(error, who).toBeNull();
+      expect(Object.keys(data ?? {}).sort(), who).toEqual(Object.keys(householdFields).sort());
+    }
+  });
 
   it('a new Household has no place and shows Fahrenheit', async () => {
     const { phone, id } = await household('The Andersons');
@@ -180,6 +209,14 @@ describe('household weather', () => {
     }
 
     expect(await stored(id)).toEqual({ ...place, temperature_unit: 'celsius' });
+  });
+
+  it('counts the characters of a name, not its bytes: 100 emoji fit and 101 do not', async () => {
+    const { phone, id } = await household('The Andersons');
+    const write = (name: string) => phone.from('households').update({ weather_place: name, latitude: 1, longitude: 2 }).eq('id', id);
+
+    expect((await write('👋'.repeat(100))).error).toBeNull();
+    expect((await write('👋'.repeat(101))).error).not.toBeNull();
   });
 
   it("a Device reads its Household's place and unit and cannot change them", async () => {

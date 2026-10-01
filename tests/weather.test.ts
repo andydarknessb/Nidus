@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   CURRENT_MAX_AGE_MS,
-  describePlace,
+  PLACE_MAX_LENGTH,
+  capPlace,
+  describePlaces,
   describeWeather,
   forecastDay,
   forecastToShow,
@@ -10,6 +12,7 @@ import {
   geocodingUrl,
   parseForecast,
   parsePlaces,
+  readDelayMs,
   type WeatherIcon,
 } from '../src/lib/weather';
 
@@ -142,8 +145,10 @@ describe('describeWeather', () => {
   const groups: [string, WeatherIcon, number[]][] = [
     ['Cloudy', 'cloud', [3]],
     ['Fog', 'fog', [45, 48]],
-    ['Drizzle', 'drizzle', [51, 53, 55, 56, 57]],
-    ['Rain', 'rain', [61, 63, 65, 66, 67, 80, 81, 82]],
+    ['Drizzle', 'drizzle', [51, 53, 55]],
+    ['Freezing drizzle', 'drizzle', [56, 57]],
+    ['Rain', 'rain', [61, 63, 65, 80, 81, 82]],
+    ['Freezing rain', 'rain', [66, 67]],
     ['Snow', 'snow', [71, 73, 75, 77, 85, 86]],
     ['Thunderstorm', 'thunderstorm', [95, 96, 99]],
   ];
@@ -206,35 +211,27 @@ describe('parsePlaces', () => {
     const places = parsePlaces(recorded('open-meteo-places'));
 
     expect(places).toHaveLength(5);
-    expect(places[0]).toEqual({ name: 'Austin', region: 'Texas', country: 'United States', latitude: 30.26715, longitude: -97.74306 });
-    expect(places[4]).toEqual({ name: 'Ardmore', region: 'Tennessee', country: 'United States', latitude: 34.99203, longitude: -86.84667 });
+    expect(places[0]).toEqual({ name: 'Austin', region: 'Texas', subregion: 'Travis', country: 'United States', latitude: 30.26715, longitude: -97.74306 });
+    expect(places[4]).toEqual({ name: 'Ardmore', region: 'Tennessee', subregion: 'Giles', country: 'United States', latitude: 34.99203, longitude: -86.84667 });
   });
 
-  it('words each match so two places with the same name can be told apart', () => {
-    const words = parsePlaces(recorded('open-meteo-places')).map(describePlace);
+  it('keeps the county or district Open-Meteo calls admin2', () => {
+    const places = parsePlaces(recorded('open-meteo-places-same-name'));
 
-    expect(words).toEqual([
-      'Austin, Texas, United States',
-      'Austin, Minnesota, United States',
-      'Austin, Indiana, United States',
-      'Austin, Arkansas, United States',
-      'Ardmore, Tennessee, United States',
-    ]);
-    expect(new Set(words).size).toBe(words.length);
+    expect(places.map((place) => place.subregion)).toEqual(['Oświęcim County', 'Myślenice County', 'Koło County', null]);
   });
 
   it('is an empty list when Open-Meteo found nothing, which it says by sending no results at all', () => {
     expect(parsePlaces({ generationtime_ms: 0.2793 })).toEqual([]);
   });
 
-  it('leaves out a region or country Open-Meteo did not send', () => {
+  it('leaves out a region, county or country Open-Meteo did not send', () => {
     const places = parsePlaces({ results: [{ name: 'Reykjavik', country: 'Iceland', latitude: 64.14, longitude: -21.9 }, { name: 'Atlantis', latitude: 0, longitude: 0 }] });
 
     expect(places).toEqual([
-      { name: 'Reykjavik', region: null, country: 'Iceland', latitude: 64.14, longitude: -21.9 },
-      { name: 'Atlantis', region: null, country: null, latitude: 0, longitude: 0 },
+      { name: 'Reykjavik', region: null, subregion: null, country: 'Iceland', latitude: 64.14, longitude: -21.9 },
+      { name: 'Atlantis', region: null, subregion: null, country: null, latitude: 0, longitude: 0 },
     ]);
-    expect(places.map(describePlace)).toEqual(['Reykjavik, Iceland', 'Atlantis']);
   });
 
   const place = { name: 'Austin', admin1: 'Texas', country: 'United States', latitude: 30.26715, longitude: -97.74306 };
@@ -255,11 +252,105 @@ describe('parsePlaces', () => {
   });
 });
 
-describe('describePlace', () => {
-  it('joins the name, region and country that are there', () => {
-    expect(describePlace({ name: 'Austin', region: 'Texas', country: 'United States', latitude: 30.27, longitude: -97.74 })).toBe('Austin, Texas, United States');
-    expect(describePlace({ name: 'Reykjavik', region: null, country: 'Iceland', latitude: 64.14, longitude: -21.9 })).toBe('Reykjavik, Iceland');
-    expect(describePlace({ name: 'Atlantis', region: null, country: null, latitude: 0, longitude: 0 })).toBe('Atlantis');
+describe('describePlaces', () => {
+  const words = (answer: unknown) => describePlaces(parsePlaces(answer)).map((option) => option.place);
+  const twin = { name: 'Springfield', region: 'Illinois', country: 'United States' };
+
+  it('words a place by its name, region and country, leaving out what Open-Meteo did not send', () => {
+    expect(words(recorded('open-meteo-places'))).toEqual([
+      'Austin, Texas, United States',
+      'Austin, Minnesota, United States',
+      'Austin, Indiana, United States',
+      'Austin, Arkansas, United States',
+      'Ardmore, Tennessee, United States',
+    ]);
+    expect(words({ results: [{ name: 'Reykjavik', country: 'Iceland', latitude: 64.14, longitude: -21.9 }, { name: 'Atlantis', latitude: 0, longitude: 0 }] })).toEqual(['Reykjavik, Iceland', 'Atlantis']);
+  });
+
+  // Hand-written, modelled on a live search for "Nowa Wieś": two places of that name in one region of one country.
+  it('adds the county or district to the places that would otherwise read the same, and only to them', () => {
+    const found = words(recorded('open-meteo-places-same-name'));
+
+    expect(found).toEqual([
+      'Nowa Wieś, Oświęcim County, Lesser Poland, Poland',
+      'Nowa Wieś, Myślenice County, Lesser Poland, Poland',
+      'Nowa Wieś Wielka, Greater Poland, Poland',
+      'Nova-Ves’, Belarus',
+    ]);
+    expect(new Set(found).size).toBe(found.length);
+  });
+
+  it('tells apart two places when only one of them has a county', () => {
+    const found = describePlaces([
+      { ...twin, subregion: 'Sangamon County', latitude: 39.8, longitude: -89.64 },
+      { ...twin, subregion: null, latitude: 38.2, longitude: -90.1 },
+    ]).map((option) => option.place);
+
+    expect(found).toEqual(['Springfield, Sangamon County, Illinois, United States', 'Springfield, Illinois, United States']);
+  });
+
+  it('says where they are when even the county is the same, or neither has one', () => {
+    for (const subregion of ['Sangamon County', null]) {
+      const found = describePlaces([
+        { ...twin, subregion, latitude: 39.8, longitude: -89.64 },
+        { ...twin, subregion, latitude: 38.2, longitude: -90.1 },
+      ]).map((option) => option.place);
+
+      const where = subregion === null ? 'Springfield, Illinois, United States' : 'Springfield, Sangamon County, Illinois, United States';
+      expect(found, String(subregion)).toEqual([`${where} (39.80, -89.64)`, `${where} (38.20, -90.10)`]);
+    }
+  });
+
+  it('hands each place back as a save takes it, with where it is as Open-Meteo sent it', () => {
+    expect(describePlaces(parsePlaces(recorded('open-meteo-places')))[0]).toEqual({ place: 'Austin, Texas, United States', latitude: 30.26715, longitude: -97.74306 });
+  });
+
+  it('has nothing to say about no places', () => {
+    expect(describePlaces([])).toEqual([]);
+  });
+});
+
+describe('capPlace', () => {
+  it('leaves a wording the column accepts as it was', () => {
+    expect(PLACE_MAX_LENGTH).toBe(100);
+    expect(capPlace('Austin, Texas, United States')).toBe('Austin, Texas, United States');
+    expect(capPlace('x'.repeat(100))).toBe('x'.repeat(100));
+  });
+
+  it('cuts a longer one to the 100 characters the column holds', () => {
+    expect(capPlace('x'.repeat(101))).toBe('x'.repeat(100));
+    expect(capPlace('x'.repeat(5000))).toHaveLength(100);
+  });
+
+  it('counts characters the way the database does, so an emoji is one and is never cut in half', () => {
+    expect(capPlace('👋'.repeat(100))).toBe('👋'.repeat(100));
+    expect(capPlace('👋'.repeat(101))).toBe('👋'.repeat(100));
+  });
+});
+
+describe('readDelayMs', () => {
+  const minutes = (count: number) => count * 60_000;
+
+  it('reads again half an hour after a good read', () => {
+    expect(readDelayMs(0)).toBe(minutes(30));
+  });
+
+  it('waits a minute after the first failure', () => {
+    expect(readDelayMs(1)).toBe(minutes(1));
+  });
+
+  it('doubles the wait with each failure in a row', () => {
+    expect([1, 2, 3, 4, 5].map(readDelayMs)).toEqual([minutes(1), minutes(2), minutes(4), minutes(8), minutes(16)]);
+  });
+
+  it('never waits longer than the half hour, however many reads fail', () => {
+    // The sixth failure in a row would be 32 minutes.
+    for (const failures of [6, 7, 20, 1_000, 100_000]) expect(readDelayMs(failures), `${failures} failures`).toBe(minutes(30));
+  });
+
+  it('starts over once a read succeeds', () => {
+    // The Wall counts the failures in a row and goes back to none on a good read.
+    expect([3, 0, 1].map(readDelayMs)).toEqual([minutes(4), minutes(30), minutes(1)]);
   });
 });
 
@@ -286,8 +377,13 @@ describe('forecastToShow', () => {
     }
   });
 
-  it('keeps the current conditions when the clock reads earlier than the reading', () => {
-    expect(forecastToShow(forecast, fetchedAt, fetchedAt - minutes(10)).current).toEqual(forecast.current);
+  it('drops the current conditions when the clock reads earlier than the reading', () => {
+    // A clock that went back cannot say how old the reading is, so it cannot vouch for it.
+    for (const back of [1, minutes(10), minutes(26 * 60)]) {
+      const shown = forecastToShow(forecast, fetchedAt, fetchedAt - back);
+      expect(shown.current, `${back} ms before the reading`).toBeNull();
+      expect(shown.days, `${back} ms before the reading`).toEqual(forecast.days);
+    }
   });
 
   it('does not change the forecast it was given', () => {

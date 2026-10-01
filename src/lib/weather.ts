@@ -16,8 +16,19 @@ export type Forecast = {
   days: ForecastDay[];
 };
 
-// A place found by name: Open-Meteo's name, region and country, which is what tells two Austins apart.
-export type PlaceMatch = { name: string; region: string | null; country: string | null; latitude: number; longitude: number };
+// A place found by name: Open-Meteo's name, region (admin1), county or district (admin2) and
+// country, which is what tells two Austins apart.
+export type PlaceMatch = {
+  name: string;
+  region: string | null;
+  subregion: string | null;
+  country: string | null;
+  latitude: number;
+  longitude: number;
+};
+
+// A place as the Household stores it: the words it is called by and where it is.
+export type WeatherPlace = { place: string; latitude: number; longitude: number };
 
 // The pictures a condition can have: a small closed set, drawn by components/Weather.tsx.
 export type WeatherIcon = 'sun' | 'moon' | 'cloud-sun' | 'cloud-moon' | 'cloud' | 'fog' | 'drizzle' | 'rain' | 'snow' | 'thunderstorm';
@@ -69,6 +80,11 @@ function textOf(value: unknown): string {
   return value;
 }
 
+// Text, or null when Open-Meteo has none for this place.
+function optionalTextOf(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
 function dateOf(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('Open-Meteo sent something that is not a date');
   return value;
@@ -103,28 +119,48 @@ export function parseForecast(json: unknown): Forecast {
 }
 
 // Open-Meteo's geocoding JSON as places, coordinates as sent (the database rounds them when they
-// are saved). It sends no `results` at all when nothing matched. A match carries no region or
-// country when Open-Meteo has none for it.
+// are saved). It sends no `results` at all when nothing matched. A match carries no region, county
+// or country when Open-Meteo has none for it.
 export function parsePlaces(json: unknown): PlaceMatch[] {
   const body = objectOf(json);
   if (body['results'] === undefined) return [];
   return listOf(body['results']).map((entry) => {
     const place = objectOf(entry);
-    const region = place['admin1'];
-    const country = place['country'];
     return {
       name: textOf(place['name']),
-      region: typeof region === 'string' && region !== '' ? region : null,
-      country: typeof country === 'string' && country !== '' ? country : null,
+      region: optionalTextOf(place['admin1']),
+      subregion: optionalTextOf(place['admin2']),
+      country: optionalTextOf(place['country']),
       latitude: numberOf(place['latitude']),
       longitude: numberOf(place['longitude']),
     };
   });
 }
 
-// A match as the picker words it, and as the Household stores it: "Austin, Texas, United States".
-export function describePlace(place: PlaceMatch): string {
-  return [place.name, place.region, place.country].filter((part) => part !== null).join(', ');
+// The matches of one search as the picker words them, each in the shape a save takes. "Name, Region,
+// Country" tells nearly every place apart. Places that would read the same also say their county or
+// district after the name, and if even that is the same, where they are, so that no two places in a
+// list read alike. A place keeps the plainest wording that no other place in the list shares.
+export function describePlaces(matches: PlaceMatch[]): WeatherPlace[] {
+  const join = (parts: (string | null)[]) => parts.filter((part) => part !== null).join(', ');
+  const plain = (match: PlaceMatch) => join([match.name, match.region, match.country]);
+  const county = (match: PlaceMatch) => join([match.name, match.subregion, match.region, match.country]);
+  const there = (match: PlaceMatch) => `${county(match)} (${match.latitude.toFixed(2)}, ${match.longitude.toFixed(2)})`;
+  const alone = (words: (match: PlaceMatch) => string, match: PlaceMatch) => matches.every((other) => other === match || words(other) !== words(match));
+  return matches.map((match) => ({
+    place: [plain, county].find((words) => alone(words, match))?.(match) ?? there(match),
+    latitude: match.latitude,
+    longitude: match.longitude,
+  }));
+}
+
+// The most characters the weather_place column holds, counted as the database counts them.
+export const PLACE_MAX_LENGTH = 100;
+
+// A place's words cut to what the column holds, so a wording it would refuse is never sent. Counted
+// in characters rather than UTF-16 units, so an emoji is one and is not cut in half.
+export function capPlace(place: string): string {
+  return Array.from(place).slice(0, PLACE_MAX_LENGTH).join('');
 }
 
 // The forecast's day for a Household date ('YYYY-MM-DD'), or undefined when it does not cover it.
@@ -137,9 +173,23 @@ export function forecastDay(forecast: Forecast | null, date: string): ForecastDa
 export const CURRENT_MAX_AGE_MS = 2 * 60 * 60_000;
 
 // What a forecast read at `fetchedAt` may still show at `now` (both in ms): the days always, since
-// each is keyed by its date, but the current conditions only while the reading is at most two hours old.
+// each is keyed by its date, but the current conditions only while the reading is at most two hours
+// old. A clock that went back since the reading cannot say how old it is, so it cannot vouch for it.
 export function forecastToShow(forecast: Forecast, fetchedAt: number, now: number): Forecast {
-  return now - fetchedAt > CURRENT_MAX_AGE_MS ? { ...forecast, current: null } : forecast;
+  const age = now - fetchedAt;
+  return age < 0 || age > CURRENT_MAX_AGE_MS ? { ...forecast, current: null } : forecast;
+}
+
+// A forecast moves slowly and Open-Meteo is a free service, so the Wall reads it every half hour.
+const REFRESH_MS = 30 * 60_000;
+// After a failed read it waits a minute, and twice as long after each failure in a row.
+const RETRY_MS = 60_000;
+
+// How long the Wall waits before it reads again, given the failed reads in a row (0 after a good
+// one). Never more than the half-hourly cadence: an outage is not hammered, a recovery is noticed
+// soon, and a Wall that woke before its Wi-Fi does not wait half an hour for its weather.
+export function readDelayMs(failures: number): number {
+  return failures <= 0 ? REFRESH_MS : Math.min(RETRY_MS * 2 ** (failures - 1), REFRESH_MS);
 }
 
 // ---- Words and pictures -------------------------------------------------------------
@@ -149,8 +199,10 @@ export function forecastToShow(forecast: Forecast, fetchedAt: number, now: numbe
 const CONDITIONS: { codes: number[]; words: string; icon: WeatherIcon }[] = [
   { codes: [3], words: 'Cloudy', icon: 'cloud' },
   { codes: [45, 48], words: 'Fog', icon: 'fog' },
-  { codes: [51, 53, 55, 56, 57], words: 'Drizzle', icon: 'drizzle' },
-  { codes: [61, 63, 65, 66, 67, 80, 81, 82], words: 'Rain', icon: 'rain' },
+  { codes: [51, 53, 55], words: 'Drizzle', icon: 'drizzle' },
+  { codes: [56, 57], words: 'Freezing drizzle', icon: 'drizzle' },
+  { codes: [61, 63, 65, 80, 81, 82], words: 'Rain', icon: 'rain' },
+  { codes: [66, 67], words: 'Freezing rain', icon: 'rain' },
   { codes: [71, 73, 75, 77, 85, 86], words: 'Snow', icon: 'snow' },
   { codes: [95, 96, 99], words: 'Thunderstorm', icon: 'thunderstorm' },
 ];
@@ -166,8 +218,11 @@ export function describeWeather(code: number, isDay = true): { words: string; ic
 
 // ---- The network --------------------------------------------------------------------
 
+// One question to Open-Meteo and nothing else: no cookies and no referrer go with it, and it gets
+// thirty seconds, so a connection that leads nowhere cannot hold up the refresh loop or the
+// staleness check behind it.
 async function getJson(url: string): Promise<unknown> {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(30_000), referrerPolicy: 'no-referrer', credentials: 'omit' });
   if (!response.ok) throw new Error(`Open-Meteo answered ${response.status}`);
   return response.json();
 }

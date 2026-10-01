@@ -1,7 +1,7 @@
 import { Check } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { updateHouseholdWeather, type Household } from '@/lib/household';
-import { describePlace, searchPlaces, type PlaceMatch, type TemperatureUnit } from '@/lib/weather';
+import { describePlaces, searchPlaces, type PlaceMatch, type TemperatureUnit, type WeatherPlace } from '@/lib/weather';
 
 const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
@@ -14,10 +14,13 @@ const UNITS: { value: TemperatureUnit; label: string }[] = [
 ];
 
 // The search and the save each say how they went, in words, beside the button that started them.
-type SearchStatus = 'idle' | 'searching' | 'none' | 'failed';
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'failed';
+type SearchStatus = 'idle' | 'searching' | 'found' | 'none' | 'failed';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'failed' | 'needs-pick';
 
-const SEARCH_WORDS: Record<SearchStatus, string> = {
+// What a search found is said by its count, so a screen reader hears that the list is there.
+const foundWords = (count: number) => `${count} ${count === 1 ? 'place' : 'places'} found. Pick one, then save.`;
+
+const SEARCH_WORDS: Record<Exclude<SearchStatus, 'found'>, string> = {
   idle: '',
   searching: 'Searching',
   none: 'No places found.',
@@ -29,6 +32,7 @@ const SAVE_WORDS: Record<SaveStatus, string> = {
   saving: '',
   saved: 'Saved.',
   failed: 'Could not save. Try again.',
+  'needs-pick': 'Search and pick a place first.',
 };
 
 // Settings, phone only: where the Household's weather is for and which unit it shows in. The phone
@@ -36,14 +40,18 @@ const SAVE_WORDS: Record<SaveStatus, string> = {
 export function WeatherSection({ household, onSaved }: { household: Household; onSaved: (household: Household) => void }) {
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<PlaceMatch[]>([]);
-  const [picked, setPicked] = useState<PlaceMatch | null>(null);
+  const [pickedIndex, setPickedIndex] = useState<number | null>(null);
   const [unit, setUnit] = useState<TemperatureUnit>(household.temperature_unit);
   const [searchStatus, setSearchStatus] = useState<SearchStatus>('idle');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const searchBox = useRef<HTMLInputElement>(null);
 
-  // The place already saved, in the shape a save takes, so a change of unit alone needs no new search.
-  const saved =
+  // The matches as the picker words them, each in the shape a save takes.
+  const options = describePlaces(matches);
+  const picked = pickedIndex === null ? undefined : options[pickedIndex];
+
+  // The place already saved, in the same shape, so a change of unit alone needs no new search.
+  const saved: WeatherPlace | null =
     household.weather_place !== null && household.latitude !== null && household.longitude !== null
       ? { place: household.weather_place, latitude: household.latitude, longitude: household.longitude }
       : null;
@@ -56,31 +64,49 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
     setSaveStatus('idle');
     // Matches from an earlier search are gone from the moment a new one starts.
     setMatches([]);
-    setPicked(null);
+    setPickedIndex(null);
     try {
       const found = await searchPlaces(name);
       setMatches(found);
-      setSearchStatus(found.length === 0 ? 'none' : 'idle');
+      setSearchStatus(found.length === 0 ? 'none' : 'found');
     } catch {
       setSearchStatus('failed');
     }
   }
 
-  // Stores a place (or none, which turns the weather off) with the chosen unit.
-  async function save(weather: { place: string; latitude: number; longitude: number } | null) {
+  // Writes a place (or none, which turns the weather off) with the chosen unit; true once it is saved.
+  async function save(weather: WeatherPlace | null): Promise<boolean> {
     setSaveStatus('saving');
     try {
       onSaved(await updateHouseholdWeather(household.id, weather, unit));
-      setMatches([]);
-      setPicked(null);
-      setQuery('');
-      setSearchStatus('idle');
       setSaveStatus('saved');
-      // Turning the weather off removes the button that was pressed: put focus on the search instead of losing it.
-      if (weather === null) searchBox.current?.focus();
+      return true;
     } catch {
       setSaveStatus('failed');
+      return false;
     }
+  }
+
+  async function saveWeather() {
+    // Words in the box and nothing picked is a search not finished: writing the old place and saying
+    // Saved would mislead, and emptying the box would throw the words away.
+    if (!picked && query.trim() !== '') {
+      setSaveStatus('needs-pick');
+      return;
+    }
+    const ok = await save(picked ?? saved);
+    // Only a saved pick empties the search; a change of unit alone leaves it as it was.
+    if (ok && picked) {
+      setQuery('');
+      setMatches([]);
+      setPickedIndex(null);
+      setSearchStatus('idle');
+    }
+  }
+
+  async function turnOff() {
+    // The button that was pressed goes with the place: put focus on the search instead of losing it.
+    if (await save(null)) searchBox.current?.focus();
   }
 
   return (
@@ -95,26 +121,29 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
           Town or city
           <input ref={searchBox} className={field} type="search" autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} required />
         </label>
-        <button type="submit" className={`${action} border border-border disabled:opacity-40`} disabled={searchStatus === 'searching'}>
+        <button type="submit" className={`${action} border border-border disabled:opacity-40`} disabled={searchStatus === 'searching' || saveStatus === 'saving'}>
           Search
         </button>
       </form>
       <p role="status" className="min-h-6 text-base">
-        {SEARCH_WORDS[searchStatus]}
+        {searchStatus === 'found' ? foundWords(options.length) : SEARCH_WORDS[searchStatus]}
       </p>
 
-      {matches.length > 0 && (
+      {options.length > 0 && (
         <ul aria-label="Places found" className="flex flex-col gap-2">
-          {matches.map((match, index) => (
+          {options.map((option, index) => (
             <li key={index}>
               <button
                 type="button"
-                aria-pressed={picked === match}
+                aria-pressed={pickedIndex === index}
                 className="flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border-2 border-border px-4 py-2 text-left text-base font-medium aria-pressed:border-foreground aria-pressed:bg-muted"
-                onClick={() => setPicked(match)}
+                onClick={() => {
+                  setPickedIndex(index);
+                  setSaveStatus('idle');
+                }}
               >
-                {describePlace(match)}
-                {picked === match && <Check aria-hidden="true" className="size-6 shrink-0" />}
+                {option.place}
+                {pickedIndex === index && <Check aria-hidden="true" className="size-6 shrink-0" />}
               </button>
             </li>
           ))}
@@ -126,7 +155,17 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
         <div className="flex flex-wrap gap-2">
           {UNITS.map(({ value, label }) => (
             <label key={value} className={choice}>
-              <input type="radio" name="temperature-unit" className="size-6" value={value} checked={unit === value} onChange={() => setUnit(value)} />
+              <input
+                type="radio"
+                name="temperature-unit"
+                className="size-6"
+                value={value}
+                checked={unit === value}
+                onChange={() => {
+                  setUnit(value);
+                  setSaveStatus('idle');
+                }}
+              />
               {label}
             </label>
           ))}
@@ -134,16 +173,11 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
       </fieldset>
 
       <div className="flex gap-3">
-        <button
-          type="button"
-          className={`${action} flex-1 bg-primary text-primary-foreground disabled:opacity-40`}
-          disabled={saveStatus === 'saving'}
-          onClick={() => void save(picked ? { place: describePlace(picked), latitude: picked.latitude, longitude: picked.longitude } : saved)}
-        >
-          Save
+        <button type="button" className={`${action} flex-1 bg-primary text-primary-foreground disabled:opacity-40`} disabled={saveStatus === 'saving'} onClick={() => void saveWeather()}>
+          Save weather
         </button>
         {saved && (
-          <button type="button" className={`${action} border border-border disabled:opacity-40`} disabled={saveStatus === 'saving'} onClick={() => void save(null)}>
+          <button type="button" className={`${action} border border-border disabled:opacity-40`} disabled={saveStatus === 'saving'} onClick={() => void turnOff()}>
             Turn weather off
           </button>
         )}
