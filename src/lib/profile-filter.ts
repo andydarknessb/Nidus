@@ -12,6 +12,10 @@ import type { Profile } from './profiles';
 // walks past next sees everything, not what the last person was looking at.
 const CLEAR_AFTER_MS = 2 * 60_000;
 
+// A tablet that sleeps runs no timers and wakes with the clock well ahead, so the wait is never longer
+// than this and the clock is compared with the deadline each time (the way watchHouseholdDay does).
+const MAX_WAIT_MS = 60_000;
+
 // Nothing pressed. One shared array, so the context's default and an empty filter are the same value.
 const NONE: readonly string[] = [];
 
@@ -30,7 +34,7 @@ export function prunePressed(pressed: readonly string[], profiles: readonly Pick
 export type ProfileFilter = {
   // The pressed Profile ids, in the order they were pressed. The same array until something changes.
   pressed(): readonly string[];
-  // Presses a Profile, or lets it go when it is pressed. Each tap starts the two minutes again.
+  // Presses a Profile, or lets it go when it is pressed. Each tap starts the two minutes again, by the clock.
   toggle(id: string): void;
   // Lets every Profile go.
   clear(): void;
@@ -44,6 +48,8 @@ export type ProfileFilter = {
 
 export function createProfileFilter(): ProfileFilter {
   let pressed: readonly string[] = NONE;
+  // The clock time the filter clears itself at, and the timer that looks for it.
+  let deadline = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>();
 
@@ -56,12 +62,17 @@ export function createProfileFilter(): ProfileFilter {
   const clear = () => {
     if (pressed.length > 0) set(NONE);
   };
+  // Looks at the clock at most a minute from now, and clears once it has reached the deadline.
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => (Date.now() >= deadline ? clear() : arm()), Math.min(Math.max(deadline - Date.now(), 1), MAX_WAIT_MS));
+  };
 
   return {
     pressed: () => pressed,
     toggle(id) {
-      clearTimeout(timer);
-      timer = setTimeout(clear, CLEAR_AFTER_MS);
+      deadline = Date.now() + CLEAR_AFTER_MS;
+      arm();
       set(pressed.includes(id) ? pressed.filter((other) => other !== id) : [...pressed, id]);
     },
     clear,
@@ -77,6 +88,10 @@ export function createProfileFilter(): ProfileFilter {
   };
 }
 
-// The pressed Profile ids for the screens under the shell, so a calendar view reads the filter
-// without every view passing it down. With no provider (a screen under test) nothing is pressed.
-export const PressedProfilesContext = createContext<readonly string[]>(NONE);
+// What the screens under the shell see of the filter: the pressed Profile ids, so a calendar view reads
+// the filter without every view passing it down, and a way to clear it, for the sheet that has just
+// written an event the filter might hide. With no provider (a screen under test, the phone) nothing
+// is pressed and there is nothing to clear.
+export type ProfileFilterView = { pressed: readonly string[]; clear: () => void };
+
+export const ProfileFilterContext = createContext<ProfileFilterView>({ pressed: NONE, clear: () => undefined });

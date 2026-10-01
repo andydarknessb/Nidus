@@ -2,7 +2,7 @@ import { useContext, useEffect, useMemo, useState } from 'react';
 import { loadOccurrences, type Occurrence, type WallDay } from './calendar-occurrences';
 import { useChangeTick } from './change-feed';
 import { watchHouseholdDay, watchMinute } from './household-day';
-import { filterOccurrences, PressedProfilesContext } from './profile-filter';
+import { filterOccurrences, ProfileFilterContext } from './profile-filter';
 import { OCCURRENCE_TABLES } from './realtime';
 import { supabase } from './supabase';
 
@@ -35,7 +35,7 @@ export function useNow(timezone: string): Date {
 export function useOccurrences(days: WallDay[], version: number): { occurrences: Occurrence[] | null; failed: boolean } {
   const [occurrences, setOccurrences] = useState<Occurrence[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const pressed = useContext(PressedProfilesContext);
+  const { pressed } = useContext(ProfileFilterContext);
   const shown = useMemo(() => (occurrences ? filterOccurrences(occurrences, pressed) : null), [occurrences, pressed]);
 
   // The span to read: from the first day's start to the last day's end. Read again when it changes

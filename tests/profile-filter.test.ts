@@ -121,6 +121,41 @@ describe('createProfileFilter', () => {
     expect(filter.pressed()).toEqual([]);
   });
 
+  // The two minutes are wall-clock time: a tablet that sleeps runs no timers, so it must not wake up
+  // filtered. The clock is jumped with setSystemTime, the way watchHouseholdDay is tested.
+  it('clears at the next wake-up after the clock jumps past the deadline, however long the tablet slept', () => {
+    const filter = createProfileFilter();
+    filter.toggle('ada');
+    vi.advanceTimersByTime(10_000);
+    vi.setSystemTime(Date.now() + 10 * 60_000);
+    // The next wake-up is the one a minute after the tap, not the one two minutes after it.
+    vi.advanceTimersByTime(49_999);
+    expect(filter.pressed()).toEqual(['ada']);
+    vi.advanceTimersByTime(1);
+    expect(filter.pressed()).toEqual([]);
+  });
+
+  it('clears a filter a minute old at the next wake-up after the clock jumps ten minutes', () => {
+    const filter = createProfileFilter();
+    filter.toggle('ada');
+    vi.advanceTimersByTime(60_000);
+    expect(filter.pressed()).toEqual(['ada']);
+    vi.setSystemTime(Date.now() + 10 * 60_000);
+    vi.advanceTimersByTime(60_000);
+    expect(filter.pressed()).toEqual([]);
+  });
+
+  it('still starts the full two minutes again at a tap after the clock has jumped', () => {
+    const filter = createProfileFilter();
+    filter.toggle('ada');
+    vi.setSystemTime(Date.now() + 10 * 60_000);
+    filter.toggle('ben');
+    vi.advanceTimersByTime(2 * 60_000 - 1);
+    expect(filter.pressed()).toEqual(['ada', 'ben']);
+    vi.advanceTimersByTime(1);
+    expect(filter.pressed()).toEqual([]);
+  });
+
   it('leaves no timer running once the last pressed Profile is let go', () => {
     const filter = createProfileFilter();
     filter.toggle('ada');

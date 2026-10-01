@@ -1,5 +1,5 @@
 import { Calendar1, CalendarRange, House, ListChecks, Plus, type LucideIcon } from 'lucide-react';
-import { useEffect, useState, useSyncExternalStore, type ComponentProps } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
@@ -13,7 +13,7 @@ import { formatClock, formatDate, navigationRailDate, parseWallRoute, wallDate, 
 import { householdDay } from './lib/routines';
 import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
-import { createProfileFilter, PressedProfilesContext } from './lib/profile-filter';
+import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useNow } from './lib/wall-hooks';
 import { RoutinesRail } from './RoutinesPage';
@@ -266,10 +266,11 @@ function HomeShell() {
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   const [listsOpen, setListsOpen] = useState(false);
   // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
-  // A tap redraws the chips and, through the context, every calendar view; the chips prune it when the
-  // Profiles change.
+  // The context hands the pressed ids to every calendar view, and a way to clear it to the Native Event
+  // sheet; the chips prune it when the Profiles change.
   const [filter] = useState(createProfileFilter);
   const pressed = useSyncExternalStore(filter.subscribe, filter.pressed);
+  const filterView = useMemo(() => ({ pressed, clear: filter.clear }), [pressed, filter]);
   useEffect(() => () => filter.dispose(), [filter]);
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
   const [adding, setAdding] = useState(false);
@@ -302,24 +303,23 @@ function HomeShell() {
   const timezone = view.household?.timezone ?? null;
 
   const today = timezone ? householdDay(timezone).date : null;
-  // The Profile chips and Add event are for the calendar screens. Every screen the shell has is one; a
-  // screen that is not (Routines, Meals) turns them off here.
+  // The Profile chips are for the calendar screens. Every screen the shell has is one; a screen that is
+  // not (Routines, Meals) turns them off here. They are hidden, not unmounted, so they keep their Profiles.
   const onCalendar = true;
 
   return (
     <main className="grid h-svh grid-cols-[5.5rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
       <NavigationRail route={route} timezone={timezone} onOpen={openView} onHome={openHome} onLists={() => setListsOpen(true)} onAdd={() => setAdding(true)} />
       <header className="flex min-h-12 items-center gap-6">
-        {/* Short of room, the name truncates first (shrink-8) and the chips scroll in what is left. */}
-        <h1 className="min-w-0 shrink-8 truncate text-3xl font-semibold">{name}</h1>
+        <h1 className="min-w-0 truncate text-3xl font-semibold">{name}</h1>
         {timezone && <WallClock timezone={timezone} />}
-        {onCalendar && <ProfileChips filter={filter} pressed={pressed} />}
+        <ProfileChips filter={filter} pressed={pressed} hidden={!onCalendar} />
         <div className="ml-auto flex shrink-0 items-center gap-4">
           <ConnectionBadge />
           <SyncBadge />
         </div>
       </header>
-      <PressedProfilesContext.Provider value={pressed}>
+      <ProfileFilterContext.Provider value={filterView}>
         {route.view !== 'home' && timezone ? (
           <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} />
         ) : route.view !== 'home' ? (
@@ -345,20 +345,20 @@ function HomeShell() {
             </div>
           </div>
         )}
-      </PressedProfilesContext.Provider>
-      {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
-      {adding && timezone && today && (
-        <NativeEventSheet
-          timezone={timezone}
-          // The day the wall is on: today when the page shown holds it, else that page's first day.
-          date={wallDate(route, today)}
-          onClose={() => setAdding(false)}
-          onSaved={() => {
-            setAdding(false);
-            setAdded((count) => count + 1);
-          }}
-        />
-      )}
+        {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
+        {adding && timezone && today && (
+          <NativeEventSheet
+            timezone={timezone}
+            // The day the wall is on: today when the page shown holds it, else that page's first day.
+            date={wallDate(route, today)}
+            onClose={() => setAdding(false)}
+            onSaved={() => {
+              setAdding(false);
+              setAdded((count) => count + 1);
+            }}
+          />
+        )}
+      </ProfileFilterContext.Provider>
     </main>
   );
 }
