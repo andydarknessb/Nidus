@@ -91,19 +91,24 @@ export function MonthGrid({
         </p>
       )}
       <div ref={rows} style={{ gridTemplateRows: `repeat(${weeks.length}, minmax(0, 1fr))` }} className="grid min-h-0 flex-1 divide-y divide-border">
-        {weeks.map((days) => (
-          <WeekRow
-            key={days[0]!.date}
-            days={days}
-            anchor={anchor}
-            window={window}
-            lines={lines}
-            version={version}
-            timezone={timezone}
-            onOpenDay={onOpenDay}
-            onUnread={reportUnread}
-          />
-        ))}
+        {weeks.map((days) =>
+          // A week wholly beyond the window has nothing to read, so it is drawn without asking the API.
+          days.every((day) => !canOpenDay(day.date, window)) ? (
+            <WeekCells key={days[0]!.date} days={days} anchor={anchor} window={window} occurrences={null} lines={lines} timezone={timezone} onOpenDay={onOpenDay} />
+          ) : (
+            <WeekRow
+              key={days[0]!.date}
+              days={days}
+              anchor={anchor}
+              window={window}
+              lines={lines}
+              version={version}
+              timezone={timezone}
+              onOpenDay={onOpenDay}
+              onUnread={reportUnread}
+            />
+          ),
+        )}
       </div>
     </section>
   );
@@ -139,6 +144,27 @@ function WeekRow({
     return () => onUnread(week, false);
   }, [onUnread, week, unread]);
 
+  return <WeekCells days={days} anchor={anchor} window={window} occurrences={occurrences} lines={lines} timezone={timezone} onOpenDay={onOpenDay} />;
+}
+
+// The seven cells of a week, given what its week has read (null until it has, and for a week that is never read).
+function WeekCells({
+  days,
+  anchor,
+  window,
+  occurrences,
+  lines,
+  timezone,
+  onOpenDay,
+}: {
+  days: WallDay[];
+  anchor: string;
+  window: PagingWindow;
+  occurrences: Occurrence[] | null;
+  lines: number;
+  timezone: string;
+  onOpenDay: (date: string) => void;
+}) {
   return (
     <div className="grid min-h-0 grid-cols-7 grid-rows-[minmax(0,1fr)] divide-x divide-border">
       {days.map((day) => (
