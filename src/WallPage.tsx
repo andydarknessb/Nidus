@@ -1,4 +1,4 @@
-import { Calendar1, CalendarRange, House, ListChecks, type LucideIcon } from 'lucide-react';
+import { Calendar1, CalendarDays, CalendarRange, House, ListChecks, type LucideIcon } from 'lucide-react';
 import { useEffect, useState, type ComponentProps } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
@@ -207,9 +207,9 @@ function NavigationRailEntry({ icon: Icon, label, current = false, ...props }: {
   );
 }
 
-// The navigation rail down the left side: Home, Day, Week and Lists. Day and Week keep the date the
-// wall is on (navigationRailDate), read at the tap so one just after Household midnight is right, and
-// wait for the Household Timezone. Lists opens the Lists screen over this one rather than going
+// The navigation rail down the left side: Home, Day, Week, Month and Lists. Day, Week and Month keep the
+// date the wall is on (navigationRailDate), read at the tap so one just after Household midnight is right,
+// and wait for the Household Timezone. Lists opens the Lists screen over this one rather than going
 // anywhere. Its column is its whole width, border and padding included, and must stay at most 90 px:
 // the five day columns at 1280 px need 140 px each. The longest labels still to come (Routines,
 // Settings) fit in it.
@@ -234,6 +234,7 @@ function NavigationRail({
       <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
       <NavigationRailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
       <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
+      <NavigationRailEntry icon={CalendarDays} label="Month" current={route.view === 'month'} disabled={!timezone} onClick={() => open('month')} />
       <NavigationRailEntry icon={ListChecks} label="Lists" aria-haspopup="dialog" onClick={onLists} />
     </nav>
   );
