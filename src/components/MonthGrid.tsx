@@ -203,6 +203,10 @@ function DayCell({
   );
 }
 
+// The width of a line's coloured edge (its border-l-4), which the stripes of an event for several Profiles
+// are drawn as wide as.
+const EDGE_PX = 4;
+
 // One occurrence on a day: its colour edge, the pin of a Native Event, the start time of a timed one (with no
 // ":00" on the hour, to leave room for the title) and the title, cut short with an ellipsis. A timed event
 // that began on an earlier day only continues, so it shows no time, as in the week view.
@@ -210,7 +214,7 @@ function EventLine({ occurrence, day, timezone }: { occurrence: Occurrence; day:
   const start = Date.parse(occurrence.starts_at);
   const time = !occurrence.is_all_day && start >= day.startMs ? formatCompactClock(start, timezone) : null;
   return (
-    <span className="mx-1 mb-0.5 flex h-5.5 shrink-0 items-center gap-1 rounded-sm border-l-4 px-1 text-base leading-5 text-foreground" style={tint(occurrence)}>
+    <span className="mx-1 mb-0.5 flex h-5.5 shrink-0 items-center gap-1 rounded-sm border-l-4 px-1 text-base leading-5 text-foreground" style={tint(occurrence, EDGE_PX)}>
       {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="size-4 shrink-0" />}
       {time && <span className="shrink-0 tabular-nums">{time}</span>}
       <span className="truncate">{occurrence.title}</span>

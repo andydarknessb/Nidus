@@ -8,8 +8,9 @@ const NEUTRAL = '#d4d4d8';
 
 // A tinted block in the event's colour: the colour is the edge and a wash, never the text, so
 // the words stay white on a dark ground whatever colour the Profile picked.
-// An event for several Profiles splits its edge into one stripe of each colour.
-export function tint(occurrence: Occurrence): CSSProperties {
+// An event for several Profiles splits its edge into one stripe of each colour, `edgePx` wide: the width
+// of the border-left of the block it is drawn on, 8 px on the time grid and 4 px on a month line.
+export function tint(occurrence: Occurrence, edgePx = 8): CSSProperties {
   const edge = occurrence.color ?? NEUTRAL;
   const wash = `color-mix(in srgb, ${edge} 24%, #18181b)`;
   const { colors } = occurrence;
@@ -18,7 +19,7 @@ export function tint(occurrence: Occurrence): CSSProperties {
   return {
     borderLeftColor: 'transparent',
     backgroundImage: `linear-gradient(to bottom, ${stops}), linear-gradient(${wash}, ${wash})`,
-    backgroundSize: '8px 100%, 100% 100%',
+    backgroundSize: `${edgePx}px 100%, 100% 100%`,
     backgroundPosition: 'left top, left top',
     backgroundRepeat: 'no-repeat',
     backgroundOrigin: 'border-box',
