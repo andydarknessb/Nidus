@@ -8,6 +8,7 @@ import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { ConnectionBadge } from './components/ConnectionBadge';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { ProfileChips } from './components/ProfileChips';
+import { WeatherNow } from './components/Weather';
 import { useChangeTick } from './lib/change-feed';
 import { formatClock, formatDate, navigationRailDate, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
@@ -15,6 +16,7 @@ import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/cal
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
+import { useForecast } from './lib/use-forecast';
 import { useNow } from './lib/wall-hooks';
 import { RoutinesRail } from './RoutinesPage';
 import { PinnedListRail, WallListsScreen } from './SharedListsPage';
@@ -301,6 +303,10 @@ function HomeShell() {
   }, [householdChanges]);
   const name = view.household?.name ?? '';
   const timezone = view.household?.timezone ?? null;
+  // The Household's weather, read once here for the header and every calendar view: nothing, and no
+  // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
+  const forecast = useForecast(view.household);
+  const weatherOn = view.household !== null && view.household.weather_place !== null;
 
   const today = timezone ? householdDay(timezone).date : null;
   // The Profile chips are for the calendar screens. Every screen the shell has is one; a screen that is
@@ -313,6 +319,7 @@ function HomeShell() {
       <header className="flex min-h-12 items-center gap-6">
         <h1 className="min-w-0 truncate text-3xl font-semibold">{name}</h1>
         {timezone && <WallClock timezone={timezone} />}
+        {view.household && today && <WeatherNow forecast={forecast} unit={view.household.temperature_unit} today={today} />}
         <ProfileChips filter={filter} pressed={pressed} hidden={!onCalendar} />
         <div className="ml-auto flex shrink-0 items-center gap-4">
           <ConnectionBadge />
@@ -321,14 +328,14 @@ function HomeShell() {
       </header>
       <ProfileFilterContext.Provider value={filterView}>
         {route.view !== 'home' && timezone ? (
-          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} />
+          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} />
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day or Week.
           <section aria-label="Calendar" className="rounded-xl border border-border" />
         ) : (
           <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
-            {timezone ? <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
+            {timezone ? <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
             <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
               {timezone ? (
                 <RoutinesRail timezone={timezone} />

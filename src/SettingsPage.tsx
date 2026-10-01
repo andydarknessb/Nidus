@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { CalendarAccountsSection } from '@/CalendarAccountsSection';
 import { DevicesSection } from '@/DevicesSection';
 import { ProfilesSection } from '@/ProfilesSection';
+import { WeatherSection } from '@/WeatherSection';
 import { updateHousehold, type Household } from '@/lib/household';
 import { timezoneOptions } from '@/lib/timezones';
 
@@ -52,6 +53,7 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
           {status === 'failed' && 'Could not save. Check the name and try again.'}
         </p>
       </form>
+      <WeatherSection household={household} onSaved={onSaved} />
       <ProfilesSection householdId={household.id} />
       <CalendarAccountsSection />
       <DevicesSection />
