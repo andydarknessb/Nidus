@@ -23,9 +23,13 @@ export type Routine = {
   archived_at: string | null;
 };
 
-// What a Household Account chooses when it makes or edits a Routine. Leaving out time_of_day
-// is the same as null: any time.
+// What a Household Account chooses when it makes a Routine. Leaving out time_of_day is the same
+// as null: any time.
 export type RoutineInput = { title: string; days_of_week: number; time_of_day?: TimeOfDay | null };
+
+// What an edit writes: all three fields, the time of day included (null is any time). An edit that
+// left it out would clear it, so the type does not allow one.
+export type RoutineEdit = Required<RoutineInput>;
 
 // A calendar day in the Household Timezone: 'YYYY-MM-DD' and its weekday (Sunday = 0).
 export type HouseholdDay = { date: string; weekday: number };
@@ -101,6 +105,12 @@ export function groupByTimeOfDay(routines: Routine[]): TimeOfDayRoutines[] {
     .filter((group) => group.routines.length > 0);
 }
 
+// Whether a Profile's Routines get group headings. Not when every one is Any time, so a Household
+// that never sets a time of day sees the Routines rail as it always was.
+export function showsTimeOfDayHeadings(routines: Routine[]): boolean {
+  return routines.some((routine) => routine.time_of_day !== null);
+}
+
 // A Profile's Routine ids in the order the phone lists them (grouped by time of day) once `id`
 // has moved `offset` places inside its own group. A Routine never crosses into another group,
 // and at the edge of its group the order stays as it was. The whole list is what gets written,
@@ -146,14 +156,16 @@ export async function createRoutine(
   return data as Routine;
 }
 
-// Writes a Routine's title, days and time of day; its position, owner and Routine Completions
-// stay as they are. Row-level security refuses a Device, or another Household's account, by
-// matching no row rather than by raising, so the row is asked for back and none means refused.
-export async function updateRoutine(client: SupabaseClient, id: string, input: RoutineInput): Promise<void> {
+// Writes a Routine's title, days and time of day, always all three; its position, owner and Routine
+// Completions stay as they are. An archived Routine is not edited, and row-level security refuses a
+// Device, or another Household's account, by matching no row rather than by raising, so the row is
+// asked for back and none means refused.
+export async function updateRoutine(client: SupabaseClient, id: string, input: RoutineEdit): Promise<void> {
   const { data, error } = await client
     .from('routines')
-    .update({ title: input.title.trim(), days_of_week: input.days_of_week, time_of_day: input.time_of_day ?? null })
+    .update({ title: input.title.trim(), days_of_week: input.days_of_week, time_of_day: input.time_of_day })
     .eq('id', id)
+    .is('archived_at', null)
     .select('id');
   if (error) throw error;
   if (data.length === 0) throw new Error('No Routine was updated.');

@@ -16,13 +16,14 @@ import {
   maskOf,
   movedIdsInGroup,
   reorderRoutines,
+  showsTimeOfDayHeadings,
   tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
   updateRoutine,
   isScheduledOn,
   type Routine,
-  type RoutineInput,
+  type RoutineEdit,
   type TimeOfDay,
 } from './lib/routines';
 import { useRefetchOn } from './lib/change-feed';
@@ -126,8 +127,7 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
       {loaded && groups.length === 0 && <p className="text-base">Nothing scheduled today.</p>}
       {groups.map(({ profile, routines }) => {
         const times = groupByTimeOfDay(routines);
-        // A Profile whose Routines are all Any time reads as the Routines rail always has: no headings.
-        const headed = times.some((time) => time.value !== null);
+        const headed = showsTimeOfDayHeadings(routines);
         return (
           <section key={profile.id} aria-labelledby={`routines-${profile.id}`} className="flex flex-col gap-2">
             <h3 id={`routines-${profile.id}`} className="flex items-center gap-2 text-xl font-semibold" style={{ color: profile.color }}>
@@ -173,6 +173,11 @@ export function RoutinesRail({ timezone }: { timezone: string }) {
 
 const allDays = maskOf(WEEKDAYS.map((weekday) => weekday.bit));
 
+// The word for a time of day. Any time has none: it is the absence of one.
+function timeWord(timeOfDay: TimeOfDay | null): string | undefined {
+  return TIME_OF_DAY_GROUPS.find((group) => group.value !== null && group.value === timeOfDay)?.label;
+}
+
 // The days, then the time of day when the Routine has one: "Mon, Tue · Morning". Non-breaking
 // spaces keep a wrapped line from ending on the dot.
 function scheduleSummary(mask: number, timeOfDay: TimeOfDay | null): string {
@@ -182,8 +187,15 @@ function scheduleSummary(mask: number, timeOfDay: TimeOfDay | null): string {
       : WEEKDAYS.filter((weekday) => isScheduledOn(mask, weekday.bit))
           .map((weekday) => weekday.short)
           .join(', ');
-  const time = TIME_OF_DAY_GROUPS.find((group) => group.value !== null && group.value === timeOfDay);
-  return time ? `${days}\u00a0·\u00a0${time.label}` : days;
+  const time = timeWord(timeOfDay);
+  return time ? `${days}\u00a0·\u00a0${time}` : days;
+}
+
+// What a Routine's buttons are called: its title, then its time of day when it has one, so two
+// Routines with one title (Brush teeth in the morning and again in the evening) can be told apart.
+function routineName(routine: Routine): string {
+  const time = timeWord(routine.time_of_day);
+  return time ? `${routine.title}, ${time}` : routine.title;
 }
 
 // Monday first on screen; the bits stay Sunday = 0.
@@ -203,19 +215,28 @@ function RoutineForm({
 }: {
   profile: Profile;
   routine?: Routine;
-  onSave: (input: RoutineInput) => Promise<boolean>;
+  onSave: (input: RoutineEdit) => Promise<boolean>;
   onCancel?: () => void;
 }) {
   const [title, setTitle] = useState(routine?.title ?? '');
   const [mask, setMask] = useState(routine?.days_of_week ?? allDays);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay | null>(routine?.time_of_day ?? null);
+  // Saving is true while a save is in flight, so a second tap cannot send it twice. Failed says the
+  // last one did not go through: the form stays open with what was typed, and says so beside Save.
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
   // What the labels name, so no two forms on the page share a label.
   const about = routine ? routine.title : `${profile.name}'s new Routine`;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!title.trim() || mask === 0) return;
-    if ((await onSave({ title, days_of_week: mask, time_of_day: timeOfDay })) && !routine) {
+    if (!title.trim() || mask === 0 || saving) return;
+    setSaving(true);
+    setFailed(false);
+    const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay });
+    setSaving(false);
+    setFailed(!saved);
+    if (saved && !routine) {
       setTitle('');
       setMask(allDays);
       setTimeOfDay(null);
@@ -271,7 +292,7 @@ function RoutineForm({
         </select>
       </label>
       <div className="flex gap-3">
-        <button type="submit" className={`${action} flex-1 bg-primary text-primary-foreground disabled:opacity-40`} disabled={mask === 0}>
+        <button type="submit" className={`${action} flex-1 bg-primary text-primary-foreground disabled:opacity-40`} disabled={mask === 0 || saving}>
           {routine ? 'Save' : 'Add Routine'}
         </button>
         {onCancel && (
@@ -280,6 +301,11 @@ function RoutineForm({
           </button>
         )}
       </div>
+      {failed && (
+        <p role="alert" className="text-base">
+          Could not {routine ? 'save' : 'add'} that Routine. Check the name and days, then try again.
+        </p>
+      )}
       {mask === 0 && <p className="text-base">Pick at least one day.</p>}
     </form>
   );
@@ -291,6 +317,8 @@ export function RoutinesPage({ household }: { household: Household }) {
   const [problem, setProblem] = useState('');
   const [confirming, setConfirming] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  // Which Routine's form is open right now. A save that finishes late looks here, not at the render it began in.
+  const editingNow = useRef<string | null>(null);
   const [focusNext, setFocusNext] = useState<string | null>(null);
 
   // Moves focus once the element it names is on screen; the swap unmounts whatever had it.
@@ -315,8 +343,9 @@ export function RoutinesPage({ household }: { household: Household }) {
   }, [refresh]);
   useRefetchOn(ROUTINE_TABLES, () => void refresh());
 
-  // Runs one change, then reloads so the screen shows what the database holds.
-  async function change(work: () => Promise<void>, failure: string): Promise<boolean> {
+  // Runs one change, then reloads so the screen shows what the database holds. A failure is said in
+  // the status line; a form that says so itself, beside its Save, passes no failure.
+  async function change(work: () => Promise<void>, failure = ''): Promise<boolean> {
     let ok = true;
     try {
       await work();
@@ -329,15 +358,24 @@ export function RoutinesPage({ household }: { household: Household }) {
     return ok;
   }
 
-  // Save and Cancel both end on the row's Edit button, which the swap back has just put on screen.
+  function startEditing(id: string) {
+    editingNow.current = id;
+    setEditing(id);
+  }
+
+  // Save and Cancel both end on the row's Edit button, which the swap back has just put on screen,
+  // but only while the form open is still this Routine's: a save that finishes late must not close
+  // the form of a Routine opened since, or take its focus.
   function stopEditing(id: string) {
+    if (editingNow.current !== id) return;
+    editingNow.current = null;
     setEditing(null);
     setFocusNext(`edit-${id}`);
   }
 
-  // A failed save keeps the form open, with what was typed, and says so in the status line.
-  async function save(id: string, input: RoutineInput): Promise<boolean> {
-    const ok = await change(() => updateRoutine(supabase, id, input), 'Could not save that Routine. Check the name and days, then try again.');
+  // A failed save keeps the form open, with what was typed; the form says so itself.
+  async function save(id: string, input: RoutineEdit): Promise<boolean> {
+    const ok = await change(() => updateRoutine(supabase, id, input));
     if (ok) stopEditing(id);
     return ok;
   }
@@ -360,7 +398,7 @@ export function RoutinesPage({ household }: { household: Household }) {
         const own = ofProfile(profile.id);
         // The groups, their order and the heading rule are the Routines rail's, so the phone never lists an order the Wall does not show.
         const times = groupByTimeOfDay(own);
-        const headed = times.some((time) => time.value !== null);
+        const headed = showsTimeOfDayHeadings(own);
         return (
           <section key={profile.id} aria-labelledby={`profile-${profile.id}`} className="flex flex-col gap-3 rounded-lg border border-border p-3">
             <h2 id={`profile-${profile.id}`} tabIndex={-1} className="flex items-center gap-2 text-xl font-semibold" style={{ color: profile.color }}>
@@ -386,7 +424,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                             <button
                               type="button"
                               className={iconAction}
-                              aria-label={`Move ${routine.title} up`}
+                              aria-label={`Move ${routineName(routine)} up`}
                               disabled={index === 0}
                               onClick={() =>
                                 void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder Routines. Try again.')
@@ -397,7 +435,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                             <button
                               type="button"
                               className={iconAction}
-                              aria-label={`Move ${routine.title} down`}
+                              aria-label={`Move ${routineName(routine)} down`}
                               disabled={index === time.routines.length - 1}
                               onClick={() =>
                                 void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder Routines. Try again.')
@@ -411,6 +449,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                               <button
                                 type="button"
                                 autoFocus
+                                aria-label={`Archive ${routineName(routine)}`}
                                 className={`${action} flex-1 border-2 border-destructive bg-primary text-primary-foreground`}
                                 onClick={() => {
                                   setConfirming(null);
@@ -433,14 +472,20 @@ export function RoutinesPage({ household }: { household: Household }) {
                             </div>
                           ) : (
                             <div className="flex gap-3">
-                              <button type="button" id={`edit-${routine.id}`} className={`${quiet} flex-1`} aria-label={`Edit ${routine.title}`} onClick={() => setEditing(routine.id)}>
+                              <button
+                                type="button"
+                                id={`edit-${routine.id}`}
+                                className={`${quiet} flex-1`}
+                                aria-label={`Edit ${routineName(routine)}`}
+                                onClick={() => startEditing(routine.id)}
+                              >
                                 Edit
                               </button>
                               <button
                                 type="button"
                                 id={`archive-${routine.id}`}
                                 className={`${quiet} flex-1`}
-                                aria-label={`Archive ${routine.title}`}
+                                aria-label={`Archive ${routineName(routine)}`}
                                 onClick={() => setConfirming(routine.id)}
                               >
                                 Archive
@@ -456,12 +501,7 @@ export function RoutinesPage({ household }: { household: Household }) {
             ))}
             <RoutineForm
               profile={profile}
-              onSave={(input) =>
-                change(
-                  () => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined),
-                  'Could not add that Routine. Check the name and days, then try again.',
-                )
-              }
+              onSave={(input) => change(() => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined))}
             />
           </section>
         );

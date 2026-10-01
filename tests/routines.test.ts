@@ -15,6 +15,7 @@ import {
   maskOf,
   movedIdsInGroup,
   reorderRoutines,
+  showsTimeOfDayHeadings,
   tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
@@ -45,6 +46,14 @@ const SUN = 0;
 
 function routine(overrides: Partial<Routine> & Pick<Routine, 'id'>): Routine {
   return { profile_id: 'p1', title: 'Brush teeth', days_of_week: 127, time_of_day: null, sort_order: 0, archived_at: null, ...overrides };
+}
+
+// The Household date `days` calendar days from `date` ('YYYY-MM-DD'). Stepping by 24 hours from now
+// instead lands on the same date during the repeated hour of a 25 hour day, and can skip one on a 23 hour day.
+function addDays(date: string, days: number): string {
+  const moved = new Date(`${date}T00:00:00Z`);
+  moved.setUTCDate(moved.getUTCDate() + days);
+  return moved.toISOString().slice(0, 10);
 }
 
 describe('weekday schedule', () => {
@@ -86,6 +95,16 @@ describe('the Household day', () => {
     expect(householdDay('America/Chicago', new Date('2026-11-01T06:30:00Z')).date).toBe('2026-11-01');
     expect(householdDay('America/Chicago', new Date('2026-11-02T05:59:00Z')).date).toBe('2026-11-01');
     expect(householdDay('America/Chicago', new Date('2026-11-02T06:00:00Z')).date).toBe('2026-11-02');
+  });
+
+  it('steps by calendar days, where stepping by 24 hours repeats a date on a 25 hour day', () => {
+    expect(addDays('2026-10-01', -1)).toBe('2026-09-30');
+    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
+    // 23:30 CST, the last hour of the 25 hour day: 24 hours back is still the 1st, one calendar day back is the 31st.
+    const lastHour = new Date('2026-11-02T05:30:00Z');
+    expect(householdDay('America/Chicago', lastHour).date).toBe('2026-11-01');
+    expect(householdDay('America/Chicago', new Date(lastHour.getTime() - 24 * 60 * 60 * 1000)).date).toBe('2026-11-01');
+    expect(addDays('2026-11-01', -1)).toBe('2026-10-31');
   });
 });
 
@@ -184,6 +203,26 @@ describe('Routines by time of day', () => {
     const groups = groupByTimeOfDay([routine({ id: 'b', sort_order: 1 }), routine({ id: 'a', sort_order: 0 })]);
     expect(groups.map((group) => group.value)).toEqual([null]);
     expect(shown([routine({ id: 'b', sort_order: 1 }), routine({ id: 'a', sort_order: 0 })])).toEqual([['Any time', ['a', 'b']]]);
+  });
+});
+
+describe("group headings over a Profile's Routines", () => {
+  it('are left off when every Routine is Any time, so a Household that never sets a time of day sees what it always has', () => {
+    expect(showsTimeOfDayHeadings([routine({ id: 'a' }), routine({ id: 'b', sort_order: 1 })])).toBe(false);
+    expect(showsTimeOfDayHeadings([routine({ id: 'a' })])).toBe(false);
+  });
+
+  it('show as soon as one Routine has a time of day, Any time ones included', () => {
+    expect(showsTimeOfDayHeadings([routine({ id: 'a' }), routine({ id: 'b', time_of_day: 'evening' })])).toBe(true);
+    expect(showsTimeOfDayHeadings([routine({ id: 'b', time_of_day: 'morning' })])).toBe(true);
+  });
+
+  it('show when every Routine has a time of day', () => {
+    expect(showsTimeOfDayHeadings([routine({ id: 'a', time_of_day: 'morning' }), routine({ id: 'b', time_of_day: 'afternoon' })])).toBe(true);
+  });
+
+  it('have nothing to head when there are no Routines', () => {
+    expect(showsTimeOfDayHeadings([])).toBe(false);
   });
 });
 
@@ -357,7 +396,7 @@ describe('routines', () => {
     const walk = await createRoutine(phone, householdId, profile.id, { title: 'Wlak the dog', days_of_week: everyDay }, 0);
     const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'evening' }, 1);
     const today = householdDay(arranged.household.timezone).date;
-    const yesterday = householdDay(arranged.household.timezone, new Date(Date.now() - 24 * 60 * 60 * 1000)).date;
+    const yesterday = addDays(today, -1);
 
     // A day of history and today's tick, arranged as in the midnight test: tick, move it back a day, tick again.
     const admin = asServiceRole();
@@ -390,6 +429,19 @@ describe('routines', () => {
     await expect(updateRoutine(phone, pills.id, { title: '   ', days_of_week: everyDay, time_of_day: 'evening' })).rejects.toMatchObject({ code: '23514' });
     await expect(updateRoutine(phone, pills.id, { title: 'Vitamins', days_of_week: 0, time_of_day: 'evening' })).rejects.toMatchObject({ code: '23514' });
     expect(await loadRoutines(phone)).toEqual([pills]);
+  });
+
+  it('refuses an edit to an archived Routine and leaves it as it was', async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0);
+    await archiveRoutine(phone, pills.id);
+
+    // It has left the phone's list, but a form left open on another screen can still hold its id.
+    await expect(updateRoutine(phone, pills.id, { title: 'Renamed', days_of_week: 1, time_of_day: 'evening' })).rejects.toBeTruthy();
+
+    const kept = await asServiceRole().from('routines').select('title, days_of_week, time_of_day, sort_order, archived_at').eq('id', pills.id).single();
+    expect(kept.data).toMatchObject({ title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning', sort_order: 0 });
+    expect(kept.data?.archived_at).not.toBeNull();
   });
 
   it('rejects a blank title, an empty or out-of-range schedule, and another Household\'s Profile', async () => {
@@ -515,8 +567,7 @@ describe('routines', () => {
     const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay }, 0);
     const wall = await device(arranged);
     const today = householdDay(arranged.household.timezone).date;
-    const yesterday = householdDay(arranged.household.timezone, new Date(Date.now() - 24 * 60 * 60 * 1000)).date;
-    expect(yesterday).not.toBe(today);
+    const yesterday = addDays(today, -1);
 
     // History arranged by moving today's completion back a day, as if ticked yesterday.
     await completeRoutine(wall, pills.id, today);
@@ -543,8 +594,9 @@ describe('routines', () => {
     const { arranged, phone, profile, householdId } = await household('The Andersons');
     const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay }, 0);
     const wall = await device(arranged);
-    const yesterday = householdDay(arranged.household.timezone, new Date(Date.now() - 24 * 60 * 60 * 1000)).date;
-    const tomorrow = householdDay(arranged.household.timezone, new Date(Date.now() + 24 * 60 * 60 * 1000)).date;
+    const today = householdDay(arranged.household.timezone).date;
+    const yesterday = addDays(today, -1);
+    const tomorrow = addDays(today, 1);
 
     await expect(completeRoutine(wall, pills.id, yesterday)).rejects.toMatchObject({ code: '23514' });
     await expect(completeRoutine(wall, pills.id, tomorrow)).rejects.toMatchObject({ code: '23514' });
