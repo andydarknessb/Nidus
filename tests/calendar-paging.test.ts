@@ -5,6 +5,7 @@ import {
   clampToWindow,
   describePage,
   holdsToday,
+  mealsPageDate,
   mealsPath,
   navigationRailDate,
   pageDays,
@@ -216,6 +217,32 @@ describe('shownDate', () => {
     expect(shownDate('2026-08-30', TODAY)).toBe('2026-09-01');
     expect(shownDate('2027-04-02', TODAY)).toBe('2027-04-01');
     expect(shownDate('2030-01-01', TODAY)).toBe('2027-04-01');
+  });
+});
+
+describe('mealsPageDate', () => {
+  it('is no date for the week that holds today, whichever day of it today is', () => {
+    // The week of Sun Sep 27 to Sat Oct 3, 2026: a Wall left on it keeps following the week.
+    for (const today of ['2026-09-27', '2026-09-30', '2026-10-01', '2026-10-03']) {
+      expect(mealsPageDate('2026-09-27', today)).toBeNull();
+    }
+  });
+
+  it('is the week\'s own Sunday for any other week', () => {
+    expect(mealsPageDate('2026-09-20', TODAY)).toBe('2026-09-20');
+    expect(mealsPageDate('2026-10-04', TODAY)).toBe('2026-10-04');
+    expect(mealsPageDate('2027-03-28', TODAY)).toBe('2027-03-28');
+  });
+
+  it('moves with today across a Saturday midnight', () => {
+    expect(mealsPageDate('2026-09-27', '2026-10-03')).toBeNull();
+    expect(mealsPageDate('2026-09-27', '2026-10-04')).toBe('2026-09-27');
+    expect(mealsPageDate('2026-10-04', '2026-10-04')).toBeNull();
+  });
+
+  it('opens what mealsPath writes, so paging back onto this week lands on /meals', () => {
+    expect(mealsPath(mealsPageDate('2026-09-27', TODAY))).toBe('/meals');
+    expect(mealsPath(mealsPageDate('2026-09-20', TODAY))).toBe('/meals?date=2026-09-20');
   });
 });
 

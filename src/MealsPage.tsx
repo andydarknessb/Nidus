@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { dayStartMs, describePage, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
+import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
 import { useChangeTick } from './lib/change-feed';
 import { dialogKeys } from './lib/dialog';
 import { loadMeals, mealGrid, setMeal, type Meal, type MealSlot } from './lib/meals';
@@ -64,7 +64,8 @@ function dayLabel(day: WallDay): string {
 
 // The week the screen is on: `date` is the page's anchor (null for this week, which the screen then
 // follows as the weeks turn), pulled into the window the calendar pages within and snapped to its
-// Sunday, as the week view does. `onNavigate` opens another week by its Sunday, or this week by null.
+// Sunday, as the week view does. `onNavigate` opens a week by its Sunday, or by null when it holds
+// today (Today, and paging back onto it), which a Wall left there then follows as the weeks turn.
 export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; date: string | null; onNavigate: (date: string | null) => void }) {
   const today = useHouseholdDay(timezone).date;
   // The page is laid out from the start of today, so its days and the mark on today agree.
@@ -72,6 +73,7 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
   const anchor = pageStart('week', shownDate(date, today));
   const days = pageDays('week', anchor, timezone, now);
   const { previous, next } = paging('week', anchor, pagingWindowAround(today));
+  const open = (week: string) => onNavigate(mealsPageDate(week, today));
   // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), [anchor]);
@@ -79,13 +81,13 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <nav aria-label="Meals paging" className="flex flex-wrap items-center gap-4">
-        <button type="button" className={PAGE_BUTTON} disabled={previous === null} onClick={() => previous && onNavigate(previous)}>
+        <button type="button" className={PAGE_BUTTON} disabled={previous === null} onClick={() => previous && open(previous)}>
           Previous week
         </button>
         <button type="button" className={PAGE_BUTTON} onClick={() => onNavigate(null)}>
           Today
         </button>
-        <button type="button" className={PAGE_BUTTON} disabled={next === null} onClick={() => next && onNavigate(next)}>
+        <button type="button" className={PAGE_BUTTON} disabled={next === null} onClick={() => next && open(next)}>
           Next week
         </button>
         <h2 ref={heading} tabIndex={-1} className="ml-2 text-2xl font-semibold outline-none">
@@ -296,9 +298,9 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
 // ---- The home screen's card -----------------------------------------------------------
 
 // The home screen's card of today's Meals, for the right rail above the Routines: the slots planned
-// for today, in slot order. Nothing at all when none is planned or today's Meals have not been
-// read, so a Household that plans no meals never sees an empty card. It moves on to the new day
-// at Household midnight and reads that day's Meals, with no reload.
+// for today, in slot order, one line each. Nothing at all when none is planned or today's Meals have
+// not been read, so a Household that plans no meals never sees an empty card. It moves on to the new
+// day at Household midnight and reads that day's Meals, with no reload.
 export function TodaysMealsCard({ timezone }: { timezone: string }) {
   const today = useHouseholdDay(timezone).date;
   // Keyed on the day, so yesterday's Meals are never shown as today's.
@@ -311,17 +313,19 @@ function TodaysMeals({ date }: { date: string }) {
   if (planned.length === 0) return null;
 
   return (
-    // Free to shrink and scroll: the right rail gives the Routines rail and the pinned list their room first.
-    <aside aria-label="Today's meals" className="flex min-h-0 flex-col gap-2 overflow-y-auto rounded-xl border border-border p-4">
-      <h2 className="text-2xl font-semibold">Today&apos;s meals</h2>
-      <ul className="flex flex-col gap-1 text-lg">
+    // Small, since it takes its height from the Routines rail and the pinned list: a title is cut at
+    // the end of its line (the whole of it stays in the text, and on the Meals screen). It is also
+    // free to shrink and scroll, because the right rail gives those two their room first.
+    <aside aria-label="Today's meals" className="flex min-h-0 flex-col gap-1 overflow-y-auto rounded-xl border border-border px-4 py-3">
+      <h2 className="text-lg font-semibold">Today&apos;s meals</h2>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 text-lg leading-6">
         {planned.map(({ slot, label, title }) => (
-          <li key={slot} className="flex gap-3">
-            <span className="w-28 shrink-0 font-semibold">{label}</span>
-            <span className="line-clamp-3 min-w-0 wrap-anywhere">{title}</span>
-          </li>
+          <Fragment key={slot}>
+            <dt className="font-semibold">{label}</dt>
+            <dd className="truncate">{title}</dd>
+          </Fragment>
         ))}
-      </ul>
+      </dl>
     </aside>
   );
 }

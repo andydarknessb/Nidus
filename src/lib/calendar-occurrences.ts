@@ -212,6 +212,13 @@ export function mealsPath(date: string | null): string {
   return date === null ? '/meals' : `/meals?date=${date}`;
 }
 
+// The date the Meals screen puts in its address to open the week anchored on the Sunday `week`: none
+// for the week that holds `today`, so paging back onto it is the following address, the same as
+// Today, and any other week names itself.
+export function mealsPageDate(week: string, today: string): string | null {
+  return week === pageStart('week', today) ? null : week;
+}
+
 // Whether `route` is a page of the calendar, which keeps a date. Every other screen is today's page
 // when it is left, whatever its address carries (Meals has a date and is still one of these). A
 // month view is added here.
