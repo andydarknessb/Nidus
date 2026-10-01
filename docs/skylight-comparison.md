@@ -79,8 +79,8 @@ The last column is the ruling that became [spec 0002](specs/0002-skylight-gaps.m
 | --- | --- | --- |
 | A light interface on the device (white ground, pastel fills, serif headings); no dark mode is documented | Dark theme only, WCAG AAA | **Keep** Nidus's: the wall must not glow at night (PLAN.md) |
 | Left rail of icon-and-label tabs in landscape: Home, Calendar, Lists, Tasks, Rewards, Meals, Recipes, Photos, with Sleep and Settings at the foot | No navigation: header buttons for Week, Day and Lists, and a Home button inside the paged views | **Build** a navigation rail on the left: Home, Day, Week, Month, Routines, Meals, Lists |
-| Information bar: date, time, weather; per-tab controls on the right | Household name, two status badges, buttons | **Build** the header: name, clock and date, weather, Profile chips, Add event |
-| A round "+" floating at the bottom right adds an event | "Add event" button in the header | **Have** |
+| Information bar: date, time, weather; per-tab controls on the right | Household name, two status badges, buttons | **Build** the header: name, clock and date, weather, Profile chips |
+| A round "+" floating at the bottom right adds an event | "Add event" button in the header | **Have**; v2 moves it to the foot of the navigation rail |
 | Home screen with panes the family chooses (calendar, tasks, lists) | Home: five days, Routines rail, Pinned List | **Have**: Nidus's home screen is the settled version of the same idea |
 | Avatars: an initial, a built-in picture or a photo; shown on events and task columns | A colour dot and the name; `avatar_url` is stored but not drawn on the Wall | **Skip**: colour and name read from across a room |
 | Swipe between days, weeks and months; pinch to zoom the schedule | Previous, Today and Next buttons | **Skip** |
