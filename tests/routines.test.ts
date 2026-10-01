@@ -15,7 +15,9 @@ import {
   maskOf,
   movedIdsInGroup,
   reorderRoutines,
+  routineProgress,
   showsTimeOfDayHeadings,
+  tapFinishesProfile,
   tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
@@ -307,6 +309,136 @@ describe('optimistic tick', () => {
     });
     expect(stuck).toBe(false);
     expect(view.get()).toEqual(['r1']);
+  });
+});
+
+describe("progress through a Profile's Routines today", () => {
+  const mine = ['brush', 'bag', 'homework'].map((id, index) => routine({ id, sort_order: index }));
+
+  it('is none done of all when nothing is ticked', () => {
+    expect(routineProgress(mine, new Set())).toEqual({ done: 0, total: 3 });
+  });
+
+  it('counts the Routines ticked', () => {
+    expect(routineProgress(mine, new Set(['bag']))).toEqual({ done: 1, total: 3 });
+    expect(routineProgress(mine, new Set(['brush', 'homework']))).toEqual({ done: 2, total: 3 });
+  });
+
+  it('is all done when every Routine is ticked', () => {
+    expect(routineProgress(mine, new Set(['brush', 'bag', 'homework']))).toEqual({ done: 3, total: 3 });
+  });
+
+  it('is nothing of nothing for a Profile with no Routines today', () => {
+    expect(routineProgress([], new Set())).toEqual({ done: 0, total: 0 });
+    expect(routineProgress([], new Set(['brush']))).toEqual({ done: 0, total: 0 });
+  });
+
+  it("ignores a completion that is not one of the Profile's Routines", () => {
+    expect(routineProgress(mine, new Set(['someone-elses', 'bag']))).toEqual({ done: 1, total: 3 });
+  });
+
+  it("counts only today's Routines: not an archived one, not one for another weekday, and not a completion of either", () => {
+    const daily = routine({ id: 'daily', sort_order: 0 });
+    const weekdays = routine({ id: 'weekdays', days_of_week: maskOf([1, 2, 3, 4, 5]), sort_order: 1 });
+    const weekend = routine({ id: 'weekend', days_of_week: maskOf([SAT, SUN]), sort_order: 2 });
+    const archived = routine({ id: 'archived', archived_at: '2026-09-01T00:00:00Z', sort_order: 3 });
+    const all = [daily, weekdays, weekend, archived];
+    // Every one of them has a completion today, as a read of the day's completions would find.
+    const everything = new Set(all.map((r) => r.id));
+
+    expect(routineProgress(todaysRoutines(all, MON), everything)).toEqual({ done: 2, total: 2 });
+    expect(routineProgress(todaysRoutines(all, SAT), new Set(['weekend']))).toEqual({ done: 1, total: 2 });
+    expect(routineProgress(todaysRoutines(all, SAT), new Set(['weekdays', 'archived']))).toEqual({ done: 0, total: 2 });
+  });
+
+  it('is worked out for each Profile on its own', () => {
+    const profiles: Profile[] = [
+      { id: 'p1', name: 'Mom', color: red, avatar_url: null, sort_order: 0 },
+      { id: 'p2', name: 'Sam', color: blue, avatar_url: null, sort_order: 1 },
+    ];
+    const rows = [
+      routine({ id: 'a', profile_id: 'p1' }),
+      routine({ id: 'b', profile_id: 'p2' }),
+      routine({ id: 'c', profile_id: 'p2', sort_order: 1 }),
+    ];
+    const groups = groupByProfile(profiles, todaysRoutines(rows, MON));
+    expect(groups.map((g) => routineProgress(g.routines, new Set(['a', 'b'])))).toEqual([
+      { done: 1, total: 1 },
+      { done: 1, total: 2 },
+    ]);
+  });
+});
+
+describe('a tap that finishes a Profile', () => {
+  const three = ['a', 'b', 'c'].map((id, index) => routine({ id, sort_order: index }));
+  // Whether ticking (or unticking) `id` finishes the Profile when `done` was ticked before the tap.
+  const finishes = (done: string[], id: string, checked: boolean, rows: Routine[] = three) => tapFinishesProfile(rows, new Set(done), id, checked);
+
+  it('is true for the tick of the last Routine left, whichever Routine that is', () => {
+    expect(finishes(['a', 'b'], 'c', true)).toBe(true);
+    expect(finishes(['c', 'a'], 'b', true)).toBe(true);
+    expect(finishes(['b', 'c'], 'a', true)).toBe(true);
+  });
+
+  it('is false for a tick that leaves another Routine unticked', () => {
+    expect(finishes([], 'a', true)).toBe(false);
+    expect(finishes(['a'], 'b', true)).toBe(false);
+    expect(finishes(['c'], 'a', true)).toBe(false);
+  });
+
+  it('is false for an untick, whether or not the Profile was done', () => {
+    expect(finishes(['a', 'b', 'c'], 'c', false)).toBe(false);
+    expect(finishes(['a', 'b', 'c'], 'a', false)).toBe(false);
+    expect(finishes(['a', 'b'], 'b', false)).toBe(false);
+    expect(finishes(['a'], 'a', false)).toBe(false);
+  });
+
+  it('is false for a tick when the Profile was already done', () => {
+    expect(finishes(['a', 'b', 'c'], 'c', true)).toBe(false);
+    expect(finishes(['a', 'b', 'c'], 'a', true)).toBe(false);
+  });
+
+  it('is true for the one tick of a Profile with one Routine', () => {
+    const only = [routine({ id: 'only' })];
+    expect(finishes([], 'only', true, only)).toBe(true);
+    expect(finishes(['only'], 'only', true, only)).toBe(false);
+    expect(finishes(['only'], 'only', false, only)).toBe(false);
+  });
+
+  it('is false for a Profile with no Routines today', () => {
+    expect(finishes([], 'a', true, [])).toBe(false);
+    expect(finishes(['a'], 'a', false, [])).toBe(false);
+  });
+
+  it("is false for the tick of a Routine that is not the Profile's, finished or not", () => {
+    expect(finishes(['a', 'b'], 'elsewhere', true)).toBe(false);
+    expect(finishes(['a', 'b', 'c'], 'elsewhere', true)).toBe(false);
+  });
+
+  it('counts only the Routines it is given, so a completion of an archived one does not finish a Profile early', () => {
+    const today = todaysRoutines([...three, routine({ id: 'old', archived_at: '2026-09-01T00:00:00Z' })], MON);
+    expect(finishes(['old', 'a'], 'b', true, today)).toBe(false);
+    expect(finishes(['old', 'a', 'b'], 'c', true, today)).toBe(true);
+  });
+
+  it('leaves the set it was given as it was', () => {
+    const before = new Set(['a', 'b']);
+    expect(tapFinishesProfile(three, before, 'c', true)).toBe(true);
+    expect([...before]).toEqual(['a', 'b']);
+  });
+
+  it('is true in exactly one case, over every state of three Routines and every tap: a tick of the one Routine left', () => {
+    const ids = three.map((r) => r.id);
+    for (let mask = 0; mask < 1 << ids.length; mask += 1) {
+      const done = new Set(ids.filter((_, index) => (mask >> index) & 1));
+      const left = ids.filter((id) => !done.has(id));
+      for (const tapped of [...ids, 'elsewhere']) {
+        for (const checked of [true, false]) {
+          const expected = checked && left.length === 1 && left[0] === tapped;
+          expect(tapFinishesProfile(three, done, tapped, checked), `done ${[...done]}, tapped ${tapped}, ticking ${checked}`).toBe(expected);
+        }
+      }
+    }
   });
 });
 

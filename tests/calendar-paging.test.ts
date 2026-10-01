@@ -154,6 +154,11 @@ describe('wall routes', () => {
     expect(parseWallRoute('/day', '?date=2026-10-02')).toEqual({ view: 'day', date: '2026-10-02' });
   });
 
+  it('reads the Routines chart, which has no date to keep', () => {
+    expect(parseWallRoute('/routines', '')).toEqual({ view: 'routines' });
+    expect(parseWallRoute('/routines', '?date=2026-09-30')).toEqual({ view: 'routines' });
+  });
+
   it('falls back to today for a missing or bad date', () => {
     expect(parseWallRoute('/week', '')).toEqual({ view: 'week', date: null });
     expect(parseWallRoute('/day', '?date=tomorrow')).toEqual({ view: 'day', date: null });
@@ -241,10 +246,8 @@ describe('holdsToday', () => {
     expect(holdsToday(page('day', '2030-01-01'), TODAY)).toBe(false);
   });
 
-  it('is true for any screen that is not a calendar view, even one with a date in its address', () => {
-    // Meals will be a screen like this: its address carries a date, but it is not a page of the calendar.
-    const meals = { view: 'meals', date: '2026-10-11' } as unknown as WallRoute;
-    expect(holdsToday(meals, TODAY)).toBe(true);
+  it('is true for a screen that is not a calendar view, such as the Routines chart', () => {
+    expect(holdsToday({ view: 'routines' }, TODAY)).toBe(true);
   });
 });
 
@@ -276,9 +279,8 @@ describe('wallDate', () => {
     expect(wallDate(page('day', '2030-01-01'), TODAY)).toBe('2027-04-01');
   });
 
-  it('is today on a screen that is not a calendar view, even one with a date in its address', () => {
-    const meals = { view: 'meals', date: '2026-10-11' } as unknown as WallRoute;
-    expect(wallDate(meals, TODAY)).toBe('2026-10-01');
+  it('is today on a screen that is not a calendar view, such as the Routines chart', () => {
+    expect(wallDate({ view: 'routines' }, TODAY)).toBe('2026-10-01');
   });
 });
 
@@ -334,10 +336,9 @@ describe('navigationRailDate', () => {
     expect(navigationRailDate('week', page('day', '2030-01-01'), TODAY)).toBe('2027-03-28');
   });
 
-  it('leaving a screen that is not a calendar view opens today\'s page, even with a date in its address', () => {
-    const meals = { view: 'meals', date: '2026-10-11' } as unknown as WallRoute;
-    expect(navigationRailDate('day', meals, TODAY)).toBe('2026-10-01');
-    expect(navigationRailDate('week', meals, TODAY)).toBe('2026-09-27');
+  it('leaving the Routines chart, which has no calendar date to keep, opens today\'s page', () => {
+    expect(navigationRailDate('day', { view: 'routines' }, TODAY)).toBe('2026-10-01');
+    expect(navigationRailDate('week', { view: 'routines' }, TODAY)).toBe('2026-09-27');
   });
 
   it('week to week and day to day are the same address, so a tap adds no step for Back', () => {

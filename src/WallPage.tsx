@@ -1,4 +1,4 @@
-import { Calendar1, CalendarRange, House, ListChecks, Plus, type LucideIcon } from 'lucide-react';
+import { Calendar1, CalendarRange, ClipboardCheck, House, ListChecks, Plus, type LucideIcon } from 'lucide-react';
 import { useEffect, useState, type ComponentProps } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
@@ -14,7 +14,7 @@ import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/cal
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { supabase } from './lib/supabase';
 import { useNow } from './lib/wall-hooks';
-import { RoutinesRail } from './RoutinesPage';
+import { RoutinesChart, RoutinesRail } from './RoutinesPage';
 import { PinnedListRail, WallListsScreen } from './SharedListsPage';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
@@ -173,7 +173,7 @@ function SyncBadge() {
 
 // Which screen the address names. The wall pages with pushState rather than reloading, so a tap
 // never drops the session or the Routines rail, and Back returns to the previous page.
-function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void] {
+function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void, () => void] {
   const read = () => parseWallRoute(window.location.pathname, window.location.search);
   const [route, setRoute] = useState<WallRoute>(read);
   useEffect(() => {
@@ -186,7 +186,7 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
     if (path !== window.location.pathname + window.location.search) window.history.pushState(null, '', path);
     setRoute(read());
   };
-  return [route, (view, date) => go(wallPath(view, date)), () => go('/')];
+  return [route, (view, date) => go(wallPath(view, date)), () => go('/'), () => go('/routines')];
 }
 
 // One entry of the navigation rail: an icon over a word, at least 64 px square. The current one is
@@ -207,7 +207,7 @@ function NavigationRailEntry({ icon: Icon, label, current = false, className = '
   );
 }
 
-// The navigation rail down the left side: Home, Day, Week and Lists, and at its foot Add event. Day and
+// The navigation rail down the left side: Home, Day, Week, Routines and Lists, and at its foot Add event. Day and
 // Week keep the date the wall is on (navigationRailDate), read at the tap so one just after Household
 // midnight is right, and wait for the Household Timezone. Lists opens the Lists screen over this one
 // rather than going anywhere. Add event is an action, not a section: it is never the current entry,
@@ -219,6 +219,7 @@ function NavigationRail({
   timezone,
   onOpen,
   onHome,
+  onRoutines,
   onLists,
   onAdd,
 }: {
@@ -226,6 +227,7 @@ function NavigationRail({
   timezone: string | null;
   onOpen: (view: CalendarView, date: string) => void;
   onHome: () => void;
+  onRoutines: () => void;
   onLists: () => void;
   onAdd: () => void;
 }) {
@@ -237,6 +239,7 @@ function NavigationRail({
       <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
       <NavigationRailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
       <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
+      <NavigationRailEntry icon={ClipboardCheck} label="Routines" current={route.view === 'routines'} onClick={onRoutines} />
       <NavigationRailEntry icon={ListChecks} label="Lists" aria-haspopup="dialog" onClick={onLists} />
       <NavigationRailEntry icon={Plus} label="Add event" aria-haspopup="dialog" disabled={!timezone} onClick={onAdd} className="mt-auto bg-primary text-primary-foreground" />
     </nav>
@@ -259,7 +262,7 @@ function WallClock({ timezone }: { timezone: string }) {
 // screen is the five-day calendar on the left and, on its right rail, today's Routines above the
 // pinned Shared List; the other lists open from the navigation rail.
 function HomeShell() {
-  const [route, openView, openHome] = useWallRoute();
+  const [route, openView, openHome, openRoutines] = useWallRoute();
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   const [listsOpen, setListsOpen] = useState(false);
@@ -297,7 +300,7 @@ function HomeShell() {
 
   return (
     <main className="grid h-svh grid-cols-[5.5rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
-      <NavigationRail route={route} timezone={timezone} onOpen={openView} onHome={openHome} onLists={() => setListsOpen(true)} onAdd={() => setAdding(true)} />
+      <NavigationRail route={route} timezone={timezone} onOpen={openView} onHome={openHome} onRoutines={openRoutines} onLists={() => setListsOpen(true)} onAdd={() => setAdding(true)} />
       <header className="flex min-h-12 items-center gap-6">
         <h1 className="min-w-0 truncate text-3xl font-semibold">{name}</h1>
         {timezone && <WallClock timezone={timezone} />}
@@ -306,7 +309,20 @@ function HomeShell() {
           <SyncBadge />
         </div>
       </header>
-      {route.view !== 'home' && timezone ? (
+      {route.view === 'routines' ? (
+        timezone ? (
+          <RoutinesChart timezone={timezone} />
+        ) : (
+          // The chart before the Household is read: an empty frame that says so if the read failed, as the Routines rail does.
+          <section aria-label="Routines" className="rounded-xl border border-border p-4">
+            {view.failed && (
+              <p role="alert" className="text-base">
+                Could not load Routines. Check your connection.
+              </p>
+            )}
+          </section>
+        )
+      ) : route.view !== 'home' && timezone ? (
         <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} />
       ) : route.view !== 'home' ? (
         // A calendar page before the Household is read: the empty calendar alone, not the home layout

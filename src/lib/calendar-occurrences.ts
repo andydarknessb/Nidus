@@ -189,11 +189,13 @@ export function describePage(days: WallDay[]): string {
 }
 
 // The wall's routes: "/" is the home screen, "/week" and "/day" the secondary views, each anchored
-// by "?date=YYYY-MM-DD" (today when it is missing or not a date). Only the calendar views keep a
-// date; any other screen (so far only the home screen) is today's page when it is left.
-export type WallRoute = { view: 'home' } | { view: CalendarView; date: string | null };
+// by "?date=YYYY-MM-DD" (today when it is missing or not a date), and "/routines" the Routines chart,
+// which is always today's. Only the calendar views keep a date; any other screen (so far the home
+// screen and the Routines chart) is today's page when it is left.
+export type WallRoute = { view: 'home' } | { view: 'routines' } | { view: CalendarView; date: string | null };
 
 export function parseWallRoute(pathname: string, search: string): WallRoute {
+  if (pathname === '/routines') return { view: 'routines' };
   const view = pathname === '/week' ? 'week' : pathname === '/day' ? 'day' : null;
   if (!view) return { view: 'home' };
   const date = new URLSearchParams(search).get('date');
