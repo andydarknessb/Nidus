@@ -7,7 +7,9 @@
 //   POST start     Household Account only (a Nidus session). Returns the URL to send the
 //                  browser to: Google's consent screen for the parent's own account
 //                  (`kind: 'settings'`), or a shareable link that opens on another adult's
-//                  phone with no Nidus session (`kind: 'link'`).
+//                  phone with no Nidus session (`kind: 'link'`). A settings flow may name
+//                  the Google account it is for (`google_email`), which is how a Calendar
+//                  Account that needs reauth is reconnected: Google offers that account first.
 //   GET  consent   The shareable link. No session: the signed `state` is the whole
 //                  authority. Redirects to Google's consent screen.
 //   GET  callback  Google returns here with a code. Exchanges it, stores the refresh
@@ -124,7 +126,7 @@ function page(status: number, title: string, message: string): Response {
   return new Response(html, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 }
 
-function consentUrl(env: ConnectEnv, state: string): string {
+function consentUrl(env: ConnectEnv, state: string, loginHint?: string): string {
   const params = new URLSearchParams({
     client_id: env.googleClientId,
     redirect_uri: `${env.functionUrl}/callback`,
@@ -134,6 +136,7 @@ function consentUrl(env: ConnectEnv, state: string): string {
     access_type: 'offline',
     prompt: 'consent',
     state,
+    ...(loginHint ? { login_hint: loginHint } : {}),
   });
   return `${GOOGLE_AUTH_URL}?${params.toString()}`;
 }
@@ -169,7 +172,7 @@ async function start(request: Request, deps: ConnectDeps, now: number): Promise<
     .maybeSingle<{ household_id: string }>();
   if (!account) return json(403, { error: 'only the Household Account connects a Calendar Account' });
 
-  const body = (await request.json().catch(() => ({}))) as { kind?: unknown };
+  const body = (await request.json().catch(() => ({}))) as { kind?: unknown; google_email?: unknown };
   const kind: FlowKind = body.kind === 'link' ? 'link' : 'settings';
   const seconds = kind === 'link' ? LINK_STATE_SECONDS : SETTINGS_STATE_SECONDS;
   const state = await signState(deps.env.stateSecret, {
@@ -177,7 +180,10 @@ async function start(request: Request, deps: ConnectDeps, now: number): Promise<
     kind,
     exp: Math.floor(now / 1000) + seconds,
   });
-  return json(200, { url: kind === 'link' ? `${deps.env.functionUrl}/consent?state=${encodeURIComponent(state)}` : consentUrl(deps.env, state) });
+  // Only a hint: Google still lets the parent pick another account, and the callback attaches
+  // whichever one signs in to this Household.
+  const hint = typeof body.google_email === 'string' && body.google_email.length <= 320 ? body.google_email : undefined;
+  return json(200, { url: kind === 'link' ? `${deps.env.functionUrl}/consent?state=${encodeURIComponent(state)}` : consentUrl(deps.env, state, hint) });
 }
 
 // GET consent: the shareable link. Nothing but the state proves anything, and that is enough.

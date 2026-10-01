@@ -48,9 +48,12 @@ export async function loadMirroredCalendars(client: SupabaseClient): Promise<Mir
 }
 
 // The URL to send the browser to: Google's consent screen for the parent's own
-// account ('settings'), or a link to hand to another adult ('link').
-export async function startCalendarConnect(client: SupabaseClient, kind: 'settings' | 'link'): Promise<string> {
-  const { data, error } = await client.functions.invoke<{ url: string }>('calendar-connect/start', { body: { kind } });
+// account ('settings'), or a link to hand to another adult ('link'). `googleEmail` names the
+// account a reconnect is for, so Google offers it first.
+export async function startCalendarConnect(client: SupabaseClient, kind: 'settings' | 'link', googleEmail?: string): Promise<string> {
+  const { data, error } = await client.functions.invoke<{ url: string }>('calendar-connect/start', {
+    body: googleEmail ? { kind, google_email: googleEmail } : { kind },
+  });
   if (error || !data?.url) throw error ?? new Error('calendar-connect returned no url');
   return data.url;
 }
@@ -75,4 +78,53 @@ export function calendarsOfAccount(calendars: MirroredCalendar[], accountId: str
   return calendars
     .filter((calendar) => calendar.calendar_account_id === accountId)
     .sort((a, b) => Number(b.selected) - Number(a.selected) || a.name.localeCompare(b.name));
+}
+
+// ---- How fresh the mirror is (issue #8) ----------------------------------------------------
+
+// The wall says nothing about freshness until an account is more than this far behind.
+export const SYNC_STALE_MS = 60 * 60 * 1000;
+
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+function plural(count: number, unit: string): string {
+  return `${count} ${unit}${count === 1 ? '' : 's'}`;
+}
+
+// How long ago, in the words the settings screen and the wall use. Rounds down.
+export function formatAge(ageMs: number): string {
+  if (ageMs < MINUTE_MS) return 'just now';
+  if (ageMs < HOUR_MS) return `${plural(Math.floor(ageMs / MINUTE_MS), 'minute')} ago`;
+  if (ageMs < DAY_MS) return `${plural(Math.floor(ageMs / HOUR_MS), 'hour')} ago`;
+  return `${plural(Math.floor(ageMs / DAY_MS), 'day')} ago`;
+}
+
+// One Calendar Account's last sync, for the settings screen.
+export function lastSyncedText(lastSyncedAt: string | null, nowMs: number): string {
+  return lastSyncedAt === null ? 'Not synced yet' : `Last synced ${formatAge(nowMs - Date.parse(lastSyncedAt))}`;
+}
+
+// What the wall needs to know about each account to say whether the mirror is behind.
+export type SyncFreshness = { last_synced_at: string | null; created_at: string };
+
+export async function loadSyncFreshness(client: SupabaseClient): Promise<SyncFreshness[]> {
+  const { data, error } = await client.from('calendar_accounts').select('last_synced_at, created_at');
+  if (error) throw error;
+  return data as SyncFreshness[];
+}
+
+// The wall's badge: null while every account is within an hour of now, otherwise how far behind
+// the furthest-behind one is. An account that has never synced counts from when it was connected.
+export function staleSyncBadge(accounts: SyncFreshness[], nowMs: number): string | null {
+  let worst: { since: number; synced: boolean } | null = null;
+  for (const account of accounts) {
+    const synced = account.last_synced_at !== null;
+    const since = Date.parse(account.last_synced_at ?? account.created_at);
+    if (Number.isNaN(since) || nowMs - since <= SYNC_STALE_MS) continue;
+    if (worst === null || since < worst.since) worst = { since, synced };
+  }
+  if (worst === null) return null;
+  return worst.synced ? `Last synced ${formatAge(nowMs - worst.since)}` : 'Not synced yet';
 }

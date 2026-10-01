@@ -75,9 +75,21 @@ describe('synced_events', () => {
     const forged = [{ google_event_id: 'forged', title: 'Forged', description: null, location: null, starts_at: lunch.starts_at, ends_at: lunch.ends_at, is_all_day: false }];
 
     for (const client of [asAnonymous(), await asHouseholdAccount(account), device.client]) {
-      const { error } = await client.rpc('replace_synced_events', { p_mirrored_calendar_id: calendarId, p_events: forged, p_sync_token: 'forged' });
+      const { error } = await client.rpc('replace_synced_events', {
+        p_mirrored_calendar_id: calendarId,
+        p_events: forged,
+        p_sync_token: 'forged',
+        p_synced_at: new Date().toISOString(),
+      });
       // 42501: refused for want of permission, not a missing function or a bad argument.
       expect(error?.code).toBe('42501');
+      const { error: deltaError } = await client.rpc('apply_synced_event_changes', {
+        p_mirrored_calendar_id: calendarId,
+        p_upserts: forged,
+        p_deleted_ids: [lunch.google_event_id],
+        p_sync_token: 'forged',
+      });
+      expect(deltaError?.code).toBe('42501');
       expect((await client.rpc('invoke_calendar_sync')).error?.code).toBe('42501');
     }
 

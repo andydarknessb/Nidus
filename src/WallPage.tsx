@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
 import { FiveDayCalendar } from './components/FiveDayCalendar';
+import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { supabase } from './lib/supabase';
 import { RoutinesRail } from './RoutinesPage';
@@ -17,6 +18,8 @@ const RETRY_MS = 5_000;
 const HOUSEHOLD_REFRESH_MS = 30_000;
 // After a failed Household read, retry sooner.
 const HOUSEHOLD_RETRY_MS = 5_000;
+// How often the wall re-reads how fresh the mirror is, and re-words the badge as time passes.
+const SYNC_FRESHNESS_MS = 60_000;
 
 type WallState = { kind: 'connecting' } | { kind: 'unpaired'; pairing: PairingCode } | { kind: 'paired' };
 
@@ -117,6 +120,40 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
 
 // The landscape home screen: the five-day calendar on the left; the right rail
 // holds today's Routines above the pinned Shared List, and the other lists open from the header.
+// The "last synced N hours ago" badge: nothing while every Calendar Account is within an hour,
+// so a healthy wall stays clean. A failed read keeps what the wall last knew.
+function SyncBadge() {
+  const [accounts, setAccounts] = useState<SyncFreshness[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function read() {
+      try {
+        const next = await loadSyncFreshness(supabase);
+        if (live) setAccounts(next);
+      } catch {
+        // Offline: keep the last reading.
+      }
+      if (!live) return;
+      setNow(Date.now());
+      timer = setTimeout(() => void read(), SYNC_FRESHNESS_MS);
+    }
+    void read();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, []);
+  const badge = staleSyncBadge(accounts, now);
+  if (!badge) return null;
+  return (
+    <p role="status" className="rounded-lg border border-border px-4 py-2 text-lg">
+      {badge}
+    </p>
+  );
+}
+
 function HomeShell() {
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
@@ -151,9 +188,12 @@ function HomeShell() {
     <main className="grid h-svh grid-rows-[auto_minmax(0,1fr)] gap-6 p-8">
       <header className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-semibold">{name}</h1>
-        <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setListsOpen(true)}>
-          Lists
-        </button>
+        <div className="flex items-center gap-4">
+          <SyncBadge />
+          <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={() => setListsOpen(true)}>
+            Lists
+          </button>
+        </div>
       </header>
       <div className="grid min-h-0 grid-cols-[1fr_24rem] gap-6">
         {timezone ? <FiveDayCalendar timezone={timezone} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
