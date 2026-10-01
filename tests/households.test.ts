@@ -34,4 +34,14 @@ describe('households', () => {
     expect(error).toBeNull();
     expect(data).toEqual([{ id: mine.household.id, name: 'The Andersons', timezone: 'America/Chicago' }]);
   });
+
+  it('refuses a delete by a Household Account at the table grant', async () => {
+    const mine = await createHousehold('The Andersons');
+    arranged.push(mine);
+
+    const account = await asHouseholdAccount(mine);
+    const { error } = await account.from('households').delete().eq('id', mine.household.id);
+
+    expect(error?.code).toBe('42501');
+  });
 });
