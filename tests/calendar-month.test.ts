@@ -247,6 +247,24 @@ describe('the occurrences of a day', () => {
     expect(titlesOn([noon, midnight])).toEqual([[], [], [], [], ['Reminder'], ['Midnight reminder'], []]);
   });
 
+  it('keeps a short event in a day\'s last quarter hour on that day only', () => {
+    // Tuesday Sep 29, 23:50 to 23:55 CDT. The week view gives such an event 15 minutes so there is something
+    // to tap, which would carry it past midnight; the month lists an event by what it really lasts.
+    const lastMinutes = event('Last call', '2026-09-30T04:50:00Z', '2026-09-30T04:55:00Z');
+    expect(titlesOn([lastMinutes])).toEqual([[], [], ['Last call'], [], [], [], []]);
+  });
+
+  it('keeps an event of no length at 23:59 on its own day', () => {
+    const reminder = event('Reminder', '2026-09-30T04:59:00Z', '2026-09-30T04:59:00Z');
+    expect(titlesOn([reminder])).toEqual([[], [], ['Reminder'], [], [], [], []]);
+  });
+
+  it('still puts a short event that really crosses midnight on both days', () => {
+    // 23:55 Tuesday to 00:05 Wednesday.
+    const across = event('Across', '2026-09-30T04:55:00Z', '2026-09-30T05:05:00Z');
+    expect(titlesOn([across])).toEqual([[], [], ['Across'], ['Across'], [], [], []]);
+  });
+
   it('follows the day lengths of a daylight saving change', () => {
     // Sunday 2026-11-01 is 25 hours long and 2026-03-08 is 23: an all-day event still fills its own day and no more.
     const fall = monthWeeks('2026-11-01', CHICAGO, TODAY)[0]!;

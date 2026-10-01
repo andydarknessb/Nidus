@@ -302,10 +302,18 @@ function endOf(occurrence: Occurrence): number {
   return occurrence.is_all_day ? end : Math.max(end, startOf(occurrence) + MIN_EVENT_MINUTES * MINUTE_MS);
 }
 
-// Whether `occurrence` is on `day`: it starts before the day ends and ends after the day starts, so one
-// ending exactly at midnight is not on the next day, and one of no length is on the day it starts.
+// Whether the span from `start` to `end` is on `day`: it starts before the day ends and ends after the day
+// starts, so one ending exactly at midnight is not on the next day. A span of no length overlaps nothing,
+// so it is on the day its instant falls in.
+function spanIsOn(start: number, end: number, day: WallDay): boolean {
+  if (end <= start) return start >= day.startMs && start < day.endMs;
+  return start < day.endMs && end > day.startMs;
+}
+
+// Whether `occurrence` is on `day` as the time grid draws it, an event of no length being given
+// MIN_EVENT_MINUTES (endOf) so that it has something to tap.
 function occursOn(occurrence: Occurrence, day: WallDay): boolean {
-  return startOf(occurrence) < day.endMs && endOf(occurrence) > day.startMs;
+  return spanIsOn(startOf(occurrence), endOf(occurrence), day);
 }
 
 function placeAllDay(occurrences: Occurrence[], days: WallDay[]): AllDayBar[] {
@@ -434,10 +442,12 @@ export function nowHour(day: WallDay, now: Date): number | null {
 // ---- Month cells --------------------------------------------------------------------
 
 // The occurrences on `day` in the order a month cell lists them: all-day first, then by start, then by
-// title. A multi-day event is on every day it covers, by the same overlap test place uses.
+// title. A multi-day event is on every day it covers, by the overlap test place uses but on what the event
+// really lasts: the padding that gives a short event something to tap in the time grid must not carry one
+// in a day's last quarter hour onto the next day.
 export function dayOccurrences(occurrences: Occurrence[], day: WallDay): Occurrence[] {
   return occurrences
-    .filter((occurrence) => occursOn(occurrence, day))
+    .filter((occurrence) => spanIsOn(startOf(occurrence), Date.parse(occurrence.ends_at), day))
     .sort((a, b) => Number(b.is_all_day) - Number(a.is_all_day) || startOf(a) - startOf(b) || a.title.localeCompare(b.title));
 }
 
