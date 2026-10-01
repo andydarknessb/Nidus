@@ -18,6 +18,7 @@ export const WATCHED_TABLES = [
   'routine_completions',
   'shared_lists',
   'list_items',
+  'meals',
 ] as const;
 
 export type WatchedTable = (typeof WATCHED_TABLES)[number];

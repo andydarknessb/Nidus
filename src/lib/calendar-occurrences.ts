@@ -188,13 +188,14 @@ export function describePage(days: WallDay[]): string {
   return `${format(first, sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })} to ${format(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
 }
 
-// The wall's routes: "/" is the home screen, "/week" and "/day" the secondary views, each anchored
-// by "?date=YYYY-MM-DD" (today when it is missing or not a date). Only the calendar views keep a
-// date; any other screen (so far only the home screen) is today's page when it is left.
-export type WallRoute = { view: 'home' } | { view: CalendarView; date: string | null };
+// The wall's routes: "/" is the home screen, "/week" and "/day" the secondary views and "/meals" the
+// Meals screen, each of those anchored by "?date=YYYY-MM-DD" (today's page, or for Meals this week,
+// when it is missing or not a date). Only the calendar views keep a date; any other screen (the
+// home screen, Meals) is today's page when it is left.
+export type WallRoute = { view: 'home' } | { view: CalendarView; date: string | null } | { view: 'meals'; date: string | null };
 
 export function parseWallRoute(pathname: string, search: string): WallRoute {
-  const view = pathname === '/week' ? 'week' : pathname === '/day' ? 'day' : null;
+  const view = pathname === '/week' ? 'week' : pathname === '/day' ? 'day' : pathname === '/meals' ? 'meals' : null;
   if (!view) return { view: 'home' };
   const date = new URLSearchParams(search).get('date');
   const valid = date !== null && /^\d{4}-\d{2}-\d{2}$/.test(date) && addDays(date, 0) === date;
@@ -205,9 +206,22 @@ export function wallPath(view: CalendarView, date: string): string {
   return `/${view}?date=${date}`;
 }
 
+// The Meals screen's address: no date for this week, which the screen then follows as the weeks turn
+// (a Wall left on it moves on at Saturday midnight), else the Sunday its week is anchored on.
+export function mealsPath(date: string | null): string {
+  return date === null ? '/meals' : `/meals?date=${date}`;
+}
+
+// The date the Meals screen puts in its address to open the week anchored on the Sunday `week`: none
+// for the week that holds `today`, so paging back onto it is the following address, the same as
+// Today, and any other week names itself.
+export function mealsPageDate(week: string, today: string): string | null {
+  return week === pageStart('week', today) ? null : week;
+}
+
 // Whether `route` is a page of the calendar, which keeps a date. Every other screen is today's page
-// when it is left, whatever its address carries (Meals will have a date and still be one of these).
-// A month view is added here.
+// when it is left, whatever its address carries (Meals has a date and is still one of these). A
+// month view is added here.
 function isCalendarRoute(route: WallRoute): route is Extract<WallRoute, { view: CalendarView }> {
   return route.view === 'day' || route.view === 'week';
 }

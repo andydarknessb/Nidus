@@ -4,9 +4,11 @@ import { useChangeTick } from './change-feed';
 import { watchHouseholdDay, watchMinute } from './household-day';
 import { filterOccurrences, ProfileFilterContext } from './profile-filter';
 import { OCCURRENCE_TABLES } from './realtime';
+import { householdDay, type HouseholdDay } from './routines';
 import { supabase } from './supabase';
 
-// What the wall's screens share: the clock, and the one read every calendar view makes of occurrences.
+// What the wall's screens share: the clock, the current Household day, and the one read every
+// calendar view makes of occurrences.
 
 // The slow read that backs up the change feed, and the sooner one after a read that failed.
 const REFRESH_MS = 60_000;
@@ -26,6 +28,21 @@ export function useNow(timezone: string): Date {
     };
   }, [timezone]);
   return now;
+}
+
+// The current Household day, moved on at Household midnight with no refresh. A screen that follows
+// "today" (Meals and its card) reads it here; the zone changing under a mounted screen moves it too.
+export function useHouseholdDay(timezone: string): HouseholdDay {
+  const [day, setDay] = useState(() => householdDay(timezone));
+  useEffect(() => {
+    // A day that has not changed is the same state, so a screen that mounts on today is not drawn twice.
+    setDay((prev) => {
+      const next = householdDay(timezone);
+      return prev.date === next.date ? prev : next;
+    });
+    return watchHouseholdDay(timezone, setDay);
+  }, [timezone]);
+  return day;
 }
 
 // The occurrences of `days` that the Profile filter lets through, null until the first read lands, and
