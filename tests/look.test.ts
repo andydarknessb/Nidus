@@ -125,11 +125,20 @@ describe('a Profile colour', () => {
 
 const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 
-// The declarations of the one top-level block whose selector is exactly `selector`.
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// How many top-level blocks in the file have exactly this selector (at the start of a line, then ` {`).
+const blockCount = (selector: string) => [...css.matchAll(new RegExp(`^${escapeRegExp(selector)} \\{`, 'gm'))].length;
+
+// How many times a custom property is declared anywhere in the file, in any block, inside any @media or @layer.
+const declaredCount = (name: string) => [...css.matchAll(new RegExp(`(?<![\\w-])${escapeRegExp(name)}\\s*:`, 'g'))].length;
+
+// The declarations of the one top-level block whose selector is exactly `selector`. It throws unless there is exactly one:
+// a second block would otherwise go unread, and its values would be what the browser draws.
 function declarations(selector: string): Map<string, string> {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const open = new RegExp(`^${escaped} \\{`, 'm').exec(css);
-  if (!open) throw new Error(`src/index.css has no "${selector}" block`);
+  const found = blockCount(selector);
+  if (found !== 1) throw new Error(`src/index.css has ${found} "${selector}" blocks, and the look wants exactly one`);
+  const open = new RegExp(`^${escapeRegExp(selector)} \\{`, 'm').exec(css)!;
   const start = open.index + open[0].length;
   const body = css.slice(start, css.indexOf('}', start));
   return new Map([...body.matchAll(/([\w-]+)\s*:\s*([^;]+);/g)].map((match) => [match[1]!, match[2]!.trim()]));
@@ -222,5 +231,78 @@ describe('src/index.css', () => {
   it('is light on :root and says so to the browser', () => {
     expect(declarations(':root').get('color-scheme')).toBe('light');
     expect(declarations(":root[data-mode='dark']").get('color-scheme')).toBe('dark');
+  });
+
+  // Nine tickets edit this file side by side: a block or a declaration added beside the ones above would be read by the
+  // browser and by no test, so these fail on a second block, a second declaration and an override inside @media.
+  it('has each block that holds tokens exactly once', () => {
+    for (const selector of [':root', ":root[data-mode='dark']", '.person', ":root[data-mode='dark'] .person", '@theme inline']) {
+      expect(blockCount(selector), selector).toBe(1);
+    }
+  });
+
+  it('declares every token of the table exactly twice, once light and once dark, and nowhere else', () => {
+    for (const name of Object.keys(TOKENS.light)) {
+      expect(declaredCount(`--${name}`), `--${name}`).toBe(2);
+      expect(declarations(':root').has(`--${name}`), `--${name} on :root`).toBe(true);
+      expect(declarations(":root[data-mode='dark']").has(`--${name}`), `--${name} in the dark block`).toBe(true);
+    }
+  });
+
+  it('declares each token that is another token exactly once, on :root', () => {
+    for (const name of Object.keys(ALIASES)) {
+      expect(declaredCount(`--${name}`), `--${name}`).toBe(1);
+      expect(declarations(':root').has(`--${name}`), `--${name} on :root`).toBe(true);
+    }
+  });
+
+  it("declares each of a person's roles exactly twice, once light and once dark, and nowhere else", () => {
+    for (const role of Object.keys(personRoles('light', FAMILIES[0]!))) {
+      const name = `--person-${kebab(role)}`;
+      expect(declaredCount(name), name).toBe(2);
+      expect(declarations('.person').has(name), `${name} on .person`).toBe(true);
+      expect(declarations(":root[data-mode='dark'] .person").has(name), `${name} in the dark .person`).toBe(true);
+    }
+  });
+});
+
+// ---- docs/look.md: the tables a person reads, equal to look.ts ------------------------------------
+
+const doc = readFileSync(new URL('../docs/look.md', import.meta.url), 'utf8');
+
+// The rows of the markdown table whose header line starts with `header`, as cells with a wrapping pair of backticks taken off.
+function table(header: string): string[][] {
+  const lines = doc.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.startsWith(header));
+  if (start < 0) throw new Error(`docs/look.md has no table headed "${header}"`);
+  const rows: string[][] = [];
+  for (const line of lines.slice(start + 2)) {
+    if (!line.startsWith('|')) break;
+    rows.push(line.split('|').slice(1, -1).map((cell) => cell.trim().replace(/^`(.*)`$/, '$1')));
+  }
+  return rows;
+}
+
+describe('docs/look.md', () => {
+  it('has the tokens of look.ts, light and dark', () => {
+    const rows = table('| Token | Role | Light | Dark |');
+    const named = (column: number) => Object.fromEntries(rows.map((row) => [row[0]!.replace(/^--/, ''), row[column]]));
+    expect(named(2)).toEqual(TOKENS.light);
+    expect(named(3)).toEqual(TOKENS.dark);
+  });
+
+  it('has the ten families of look.ts, four steps each, in the palette order', () => {
+    const rows = table('| Family | 100 | 200 | 300 (stored) | 800 |');
+    expect(rows.map(([name, a, b, c, d]) => ({ name, 100: a, 200: b, 300: c, 800: d }))).toEqual(
+      FAMILIES.map((family) => ({ name: family.name, 100: family[100], 200: family[200], 300: family[300], 800: family[800] })),
+    );
+  });
+
+  it('mixes the dark roles at the percentages look.ts exports', () => {
+    const dark = Object.fromEntries(table('| Role | Used for | Light | Dark |').map((row) => [row[0], row[3]]));
+    const percent = (cell: string | undefined) => Number(/(\d+)%/.exec(cell ?? '')?.[1]);
+    expect(percent(dark['soft'])).toBe(DARK_MIX.soft);
+    expect(percent(dark['fill'])).toBe(DARK_MIX.fill);
+    expect(percent(dark['done picture'])).toBe(DARK_MIX.doneDisc);
   });
 });
