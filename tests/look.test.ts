@@ -9,8 +9,8 @@ import {
   mix,
   personRoles,
   personStyle,
-  type FamilySteps,
   type Mode,
+  type Steps,
   type TokenName,
 } from '../src/lib/look';
 import { PROFILE_PALETTE, contrastRatio } from '../src/lib/profiles';
@@ -26,8 +26,8 @@ const SHAPE = 3;
 
 type Pair = { what: string; foreground: string; ground: string; floor: number };
 
-// Every pair the look draws in one mode, for one family: the person's own roles, and the chrome on them.
-function pairsOf(mode: Mode, family: FamilySteps): Pair[] {
+// Every pair the look draws in one mode, for one person's four steps: the person's own roles, and the chrome on them.
+function pairsOf(mode: Mode, family: Steps & { name: string }): Pair[] {
   const t = TOKENS[mode];
   const p = personRoles(mode, family);
   return [
@@ -167,6 +167,15 @@ function scopeOf(mode: Mode): Map<string, string> {
   return scope;
 }
 
+// The custom properties in force on an element with the class `person` and no style of its own: the mode's, with the `.person`
+// rules over them. A style from personStyle() sets the four steps on top of these.
+function personScope(mode: Mode): Map<string, string> {
+  const scope = scopeOf(mode);
+  for (const [name, value] of declarations('.person')) scope.set(name, value);
+  if (mode === 'dark') for (const [name, value] of declarations(":root[data-mode='dark'] .person")) scope.set(name, value);
+  return scope;
+}
+
 const kebab = (role: string) => role.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 
 describe('src/index.css', () => {
@@ -195,15 +204,32 @@ describe('src/index.css', () => {
 
   it("derives a person's roles from the four steps to the colours look.ts holds, for all ten families in both modes", () => {
     for (const mode of MODES) {
-      const roles = declarations('.person');
-      if (mode === 'dark') for (const [name, value] of declarations(":root[data-mode='dark'] .person")) roles.set(name, value);
       for (const family of FAMILIES) {
-        const scope = scopeOf(mode);
-        for (const [name, value] of roles) scope.set(name, value);
+        const scope = personScope(mode);
         for (const step of [100, 200, 300, 800] as const) scope.set(`--person-${step}`, family[step]);
         for (const [role, expected] of Object.entries(personRoles(mode, family))) {
           expect(evaluate(`var(--person-${kebab(role)})`, scope), `${mode}: ${family.name} ${role}`).toBe(expected);
         }
+      }
+    }
+  });
+
+  // A custom property that nothing sets leaves a background transparent and words with no ground, so a `person` element that
+  // was given no steps (a style forgotten, a Profile not read yet) would draw white initials on nothing. `.person` carries
+  // neutral steps made of surface tokens instead, which the style from personStyle() replaces. They are held to every floor.
+  it('gives a person with no colour of its own neutral steps from the surface tokens, whose roles hold every floor', () => {
+    for (const mode of MODES) {
+      const scope = personScope(mode);
+      const neutral = { name: 'Neutral', 100: '', 200: '', 300: '', 800: '' };
+      for (const step of [100, 200, 300, 800] as const) {
+        neutral[step] = evaluate(`var(--person-${step})`, scope);
+        expect(neutral[step], `${mode}: --person-${step}`).toMatch(/^#[0-9A-F]{6}$/);
+      }
+      for (const [role, expected] of Object.entries(personRoles(mode, neutral))) {
+        expect(evaluate(`var(--person-${kebab(role)})`, scope), `${mode}: neutral ${role}`).toBe(expected);
+      }
+      for (const pair of pairsOf(mode, neutral)) {
+        expect(contrastRatio(pair.foreground, pair.ground), `${mode}: ${pair.what}`).toBeGreaterThanOrEqual(pair.floor);
       }
     }
   });
@@ -277,6 +303,16 @@ describe('src/index.css', () => {
       expect(declarations('.person').has(name), `${name} on .person`).toBe(true);
       expect(declarations(":root[data-mode='dark'] .person").has(name), `${name} in the dark .person`).toBe(true);
     }
+  });
+
+  it('declares the four neutral steps once on .person, each a token, and the 300 once more for dark', () => {
+    const tokens = new Set(Object.keys(TOKENS.light).map((name) => `var(--${name})`));
+    for (const step of [100, 200, 300, 800]) {
+      const name = `--person-${step}`;
+      expect(declaredCount(name), name).toBe(step === 300 ? 2 : 1);
+      expect(tokens, `${name} on .person`).toContain(declarations('.person').get(name));
+    }
+    expect(tokens, '--person-300 in the dark .person').toContain(declarations(":root[data-mode='dark'] .person").get('--person-300'));
   });
 });
 

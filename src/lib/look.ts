@@ -80,7 +80,10 @@ const STEPS: Record<Family, { 100: string; 200: string; 800: string }> = {
   Pink: { 100: '#FCE7F3', 200: '#FBCFE8', 800: '#9D174D' },
 };
 
-export type FamilySteps = { name: Family; 100: string; 200: string; 300: string; 800: string };
+// The four steps a person's roles are derived from: a family's, or the neutral ones index.css gives a person with none.
+export type Steps = { 100: string; 200: string; 300: string; 800: string };
+
+export type FamilySteps = { name: Family } & Steps;
 
 // The ten families in the palette's order, each with the four steps the look uses.
 export const FAMILIES: readonly FamilySteps[] = PROFILE_PALETTE.map(({ name, hex }) => ({ name, ...STEPS[name], 300: hex.toUpperCase() }));
@@ -118,7 +121,7 @@ export function mix(a: string, percent: number, b: string): string {
 
 // What a person's colour becomes in a mode (docs/look.md, People). index.css derives the same roles from the four
 // steps on an element with the class `person`.
-export function personRoles(mode: Mode, family: FamilySteps): PersonRoles {
+export function personRoles(mode: Mode, family: Steps): PersonRoles {
   const t = TOKENS[mode];
   if (mode === 'light') {
     return {

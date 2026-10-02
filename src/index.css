@@ -62,8 +62,17 @@
    color-mix(), at the percentages look.ts exports as DARK_MIX (the 300 at 13% for soft and 28% for fill, so the card
    at 87% and 72%). The colour that is safe to be left with comes first: the build lowers a color-mix() to its first
    operand where a browser has none, and words on the card are readable where words on a pastel are not. Words on a
-   soft or a fill are --foreground and never a person's colour. */
+   soft or a fill are --foreground and never a person's colour.
+
+   A person that is given no steps (a style forgotten, a Profile not read yet) is neutral, not colourless: a custom property
+   that nothing sets would leave a background transparent and the words on it with no ground. So `.person` sets the four
+   steps itself, from surface tokens, and the style from personStyle() replaces them. The neutral 300 is --accent in light and
+   --muted-foreground in dark, where the 300 is what shows. tests/look.test.ts holds the roles they make to every floor. */
 .person {
+  --person-100: var(--muted);
+  --person-200: var(--accent);
+  --person-300: var(--accent);
+  --person-800: var(--foreground);
   --person-soft: var(--person-100);
   --person-fill: var(--person-200);
   --person-base: var(--person-300);
@@ -77,6 +86,7 @@
 }
 
 :root[data-mode='dark'] .person {
+  --person-300: var(--muted-foreground);
   --person-soft: color-mix(in srgb, var(--card) 87%, var(--person-300));
   --person-fill: color-mix(in srgb, var(--card) 72%, var(--person-300));
   --person-base: var(--person-300);
