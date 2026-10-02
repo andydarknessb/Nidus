@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  PROFILE_BACKGROUND,
   PROFILE_PALETTE,
   byPosition,
   cleanAvatarUrl,
@@ -29,13 +28,8 @@ import {
 const red = PROFILE_PALETTE[0].hex;
 const blue = PROFILE_PALETTE[7].hex;
 
+// What the palette's colours must clear, in both modes, is held in tests/look.test.ts.
 describe('the Profile palette', () => {
-  it('meets WCAG AAA (7:1) on a Zinc-950 background, every colour', () => {
-    for (const color of PROFILE_PALETTE) {
-      expect(contrastRatio(color.hex, PROFILE_BACKGROUND), color.name).toBeGreaterThanOrEqual(7);
-    }
-  });
-
   it('has distinct colours with names', () => {
     expect(new Set(PROFILE_PALETTE.map((color) => color.hex)).size).toBe(PROFILE_PALETTE.length);
     expect(paletteColorName(red)).toBe('Red');

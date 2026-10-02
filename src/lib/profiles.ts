@@ -9,12 +9,11 @@ export type Profile = { id: string; name: string; color: string; avatar_url: str
 
 export type ProfileInput = { name: string; color: string; avatar_url: string | null };
 
-// The fixed palette every later feature colours from. Tailwind's 300 shades: each
-// clears WCAG AAA (7:1) against Zinc-950 (#09090b), the app background; the tests
-// hold that line. `name` is what the picker announces, since colour alone never
-// carries the choice.
-export const PROFILE_BACKGROUND = '#09090b';
-
+// The fixed palette every later feature colours from. Tailwind's 300 shades, the step a
+// Profile stores: look.ts takes the other steps of each family from it, and
+// tests/look.test.ts holds every pair of words and ground made from them to its
+// contrast floor in both modes. `name` is what the picker announces, since colour
+// alone never carries the choice.
 export const PROFILE_PALETTE = [
   { name: 'Red', hex: '#fca5a5' },
   { name: 'Orange', hex: '#fdba74' },

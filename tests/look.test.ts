@@ -1,0 +1,226 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import {
+  ALIASES,
+  DARK_MIX,
+  FAMILIES,
+  TOKENS,
+  familyOf,
+  mix,
+  personRoles,
+  personStyle,
+  type FamilySteps,
+  type Mode,
+  type TokenName,
+} from '../src/lib/look';
+import { PROFILE_PALETTE, contrastRatio } from '../src/lib/profiles';
+
+const MODES: Mode[] = ['light', 'dark'];
+
+// ---- The look as data: every pair at its floor ---------------------------------------------------
+
+// docs/look.md: words on their ground are 7:1 or better, and a shape that carries meaning (a ring, an outline, a
+// picture, a progress pip) is 3:1 or better.
+const WORDS = 7;
+const SHAPE = 3;
+
+type Pair = { what: string; foreground: string; ground: string; floor: number };
+
+// Every pair the look draws in one mode, for one family: the person's own roles, and the chrome on them.
+function pairsOf(mode: Mode, family: FamilySteps): Pair[] {
+  const t = TOKENS[mode];
+  const p = personRoles(mode, family);
+  return [
+    { what: `${family.name}: words on a fill`, foreground: t.foreground, ground: p.fill, floor: WORDS },
+    { what: `${family.name}: words on a soft`, foreground: t.foreground, ground: p.soft, floor: WORDS },
+    { what: `${family.name}: secondary words on a soft`, foreground: t['muted-foreground'], ground: p.soft, floor: WORDS },
+    { what: `${family.name}: ink on a finished tile`, foreground: p.onBase, ground: p.base, floor: WORDS },
+    { what: `${family.name}: the initial on its disc`, foreground: p.onStrong, ground: p.strong, floor: WORDS },
+    { what: `${family.name}: strong on a fill`, foreground: p.strong, ground: p.fill, floor: SHAPE },
+    { what: `${family.name}: strong on a soft`, foreground: p.strong, ground: p.soft, floor: SHAPE },
+    { what: `${family.name}: strong on a card`, foreground: p.strong, ground: t.card, floor: SHAPE },
+    { what: `${family.name}: strong on a tile`, foreground: p.strong, ground: t.muted, floor: SHAPE },
+    { what: `${family.name}: an empty pip on a soft`, foreground: t.input, ground: p.soft, floor: SHAPE },
+    { what: `${family.name}: the tick on its disc`, foreground: p.onTick, ground: p.tick, floor: SHAPE },
+    { what: `${family.name}: the tick disc on a finished tile`, foreground: p.tick, ground: p.base, floor: SHAPE },
+    { what: `${family.name}: the picture on its done disc`, foreground: p.donePicture, ground: p.doneDisc, floor: SHAPE },
+  ];
+}
+
+function chromePairs(mode: Mode): Pair[] {
+  const t = TOKENS[mode];
+  const grounds = ['background', 'card', 'muted', 'accent', 'everyone'] as const;
+  return [
+    ...grounds.flatMap((ground) => [
+      { what: `words on ${ground}`, foreground: t.foreground, ground: t[ground], floor: WORDS },
+      { what: `secondary words on ${ground}`, foreground: t['muted-foreground'], ground: t[ground], floor: WORDS },
+    ]),
+    { what: 'words on the primary action', foreground: t['primary-foreground'], ground: t.primary, floor: WORDS },
+    { what: 'words on delete', foreground: t['destructive-foreground'], ground: t.destructive, floor: WORDS },
+    ...(['background', 'card', 'muted', 'accent'] as const).map((ground) => ({ what: `the focus ring on ${ground}`, foreground: t.ring, ground: t[ground], floor: SHAPE })),
+    ...(['card', 'muted'] as const).flatMap((ground) => [
+      { what: `an outline or empty ring on ${ground}`, foreground: t.input, ground: t[ground], floor: SHAPE },
+      { what: `today's disc on ${ground}`, foreground: t.primary, ground: t[ground], floor: SHAPE },
+    ]),
+    { what: 'the house disc on everyone', foreground: t.primary, ground: t.everyone, floor: SHAPE },
+  ];
+}
+
+describe('the look as data', () => {
+  it('holds every pair of words at 7:1 and every shape at 3:1, for all ten families in both modes', () => {
+    for (const mode of MODES) {
+      for (const pair of [...chromePairs(mode), ...FAMILIES.flatMap((family) => pairsOf(mode, family))]) {
+        expect(contrastRatio(pair.foreground, pair.ground), `${mode}: ${pair.what}`).toBeGreaterThanOrEqual(pair.floor);
+      }
+    }
+  });
+
+  it("holds a person's disc to 3:1 on everyone else's fill, since a shared event is striped in each person's colour", () => {
+    for (const mode of MODES) {
+      for (const person of FAMILIES) {
+        for (const other of FAMILIES) {
+          const ratio = contrastRatio(personRoles(mode, person).strong, personRoles(mode, other).fill);
+          expect(ratio, `${mode}: ${person.name} on ${other.name}`).toBeGreaterThanOrEqual(SHAPE);
+        }
+      }
+    }
+  });
+
+  it('has the ten families the Profiles store, each stored as its 300 step', () => {
+    expect(FAMILIES.map((family) => family.name)).toEqual(PROFILE_PALETTE.map((color) => color.name));
+    expect(FAMILIES.map((family) => family[300])).toEqual(PROFILE_PALETTE.map((color) => color.hex.toUpperCase()));
+    for (const family of FAMILIES) {
+      for (const step of [100, 200, 300, 800] as const) expect(family[step], `${family.name} ${step}`).toMatch(/^#[0-9A-F]{6}$/);
+    }
+  });
+
+  it('mixes the dark soft and fill into the card at the exported percentages', () => {
+    const blue = FAMILIES.find((family) => family.name === 'Blue')!;
+    expect(personRoles('dark', blue).soft).toBe(mix(blue[300], DARK_MIX.soft, TOKENS.dark.card));
+    expect(personRoles('dark', blue).fill).toBe(mix(blue[300], DARK_MIX.fill, TOKENS.dark.card));
+    expect(mix('#FFFFFF', 25, '#000000')).toBe('#404040');
+    expect(mix('#FF0000', 100, '#0000FF')).toBe('#FF0000');
+  });
+});
+
+describe('a Profile colour', () => {
+  it('is its own family when it is in the palette, in any case', () => {
+    for (const color of PROFILE_PALETTE) {
+      expect(familyOf(color.hex).name).toBe(color.name);
+      expect(familyOf(color.hex.toUpperCase()).name).toBe(color.name);
+    }
+  });
+
+  it('takes the nearest family when it is not in the palette', () => {
+    expect(familyOf('#fca5a6').name).toBe('Red');
+    expect(familyOf('#92c5fb').name).toBe('Blue');
+  });
+
+  it("is drawn from the four steps of its family, as custom properties", () => {
+    expect(personStyle('#93c5fd')).toEqual({ '--person-100': '#DBEAFE', '--person-200': '#BFDBFE', '--person-300': '#93C5FD', '--person-800': '#1E40AF' });
+  });
+});
+
+// ---- src/index.css: the same values, read the way a browser reads them ----------------------------
+
+const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+
+// The declarations of the one top-level block whose selector is exactly `selector`.
+function declarations(selector: string): Map<string, string> {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const open = new RegExp(`^${escaped} \\{`, 'm').exec(css);
+  if (!open) throw new Error(`src/index.css has no "${selector}" block`);
+  const start = open.index + open[0].length;
+  const body = css.slice(start, css.indexOf('}', start));
+  return new Map([...body.matchAll(/([\w-]+)\s*:\s*([^;]+);/g)].map((match) => [match[1]!, match[2]!.trim()]));
+}
+
+// What a declared value comes to in a scope of custom properties: a colour as #RRGGBB, or any other value as its
+// words in lower case with single spaces. Understands the three forms index.css uses: a literal, var() and a
+// color-mix() in sRGB.
+function evaluate(value: string, scope: ReadonlyMap<string, string>): string {
+  const v = value.trim();
+  const variable = /^var\((--[\w-]+)\)$/.exec(v);
+  if (variable) {
+    const found = scope.get(variable[1]!);
+    if (found === undefined) throw new Error(`${variable[1]} is not defined`);
+    return evaluate(found, scope);
+  }
+  const mixed = /^color-mix\(in srgb, (.+?) (\d+)%, (.+)\)$/.exec(v);
+  if (mixed) return mix(evaluate(mixed[1]!, scope), Number(mixed[2]), evaluate(mixed[3]!, scope));
+  return /^#[0-9a-f]{6}$/i.test(v) ? v.toUpperCase() : v.replace(/\s+/g, ' ').toLowerCase();
+}
+
+// The custom properties in force for a mode: the root's, and for dark the dark block laid over them.
+function scopeOf(mode: Mode): Map<string, string> {
+  const scope = declarations(':root');
+  if (mode === 'dark') for (const [name, value] of declarations(":root[data-mode='dark']")) scope.set(name, value);
+  return scope;
+}
+
+const kebab = (role: string) => role.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+
+describe('src/index.css', () => {
+  it('defines every token of docs/look.md for both modes, equal to look.ts', () => {
+    for (const mode of MODES) {
+      const scope = scopeOf(mode);
+      for (const [name, value] of Object.entries(TOKENS[mode])) {
+        expect(evaluate(`var(--${name})`, scope), `${mode}: --${name}`).toBe(evaluate(value, new Map()));
+      }
+    }
+  });
+
+  it('defines the dark block with every token, so dark never leans on a light value', () => {
+    const custom = [...declarations(":root[data-mode='dark']").keys()].filter((name) => name.startsWith('--'));
+    expect(custom.sort()).toEqual(Object.keys(TOKENS.dark).map((name) => `--${name}`).sort());
+  });
+
+  it('defines the tokens that are another token, in both modes', () => {
+    for (const mode of MODES) {
+      const scope = scopeOf(mode);
+      for (const [alias, target] of Object.entries(ALIASES)) {
+        expect(evaluate(`var(--${alias})`, scope), `${mode}: --${alias}`).toBe(evaluate(TOKENS[mode][target as TokenName], new Map()));
+      }
+    }
+  });
+
+  it("derives a person's roles from the four steps to the colours look.ts holds, for all ten families in both modes", () => {
+    for (const mode of MODES) {
+      const roles = declarations('.person');
+      if (mode === 'dark') for (const [name, value] of declarations(":root[data-mode='dark'] .person")) roles.set(name, value);
+      for (const family of FAMILIES) {
+        const scope = scopeOf(mode);
+        for (const [name, value] of roles) scope.set(name, value);
+        for (const step of [100, 200, 300, 800] as const) scope.set(`--person-${step}`, family[step]);
+        for (const [role, expected] of Object.entries(personRoles(mode, family))) {
+          expect(evaluate(`var(--person-${kebab(role)})`, scope), `${mode}: ${family.name} ${role}`).toBe(expected);
+        }
+      }
+    }
+  });
+
+  it('mixes the dark roles at the percentages look.ts exports', () => {
+    const dark = declarations(":root[data-mode='dark'] .person");
+    expect(dark.get('--person-soft')).toBe(`color-mix(in srgb, var(--person-300) ${DARK_MIX.soft}%, var(--card))`);
+    expect(dark.get('--person-fill')).toBe(`color-mix(in srgb, var(--person-300) ${DARK_MIX.fill}%, var(--card))`);
+    expect(dark.get('--person-done-disc')).toBe(`color-mix(in srgb, var(--ink) ${DARK_MIX.doneDisc}%, var(--person-300))`);
+  });
+
+  it('maps every token and every person role to a Tailwind colour once, in @theme inline', () => {
+    const theme = css.slice(css.indexOf('@theme inline {'), css.indexOf('}', css.indexOf('@theme inline {')));
+    const mapped = new Set([...theme.matchAll(/--color-([\w-]+):\s*var\(--([\w-]+)\);/g)].map((match) => `${match[1]}=${match[2]}`));
+    const roles = Object.keys(personRoles('light', FAMILIES[0]!)).map((role) => `person-${kebab(role)}`);
+    for (const name of [...Object.keys(TOKENS.light), ...Object.keys(ALIASES), ...roles]) {
+      expect(mapped, `--color-${name}`).toContain(`${name}=${name}`);
+    }
+  });
+
+  it("binds Tailwind's dark variant to the document's mode", () => {
+    expect(css).toMatch(/@custom-variant dark \(&:where\(\[data-mode='dark'\], \[data-mode='dark'\] \*\)\);/);
+  });
+
+  it('is light on :root and says so to the browser', () => {
+    expect(declarations(':root').get('color-scheme')).toBe('light');
+    expect(declarations(":root[data-mode='dark']").get('color-scheme')).toBe('dark');
+  });
+});

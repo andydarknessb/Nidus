@@ -1,28 +1,90 @@
 @import 'tailwindcss';
+@import '@fontsource/young-serif';
+@import '@fontsource-variable/lexend';
 
-/* shadcn theme tokens. Dark theme only: the wall never glows white (PLAN.md), so
-   there is no light palette to switch to. Values are the zinc dark preset. */
+/* Tailwind's dark: variant follows the document's mode (src/lib/mode.ts), not the operating system's. */
+@custom-variant dark (&:where([data-mode='dark'], [data-mode='dark'] *));
+
+/* The look (docs/look.md): one set of tokens in two modes. Light is on :root, so a page with no mode set is light
+   and fully coloured, never colourless; dark is under [data-mode='dark'], which src/lib/mode.ts keeps on <html>.
+   The values are src/lib/look.ts's, and tests/look.test.ts fails if the two disagree. */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   --radius: 0.625rem;
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 286.32);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
+  --background: #F1F4F9;
+  --card: #FFFFFF;
+  --muted: #ECF0F6;
+  --accent: #DCE3EE;
+  --border: #DCE3EE;
+  --input: #667085;
+  --foreground: #182031;
+  --muted-foreground: #384256;
+  --ink: #182031;
+  --primary: #182031;
+  --primary-foreground: #FFFFFF;
+  --destructive: #991B1B;
+  --destructive-foreground: #FFFFFF;
+  --everyone: #EEE6D8;
+  --ring: #182031;
+  --scrim: rgb(24 32 49 / 50%);
+  /* Tokens that are another token, in both modes. */
+  --secondary: var(--muted);
+  --popover: var(--card);
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --secondary-foreground: var(--foreground);
+  --accent-foreground: var(--foreground);
+}
+
+:root[data-mode='dark'] {
+  color-scheme: dark;
+  --background: #0E1016;
+  --card: #171A22;
+  --muted: #20242F;
+  --accent: #2A2F3C;
+  --border: #2A2F3C;
+  --input: #7C8499;
+  --foreground: #F5F2EA;
+  --muted-foreground: #C3C7D4;
+  --ink: #111318;
+  --primary: #F5F2EA;
+  --primary-foreground: #111318;
+  --destructive: #991B1B;
+  --destructive-foreground: #F5F2EA;
+  --everyone: #3A342C;
+  --ring: #F5F2EA;
+  --scrim: rgb(0 0 0 / 60%);
+}
+
+/* A person (docs/look.md, People). An element with the class `person` carries four custom properties, the steps of
+   its family (personStyle() in src/lib/look.ts sets them from a Profile's stored colour), and the roles below are
+   derived from them, once for each mode. Light takes the steps as they are; dark mixes the 300 into --card with
+   color-mix(), at the percentages look.ts exports as DARK_MIX. Words on a soft or a fill are --foreground and never
+   a person's colour. */
+.person {
+  --person-soft: var(--person-100);
+  --person-fill: var(--person-200);
+  --person-base: var(--person-300);
+  --person-on-base: var(--ink);
+  --person-strong: var(--person-800);
+  --person-on-strong: #FFFFFF;
+  --person-tick: var(--person-800);
+  --person-on-tick: #FFFFFF;
+  --person-done-disc: var(--person-100);
+  --person-done-picture: var(--person-800);
+}
+
+:root[data-mode='dark'] .person {
+  --person-soft: color-mix(in srgb, var(--person-300) 13%, var(--card));
+  --person-fill: color-mix(in srgb, var(--person-300) 28%, var(--card));
+  --person-base: var(--person-300);
+  --person-on-base: var(--ink);
+  --person-strong: var(--person-300);
+  --person-on-strong: var(--ink);
+  --person-tick: var(--ink);
+  --person-on-tick: var(--person-300);
+  --person-done-disc: color-mix(in srgb, var(--ink) 20%, var(--person-300));
+  --person-done-picture: var(--ink);
 }
 
 @theme inline {
@@ -45,21 +107,72 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-ink: var(--ink);
+  --color-everyone: var(--everyone);
+  --color-scrim: var(--scrim);
+  /* The person roles, as classes: bg-person-soft, bg-person-strong, text-person-on-strong and so on. */
+  --color-person-soft: var(--person-soft);
+  --color-person-fill: var(--person-fill);
+  --color-person-base: var(--person-base);
+  --color-person-on-base: var(--person-on-base);
+  --color-person-strong: var(--person-strong);
+  --color-person-on-strong: var(--person-on-strong);
+  --color-person-tick: var(--person-tick);
+  --color-person-on-tick: var(--person-on-tick);
+  --color-person-done-disc: var(--person-done-disc);
+  --color-person-done-picture: var(--person-done-picture);
+  /* Young Serif has one weight, 400: it is never bold. Lexend carries everything else (400, 500, 600). */
+  --font-sans: 'Lexend Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Young Serif', Georgia, 'Times New Roman', serif;
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   html,
   body {
     height: 100%;
   }
+  html {
+    /* A face that lacks a weight is never drawn faux bold: the display face has only 400. */
+    font-synthesis-weight: none;
+  }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+
+  /* Focus: a 2 px ring in --ring, 2 px out from the control, on every control reached by keyboard. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* A field is --muted with a 1.5 px inset --input ring. Focused, the ring thickens to 2.5 px of --foreground and the
+     focus ring above is not drawn, so a field never shows two. Checkboxes, radios and the like are not fields. */
+  :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color'], [type='hidden'], [type='button'], [type='submit'], [type='reset'], [type='image']), select, textarea) {
+    min-height: 3.25rem;
+    border-radius: 1rem;
+    background-color: var(--muted);
+    padding-inline: 0.875rem;
+    box-shadow: inset 0 0 0 1.5px var(--input);
+    color: var(--foreground);
+    &:focus {
+      outline: none;
+      box-shadow: inset 0 0 0 2.5px var(--foreground);
+    }
+  }
+  ::placeholder {
+    color: var(--muted-foreground);
+    opacity: 1;
+  }
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--foreground);
   }
 }
 
