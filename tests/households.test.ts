@@ -245,7 +245,9 @@ describe('household weather', () => {
 
     for (const [who, client] of [['Household Account', theirPhone], ['Device', theirWall]] as const) {
       const read = await client.from('households').select(columns).eq('id', id);
-      expect(read.data ?? [], `a ${who} reading`).toEqual([]);
+      // No error and no rows: a read that failed would also have no data, so the error is asserted, not defaulted away.
+      expect(read.error, `a ${who} reading: the read itself`).toBeNull();
+      expect(read.data, `a ${who} reading`).toEqual([]);
 
       const attempt = await client.from('households').update({ ...noPlace, temperature_unit: 'fahrenheit' }).eq('id', id).select('id');
       expect(attempt.data ?? [], `a ${who} writing`).toEqual([]);
@@ -381,7 +383,9 @@ describe('household appearance', () => {
 
     for (const [who, client] of [['Household Account', theirPhone], ['Device', theirWall]] as const) {
       const read = await client.from('households').select('appearance').eq('id', id);
-      expect(read.data ?? [], `a ${who} reading`).toEqual([]);
+      // No error and no rows: a read that failed would also have no data, so the error is asserted, not defaulted away.
+      expect(read.error, `a ${who} reading: the read itself`).toBeNull();
+      expect(read.data, `a ${who} reading`).toEqual([]);
 
       const attempt = await client.from('households').update({ appearance: 'light' }).eq('id', id).select('id');
       expect(attempt.data ?? [], `a ${who} writing`).toEqual([]);
