@@ -4,7 +4,7 @@ One look in two modes: light by day, dark at night. This file is the source for 
 
 ## Principles
 
-- **The chrome is neutral. Colour belongs to people.** The only hues on a screen are the Profiles' own. The whole Household and Meals share one warm neutral, never a Profile colour. Delete is the only red.
+- **The chrome is neutral. Colour belongs to people.** The only hues on a screen are the Profiles' own. The whole Household and Meals share one warm neutral, never a Profile colour. Delete is the only red in the chrome.
 - **Never colour alone.** A person is a disc with their initial. Today is a filled disc. Selected is a fill and a ring. Done is a fill and a tick.
 - **Surfaces are told apart by fill, not by an outline.** Outlines are for fields and empty rings.
 - **AAA in both modes.** Words on their ground are 7:1 or better. A shape that carries meaning (a ring, an outline, a picture, a progress pip) is 3:1 or better.
@@ -22,8 +22,8 @@ The Wall is light from sunrise to sunset and dark from sunset to sunrise (Auto).
 | `--muted` | tiles, rows, fields, today's column | `#ECF0F6` | `#20242F` |
 | `--accent` | pressed, selected, the current rail entry | `#DCE3EE` | `#2A2F3C` |
 | `--border` | hairlines between rows and hours | `#DCE3EE` | `#2A2F3C` |
-| `--input` | field outlines and empty rings | `#667085` | `#7C8499` |
-| `--foreground` | words | `#182031` | `#F5F2EA` |
+| `--input` | field outlines, empty rings, empty pips, the hatch | `#667085` | `#7C8499` |
+| `--foreground` | words, the now line, the ring on what is on now | `#182031` | `#F5F2EA` |
 | `--muted-foreground` | secondary words, never dimmer | `#384256` | `#C3C7D4` |
 | `--ink` | words on a person's stored colour | `#182031` | `#111318` |
 | `--primary` | the one primary action, today's disc | `#182031` | `#F5F2EA` |
@@ -34,7 +34,7 @@ The Wall is light from sunrise to sunset and dark from sunset to sunrise (Auto).
 | `--ring` | the focus ring, 2 px, offset 2 px | `#182031` | `#F5F2EA` |
 | `--scrim` | behind a sheet | `rgb(24 32 49 / 50%)` | `rgb(0 0 0 / 60%)` |
 
-`--secondary` (the secondary button's fill) is `--muted`, and `--popover` is `--card`.
+`--secondary` (the secondary button's fill) is `--muted`, `--popover` is `--card`, and each `-foreground` partner not listed is `--foreground`.
 
 ## People
 
@@ -53,7 +53,7 @@ A Profile stores one colour, the 300 step of its family. The look uses four step
 | Violet | `#EDE9FE` | `#DDD6FE` | `#C4B5FD` | `#5B21B6` |
 | Pink | `#FCE7F3` | `#FBCFE8` | `#F9A8D4` | `#9D174D` |
 
-What each role is, by mode:
+What each role is, by mode. The dark mixes are `color-mix(in srgb, …)`.
 
 | Role | Used for | Light | Dark |
 | --- | --- | --- | --- |
@@ -64,11 +64,11 @@ What each role is, by mode:
 | strong | the initial disc, pictures, rings, progress | 800 | 300 |
 | on strong | the initial | white | `--ink` |
 | tick | the tick on a finished tile | white on 800 | 300 on `--ink` |
-| done picture | the picture disc on a finished tile | 800 on 100 | `--ink` on 300 darkened 20% |
+| done picture | the picture disc on a finished tile | 800 on 100 | `--ink` on the 300 with 20% `--ink` mixed in |
 
 Words on a soft or a fill are always `--foreground` (soft also takes `--muted-foreground`). Words are never drawn in a person's colour.
 
-An event for one person is that person's fill. A shared event is striped, one equal band for each person, left to right in Profile order. An event for the whole Household is `--everyone` with the house disc.
+An event for one person is that person's fill. A shared event is striped, one equal band for each person (three at most), left to right in Profile order. An event for the whole Household, or for every Profile in it, is `--everyone` with the house disc. A Mirrored Calendar has no colour of its own.
 
 ## Type
 
@@ -85,18 +85,43 @@ Two faces, shipped with the app: **Young Serif** (one weight, 400) for the clock
 | Event titles, buttons | Lexend 600 | 15 to 16 |
 | Times, captions, rail words | Lexend 400 to 500 | 14, the smallest |
 
+An initial inside a disc is the one exception to the 14 px floor: it is never under 11 px.
+
 ## Shape and space
 
 Cards 24, tiles and fields 16 to 18, rows and event pills 14, pills and discs round. Spacing steps 4, 6, 8, 12, 16, 24. No shadows, no gradients (a shared event's stripes are flat bands), no coloured side borders.
 
 ## The parts
 
-- **Buttons.** Four voices from one component: primary (`--primary`), secondary (`--muted`), quiet (no fill, `--muted-foreground`) and delete (`--destructive`). One primary on a screen. Pressed dips and takes `--accent`. Switched off is 40% and not tappable.
+- **Buttons.** Four voices from one component: primary (`--primary`), secondary (`--muted`), quiet (no fill, `--muted-foreground`) and delete (`--destructive`). One primary on a screen. Pressed, a button dips; secondary and quiet also take `--accent`, and primary and delete keep their fill so their words keep their contrast. Switched off is 40% and not tappable.
 - **Selected.** `--accent` fill, a 2 px inset ring in `--foreground`, weight 600: the current rail entry, a pressed pill, a segmented control's choice, the current tab.
-- **A field.** `--muted` fill with a 1.5 px inset `--input` ring, its label above it, 52 to 60 tall. Focused, the ring is 2.5 px of `--foreground`. A placeholder is `--muted-foreground`.
+- **Focus.** A 2 px ring in `--ring`, offset 2 px, on every control. A field instead thickens its own ring to 2.5 px of `--foreground`.
+- **A field.** `--muted` fill with a 1.5 px inset `--input` ring, its label above it, 52 to 60 tall. A placeholder is `--muted-foreground`.
 - **A person.** A disc in their strong colour with their initial, at 24, 34, 40, 44 or 56 px. Everyone is the same disc in `--primary` with a house.
-- **An event pill.** At least 52 tall, radius 14, the title on up to two lines (it wraps between words and never inside one, then ends in an ellipsis), the time under it, the initial disc at the right. The event that is on now has a 2.5 px inset ring.
+- **An event pill.** At least 52 tall, radius 14, the title on up to two lines (it wraps between words and never inside one, then ends in an ellipsis), the time under it, the disc at the right. A Native Event has a pin before its title. Discs overlap; there are at most two, then a "+N" disc. A timed event that is on now has a 2.5 px inset ring in `--foreground`.
 - **Today.** The date in a `--primary` disc, on every view.
-- **A Routine tile.** 80 tall, radius 18: the picture in a 52 px disc, the words, then a 44 px ring. To do, the tile is `--card` and the ring is the person's strong colour. Done, the tile is the person's base colour with a tick; the words stay as they are, not struck through.
-- **Progress.** One pip for each Routine: filled in the person's strong colour, or an outline.
+- **The now line.** `--foreground`, behind the Day view's blocks.
+- **A Routine tile.** The whole tile is the button, 80 tall, radius 18: the picture in a 52 px disc, the words, then a 44 px ring. To do, the tile is `--card` and the ring is the person's strong colour. Done, the tile is the person's base colour with a tick; the words stay as they are, not struck through.
+- **Progress.** One pip for each Routine: filled in the person's strong colour, or a 1.5 px `--input` ring. Past eight, the count alone.
 - **The people strip.** Everyone, then a pill for each Profile on its soft colour: the disc, the name, "3 of 5" and the pips. Pressed, a pill filters the calendar.
+- **The status line.** One line at the foot of the screen that says what just happened, for six seconds.
+- **Beyond the calendar's range.** A hatch in `--input`.
+
+## Routine pictures
+
+The key stored in `routines.picture`, and the icon it draws (lucide names). Any other value, or none, draws a plain circle.
+
+| Key | Icon | Key | Icon |
+| --- | --- | --- | --- |
+| `teeth` | toothbrush | `shower` | shower-head |
+| `bed` | bed | `hair` | brush |
+| `dressed` | shirt | `shoes` | footprints |
+| `bag` | backpack | `music` | music |
+| `read` | book-open | `sport` | volleyball |
+| `homework` | pencil | `bike` | bike |
+| `pet` | paw-print | `laundry` | washing-machine |
+| `plants` | sprout | `tidy` | sparkles |
+| `toys` | blocks | `medicine` | pill |
+| `bins` | trash-2 | `water` | glass-water |
+| `dishes` | utensils | `sleep` | moon |
+| `bath` | bath | `stretch` | person-standing |
