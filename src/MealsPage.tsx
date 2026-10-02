@@ -1,5 +1,6 @@
-import { Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Cookie, Moon, Plus, Sun, Sunrise, X, type LucideIcon } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { Button } from './components/ui/button';
 import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
 import { useChangeTick } from './lib/change-feed';
 import { dialogKeys } from './lib/dialog';
@@ -18,10 +19,8 @@ const RETRY_MS = 5_000;
 // What each read here listens to: a Meal changed anywhere in the Household.
 const MEAL_TABLES = ['meals'] as const;
 
-const PAGE_BUTTON = 'min-h-12 rounded-lg border border-border px-6 text-lg font-medium disabled:opacity-50';
-const field = 'w-full text-lg';
-const action = 'min-h-12 rounded-lg px-6 text-lg font-medium';
-const quiet = `${action} border border-border disabled:opacity-40`;
+// The picture each slot is marked with, in the plan's rows.
+const SLOT_PICTURES: Record<MealSlot, LucideIcon> = { breakfast: Sunrise, lunch: Sun, dinner: Moon, snack: Cookie };
 
 // The Meals from `from` to `to` (Household dates), read again when a Meal changes anywhere in the
 // Household, when `saves` goes up (a save made here) and every minute, or after five seconds when
@@ -79,18 +78,19 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
   useEffect(() => heading.current?.focus(), [anchor]);
 
   return (
-    <div className="flex min-h-0 flex-col gap-4">
-      <nav aria-label="Meals paging" className="flex flex-wrap items-center gap-4">
-        <button type="button" className={PAGE_BUTTON} disabled={previous === null} onClick={() => previous && open(previous)}>
-          Previous week
-        </button>
-        <button type="button" className={PAGE_BUTTON} onClick={() => onNavigate(null)}>
+    <div className="flex min-h-0 flex-col gap-3">
+      {/* The paging row sits on the page, so its buttons are --card, as the plan under them is. */}
+      <nav aria-label="Meals paging" className="flex h-12 flex-none items-center gap-2">
+        <Button aria-label="Previous week" className="size-12 rounded-full bg-card p-0" disabled={previous === null} onClick={() => previous && open(previous)}>
+          <ChevronLeft aria-hidden className="size-6" strokeWidth={2.2} />
+        </Button>
+        <Button className="h-12 rounded-full bg-card px-5 text-[15px]" onClick={() => onNavigate(null)}>
           Today
-        </button>
-        <button type="button" className={PAGE_BUTTON} disabled={next === null} onClick={() => next && open(next)}>
-          Next week
-        </button>
-        <h2 ref={heading} tabIndex={-1} className="ml-2 text-2xl font-semibold outline-none">
+        </Button>
+        <Button aria-label="Next week" className="size-12 rounded-full bg-card p-0" disabled={next === null} onClick={() => next && open(next)}>
+          <ChevronRight aria-hidden className="size-6" strokeWidth={2.2} />
+        </Button>
+        <h2 ref={heading} tabIndex={-1} className="ml-3 font-display text-[28px] leading-[34px] outline-none">
           {describePage(days)}
         </h2>
       </nav>
@@ -112,10 +112,11 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
 // The cell the sheet is open on: its Household date and slot, how it is named, and the Meal it holds.
 type Editing = { date: string; slot: MealSlot; heading: string; meal: Meal | null };
 
-// A heading row of days over a row for each slot. Each cell is one button, at least 48 px tall,
-// that opens the sheet; the rows share the height the screen has. Until the Meals have been read
-// (and after a first read that failed) the cells are disabled and show nothing, since a cell that
-// looked empty and could be tapped would invite writing over a Meal that is only not read yet.
+// A heading row of days over a row for each slot, each row starting with the slot's picture and name. Each cell is
+// one button, at least 48 px either way, that opens the sheet; a planned Meal is on --everyone and an empty slot is a
+// quiet plus on --muted. The rows share the height the screen has. Until the Meals have been read (and after a first
+// read that failed) the cells are disabled and show nothing, since a cell that looked empty and could be tapped would
+// invite writing over a Meal that is only not read yet.
 function MealsGrid({ days }: { days: WallDay[] }) {
   const [saves, setSaves] = useState(0);
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -123,55 +124,65 @@ function MealsGrid({ days }: { days: WallDay[] }) {
   const known = meals !== null;
   const rows = mealGrid(meals ?? [], days.map((day) => day.date));
   const template: CSSProperties = {
-    gridTemplateColumns: `8rem repeat(${days.length}, minmax(0, 1fr))`,
-    gridTemplateRows: `auto repeat(${rows.length}, minmax(min-content, 1fr))`,
+    // The slot column is 7 rem and the heading row 3.5 rem; a day never narrows past a finger.
+    gridTemplateColumns: `7rem repeat(${days.length}, minmax(3rem, 1fr))`,
+    gridTemplateRows: `3.5rem repeat(${rows.length}, minmax(min-content, 1fr))`,
   };
 
   return (
-    <section aria-label="Meals" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
+    <section aria-label="Meal plan" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
       {failed && !known && (
         <p role="alert" className="p-4 text-xl">
           Could not load meals. Check your connection.
         </p>
       )}
-      <div style={template} className="grid min-h-0 flex-1 overflow-y-auto">
+      {/* The padding is on the scrolling grid, so a focus ring has room inside what it clips. */}
+      <div style={template} className="grid min-h-0 flex-1 gap-2 overflow-y-auto p-2.5">
         {/* The first read's own line, in the corner so the grid does not shift when it lands. */}
-        <div className="flex items-center px-3 text-lg">{!known && !failed ? 'Loading' : null}</div>
+        <div className="flex items-center px-3 text-sm text-muted-foreground">{!known && !failed ? 'Loading' : null}</div>
         {days.map((day) => (
           <DayHeading key={day.date} day={day} />
         ))}
-        {rows.map((row) => (
-          <Fragment key={row.slot}>
-            <div className="flex items-center border-t border-border px-3 text-xl font-semibold">{row.label}</div>
-            {row.cells.map((meal, index) => {
-              const day = days[index]!;
-              const heading = `${row.label}, ${dayLabel(day)}`;
-              return (
-                <button
-                  key={day.date}
-                  type="button"
-                  disabled={!known}
-                  onClick={() => setEditing({ date: day.date, slot: row.slot, heading, meal })}
-                  // The inset ring stays inside the cell, where the scrolling grid cannot clip it.
-                  className={`flex min-h-12 w-full items-center justify-center border-t border-l border-border px-2 py-2 text-center text-lg leading-snug focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-foreground ${day.isToday ? 'bg-muted' : ''}`}
-                >
-                  {/* The name a screen reader hears: "Dinner, Thu 1: Tacos", or "nothing planned"; while the Meals are unknown, just "Dinner, Thu 1". */}
-                  <span className="sr-only">{known ? `${heading}: ` : heading}</span>
-                  {meal ? (
-                    <span className="line-clamp-3 min-w-0 wrap-anywhere">{meal.title}</span>
-                  ) : (
-                    known && (
-                      <>
-                        <Plus aria-hidden className="size-6 shrink-0" />
-                        <span className="sr-only">nothing planned</span>
-                      </>
-                    )
-                  )}
-                </button>
-              );
-            })}
-          </Fragment>
-        ))}
+        {rows.map((row) => {
+          const Picture = SLOT_PICTURES[row.slot];
+          return (
+            <Fragment key={row.slot}>
+              <h3 className="flex min-w-0 flex-col items-center justify-center gap-1.5 text-[15px] leading-5 font-semibold">
+                <span aria-hidden className="flex size-10 items-center justify-center rounded-full bg-everyone">
+                  <Picture className="size-[22px]" />
+                </span>
+                {row.label}
+              </h3>
+              {row.cells.map((meal, index) => {
+                const day = days[index]!;
+                const heading = `${row.label}, ${dayLabel(day)}`;
+                return (
+                  <Button
+                    key={day.date}
+                    disabled={!known}
+                    onClick={() => setEditing({ date: day.date, slot: row.slot, heading, meal })}
+                    // Corners of 14 and 10 px inside, as an event pill has; a Meal's words start at the top left and are
+                    // clamped to three lines (the whole of them are in the sheet), an empty slot's plus is in the middle.
+                    className={`h-auto min-h-12 min-w-0 rounded-[14px] p-2.5 text-left text-[15px] leading-[19px] font-medium whitespace-normal ${meal ? 'items-start justify-start bg-everyone' : 'text-muted-foreground'}`}
+                  >
+                    {/* The name a screen reader hears: "Dinner, Thu 1: Tacos", or "nothing planned"; while the Meals are unknown, just "Dinner, Thu 1". */}
+                    <span className="sr-only">{known ? `${heading}: ` : heading}</span>
+                    {meal ? (
+                      <span className="line-clamp-3 min-w-0 flex-1 wrap-anywhere">{meal.title}</span>
+                    ) : (
+                      known && (
+                        <>
+                          <Plus aria-hidden className="size-[22px]" />
+                          <span className="sr-only">nothing planned</span>
+                        </>
+                      )
+                    )}
+                  </Button>
+                );
+              })}
+            </Fragment>
+          );
+        })}
       </div>
       {editing && (
         <MealSheet
@@ -187,23 +198,26 @@ function MealsGrid({ days }: { days: WallDay[] }) {
   );
 }
 
-// Today's column is marked by an underline and the word "today" for a screen reader, never by its
-// tint alone.
+// A day's heading: the weekday over the date, which is the same 32 px tall on every day so the weekday words share a
+// line. Today says so in words, puts its date in a --primary disc and sits on --muted, so it never rests on a tint alone.
 function DayHeading({ day }: { day: WallDay }) {
+  const { name, short } = WEEKDAYS[day.weekday]!;
+  const date = Number(day.date.slice(8));
   return (
     <h3
       aria-current={day.isToday ? 'date' : undefined}
-      className={`border-l border-border px-2 py-3 text-center text-2xl font-semibold ${day.isToday ? 'bg-muted underline decoration-4 underline-offset-8' : ''}`}
+      aria-label={`${name} ${date}${day.isToday ? ', today' : ''}`}
+      className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[14px] font-normal ${day.isToday ? 'bg-muted' : ''}`}
     >
-      {dayLabel(day)}
-      {day.isToday && <span className="sr-only"> (today)</span>}
+      <span className={`text-sm leading-[18px] ${day.isToday ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{day.isToday ? 'Today' : short}</span>
+      <span className={`flex h-8 items-center justify-center font-display text-[22px] leading-none ${day.isToday ? 'size-8 rounded-full bg-primary text-primary-foreground' : ''}`}>{date}</span>
     </h3>
   );
 }
 
-// Plans one cell, or clears it: a small sheet with one text field. Focus moves onto the field on
-// open, so the tablet's keyboard comes up at once, and back to the cell on close; Escape and the
-// backdrop close it without writing. A blank field is a clear.
+// Plans one cell, or clears it: a small sheet on the scrim with one text field, in the look of the Add event sheet.
+// Focus moves onto the field on open, so the tablet's keyboard comes up at once, and back to the cell on close;
+// Close, Cancel, Escape and the scrim close it without writing. A blank field is a clear.
 function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
   const dialog = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -265,30 +279,35 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
         noValidate
         onSubmit={submit}
         onKeyDown={(event) => dialogKeys(event, close)}
-        className="flex w-full max-w-lg flex-col gap-5 rounded-3xl bg-card p-6 outline-none"
+        className="flex w-full max-w-lg flex-col gap-[18px] rounded-[28px] bg-card p-6 outline-none"
       >
-        <h2 id="meal-sheet-title" className="text-3xl font-semibold">
-          {editing.heading}
-        </h2>
-        <label className="flex flex-col gap-2 text-lg">
-          Meal
-          <input ref={input} className={field} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+        <div className="flex h-12 items-center justify-between gap-4">
+          <h2 id="meal-sheet-title" className="font-display text-[30px] leading-9">
+            {editing.heading}
+          </h2>
+          <Button variant="quiet" aria-label="Close" className="size-12 rounded-full p-0" disabled={busy} onClick={close}>
+            <X aria-hidden className="size-[26px]" strokeWidth={2.2} />
+          </Button>
+        </div>
+        <label className="flex flex-col gap-2">
+          <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
+          <input ref={input} className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
         </label>
         <p role="alert" className="min-h-6 text-lg empty:hidden">
           {problem}
         </p>
-        <div className="flex flex-wrap gap-3">
-          <button type="submit" className={`${action} bg-primary text-primary-foreground disabled:opacity-40`} disabled={busy}>
-            Save
-          </button>
+        <div className="flex flex-wrap items-center justify-end gap-3">
           {editing.meal && (
-            <button type="button" className={quiet} disabled={busy} onClick={() => void write('')}>
+            <Button className="mr-auto h-14 px-6 text-[17px]" disabled={busy} onClick={() => void write('')}>
               Clear
-            </button>
+            </Button>
           )}
-          <button type="button" className={quiet} disabled={busy} onClick={close}>
+          <Button variant="quiet" className="h-14 px-6 text-[17px]" disabled={busy} onClick={close}>
             Cancel
-          </button>
+          </Button>
+          <Button type="submit" variant="primary" className="h-14 min-w-32 px-6 text-[17px]" disabled={busy}>
+            Save
+          </Button>
         </div>
       </form>
     </div>
