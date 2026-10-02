@@ -1,8 +1,9 @@
 import { Cloud } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
-import { Card, Field, fieldClass, labelClass } from '@/components/phone';
+import { Card, Field, Problem, fieldClass, labelClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHouseholdWeather, type Household } from '@/lib/household';
+import { useWriteProblem } from '@/lib/use-write-problem';
 import { describePlaces, searchPlaces, type PlaceMatch, type TemperatureUnit, type WeatherPlace } from '@/lib/weather';
 
 const UNITS: { value: TemperatureUnit; label: string }[] = [
@@ -12,8 +13,9 @@ const UNITS: { value: TemperatureUnit; label: string }[] = [
 
 // The search says how it went, in words, under the button that started it.
 type SearchStatus = 'idle' | 'searching' | 'found' | 'none' | 'failed';
-// What the last save did: nothing yet (or the next one has started), it landed, or it did not.
-type SaveStatus = 'idle' | 'saved' | 'failed';
+// Where a save that failed says so: in the search that opened it (a place, or the weather turned off), or under the units.
+const PANEL = 'weather-panel';
+const UNIT = 'weather-unit';
 
 // What a search found is said by its count, so a screen reader hears that the list is there. A tap on a place uses it.
 const foundWords = (count: number) => `${count} ${count === 1 ? 'place' : 'places'} found. Tap one to use it.`;
@@ -35,8 +37,12 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
   const [searchStatus, setSearchStatus] = useState<SearchStatus>('idle');
   // The unit being saved shows as chosen at once; it goes back to the saved one if the save fails.
   const [savingUnit, setSavingUnit] = useState<TemperatureUnit | null>(null);
+  // One save at a time. The ref is the guard; the state is what is drawn: a button that is busy is `aria-disabled` and does nothing,
+  // never `disabled`, which would drop the focus to the page. What a save that failed says is said at once, where it was made.
+  const working = useRef(false);
   const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [landed, setLanded] = useState(false);
+  const problems = useWriteProblem();
   const changeButton = useRef<HTMLButtonElement>(null);
   // Which search is the latest, so that an answer that comes after the search was closed, or after a newer one began, is let go.
   const latestSearch = useRef(0);
@@ -52,6 +58,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
 
   function close() {
     latestSearch.current += 1;
+    problems.clear(PANEL);
     setChanging(false);
     setQuery('');
     setMatches([]);
@@ -61,7 +68,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
   async function search(event: FormEvent) {
     event.preventDefault();
     const name = query.trim();
-    if (name === '') return;
+    if (name === '' || searchStatus === 'searching' || saving) return;
     const mine = ++latestSearch.current;
     setSearchStatus('searching');
     // Matches from an earlier search are gone from the moment a new one starts.
@@ -78,18 +85,22 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
 
   // Writes a place (or none, which turns the weather off) with a unit; true once it is saved. One save at a time, so a slow
   // answer can never land after a newer one.
-  async function save(weather: WeatherPlace | null, nextUnit: TemperatureUnit): Promise<boolean> {
-    if (saving) return false;
+  async function save(place: string, weather: WeatherPlace | null, nextUnit: TemperatureUnit): Promise<boolean> {
+    if (working.current) return false;
+    working.current = true;
     setSaving(true);
-    setSaveStatus('idle');
+    setLanded(false);
     try {
       onSaved(await updateHouseholdWeather(household.id, weather, nextUnit));
-      setSaveStatus('saved');
+      // The place and the unit are saved together, and say so on one line: what either said before is old.
+      problems.clear();
+      setLanded(true);
       return true;
-    } catch {
-      setSaveStatus('failed');
+    } catch (error) {
+      problems.fail(place, error);
       return false;
     } finally {
+      working.current = false;
       setSaving(false);
     }
   }
@@ -97,7 +108,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
   // A place that is saved closes the search and puts the focus back on the button that opened it: the button just
   // pressed goes with the list.
   async function usePlace(weather: WeatherPlace | null) {
-    if (await save(weather, unit)) {
+    if (await save(PANEL, weather, unit)) {
       close();
       changeButton.current?.focus();
     }
@@ -106,7 +117,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
   async function chooseUnit(next: TemperatureUnit) {
     if (saving || next === household.temperature_unit) return;
     setSavingUnit(next);
-    await save(saved, next);
+    await save(UNIT, saved, next);
     setSavingUnit(null);
   }
 
@@ -133,7 +144,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
             <Field label="Town or city">
               <input className={fieldClass} enterKeyHint="search" autoComplete="off" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} required />
             </Field>
-            <Button type="submit" variant="secondary" size="phone" disabled={searchStatus === 'searching' || saving}>
+            <Button type="submit" variant="secondary" size="phone" aria-disabled={searchStatus === 'searching' || saving || undefined}>
               Search
             </Button>
           </form>
@@ -144,7 +155,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
             <ul aria-label="Places found" className="flex flex-col gap-2">
               {options.map((option, index) => (
                 <li key={index}>
-                  <Button variant="secondary" className="h-auto min-h-14 w-full justify-start py-2 text-left font-medium whitespace-normal [overflow-wrap:anywhere]" disabled={saving} onClick={() => void usePlace(option)}>
+                  <Button variant="secondary" className="h-auto min-h-14 w-full justify-start py-2 text-left font-medium whitespace-normal [overflow-wrap:anywhere]" aria-disabled={saving || undefined} onClick={() => void usePlace(option)}>
                     {option.place}
                   </Button>
                 </li>
@@ -152,10 +163,11 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
             </ul>
           )}
           {saved && (
-            <Button variant="quiet" size="phone" disabled={saving} onClick={() => void usePlace(null)}>
+            <Button variant="quiet" size="phone" aria-disabled={saving || undefined} onClick={() => void usePlace(null)}>
               Turn weather off
             </Button>
           )}
+          <Problem id={`problem-${PANEL}`} problem={problems.at(PANEL)} />
         </div>
       )}
 
@@ -165,7 +177,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
         </span>
         <div role="group" aria-labelledby="units-label" className="grid h-14 grid-cols-2 gap-2 rounded-2xl bg-muted p-1">
           {UNITS.map(({ value, label }) => (
-            <Button key={value} variant="quiet" aria-pressed={unit === value} className="h-12 rounded-xl px-2 text-base font-medium" onClick={() => void chooseUnit(value)}>
+            <Button key={value} variant="quiet" aria-pressed={unit === value} aria-disabled={saving || undefined} className="h-12 rounded-xl px-2 text-base font-medium" onClick={() => void chooseUnit(value)}>
               {label}
             </Button>
           ))}
@@ -173,8 +185,8 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
         {/* The status line is there from the start, so a screen reader has it before it speaks, and is one line tall whichever of
             the two says something, so nothing below moves. */}
         <div className="min-h-6 text-base">
-          <p role="status">{saveStatus === 'saved' && 'Saved.'}</p>
-          {saveStatus === 'failed' && <p role="alert">Could not save. Try again.</p>}
+          <p role="status">{landed && 'Saved.'}</p>
+          <Problem id={`problem-${UNIT}`} problem={problems.at(UNIT)} />
         </div>
       </div>
 

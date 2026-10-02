@@ -1,13 +1,14 @@
 import { LogOut } from 'lucide-react';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { AppearanceSection } from '@/AppearanceSection';
 import { DevicesSection } from '@/DevicesSection';
 import { ProfilesSection } from '@/ProfilesSection';
 import { WeatherSection } from '@/WeatherSection';
-import { Card, Field, PhonePage, cardClass, fieldClass, helpClass } from '@/components/phone';
+import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import { timezoneOptions } from '@/lib/timezones';
+import { useWriteProblem } from '@/lib/use-write-problem';
 
 type Props = { household: Household; onSaved: (household: Household) => void; onSignOut: () => void };
 
@@ -16,20 +17,40 @@ type Props = { household: Household; onSaved: (household: Household) => void; on
 export function SettingsPage({ household, onSaved, onSignOut }: Props) {
   const [name, setName] = useState(household.name);
   const [timezone, setTimezone] = useState(household.timezone);
-  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const [saved, setSaved] = useState(false);
+  // What a save that did not go through says (the Wall's two sentences; "Check the name" only when the database refused the name), at
+  // once, under the button. One save at a time: while it is on its way Save is `aria-disabled` and does nothing, never `disabled`,
+  // which would drop the focus to the page.
+  const problems = useWriteProblem();
+  const working = useRef(false);
+  const [busy, setBusy] = useState(false);
   // About four hundred zones, each named: drawn once for a zone and not again at every key typed in the name.
   const zones = useMemo(() => timezoneOptions(household.timezone), [household.timezone]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    setStatus('saving');
+    if (working.current) return;
+    working.current = true;
+    setBusy(true);
+    setSaved(false);
     try {
       onSaved(await updateHousehold(household.id, { name: name.trim(), timezone }));
-      setStatus('saved');
-    } catch {
-      setStatus('failed');
+      problems.clear('household');
+      setSaved(true);
+    } catch (error) {
+      problems.fail('household', error, { refusal: 'Could not save. Check the name and try again.' });
+    } finally {
+      working.current = false;
+      setBusy(false);
     }
   }
+
+  const problem = problems.at('household');
+  // What was said is old once either field changes.
+  const edited = () => {
+    setSaved(false);
+    problems.clear();
+  };
 
   return (
     <PhonePage title="Household settings">
@@ -42,10 +63,12 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
-                setStatus('idle');
+                edited();
               }}
               maxLength={100}
               required
+              aria-invalid={problem?.refused || undefined}
+              aria-describedby={problem?.refused ? 'problem-household' : undefined}
             />
           </Field>
           <div className="flex flex-col gap-2">
@@ -55,7 +78,7 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
                 value={timezone}
                 onChange={(e) => {
                   setTimezone(e.target.value);
-                  setStatus('idle');
+                  edited();
                 }}
               >
                 {zones.map((zone) => (
@@ -70,12 +93,12 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
           {/* The line for what the save did is there from the start, so a screen reader has it before it speaks, and is one line
               tall whichever it says, so nothing below moves. */}
           <div className="flex flex-col gap-2">
-            <Button type="submit" variant="primary" size="phone" disabled={status === 'saving'}>
+            <Button type="submit" variant="primary" size="phone" aria-disabled={busy || undefined}>
               Save
             </Button>
             <div className="min-h-6 text-base">
-              <p role="status">{status === 'saved' && 'Saved.'}</p>
-              {status === 'failed' && <p role="alert">Could not save. Check the name and try again.</p>}
+              <p role="status">{saved && 'Saved.'}</p>
+              <Problem id="problem-household" problem={problem} />
             </div>
           </div>
         </form>
