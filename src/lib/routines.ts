@@ -55,6 +55,9 @@ export const TIME_OF_DAY_GROUPS: readonly { value: TimeOfDay | null; label: stri
 
 const columns = 'id, profile_id, title, days_of_week, time_of_day, sort_order, archived_at';
 
+// What every screen that shows Routines listens to: a change to any of these tables reads them again.
+export const ROUTINE_TABLES = ['routines', 'routine_completions', 'profiles'] as const;
+
 // ---- Pure helpers -------------------------------------------------------------
 
 export function maskOf(weekdays: readonly number[]): number {
@@ -137,6 +140,68 @@ export function tapFinishesProfile(routines: Routine[], doneBefore: ReadonlySet<
   const before = routineProgress(routines, doneBefore);
   const after = routineProgress(routines, new Set(doneBefore).add(routineId));
   return before.done < before.total && after.done === after.total;
+}
+
+// The ids of the Profiles whose Routines today are all done, the ones that read "All done". A Profile
+// with no Routines today is not among them.
+export function finishedProfiles(groups: readonly ProfileRoutines[], doneIds: ReadonlySet<string>): Set<string> {
+  return new Set(
+    groups
+      .filter(({ routines }) => {
+        const { done, total } = routineProgress(routines, doneIds);
+        return total > 0 && done === total;
+      })
+      .map(({ profile }) => profile.id),
+  );
+}
+
+// ---- The celebration ------------------------------------------------------------------------
+
+// One burst of confetti over a Profile's group. Its id is new for each burst, so a Profile that finishes
+// twice plays it again, and the landing of an older burst ends nothing. `at` is how far down the group (px)
+// the Routine that finished the Profile is: where the burst starts.
+export type Burst = { id: number; at: number };
+
+// The bursts playing on one screen, by Profile id; the Household day they started on; and how many have
+// been started, which is where the next id comes from.
+export type Celebration = { day: string | null; bursts: Readonly<Record<string, Burst>>; issued: number };
+
+export const noCelebration: Celebration = { day: null, bursts: {}, issued: 0 };
+
+export type CelebrationEvent =
+  // A tap on this screen finished the Profile; the Routine tapped is `at` px down its group.
+  | { type: 'finished'; profileId: string; day: string; at: number }
+  // The last piece of the Profile's burst `id` landed.
+  | { type: 'landed'; profileId: string; id: number }
+  // What the screen shows now: the Household day, and the Profiles whose groups are on it and all done.
+  | { type: 'shown'; day: string | null; finished: ReadonlySet<string> };
+
+const withoutBursts = (state: Celebration, profileIds: string[]): Celebration => ({
+  ...state,
+  bursts: Object.fromEntries(Object.entries(state.bursts).filter(([id]) => !profileIds.includes(id))),
+});
+
+// The life of the bursts on one screen, so that a burst is only ever over a group that is on the screen
+// and finished, on the day it began. A tap that finishes a Profile starts its burst, and its last piece
+// landing ends it. The screen says what it shows after every change, and a burst whose Profile is no longer
+// finished (an untick, a tick put back), whose group has left the screen, or that began on another
+// Household day is gone: it never comes back when a group does, and nothing falls over "2 of 3".
+export function celebrate(state: Celebration, event: CelebrationEvent): Celebration {
+  switch (event.type) {
+    case 'finished': {
+      const issued = state.issued + 1;
+      // A burst left from another day is not this tap's to keep.
+      const kept = event.day === state.day ? state.bursts : {};
+      return { day: event.day, bursts: { ...kept, [event.profileId]: { id: issued, at: event.at } }, issued };
+    }
+    case 'landed':
+      return state.bursts[event.profileId]?.id === event.id ? withoutBursts(state, [event.profileId]) : state;
+    case 'shown': {
+      const playing = Object.keys(state.bursts);
+      const gone = event.day === state.day ? playing.filter((id) => !event.finished.has(id)) : playing;
+      return gone.length === 0 ? state : withoutBursts(state, gone);
+    }
+  }
 }
 
 // ---- Household Account writes; Household Account or Device reads ----------------

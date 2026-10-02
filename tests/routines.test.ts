@@ -4,8 +4,10 @@ import {
   TIME_OF_DAY_GROUPS,
   WEEKDAYS,
   archiveRoutine,
+  celebrate,
   completeRoutine,
   createRoutine,
+  finishedProfiles,
   groupByProfile,
   groupByTimeOfDay,
   householdDay,
@@ -14,6 +16,7 @@ import {
   loadRoutines,
   maskOf,
   movedIdsInGroup,
+  noCelebration,
   reorderRoutines,
   routineProgress,
   showsTimeOfDayHeadings,
@@ -22,6 +25,8 @@ import {
   todaysRoutines,
   uncompleteRoutine,
   updateRoutine,
+  type Celebration,
+  type CelebrationEvent,
   type Routine,
 } from '../src/lib/routines';
 import {
@@ -439,6 +444,171 @@ describe('a tap that finishes a Profile', () => {
         }
       }
     }
+  });
+});
+
+describe('the Profiles that are all done', () => {
+  const mom = { id: 'p1', name: 'Mom', color: red, avatar_url: null, sort_order: 0 };
+  const sam = { id: 'p2', name: 'Sam', color: blue, avatar_url: null, sort_order: 1 };
+  const groups = [
+    { profile: mom, routines: [routine({ id: 'a' }), routine({ id: 'b', sort_order: 1 })] },
+    { profile: sam, routines: [routine({ id: 'c', profile_id: 'p2' })] },
+  ];
+
+  it('are the ones with every Routine today ticked', () => {
+    expect([...finishedProfiles(groups, new Set(['a', 'b']))]).toEqual(['p1']);
+    expect([...finishedProfiles(groups, new Set(['c']))]).toEqual(['p2']);
+    expect([...finishedProfiles(groups, new Set(['a', 'b', 'c']))]).toEqual(['p1', 'p2']);
+  });
+
+  it('are none while every Profile has one left, or nothing is ticked', () => {
+    expect(finishedProfiles(groups, new Set()).size).toBe(0);
+    expect(finishedProfiles(groups, new Set(['a'])).size).toBe(0);
+  });
+
+  it('never include a Profile with no Routines today, or count a completion that is not its own', () => {
+    expect(finishedProfiles([], new Set(['a'])).size).toBe(0);
+    expect(finishedProfiles([{ profile: mom, routines: [] }], new Set(['a'])).size).toBe(0);
+    expect([...finishedProfiles(groups, new Set(['a', 'c', 'elsewhere']))]).toEqual(['p2']);
+  });
+});
+
+describe('the celebration of a finished Profile', () => {
+  // Friday night, the first minute of Saturday, and the Monday the Profile's Routines return.
+  const friday = '2026-10-02';
+  const saturday = '2026-10-03';
+  const monday = '2026-10-05';
+  // `at` is how far down its group (px) the Routine that finished the Profile is.
+  const finished = (profileId: string, day = friday, at = 40): CelebrationEvent => ({ type: 'finished', profileId, day, at });
+  const landed = (profileId: string, id: number): CelebrationEvent => ({ type: 'landed', profileId, id });
+  // What the screen shows: the day, and the Profiles whose groups are on it and finished.
+  const shown = (day: string | null, ...profileIds: string[]): CelebrationEvent => ({ type: 'shown', day, finished: new Set(profileIds) });
+  const play = (...events: CelebrationEvent[]): Celebration => events.reduce(celebrate, noCelebration);
+  const celebrating = (state: Celebration) => Object.keys(state.bursts).sort();
+
+  it('starts when a tap finishes a Profile, over that Profile only', () => {
+    const state = play(finished('ava'));
+    expect(celebrating(state)).toEqual(['ava']);
+    expect(celebrating(noCelebration)).toEqual([]);
+  });
+
+  it('plays over two Profiles at once when two finish together', () => {
+    expect(celebrating(play(finished('ava'), finished('ben')))).toEqual(['ava', 'ben']);
+  });
+
+  it('starts where the tapped Routine is in its group, each burst at its own', () => {
+    const state = play(finished('ava', friday, 120), finished('ben', friday, 15));
+    expect(state.bursts.ava!.at).toBe(120);
+    expect(state.bursts.ben!.at).toBe(15);
+  });
+
+  it('starts again where the new tap was when a Profile finishes again', () => {
+    const state = play(finished('ava', friday, 120), finished('ava', friday, 300));
+    expect(state.bursts.ava!.at).toBe(300);
+  });
+
+  it('stays where it started while the screen goes on showing the Profile finished', () => {
+    const state = play(finished('ava', friday, 120));
+    expect(celebrate(state, shown(friday, 'ava')).bursts.ava!.at).toBe(120);
+  });
+
+  it('plays again when a Profile finishes again, as a new burst', () => {
+    const first = play(finished('ava'));
+    const again = celebrate(first, finished('ava'));
+    expect(celebrating(again)).toEqual(['ava']);
+    expect(again.bursts.ava!.id).not.toBe(first.bursts.ava!.id);
+  });
+
+  it('ends when its animation ends', () => {
+    const state = play(finished('ava'), finished('ben'));
+    const ended = celebrate(state, landed('ava', state.bursts.ava!.id));
+    expect(celebrating(ended)).toEqual(['ben']);
+  });
+
+  it('is not ended by the landing of an older burst of the same Profile', () => {
+    const first = play(finished('ava'));
+    const second = celebrate(first, finished('ava'));
+    expect(celebrate(second, landed('ava', first.bursts.ava!.id))).toBe(second);
+  });
+
+  it('is not ended by a landing for a Profile that is not celebrating', () => {
+    const state = play(finished('ava'));
+    expect(celebrate(state, landed('ben', 1))).toBe(state);
+    expect(celebrate(noCelebration, landed('ava', 1))).toBe(noCelebration);
+  });
+
+  it('lasts while its Profile is still finished on the screen, and changes nothing', () => {
+    const state = play(finished('ava'));
+    expect(celebrate(state, shown(friday, 'ava'))).toBe(state);
+    expect(celebrate(state, shown(friday, 'ava', 'ben'))).toBe(state);
+    expect(celebrate(noCelebration, shown(friday, 'ava'))).toBe(noCelebration);
+  });
+
+  it('ends when the Profile is no longer finished, as with an untick, so nothing falls over "2 of 3"', () => {
+    const state = play(finished('ava'), shown(friday, 'ava'));
+    expect(celebrating(celebrate(state, shown(friday)))).toEqual([]);
+  });
+
+  it('ends when a tick is put back after a failed write, whichever tap it was', () => {
+    // Ticked, shown finished, then the write failed and the tick went back.
+    expect(celebrating(play(finished('ava'), shown(friday, 'ava'), shown(friday)))).toEqual([]);
+    // One Profile's tick put back while another Profile's burst plays: only the one that lost its finish ends.
+    expect(celebrating(play(finished('ava'), finished('ben'), shown(friday, 'ava', 'ben'), shown(friday, 'ben')))).toEqual(['ben']);
+  });
+
+  it('is not ended by an earlier tap failing while the Profile stays finished', () => {
+    // Done already, then unticked, then ticked again (a burst). The untick's write now fails and puts its
+    // Routine back: it is ticked either way, the Profile is still finished, and the burst plays on.
+    const state = play(shown(friday, 'ava'), shown(friday), finished('ava'), shown(friday, 'ava'));
+    expect(celebrating(state)).toEqual(['ava']);
+    expect(celebrate(state, shown(friday, 'ava'))).toBe(state);
+  });
+
+  it("ends when its Profile's group leaves the screen, and only that Profile's", () => {
+    const state = play(finished('ava'), finished('ben'));
+    expect(celebrating(celebrate(state, shown(friday, 'ben')))).toEqual(['ben']);
+  });
+
+  it('is cleared for every Profile when the Household day changes', () => {
+    const state = play(finished('ava'), finished('ben'));
+    // Even a Profile the new day's read shows finished does not keep a burst the old day started.
+    expect(celebrating(celebrate(state, shown(saturday, 'ava', 'ben')))).toEqual([]);
+    expect(celebrating(celebrate(state, shown(saturday)))).toEqual([]);
+  });
+
+  it('cannot replay when the group comes back: finished at 23:59:59 on a Friday, gone from Saturday, back on Monday', () => {
+    let state = play(finished('ava', friday));
+    // Midnight: the Profile's Routines are not scheduled for Saturday, so its group leaves the screen.
+    state = celebrate(state, shown(saturday));
+    expect(celebrating(state)).toEqual([]);
+    // Monday: the group comes back unfinished, and later finishes by a tick heard from another screen.
+    state = celebrate(state, shown(monday));
+    state = celebrate(state, shown(monday, 'ava'));
+    expect(celebrating(state)).toEqual([]);
+  });
+
+  it('cannot replay when a group comes back on the same day either', () => {
+    const state = play(finished('ava'), shown(friday), shown(friday, 'ava'));
+    expect(celebrating(state)).toEqual([]);
+  });
+
+  it('does not carry a burst from another day into a new tap', () => {
+    expect(celebrating(play(finished('ava', friday), finished('ben', saturday)))).toEqual(['ben']);
+  });
+
+  it('works on a screen that has no day yet', () => {
+    expect(celebrate(noCelebration, shown(null))).toBe(noCelebration);
+  });
+
+  it('never changes the state or the sets it is given', () => {
+    const frozen = Object.freeze({ day: friday, bursts: Object.freeze({ ava: Object.freeze({ id: 1, at: 0 }) }), issued: 1 });
+    const finishedNow = Object.freeze(new Set(['ava']));
+    expect(() => celebrate(frozen, finished('ben'))).not.toThrow();
+    expect(() => celebrate(frozen, landed('ava', 1))).not.toThrow();
+    expect(() => celebrate(frozen, { type: 'shown', day: friday, finished: finishedNow })).not.toThrow();
+    expect(() => celebrate(frozen, { type: 'shown', day: saturday, finished: finishedNow })).not.toThrow();
+    expect(frozen.bursts.ava.id).toBe(1);
+    expect([...finishedNow]).toEqual(['ava']);
   });
 });
 

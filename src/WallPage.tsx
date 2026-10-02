@@ -17,6 +17,7 @@ import { householdViewAfter, loadHousehold, type Household, type HouseholdView }
 import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useForecast } from './lib/use-forecast';
+import { useRoutinesToday } from './lib/use-routines-today';
 import { useNow } from './lib/wall-hooks';
 import { MealsScreen, TodaysMealsCard } from './MealsPage';
 import { RoutinesChart, RoutinesRail } from './RoutinesPage';
@@ -239,7 +240,7 @@ function NavigationRailEntry({ icon: Icon, label, current = false, className = '
 // entry, opens the Native Event sheet, and is drawn as the primary action. Above it, for a Household
 // Account only, sits the link to Settings: a Device is never offered a way into administration. Its column is its whole
 // width, border and padding included, and must stay at most 90 px: the five day columns at 1280 px need
-// 140 px each. The longest labels still to come (Routines, Settings) fit in it.
+// 140 px each. Its longest labels, Routines and Settings, fit in it.
 function NavigationRail({
   route,
   timezone,
@@ -346,6 +347,9 @@ function HomeShell({ owner }: { owner: boolean }) {
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
   const forecast = useForecast(view.household);
   const weatherOn = view.household !== null && view.household.weather_place !== null;
+  // Today's Routines, read once for as long as the shell lives and handed to the Routines rail on Home and to
+  // the Routines chart, so going from one to the other reads nothing again and a tick in flight is not dropped.
+  const routines = useRoutinesToday(timezone);
 
   const today = timezone ? householdDay(timezone).date : null;
   // The Profile chips are for the calendar screens; a screen that is not one (Routines, Meals) turns them off here.
@@ -378,7 +382,7 @@ function HomeShell({ owner }: { owner: boolean }) {
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
           timezone ? (
-            <RoutinesChart timezone={timezone} />
+            <RoutinesChart routines={routines} />
           ) : (
             // The chart before the Household is read: an empty frame that says so if the read failed, as the Routines rail does.
             <section aria-label="Routines" className="rounded-xl border border-border p-4">
@@ -409,7 +413,7 @@ function HomeShell({ owner }: { owner: boolean }) {
             {timezone && <TodaysMealsCard timezone={timezone} />}
             <div className="grid min-h-[27rem] flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
               {timezone ? (
-                <RoutinesRail timezone={timezone} />
+                <RoutinesRail routines={routines} />
               ) : (
                 <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4">
                   {view.failed && (
