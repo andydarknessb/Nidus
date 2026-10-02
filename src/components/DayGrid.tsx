@@ -131,6 +131,7 @@ function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top:
   return (
     <Button
       variant="quiet"
+      data-event={occurrence.id}
       aria-label={pillName(pill, day, people)}
       onClick={() => onOpen(occurrence)}
       className="absolute h-auto justify-start gap-3 rounded-[14px] px-0 pt-0 pr-2.5 pb-0.5 pl-3.5 text-left font-normal whitespace-normal text-foreground focus-visible:-outline-offset-2 active:bg-transparent"

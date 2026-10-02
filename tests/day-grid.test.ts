@@ -123,6 +123,11 @@ describe('the grid', () => {
     expect(html).toContain('>4:00 to 4:45 PM<');
   });
 
+  it('says which event each block is, so focus can be put back on it when a sheet it opened has closed', () => {
+    const piano = event('Piano', OCT1, '16:00', '17:00');
+    expect(block(grid(plan([piano])), 'Piano')).toContain(`data-event="${piano.id}"`);
+  });
+
   it('pins a Native Event before its title', () => {
     const html = grid(plan([event('Plumber coming', OCT1, '20:00', '21:00', [], { source: 'native', calendar_id: null, calendar_name: 'Nidus' })]));
     expect(count(html, 'data-testid="native-mark"')).toBe(1);

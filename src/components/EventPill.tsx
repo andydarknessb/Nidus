@@ -64,6 +64,7 @@ const holdTime = (time: string) => time.replace(/ ([AP]M)$/, '\u00a0$1');
 // --foreground, drawn over the fill as a shape of its own so the focus ring (the outline) stays free for the keyboard.
 // `className` is for the column that holds a pill it is not drawing: it is still measured. `lines` is how many lines the
 // title may take: two, or one for a row that is exactly one pill tall (the Day view's rows above and below its grid).
+// `data-event` is the event's id, so focus can be put back on its pill when a sheet it opened has closed (lib/focus.ts).
 export function EventPill({
   pill,
   day,
@@ -84,6 +85,7 @@ export function EventPill({
     <Button
       variant="quiet"
       data-pill
+      data-event={occurrence.id}
       data-ended-at={pill.endedAt ?? undefined}
       aria-label={pillName(pill, day, people)}
       onClick={() => onOpen(occurrence)}

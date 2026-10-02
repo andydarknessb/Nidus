@@ -14,6 +14,7 @@ import {
   type WallDay,
 } from '../lib/calendar-occurrences';
 import { emptyRowWords, HOUR_REM, hoursThatFit, planDay } from '../lib/day-view';
+import { focusEvent } from '../lib/focus';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { householdDay } from '../lib/routines';
@@ -161,7 +162,7 @@ export function PagedCalendar({
           profiles={profiles}
         />
       ) : day ? (
-        <DayView key={`${view}:${day.date}`} timezone={timezone} now={now} day={day} version={version} profiles={profiles} returnFocus={() => heading.current?.focus()} />
+        <DayView key={`${view}:${day.date}`} timezone={timezone} now={now} day={day} version={version} profiles={profiles} focusHeading={() => heading.current?.focus()} />
       ) : (
         // The month's cells carry no weather: the spec puts it on the day headings of Home, Day and Week.
         <MonthGrid key={`${view}:${anchor}`} timezone={timezone} today={today} anchor={anchor} window={window} version={version} onOpenDay={(date) => onNavigate('day', date)} profiles={profiles} />
@@ -196,21 +197,22 @@ const FIT_UNTIL_MEASURED = 8;
 // here and decided by planDay) never depend on them. A row with more pills than fit scrolls sideways. Events that overlap sit
 // side by side, two at most; a cluster of more folds into a "+N" in the second lane that opens a list of it. The blocks wait for
 // the Profiles, as the schedule's pills do, and are filled from them. Tapping an event opens its details; after an event is
-// deleted from its sheet, focus goes to the page title (`returnFocus`), not to the page.
+// deleted from its sheet, or moved by an edit, focus goes to its new pill or block, or to the page title (`focusHeading`) if it is
+// not on the day any more, and never to the page (EventSheets).
 function DayView({
   timezone,
   now,
   day,
   version,
   profiles,
-  returnFocus,
+  focusHeading,
 }: {
   timezone: string;
   now: Date;
   day: WallDay;
   version: number;
   profiles: Profile[] | null;
-  returnFocus: () => void;
+  focusHeading: () => void;
 }) {
   // The event tapped and the sheet it opened, and a count of the edits made here, so the read runs again after one.
   const [open, setOpen] = useState<OpenEvent>(null);
@@ -241,20 +243,6 @@ function DayView({
 
   const plan = planDay({ occurrences: loaded ? occurrences : [], day, now, fit });
 
-  // The event a sheet was last opened for: if a read finds it gone (it was deleted from its sheet) while focus has fallen to the
-  // page, focus goes to the page title instead.
-  const opened = useRef<string | null>(null);
-  const change = (next: OpenEvent) => {
-    if (next && next.sheet !== 'cluster') opened.current = next.occurrence.id;
-    setOpen(next);
-  };
-  useEffect(() => {
-    if (open !== null || opened.current === null || occurrences === null) return;
-    if (occurrences.some((occurrence) => occurrence.id === opened.current) || document.activeElement !== document.body) return;
-    opened.current = null;
-    returnFocus();
-  }, [open, occurrences, returnFocus]);
-
   return (
     <section
       aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`}
@@ -265,14 +253,14 @@ function DayView({
           Could not load the calendar. Check your connection.
         </p>
       )}
-      <PillRow label="Earlier" name="All day and earlier" pills={plan.above} day={day} people={people} empty={loaded ? emptyRowWords('earlier', day.isToday) : ''} onOpen={(occurrence) => change({ sheet: 'details', occurrence })} />
+      <PillRow label="Earlier" name="All day and earlier" pills={plan.above} day={day} people={people} empty={loaded ? emptyRowWords('earlier', day.isToday) : ''} onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })} />
       <div ref={room} className="flex min-h-0 flex-1 flex-col gap-2">
         <HourGrid
           plan={plan}
           day={day}
           people={people}
-          onOpen={(occurrence) => change({ sheet: 'details', occurrence })}
-          onFold={(fold) => change({ sheet: 'cluster', day, pills: fold.pills })}
+          onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })}
+          onFold={(fold) => setOpen({ sheet: 'cluster', day, pills: fold.pills })}
         />
         <PillRow
           ref={later}
@@ -282,10 +270,22 @@ function DayView({
           day={day}
           people={people}
           empty={loaded ? emptyRowWords('later', day.isToday) : ''}
-          onOpen={(occurrence) => change({ sheet: 'details', occurrence })}
+          onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })}
         />
       </div>
-      <EventSheets open={open} onChange={change} timezone={timezone} date={day.date} profiles={people} onEdited={() => setEdits((count) => count + 1)} />
+      <EventSheets
+        open={open}
+        onChange={setOpen}
+        timezone={timezone}
+        date={day.date}
+        profiles={people}
+        occurrences={occurrences}
+        onEdited={() => setEdits((count) => count + 1)}
+        // After an event is deleted from its sheet, or moved by an edit: to its new pill or block if it is still on the day, else the title.
+        returnFocus={(occurrence) => {
+          if (!focusEvent(occurrence.id)) focusHeading();
+        }}
+      />
     </section>
   );
 }
