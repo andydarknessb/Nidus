@@ -18,17 +18,20 @@ import {
   holdEndsAt,
   holdShown,
   maskOf,
+  noTickProblems,
   openChart,
   partDone,
   partOfDay,
   partView,
   pickPart,
+  problemsOn,
   todaysRoutines,
   upNext,
   upNextLink,
   type Chart,
   type ProfileRoutines,
   type Routine,
+  type TickProblems,
   type TickedHere,
   type TimeOfDay,
 } from '../src/lib/routines';
@@ -596,45 +599,83 @@ describe("the link in Up next's heading", () => {
 // ---- A tick that did not save --------------------------------------------------------------------------
 
 describe('a tick that did not save', () => {
+  const D1 = '2026-10-01';
+  const D2 = '2026-10-02';
+  // The lines standing on a day, and a tick that did not save, said for a Profile on a day.
+  const says = (problems: TickProblems, day = D1) => problemsOn(problems, day);
+  const failed = (profileId: string, offline = false, from: TickProblems = noTickProblems, day = D1) => afterTick(from, day, profileId, false, offline);
+
   it('says "No internet, so that did not save. Try again soon." when the screen is offline, and "That did not save. Try again." otherwise', () => {
     expect(TICK_OFFLINE).toBe('No internet, so that did not save. Try again soon.');
     expect(TICK_FAILED).toBe('That did not save. Try again.');
-    expect(afterTick({}, 'ava', false, true)).toEqual({ ava: TICK_OFFLINE });
-    expect(afterTick({}, 'ava', false, false)).toEqual({ ava: TICK_FAILED });
+    expect(says(failed('ava', true))).toEqual({ ava: TICK_OFFLINE });
+    expect(says(failed('ava', false))).toEqual({ ava: TICK_FAILED });
+  });
+
+  it('says nothing before a tick has failed', () => {
+    expect(says(noTickProblems)).toEqual({});
   });
 
   it('belongs to the person whose tick it was, and to no one else', () => {
-    const problems = afterTick({}, 'ava', false, false);
-    expect(problems['ben']).toBeUndefined();
-    expect(afterTick(problems, 'ben', false, true)).toEqual({ ava: TICK_FAILED, ben: TICK_OFFLINE });
+    const problems = failed('ava');
+    expect(says(problems)['ben']).toBeUndefined();
+    expect(says(failed('ben', true, problems))).toEqual({ ava: TICK_FAILED, ben: TICK_OFFLINE });
   });
 
   it("goes at that person's next tick that saves", () => {
-    const problems = { ava: TICK_FAILED, ben: TICK_OFFLINE };
-    expect(afterTick(problems, 'ava', true, false)).toEqual({ ben: TICK_OFFLINE });
+    const problems = failed('ben', true, failed('ava'));
+    expect(says(afterTick(problems, D1, 'ava', true, false))).toEqual({ ben: TICK_OFFLINE });
   });
 
   it("is not taken away by another person's tick that saves", () => {
-    const problems = { ava: TICK_FAILED };
-    expect(afterTick(problems, 'ben', true, false)).toBe(problems);
+    const problems = failed('ava');
+    expect(afterTick(problems, D1, 'ben', true, false)).toBe(problems);
   });
 
   it('is said again, in the right words, by a later tick that does not save either', () => {
-    const first = afterTick({}, 'ava', false, true);
-    expect(afterTick(first, 'ava', false, false)).toEqual({ ava: TICK_FAILED });
-    expect(afterTick(afterTick({}, 'ava', false, false), 'ava', false, true)).toEqual({ ava: TICK_OFFLINE });
+    expect(says(failed('ava', false, failed('ava', true)))).toEqual({ ava: TICK_FAILED });
+    expect(says(failed('ava', true, failed('ava', false)))).toEqual({ ava: TICK_OFFLINE });
   });
 
   it('is left alone, as the same object, by a tick that saves when there was nothing to say', () => {
-    const problems = {};
-    expect(afterTick(problems, 'ava', true, true)).toBe(problems);
+    expect(afterTick(noTickProblems, D1, 'ava', true, true)).toBe(noTickProblems);
   });
 
   it('never changes what it is given', () => {
-    const problems = Object.freeze({ ava: TICK_FAILED });
-    expect(() => afterTick(problems, 'ava', true, false)).not.toThrow();
-    expect(() => afterTick(problems, 'ben', false, true)).not.toThrow();
-    expect(problems).toEqual({ ava: TICK_FAILED });
+    const problems = Object.freeze({ day: D1, says: Object.freeze({ ava: TICK_FAILED }) });
+    expect(() => afterTick(problems, D1, 'ava', true, false)).not.toThrow();
+    expect(() => afterTick(problems, D1, 'ben', false, true)).not.toThrow();
+    expect(() => afterTick(problems, D2, 'ben', false, true)).not.toThrow();
+    expect(problems).toEqual({ day: D1, says: { ava: TICK_FAILED } });
+  });
+
+  describe('and its day', () => {
+    it('does not outlive it: a line said on one Household day is gone on the next', () => {
+      const problems = failed('ava', true, failed('ben'));
+      expect(says(problems, D1)).toEqual({ ava: TICK_OFFLINE, ben: TICK_FAILED });
+      expect(says(problems, D2)).toEqual({});
+    });
+
+    it('starts the next day clean: a tick that does not save then says only that, with nothing left of the day before', () => {
+      const yesterday = failed('ava', true, failed('ben'));
+      expect(says(afterTick(yesterday, D2, 'ben', false, false), D2)).toEqual({ ben: TICK_FAILED });
+    });
+
+    it('is not brought back by a tick that saves on the next day', () => {
+      const yesterday = failed('ava');
+      expect(says(afterTick(yesterday, D2, 'ava', true, false), D2)).toEqual({});
+      expect(says(afterTick(yesterday, D2, 'ben', true, false), D2)).toEqual({});
+    });
+
+    it('keeps the day\'s lines while the day goes on', () => {
+      const today = failed('ava');
+      expect(says(afterTick(today, D1, 'ben', false, true), D1)).toEqual({ ava: TICK_FAILED, ben: TICK_OFFLINE });
+    });
+
+    it('belongs to the day the tick was made on, even if it did not save until the next', () => {
+      // A tick begun at 23:59 on D1 that fails at 00:00:03 is said for D1, so it is never shown on D2.
+      expect(says(failed('ava', false, noTickProblems, D1), D2)).toEqual({});
+    });
   });
 });
 

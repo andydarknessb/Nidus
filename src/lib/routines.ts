@@ -302,15 +302,26 @@ export function upNextLink(more: number): { words: string; name: string } {
 export const TICK_FAILED = 'That did not save. Try again.';
 export const TICK_OFFLINE = 'No internet, so that did not save. Try again soon.';
 
-// What each Profile's last tick, if it did not save, says: by Profile id.
-export type TickProblems = Readonly<Record<string, string>>;
+// What each Profile's last tick, if it did not save, says (by Profile id), and the Household day those lines were said on.
+export type TickProblems = { day: string; says: Readonly<Record<string, string>> };
 
-// Said under a person's column, or tile, when their tick did not save, in words for the screen being offline or not; it goes
-// at that person's next tick that saves. Nothing else takes it away: not another person's tick, and not coming back online.
-export function afterTick(problems: TickProblems, profileId: string, saved: boolean, offline: boolean): TickProblems {
-  if (!saved) return { ...problems, [profileId]: offline ? TICK_OFFLINE : TICK_FAILED };
-  if (problems[profileId] === undefined) return problems;
-  return Object.fromEntries(Object.entries(problems).filter(([id]) => id !== profileId));
+export const noTickProblems: TickProblems = { day: '', says: {} };
+
+const noLines: Readonly<Record<string, string>> = {};
+
+// The lines that stand on `day`: a line does not outlive the Household day it was said on, so none from an earlier day.
+export function problemsOn(problems: TickProblems, day: string): Readonly<Record<string, string>> {
+  return problems.day === day ? problems.says : noLines;
+}
+
+// Said under a person's column, or tile, when their tick did not save, in words for the screen being offline or not; `day` is the
+// Household day the tick was made on. It goes at that person's next tick that saves. Nothing else takes it away: not another
+// person's tick, and not coming back online; only the day ending does (problemsOn).
+export function afterTick(problems: TickProblems, day: string, profileId: string, saved: boolean, offline: boolean): TickProblems {
+  const says = problemsOn(problems, day);
+  if (!saved) return { day, says: { ...says, [profileId]: offline ? TICK_OFFLINE : TICK_FAILED } };
+  if (says[profileId] === undefined) return problems;
+  return { day, says: Object.fromEntries(Object.entries(says).filter(([id]) => id !== profileId)) };
 }
 
 // ---- The celebration ------------------------------------------------------------------------

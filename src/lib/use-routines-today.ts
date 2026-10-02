@@ -13,7 +13,9 @@ import {
   loadCompletions,
   loadRoutines,
   noCelebration,
+  noTickProblems,
   partOfDay,
+  problemsOn,
   tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
@@ -46,8 +48,8 @@ export type RoutinesToday = {
   // The part of the day it is in the Household Timezone, which changes the minute a part begins. (UTC's until the
   // Household Timezone is known, which is before anything is read, so nothing shows it.)
   part: TimeOfDay;
-  // What a tick that did not save says, for each Profile whose last tick did not, by Profile id.
-  problems: TickProblems;
+  // What a tick that did not save says, for each Profile whose last tick did not, by Profile id. None from an earlier day.
+  problems: Readonly<Record<string, string>>;
   // The Profiles that have Routines today, each with them, in Profile order.
   groups: ProfileRoutines[];
   // Every Profile that has a Routine on any day, each with the ones scheduled today (none on a day it has none): the chart's
@@ -83,7 +85,7 @@ export function useRoutinesToday(timezone: string | null): RoutinesToday {
   const day = useHouseholdDay(timezone ?? 'UTC');
   const part = usePartOfDay(timezone ?? 'UTC');
   const [loaded, setLoaded] = useState<Today | null>(null);
-  const [problems, setProblems] = useState<TickProblems>({});
+  const [problems, setProblems] = useState<TickProblems>(noTickProblems);
   const [failed, setFailed] = useState(false);
   // Whether the screen is offline when a tick fails, which decides what that tick says: read when it fails, not when it was made.
   const offline = useRef(false);
@@ -136,11 +138,24 @@ export function useRoutinesToday(timezone: string | null): RoutinesToday {
         checking ? completeRoutine(supabase, routine.id, date) : uncompleteRoutine(supabase, routine.id, date),
       );
     const stuck = await (reader.current ? reader.current.write(tap) : tap());
-    setProblems((current) => afterTick(current, routine.profile_id, stuck, offline.current));
+    // Said for the day the tick was made on, so one that fails after midnight is never shown on the new day.
+    setProblems((current) => afterTick(current, date, routine.profile_id, stuck, offline.current));
     return stuck;
   }
 
-  return { date: timezone === null ? null : day.date, loaded: loaded !== null, settled, failed, part, problems, groups, columns, done, finished: finishedProfiles(groups, done), toggle };
+  return {
+    date: timezone === null ? null : day.date,
+    loaded: loaded !== null,
+    settled,
+    failed,
+    part,
+    problems: problemsOn(problems, day.date),
+    groups,
+    columns,
+    done,
+    finished: finishedProfiles(groups, done),
+    toggle,
+  };
 }
 
 // The bursts of confetti playing on one screen, which each screen keeps for itself: celebrate() decides when one starts
