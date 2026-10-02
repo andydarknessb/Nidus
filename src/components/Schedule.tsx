@@ -199,7 +199,7 @@ export function Schedule({
           />
         ))}
       </div>
-      <EventSheets open={open} onChange={setOpen} timezone={timezone} date={days[0]!.date} onEdited={() => setEdits((count) => count + 1)} />
+      <EventSheets open={open} onChange={setOpen} timezone={timezone} date={days[0]!.date} profiles={profiles ?? []} onEdited={() => setEdits((count) => count + 1)} />
     </section>
   );
 }

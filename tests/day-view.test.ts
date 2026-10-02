@@ -3,7 +3,7 @@ import { offsetMs } from '../supabase/functions/_shared/zoned-time.ts';
 import { addDays, dayStartMs, pageDays, type Occurrence, type WallDay } from '../src/lib/calendar-occurrences';
 import type { Profile } from '../src/lib/profiles';
 import { pillPeople } from '../src/lib/schedule';
-import { blockTime, dayView, emptyRowWords, hourWindow, hourWords, hoursThatFit, whoWords, type DayView } from '../src/lib/day-view';
+import { blockTime, emptyRowWords, hourWindow, hourWords, hoursThatFit, planDay, whoWords, type DayPlan } from '../src/lib/day-view';
 
 // The Day view's rules, all pure: how many hours fit, which of them the grid shows, which events go in the row above it (all
 // day, then what ended before its first hour), which in the row below (what starts after its last), where each block sits and
@@ -61,12 +61,12 @@ const TOMORROW = '2026-10-02';
 
 const dayOf = (date: string, timezone: string, now: Date): WallDay => pageDays('day', date, timezone, now)[0]!;
 const titles = (pills: readonly { occurrence: Occurrence }[]) => pills.map((pill) => pill.occurrence.title);
-const shown = (view: DayView) => titles(view.blocks.map((block) => block.pill));
+const shown = (view: DayPlan) => titles(view.blocks.map((block) => block.pill));
 
 // The view of a day: today's (the clock being `now`) or another one, with `fit` hours that fit.
-function view(occurrences: Occurrence[], options: { date?: string; now?: Date; fit?: number; timezone?: string } = {}): DayView {
+function view(occurrences: Occurrence[], options: { date?: string; now?: Date; fit?: number; timezone?: string } = {}): DayPlan {
   const { date = TODAY, now = NOW, fit = 8, timezone = CHICAGO } = options;
-  return dayView({ occurrences, day: dayOf(date, timezone, now), now, fit });
+  return planDay({ occurrences, day: dayOf(date, timezone, now), now, fit });
 }
 const windowOf = (occurrences: Occurrence[], options: { date?: string; now?: Date; fit?: number; timezone?: string } = {}) => {
   const { date = TODAY, now = NOW, fit = 8, timezone = CHICAGO } = options;
@@ -280,6 +280,16 @@ describe('the rows above and below the grid', () => {
     const v = view([review, allDay('School photo day', TODAY, TODAY), standup, allDay('Grandma visiting', TODAY, '2026-10-03')]);
     expect(titles(v.above)).toEqual(['Grandma visiting', 'School photo day', 'Standup', 'Design review']);
     expect(v.above.map((pill) => pill.time)).toEqual(['All day', 'All day', '9:00 AM', '1:00 PM']);
+  });
+
+  it('follow Household dates: an all-day event in Tokyo is on its Tokyo day', () => {
+    const tokyo = 'Asia/Tokyo';
+    // Thu Oct 1 in Tokyo is Wed Sep 30 15:00Z to Thu Oct 1 15:00Z.
+    const holiday = allDay('Holiday', TODAY, TODAY, tokyo);
+    const now = clock(TODAY, '12:00', tokyo);
+    expect(titles(view([holiday], { timezone: tokyo, now }).above)).toEqual(['Holiday']);
+    expect(titles(view([holiday], { date: TOMORROW, timezone: tokyo, now }).above)).toEqual([]);
+    expect(titles(view([holiday], { date: '2026-09-30', timezone: tokyo, now }).above)).toEqual([]);
   });
 
   it('call a timed event that covers the whole day all day, and keep it out of the grid', () => {
@@ -502,6 +512,15 @@ describe('daylight saving days', () => {
     expect(v.nowHour).toBeCloseTo(12);
   });
 
+  it('does not run past the bottom of the day before a skipped midnight', () => {
+    // Santiago's clocks jump from 00:00 to 01:00 on Sun 2026-09-06, so Saturday ends at that jump.
+    const santiago = 'America/Santiago';
+    const now = new Date('2026-09-05T15:00:00Z');
+    const v = view([make('Late', Date.parse('2026-09-06T01:00:00Z'), Date.parse('2026-09-06T05:00:00Z'))], { date: '2026-09-05', now, timezone: santiago, fit: 24 });
+    // 21:00 Saturday (UTC-4 then) to past the jump: the Saturday block ends at 24, not 25.
+    expect(v.blocks[0]).toMatchObject({ topHour: 21, bottomHour: 24 });
+  });
+
   it('puts the row an event belongs in by the wall clock too', () => {
     // 12:30 PM CST on the 25 hour day: the grid is 11 AM to 7 PM, and an event in the repeated hour (00:30 CDT, 05:30Z) ended before it.
     const now = new Date('2026-11-01T18:30:00Z');
@@ -514,7 +533,7 @@ describe('daylight saving days', () => {
 });
 
 describe('overlapping blocks', () => {
-  const lanes = (v: DayView) => Object.fromEntries(v.blocks.map((block) => [block.pill.occurrence.title, [block.lane, block.lanes]]));
+  const lanes = (v: DayPlan) => Object.fromEntries(v.blocks.map((block) => [block.pill.occurrence.title, [block.lane, block.lanes]]));
 
   it('are one lane when alone, and when they only touch', () => {
     const v = view([at('First', TODAY, '16:00', '17:00'), at('Second', TODAY, '17:00', '18:00'), at('Alone', TODAY, '20:00', '21:00')]);

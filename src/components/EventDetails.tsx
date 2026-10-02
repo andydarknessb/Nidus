@@ -1,87 +1,83 @@
-import { Pin } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { CalendarDays, Pin, X } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { describeWhen, type Occurrence } from '../lib/calendar-occurrences';
-import { dialogKeys } from '../lib/dialog';
+import { whoWords } from '../lib/day-view';
+import type { PillPeople } from '../lib/schedule';
+import { EventDiscs, EventFill } from './EventPill';
+import { Sheet } from './Sheet';
+import { Button } from './ui/button';
 
-// The details of one event, over the wall: title, when, where, notes and which calendar it
-// came from. A Synced Event is read-only (it is never edited here); a Native Event says it lives
-// only in Nidus and offers Edit when `onEdit` is given. Focus moves in on open and back to the
-// tapped event on close; Escape, the backdrop and the button all close it.
+// What the sheet says of where an event lives, and so of where to change it: a Synced Event is read-only here and is changed in
+// Google Calendar; a Native Event lives only in Nidus.
+const FROM_GOOGLE = 'From Google Calendar. Change it there.';
+const ADDED_HERE = 'Added here. Not in Google Calendar.';
+
+// The details of one event, over the wall (docs/look.md, Sheets): the title, who it is for (on the event's own fill, with its
+// discs and every name, or "Everyone"), when, where, the notes and, for a Synced Event, which calendar it came from. The foot says
+// where the event lives; a Native Event offers Edit when `onEdit` is given. A Synced Event is read-only: it is never edited
+// here. Focus moves in on open and back to the tapped event on close; Escape, the scrim and the X all close it.
 export function EventDetails({
   occurrence,
   timezone,
+  people,
   onClose,
   onEdit,
 }: {
   occurrence: Occurrence;
   timezone: string;
+  people: PillPeople;
   onClose: () => void;
   onEdit?: () => void;
 }) {
-  const dialog = useRef<HTMLDivElement>(null);
   const native = occurrence.source === 'native';
 
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    dialog.current?.focus();
-    return () => opener?.focus();
-  }, []);
-
   return (
-    <div
-      className="fixed inset-0 z-10 flex items-center justify-center bg-scrim p-8"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="event-details-title"
-        tabIndex={-1}
-        // aria-modal: Tab and Shift+Tab stay inside the sheet instead of reaching the wall behind it.
-        onKeyDown={(event) => dialogKeys(event, onClose)}
-        className="flex max-h-full w-full max-w-3xl flex-col gap-6 overflow-y-auto rounded-3xl bg-card p-8 outline-none"
-      >
-        <header className="flex items-start justify-between gap-6">
-          <h2 id="event-details-title" className="text-4xl font-semibold break-words">
-            {occurrence.title}
-          </h2>
-          <div className="flex shrink-0 gap-3">
-            {native && onEdit && (
-              <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={onEdit}>
-                Edit
-              </button>
-            )}
-            <button type="button" className="min-h-12 rounded-lg border border-border px-6 text-lg font-medium" onClick={onClose}>
-              Close
-            </button>
-          </div>
-        </header>
-        {native && (
-          <p className="flex items-center gap-3 text-xl font-semibold">
-            <Pin aria-hidden className="size-6 shrink-0" />
-            Only in Nidus. It is not in Google Calendar.
-          </p>
+    <Sheet labelledBy="event-details-title" onClose={onClose} className="max-w-[640px]">
+      <header className="flex items-start justify-between gap-4">
+        <h2 id="event-details-title" className="min-w-0 pt-1 font-display text-[30px] leading-9 break-words">
+          {occurrence.title}
+        </h2>
+        <Button variant="quiet" aria-label="Close" onClick={onClose} className="size-12 rounded-full p-0">
+          <X aria-hidden className="size-[26px]" strokeWidth={2.2} />
+        </Button>
+      </header>
+      <dl className="flex flex-col gap-4">
+        <Detail label="Who">
+          {/* The event's own fill and discs, as on the calendar, and every name: nobody is told apart by colour alone. */}
+          <span className="relative flex items-center gap-3 rounded-[18px] py-3 pr-4 pl-3 text-foreground">
+            <EventFill people={people} />
+            <span className="relative flex">
+              <EventDiscs people={people} />
+            </span>
+            <span className="relative min-w-0 font-semibold">{whoWords(people)}</span>
+          </span>
+        </Detail>
+        <Detail label="When">{describeWhen(occurrence, timezone)}</Detail>
+        {occurrence.location && <Detail label="Where">{occurrence.location}</Detail>}
+        {occurrence.description && <Detail label="Notes">{occurrence.description}</Detail>}
+        {!native && <Detail label="Calendar">{occurrence.calendar_name}</Detail>}
+      </dl>
+      <footer className="flex flex-wrap items-center gap-x-3 gap-y-3">
+        <p className="flex min-w-48 flex-1 items-center gap-2 text-[17px] leading-6 font-medium">
+          {native ? <Pin aria-hidden className="size-5 shrink-0" /> : <CalendarDays aria-hidden className="size-5 shrink-0" />}
+          <span>{native ? ADDED_HERE : FROM_GOOGLE}</span>
+        </p>
+        {native && onEdit && (
+          <Button variant="secondary" onClick={onEdit} className="h-14 px-6 text-[17px] font-medium">
+            Edit
+          </Button>
         )}
-        <dl className="flex flex-col gap-5 text-2xl">
-          <Detail label="When">{describeWhen(occurrence, timezone)}</Detail>
-          {occurrence.location && <Detail label="Where">{occurrence.location}</Detail>}
-          {occurrence.description && <Detail label="Notes">{occurrence.description}</Detail>}
-          {!native && <Detail label="Calendar">{occurrence.calendar_name}</Detail>}
-        </dl>
-      </div>
-    </div>
+      </footer>
+    </Sheet>
   );
 }
 
-function Detail({ label, children }: { label: string; children: string }) {
+// A caption over its value. A description from Google may hold markup, which is never rendered: plain text.
+function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <dt className="text-lg font-semibold">{label}</dt>
-      {/* Plain text: a description from Google may hold markup, which is never rendered. */}
-      <dd className="break-words whitespace-pre-wrap">{children}</dd>
+      <dt className="text-[15px] leading-5 text-muted-foreground">{label}</dt>
+      <dd className="text-[19px] leading-7 break-words whitespace-pre-wrap">{children}</dd>
     </div>
   );
 }

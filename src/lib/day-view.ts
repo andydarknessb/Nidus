@@ -86,7 +86,7 @@ export type DayBlock = { pill: Pill; topHour: number; bottomHour: number; lane: 
 // what they take, and `pills` are every event of the cluster, in time order, for the list it opens.
 export type FoldTile = { pills: Pill[]; folded: number; topHour: number; bottomHour: number };
 
-export type DayView = {
+export type DayPlan = {
   window: HourWindow;
   // The row above the grid: the day's all-day events (a timed event that covers the whole day too), then the timed events that
   // ended before the window.
@@ -152,7 +152,7 @@ function assignLanes(slots: Slot[]): { lane: number; lanes: number; cluster: num
 // The Day view of `day`: the window for the `fit` hours that fit, the rows above and below it, the blocks in it and the "+N" of
 // a cluster that is too crowded. `occurrences` are the Household's for the day, after the Profile filter, and `now` is the
 // clock, so the event that is on now is known.
-export function dayView({ occurrences, day, now, fit }: { occurrences: Occurrence[]; day: WallDay; now: Date; fit: number }): DayView {
+export function planDay({ occurrences, day, now, fit }: { occurrences: Occurrence[]; day: WallDay; now: Date; fit: number }): DayPlan {
   const window = hourWindow({ occurrences, day, now, fit });
   const { pills } = scheduleColumns(occurrences, [day], now)[0]!;
   const allDay: Pill[] = [];
