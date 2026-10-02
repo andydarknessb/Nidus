@@ -165,13 +165,18 @@ function useHeight(ref: RefObject<HTMLElement | null>): number | null {
   return height;
 }
 
-// The height of an item's row in each place, from the drawings: 52 px in a card on the Lists screen, 48 px on Home and
-// 56 px on the phone, where every row is.
-const ROW_HEIGHT = { card: 'h-13', home: 'h-12', phone: 'h-14' } as const;
+// How an item's row is drawn in each place, from the drawings. In a card on the Lists screen it is 52 px, and its words may take two
+// lines (the row grows for the second). On Home it is 48 px and the words one line, since its rows are counted by height. On the phone
+// it is at least 56 px and shows the words in full. Words with no space in them break where the row ends.
+const ROW = {
+  card: { box: 'min-h-13 py-2', words: 'line-clamp-2 wrap-anywhere' },
+  home: { box: 'h-12', words: 'truncate' },
+  phone: { box: 'min-h-14 py-2', words: 'wrap-anywhere' },
+} as const;
 
 // One item. The whole row is the button: a tap crosses the item off, another puts it back. To get, it is an empty ring;
 // crossed off, a tick and struck-through words, so it never rests on colour alone.
-function ItemRow({ item, size, onToggle }: { item: ListItem; size: keyof typeof ROW_HEIGHT; onToggle: () => void }) {
+function ItemRow({ item, size, onToggle }: { item: ListItem; size: keyof typeof ROW; onToggle: () => void }) {
   const crossed = item.crossed_at !== null;
   const ring = size === 'home' ? 26 : 28;
   return (
@@ -180,10 +185,10 @@ function ItemRow({ item, size, onToggle }: { item: ListItem; size: keyof typeof 
       aria-pressed={crossed}
       onClick={onToggle}
       // The focus ring is drawn inside the row: its list scrolls, and a scrolling box clips what is drawn outside it.
-      className={`flex w-full shrink-0 items-center gap-3 rounded-[14px] bg-muted px-3 text-left text-[17px] transition-[transform,background-color] duration-75 select-none focus-visible:-outline-offset-2 active:translate-y-0.5 active:bg-accent ${ROW_HEIGHT[size]}`}
+      className={`flex w-full shrink-0 items-center gap-3 rounded-[14px] bg-muted px-3 text-left text-[17px] transition-[transform,background-color] duration-75 select-none focus-visible:-outline-offset-2 active:translate-y-0.5 active:bg-accent ${ROW[size].box}`}
     >
       {crossed ? <Tick size={ring} /> : <EmptyRing size={ring} width={2.5} />}
-      <span className={`min-w-0 flex-1 truncate ${crossed ? 'text-muted-foreground line-through' : ''}`}>{item.text}</span>
+      <span className={`min-w-0 flex-1 ${ROW[size].words} ${crossed ? 'text-muted-foreground line-through' : ''}`}>{item.text}</span>
     </button>
   );
 }
