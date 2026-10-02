@@ -322,7 +322,9 @@ export function ListsScreen() {
 const HOME_ROW_PX = 48;
 const HOME_GAP_PX = 8;
 const HOME_MORE_PX = 48;
-const HOME_CARD = 'flex min-h-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3';
+// min-w-0: the card is a grid item, whose width is otherwise at least that of its widest unwrapped words, so one long item or list
+// name would make the whole right rail, and the page, wider than the screen.
+const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3';
 
 // The Pinned List's card: it is as tall as the right rail leaves it, and shows the items still to get that fit under its field
 // (rowsThatFit), then "and N more", which opens the Lists screen. Crossed-off items are for the Lists screen, until someone clears
