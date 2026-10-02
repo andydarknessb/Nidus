@@ -129,7 +129,7 @@ export function DevicesSection() {
                     id={`unpair-${device.id}`}
                     variant="secondary"
                     size="phone"
-                    className="h-auto min-h-14 py-2 whitespace-normal"
+                    className="h-auto min-h-14 py-2 whitespace-normal [overflow-wrap:anywhere]"
                     onClick={() => setOpen({ id: device.id, confirming: true })}
                   >
                     Unpair {device.name}
@@ -157,7 +157,7 @@ export function DevicesSection() {
               />
             </Field>
             <Field label="Tablet name">
-              <input className={fieldClass} value={pairing.name} onChange={(e) => setPairing({ ...pairing, name: e.target.value })} maxLength={100} placeholder="Kitchen" required />
+              <input className={fieldClass} autoComplete="off" value={pairing.name} onChange={(e) => setPairing({ ...pairing, name: e.target.value })} maxLength={100} placeholder="Kitchen" required />
             </Field>
             <div className="flex gap-2">
               <Button

@@ -33,7 +33,7 @@ export function Card({ title, children }: { title: string; children: ReactNode }
 }
 
 // A field's label sits above it, 15 px, in the secondary words; the field itself is drawn by the base rule in index.css, 56 tall.
-export const labelClass = 'text-[15px] leading-5 text-muted-foreground';
+export const labelClass = 'text-[15px] leading-5 text-muted-foreground break-words';
 export const fieldClass = 'h-14 w-full text-[17px]';
 
 // A line of help under a field or a control, 14 px.
@@ -73,7 +73,7 @@ export function Confirm({
   useEffect(() => heading.current?.focus(), []);
   return (
     <div className="flex flex-col gap-3">
-      <h3 ref={heading} tabIndex={-1} className="text-[17px] leading-6 font-semibold">
+      <h3 ref={heading} tabIndex={-1} className="text-[17px] leading-6 font-semibold break-words">
         {title}
       </h3>
       <p className="text-base leading-6">{words}</p>
@@ -81,7 +81,7 @@ export function Confirm({
         <Button variant="secondary" size="phone" className="flex-1" onClick={onCancel}>
           {cancel}
         </Button>
-        <Button variant="delete" size="phone" className="h-auto min-h-14 flex-[2] py-2 whitespace-normal" disabled={busy} onClick={onConfirm}>
+        <Button variant="delete" size="phone" className="h-auto min-h-14 flex-[2] py-2 whitespace-normal [overflow-wrap:anywhere]" disabled={busy} onClick={onConfirm}>
           {confirm}
         </Button>
       </div>

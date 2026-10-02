@@ -144,7 +144,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
             <ul aria-label="Places found" className="flex flex-col gap-2">
               {options.map((option, index) => (
                 <li key={index}>
-                  <Button variant="secondary" className="h-auto min-h-14 w-full justify-start py-2 text-left font-medium whitespace-normal" disabled={saving} onClick={() => void usePlace(option)}>
+                  <Button variant="secondary" className="h-auto min-h-14 w-full justify-start py-2 text-left font-medium whitespace-normal [overflow-wrap:anywhere]" disabled={saving} onClick={() => void usePlace(option)}>
                     {option.place}
                   </Button>
                 </li>

@@ -201,7 +201,7 @@ export function CalendarAccountsSection() {
             {account.status === 'needs_reauth' && (
               <div className="flex flex-col gap-3">
                 <p className="text-base leading-6">Nothing is lost. Connecting again keeps this account’s calendars and your choices for them.</p>
-                <Button variant="secondary" size="phone" className="h-auto min-h-14 py-2 whitespace-normal" onClick={() => void reconnect(account.google_email)}>
+                <Button variant="secondary" size="phone" className="h-auto min-h-14 py-2 whitespace-normal [overflow-wrap:anywhere]" onClick={() => void reconnect(account.google_email)}>
                   Connect {account.google_email} again
                 </Button>
               </div>
@@ -231,7 +231,7 @@ export function CalendarAccountsSection() {
                 onConfirm={() => void remove(account.id)}
               />
             ) : (
-              <Button id={`remove-${account.id}`} variant="secondary" size="phone" className="h-auto min-h-14 py-2 whitespace-normal" onClick={() => setConfirming(account.id)}>
+              <Button id={`remove-${account.id}`} variant="secondary" size="phone" className="h-auto min-h-14 py-2 whitespace-normal [overflow-wrap:anywhere]" onClick={() => setConfirming(account.id)}>
                 Remove {account.google_email}
               </Button>
             )}

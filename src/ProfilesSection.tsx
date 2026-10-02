@@ -26,7 +26,7 @@ function FormTitle({ draft, title }: { draft: Draft; title: string }) {
   return (
     <div className="flex items-center gap-3">
       <PersonDisc name={draft.name} color={draft.color} size={44} />
-      <h3 className="font-display text-[22px] leading-7">{title}</h3>
+      <h3 className="min-w-0 font-display text-[22px] leading-7 break-words">{title}</h3>
     </div>
   );
 }
@@ -151,6 +151,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                       <Field label="Name">
                         <input
                           className={fieldClass}
+                          autoComplete="off"
                           autoFocus
                           value={editing.draft.name}
                           onChange={(e) => setEditing({ ...editing, draft: { ...editing.draft, name: e.target.value } })}
@@ -197,7 +198,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                       id={controlId(profile.id, 'delete')}
                       variant="quiet"
                       size="phone"
-                      className="h-auto min-h-14 py-2 whitespace-normal"
+                      className="h-auto min-h-14 py-2 whitespace-normal [overflow-wrap:anywhere]"
                       onClick={() => setEditing({ ...editing, deleting: true })}
                     >
                       Delete {profile.name}
@@ -228,7 +229,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
         <form onSubmit={(event) => void add(event)} className="flex flex-col gap-4 border-t border-border pt-4">
           <FormTitle draft={adding} title="New person" />
           <Field label="Name">
-            <input className={fieldClass} autoFocus value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} maxLength={100} required />
+            <input className={fieldClass} autoComplete="off" autoFocus value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} maxLength={100} required />
           </Field>
           <ColorPicker value={adding.color} profiles={profiles ?? []} onChange={(color) => setAdding({ ...adding, color })} />
           <div className="flex gap-2">
