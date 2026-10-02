@@ -86,6 +86,12 @@ export function Confetti({ at, onDone }: { at: number; onDone: () => void }) {
   );
 }
 
+// The words of a tile, whatever they are. A word too long for its line is hyphenated (the page says lang="en") or, where that
+// cannot be done, broken onto the next line, and what is past the last line ends in an ellipsis: no letter is ever cut with
+// nothing to show it. `dir="auto"` on the element sets the direction from the words, so a right-to-left title starts at the
+// right and, when it is cut, is cut at its end; `text-start` follows that direction.
+const WORDS = 'min-w-0 text-start break-words hyphens-auto';
+
 // A Routine's tile (docs/look.md, A Routine tile): the whole tile is the button, 80 px tall, with the picture in a 52 px disc,
 // the words on up to two lines and a 44 px ring. To do, the ring is the person's strong colour; done, the tile is filled
 // with their base colour and shows a tick, and its words stay as they are, not struck through. On the chart it is a card
@@ -127,11 +133,17 @@ export function RoutineTile({
         <RoutinePicture picture={routine.picture} />
       </span>
       {who === undefined ? (
-        <span className={cn('line-clamp-2 min-w-0 flex-1 text-[19px] leading-[1.2]', done ? 'font-semibold' : 'font-medium')}>{routine.title}</span>
+        <span dir="auto" className={cn(WORDS, 'line-clamp-2 flex-1 text-[19px] leading-[1.2]', done ? 'font-semibold' : 'font-medium')}>
+          {routine.title}
+        </span>
       ) : (
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className={cn('truncate text-[19px] leading-6', done ? 'font-semibold' : 'font-medium')}>{routine.title}</span>
-          <span className={cn('text-sm leading-[18px]', !done && 'text-muted-foreground')}>{who}</span>
+          <span dir="auto" className={cn(WORDS, 'line-clamp-2 text-[19px] leading-6', done ? 'font-semibold' : 'font-medium')}>
+            {routine.title}
+          </span>
+          <span dir="auto" className={cn('truncate text-start text-sm leading-[18px]', !done && 'text-muted-foreground')}>
+            {who}
+          </span>
         </span>
       )}
       {done ? <Tick color={color} /> : <EmptyRing color={color} />}
