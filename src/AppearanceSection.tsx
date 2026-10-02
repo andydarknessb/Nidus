@@ -44,7 +44,7 @@ export function AppearanceControl({
         <span id="appearance-label" className="text-[15px] leading-5 text-muted-foreground">
           The Wall looks
         </span>
-        <div role="group" aria-labelledby="appearance-label" aria-describedby="appearance-help" className="grid h-14 grid-cols-3 gap-1 rounded-2xl bg-muted p-1">
+        <div role="group" aria-labelledby="appearance-label" aria-describedby="appearance-help" className="grid h-14 grid-cols-3 gap-2 rounded-2xl bg-muted p-1">
           {OPTIONS.map(({ value, label, Icon }) => (
             <Button key={value} variant="quiet" aria-pressed={chosen === value} className="h-12 rounded-xl px-2 text-base font-medium" onClick={() => onChoose(value)}>
               {Icon && <Icon aria-hidden="true" />}

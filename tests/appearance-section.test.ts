@@ -49,6 +49,12 @@ describe('the Appearance section: the choices', () => {
     }
   });
 
+  it('keeps the choices 8 px apart, as docs/look.md has it, and not 4 as the drawing has it', () => {
+    const group = holding(render(), 'role="group"');
+    expect(group?.attributes).toMatch(/class="[^"]*\bgap-2\b/);
+    expect(group?.attributes).not.toMatch(/class="[^"]*\bgap-1\b/);
+  });
+
   it('is named by its label and described by what Auto does', () => {
     const markup = render();
     expect(holding(markup, 'role="group"')?.attributes).toContain('aria-labelledby="appearance-label"');
