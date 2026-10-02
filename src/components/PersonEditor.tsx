@@ -1,6 +1,8 @@
 import { useId } from 'react';
 import { personStyle } from '@/lib/look';
-import { PROFILE_PALETTE, colorOwners, initialOf, namesInWords, type Profile } from '@/lib/profiles';
+import { PROFILE_PALETTE, colorOwners, initialOf, type Profile } from '@/lib/profiles';
+import { listNames } from '@/lib/schedule';
+import { type Said } from '@/lib/write-failure';
 import { Confirm, Field, fieldClass, helpClass, labelClass } from './phone';
 
 // The parts of the People card that say something to the family (docs/look.md; spec 0003, People): what a person is asked for, the
@@ -12,16 +14,21 @@ import { Confirm, Field, fieldClass, helpClass, labelClass } from './phone';
 // with no Profile (on delete cascade of the join row, and set null), and both read as the whole Household's.
 export const DELETE_PERSON_WORDS = "Their Routines and every tick go. Events only for them, and calendars set to them, become everyone's.";
 
-// What a swatch says of whose it is: the first two initials, and a count past them, so it never carries more than that.
-const initialsOf = (owners: readonly Pick<Profile, 'name'>[]) =>
-  owners
-    .slice(0, 2)
-    .map((owner) => initialOf(owner.name))
-    .join('') + (owners.length > 2 ? `+${owners.length - 2}` : '');
+// What a swatch says of whose it is: the first one's initial, and the count of the others ("C+2"), never more. Each is isolated from
+// the other and from the swatch (<bdi>), so a name written right to left beside a Latin one cannot reorder or spill what is drawn.
+function Owners({ owners }: { owners: readonly Pick<Profile, 'name'>[] }) {
+  const others = owners.length - 1;
+  return (
+    <span aria-hidden="true" className="flex max-w-full items-baseline justify-center gap-px overflow-hidden px-1">
+      <bdi>{initialOf(owners[0]?.name ?? '')}</bdi>
+      {others > 0 && <bdi className="text-[13px]">+{others}</bdi>}
+    </span>
+  );
+}
 
-// The ten colours as a group of radios, five to a row (four where the card is narrower than five 48 px swatches need). Nothing here is told by colour alone: each swatch is named, the chosen one
-// has a ring, and a colour someone already has carries their initial and says whose it is in its name. A colour in use can still
-// be chosen: two children may share one on purpose, and the first free colour is only where a new person starts. `profiles` is
+// The ten colours as a group of radios, five to a row (four where the card is narrower than five 48 px swatches need). Nothing here
+// is told by colour alone: each swatch is named, the chosen one has a ring, and a colour someone already has carries their initial
+// and says whose it is in its name. A colour in use can still be chosen: two children may share one on purpose, and the first free colour is only where a new person starts. `profiles` is
 // everyone, the person being edited included, whose own colour then carries their own initial.
 export function ColorPicker({
   value,
@@ -56,9 +63,9 @@ export function ColorPicker({
                 value={hex}
                 checked={value.toLowerCase() === hex}
                 onChange={() => onChange(hex)}
-                aria-label={owners.length === 0 ? name : `${name}, in use by ${namesInWords(owners.map((owner) => owner.name))}`}
+                aria-label={owners.length === 0 ? name : `${name}, in use by ${listNames(owners.map((owner) => owner.name))}`}
               />
-              {owners.length > 0 && <span aria-hidden="true">{initialsOf(owners)}</span>}
+              {owners.length > 0 && <Owners owners={owners} />}
             </label>
           );
         })}
@@ -71,19 +78,32 @@ export function ColorPicker({
 // What a person is asked for, to be added or to be changed: a name and a colour, and nothing else. There is no picture address.
 export type PersonDraft = { name: string; color: string };
 
+// `problem` is the sentence a failed write said in the form, tied to the name when the database refused the name.
 export function PersonFields({
   draft,
   profiles,
+  problem,
   onChange,
 }: {
   draft: PersonDraft;
   profiles: readonly Pick<Profile, 'id' | 'name' | 'color'>[];
+  problem?: { id: string; refused: boolean } | undefined;
   onChange: (draft: PersonDraft) => void;
 }) {
   return (
     <>
       <Field label="Name">
-        <input className={fieldClass} autoComplete="off" autoFocus value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} maxLength={100} required />
+        <input
+          className={fieldClass}
+          autoComplete="off"
+          autoFocus
+          value={draft.name}
+          onChange={(e) => onChange({ ...draft, name: e.target.value })}
+          maxLength={100}
+          required
+          aria-invalid={problem?.refused || undefined}
+          aria-describedby={problem?.refused ? problem.id : undefined}
+        />
       </Field>
       <ColorPicker value={draft.color} profiles={profiles} onChange={(color) => onChange({ ...draft, color })} />
     </>
@@ -91,6 +111,18 @@ export function PersonFields({
 }
 
 // Before a person is deleted: who, and what goes with them.
-export function DeletePerson({ name, busy = false, onCancel, onDelete }: { name: string; busy?: boolean; onCancel: () => void; onDelete: () => void }) {
-  return <Confirm title={`Delete ${name}?`} words={DELETE_PERSON_WORDS} cancel="Cancel" confirm={`Delete ${name}`} busy={busy} onCancel={onCancel} onConfirm={onDelete} />;
+export function DeletePerson({
+  name,
+  busy = false,
+  problem,
+  onCancel,
+  onDelete,
+}: {
+  name: string;
+  busy?: boolean;
+  problem?: Said | null | undefined;
+  onCancel: () => void;
+  onDelete: () => void;
+}) {
+  return <Confirm title={`Delete ${name}?`} words={DELETE_PERSON_WORDS} cancel="Cancel" confirm={`Delete ${name}`} busy={busy} problem={problem} onCancel={onCancel} onConfirm={onDelete} />;
 }

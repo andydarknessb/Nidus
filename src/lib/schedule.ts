@@ -151,8 +151,8 @@ export function pillPeople(occurrence: Occurrence, profiles: readonly Profile[])
   };
 }
 
-// "Ava", "Ava and Ben", "Cory, Sam and Ava".
-function listNames(names: readonly string[]): string {
+// "Ava", "Ava and Ben", "Cory, Sam and Ava". The phone says people the same way (src/EventsSection.tsx, the colours' names).
+export function listNames(names: readonly string[]): string {
   return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 }
 
