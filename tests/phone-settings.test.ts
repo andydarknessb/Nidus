@@ -4,15 +4,20 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccountSummary as AccountSummaryType, CalendarRow as CalendarRowType } from '../src/CalendarAccountsSection';
 import type { CalendarsPage as CalendarsPageType } from '../src/CalendarsPage';
+import type { EventRow as EventRowType } from '../src/EventsSection';
 import type { SettingsPage as SettingsPageType } from '../src/SettingsPage';
 import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '../src/components/PersonEditor';
-import { UPDATE_FAILED_WORDS, accountStatusText } from '../src/lib/calendar-accounts';
+import { Confirm } from '../src/components/phone';
+import { Button } from '../src/components/ui/button';
+import type { Occurrence } from '../src/lib/calendar-occurrences';
+import { UPDATE_FAILED_WORDS, accountStatusText, shownCalendar, stillPending } from '../src/lib/calendar-accounts';
 import { seenWords } from '../src/lib/device-format';
 import type { Household } from '../src/lib/household';
 import { TOKENS } from '../src/lib/look';
-import { PROFILE_PALETTE, colorOwners, eventPeople, firstFreeColor, namesInWords } from '../src/lib/profiles';
+import { PROFILE_PALETTE, colorOwners, firstFreeColor } from '../src/lib/profiles';
 import { SETTINGS_TABS, settingsLabelOf, settingsPathNow, settingsTabOf } from '../src/lib/settings-tabs';
 import { timezoneName, timezoneOptions } from '../src/lib/timezones';
+import { NOT_SAVED, NOT_SAVED_OFFLINE, isNetworkFailure, isRefusal, writeFailureWords } from '../src/lib/write-failure';
 
 // The phone's settings (spec 0003, Phone settings and People): what is pure about them. The first free colour, the time zone
 // names, the tabs and where each page lives, the words for an account that failed and for a tablet last seen, and the parts the
@@ -73,38 +78,6 @@ describe('whose a colour is', () => {
   it('lists the people who have it, in their order', () => {
     expect(colorOwners([cory, sam, alex], hex(7))).toEqual([cory, alex]);
     expect(colorOwners([cory, sam], hex(0))).toEqual([]);
-  });
-
-  it('names people for a sentence', () => {
-    expect(namesInWords([])).toBe('');
-    expect(namesInWords(['Cory'])).toBe('Cory');
-    expect(namesInWords(['Cory', 'Sam'])).toBe('Cory and Sam');
-    expect(namesInWords(['Cory', 'Sam', 'Ava'])).toBe('Cory, Sam and Ava');
-  });
-});
-
-describe('who an event is for', () => {
-  const [cory, sam, ava] = [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }];
-
-  it('is everyone when it names nobody', () => {
-    expect(eventPeople([], [cory, sam, ava])).toEqual({ everyone: true, people: [] });
-  });
-
-  it('is the people it names, in the order of the people and not of the event', () => {
-    expect(eventPeople(['p3', 'p1'], [cory, sam, ava])).toEqual({ everyone: false, people: [cory, ava] });
-  });
-
-  it('is everyone when it names every person of a Household of two or more', () => {
-    expect(eventPeople(['p2', 'p1', 'p3'], [cory, sam, ava])).toEqual({ everyone: true, people: [] });
-    expect(eventPeople(['p1', 'p2'], [cory, sam])).toEqual({ everyone: true, people: [] });
-  });
-
-  it('is that person when it names the only person of a Household', () => {
-    expect(eventPeople(['p1'], [cory])).toEqual({ everyone: false, people: [cory] });
-  });
-
-  it('is nobody drawn, and not everyone, while the people are not read yet', () => {
-    expect(eventPeople(['p1'], [])).toEqual({ everyone: false, people: [] });
   });
 });
 
@@ -269,11 +242,20 @@ describe('the colours a person can be given', () => {
     expect(radios(render({ value: hex(9) }))[9]?.checked).toBe(true);
   });
 
-  it('shows everyone who has a colour that more than one has', () => {
+  it('names everyone who has a colour that more than one has, and draws the first one and a count', () => {
     const alex = { id: 'p3', name: 'Alex', color: hex(7), avatar_url: null, sort_order: 2 };
     const ben = { id: 'p4', name: 'Ben', color: hex(7), avatar_url: null, sort_order: 3 };
-    expect(radios(render({ profiles: [cory, alex] }))[7]).toMatchObject({ name: 'Blue, in use by Cory and Alex', shown: 'CA' });
-    expect(radios(render({ profiles: [cory, alex, ben] }))[7]).toMatchObject({ name: 'Blue, in use by Cory, Alex and Ben' });
+    expect(radios(render({ profiles: [cory, alex] }))[7]).toMatchObject({ name: 'Blue, in use by Cory and Alex', shown: 'C +1' });
+    expect(radios(render({ profiles: [cory, alex, ben] }))[7]).toMatchObject({ name: 'Blue, in use by Cory, Alex and Ben', shown: 'C +2' });
+  });
+
+  it('isolates the initial and the count from each other and from the swatch, so a name written right to left cannot reorder them', () => {
+    const alex = { id: 'p3', name: 'Alex', color: hex(7), avatar_url: null, sort_order: 2 };
+    const sara = { id: 'p4', name: 'سارة', color: hex(7), avatar_url: null, sort_order: 3 };
+    const markup = render({ profiles: [sara, cory, alex] });
+    expect(markup).toContain('<bdi>س</bdi><bdi class="text-[13px]">+2</bdi>');
+    // And it is held in the swatch: it can neither grow it nor spill out of it.
+    expect(markup).toMatch(/<span aria-hidden="true" class="[^"]*\bmax-w-full\b[^"]*\boverflow-hidden\b/);
   });
 
   it('says what the letters are only when there are any', () => {
@@ -479,6 +461,13 @@ describe('a Calendar Account and its calendars', () => {
     expect(hidden).not.toContain('<select');
   });
 
+  it('says what went wrong under its own row, as an alert, and says nothing otherwise', () => {
+    const failed = renderToStaticMarkup(createElement(CalendarRow, { calendar: family, profiles: members, problem: { words: 'That did not save. Try again.' }, onChange: () => undefined }));
+    expect(failed).toContain('role="alert"');
+    expect(words(failed)).toContain('That did not save. Try again.');
+    expect(row()).not.toContain('role="alert"');
+  });
+
   it('says of an account whose last update failed what Nidus says, and none of what the sync wrote', () => {
     const now = Date.parse('2026-10-01T19:21:00Z');
     const account = { id: 'a1', google_email: 'sam.work@example.com', status: 'active' as const, last_synced_at: '2026-10-01T16:21:00Z', last_error: 'Work: Google answered 500 (backendError)' };
@@ -487,5 +476,250 @@ describe('a Calendar Account and its calendars', () => {
     expect(shown).toContain('Connected, but the last update failed. Nidus tries again every 5 minutes.');
     expect(shown).toContain('Last synced 3 hours ago');
     expect(shown).not.toMatch(/answered|500|backendError|Work/);
+  });
+});
+
+// What a write that did not go through says: the Wall's two sentences, the form's own words for a value the database refused.
+describe('a write that did not go through', () => {
+  // supabase-js hands a fetch that threw back as an error with no code and the browser's own words.
+  const offlineError = { message: 'TypeError: Failed to fetch', details: '', hint: '', code: '' };
+  const serverError = { message: 'permission denied', details: '', hint: '', code: '42501' };
+  const refusal = { message: 'violates check constraint', details: '', hint: '', code: '23514' };
+  const REFUSAL = 'Could not save the person. Check the name and try again.';
+
+  it("says the Wall's two sentences: with no connection, and otherwise", () => {
+    expect(NOT_SAVED).toBe('That did not save. Try again.');
+    expect(NOT_SAVED_OFFLINE).toBe('No internet, so that did not save. Try again soon.');
+    expect(writeFailureWords(serverError, { offline: false })).toBe(NOT_SAVED);
+    expect(writeFailureWords(offlineError, { offline: false })).toBe(NOT_SAVED_OFFLINE);
+    expect(writeFailureWords(new Error('boom'), { offline: false })).toBe(NOT_SAVED);
+  });
+
+  it('knows a request that never got an answer, however the browser words it', () => {
+    for (const message of ['TypeError: Failed to fetch', 'TypeError: Load failed', 'TypeError: NetworkError when attempting to fetch resource.', 'FetchError: network request failed']) {
+      expect(isNetworkFailure({ message, code: '' }), message).toBe(true);
+    }
+    expect(isNetworkFailure(new TypeError('Failed to fetch'))).toBe(true);
+    expect(isNetworkFailure({ name: 'FunctionsFetchError', message: 'Failed to send a request to the Edge Function' })).toBe(true);
+    // An answer, even a refusal, has a code; and what is not an error is not one.
+    expect(isNetworkFailure(serverError)).toBe(false);
+    expect(isNetworkFailure(refusal)).toBe(false);
+    expect(isNetworkFailure({ message: 'Failed to fetch', code: '42501' })).toBe(false);
+    expect(isNetworkFailure(null)).toBe(false);
+    expect(isNetworkFailure('Failed to fetch')).toBe(false);
+  });
+
+  it('says the screen was offline when it was, if the error does not say otherwise', () => {
+    expect(writeFailureWords(new Error('boom'), { offline: true })).toBe(NOT_SAVED_OFFLINE);
+    // The server answered, so there was a connection whatever the screen thought.
+    expect(writeFailureWords(serverError, { offline: true })).toBe(NOT_SAVED);
+  });
+
+  it('keeps "Check the name" for a value the database refused, and only when the form asked to say so', () => {
+    expect(writeFailureWords(refusal, { offline: false, refusal: REFUSAL })).toBe(REFUSAL);
+    expect(writeFailureWords(refusal, { offline: true, refusal: REFUSAL })).toBe(REFUSAL);
+    expect(writeFailureWords(refusal, { offline: false })).toBe(NOT_SAVED);
+    // Not a refusal: no name is to be checked, whatever else is wrong.
+    expect(writeFailureWords(serverError, { offline: false, refusal: REFUSAL })).toBe(NOT_SAVED);
+    expect(writeFailureWords(offlineError, { offline: false, refusal: REFUSAL })).toBe(NOT_SAVED_OFFLINE);
+    expect(isRefusal(refusal)).toBe(true);
+    expect(isRefusal({ code: '22001' })).toBe(true);
+    expect(isRefusal(serverError)).toBe(false);
+    expect(isRefusal(offlineError)).toBe(false);
+  });
+
+  it('names an action that is not a save in both sentences', () => {
+    const said = { failed: 'Could not start connecting to Google. Try again.', offline: 'No internet, so that did not start. Try again soon.' };
+    expect(writeFailureWords(serverError, { offline: false, said })).toBe(said.failed);
+    expect(writeFailureWords(offlineError, { offline: false, said })).toBe(said.offline);
+  });
+
+  it('has no em-dash or en-dash, and no glossary word, in anything it says', () => {
+    for (const sentence of [NOT_SAVED, NOT_SAVED_OFFLINE]) {
+      expect(sentence).not.toMatch(/[–—]/);
+      expect(sentence).not.toMatch(/Profile|Device|Revoke/);
+    }
+  });
+});
+
+// A calendar's switch and its person are sent one at a time, shown at once, and put back if the write fails.
+describe("a calendar's choices, one field at a time", () => {
+  const family = { id: 'c1', calendar_account_id: 'a1', google_calendar_id: 'g1', name: 'Family', color: null, profile_id: null, selected: true };
+
+  it('are shown at once, laid over what is stored', () => {
+    expect(shownCalendar(family, undefined)).toBe(family);
+    expect(shownCalendar(family, { selected: false })).toEqual({ ...family, selected: false });
+    expect(shownCalendar(family, { profile_id: 'p1' })).toEqual({ ...family, profile_id: 'p1' });
+    expect(shownCalendar(family, { selected: false, profile_id: 'p1' })).toEqual({ ...family, selected: false, profile_id: 'p1' });
+  });
+
+  it('stop being pending when they are answered, whether they landed or failed', () => {
+    expect(stillPending({ selected: false }, { selected: false })).toBeUndefined();
+    expect(stillPending({ profile_id: 'p1' }, { profile_id: 'p1' })).toBeUndefined();
+    expect(stillPending({ selected: false, profile_id: 'p1' }, { selected: false })).toEqual({ profile_id: 'p1' });
+  });
+
+  it('stay pending for a field that was asked for again since: it has an answer of its own to wait for', () => {
+    expect(stillPending({ selected: true }, { selected: false })).toEqual({ selected: true });
+    expect(stillPending({ profile_id: null }, { profile_id: 'p1' })).toEqual({ profile_id: null });
+  });
+
+  it('are nothing to answer for a calendar with nothing pending', () => {
+    expect(stillPending(undefined, { selected: true })).toBeUndefined();
+  });
+});
+
+// The question before something is taken away: the three the phone asks (delete a person, unpair a tablet, remove an account).
+describe('the question before something is taken away', () => {
+  const render = (props: Partial<Parameters<typeof Confirm>[0]> = {}) =>
+    renderToStaticMarkup(createElement(Confirm, { title: 'Delete Ava?', words: 'Their Routines go.', cancel: 'Cancel', confirm: 'Delete Ava', onCancel: () => undefined, onConfirm: () => undefined, ...props }));
+  const tag = (markup: string, name: string) => new RegExp(`<button[^>]*>\\s*${name}\\s*</button>`).exec(markup)?.[0] ?? '';
+  const idOf = (markup: string, element: string) => new RegExp(`<${element}[^>]*\\bid="([^"]*)"`).exec(markup)?.[1];
+
+  it('is a group named by its question', () => {
+    const markup = render();
+    const labelledBy = /role="group" aria-labelledby="([^"]*)"/.exec(markup)?.[1];
+    expect(labelledBy).toBeDefined();
+    expect(labelledBy).toBe(idOf(markup, 'h3'));
+  });
+
+  it('has both answers described by what goes, so it is read when the focus lands on the safe one', () => {
+    const markup = render();
+    expect(tag(markup, 'Cancel')).toContain(`aria-describedby="${idOf(markup, 'p')}"`);
+    expect(tag(markup, 'Delete Ava')).toContain(`aria-describedby="${idOf(markup, 'p')}"`);
+  });
+
+  it('lets its buttons shrink, so a name that is one long word breaks inside the word and never reaches past the card', () => {
+    const markup = render({ confirm: `Delete ${'W'.repeat(100)}` });
+    const classes = /<button[^>]*class="([^"]*)"[^>]*>\s*Delete W/.exec(markup)?.[1] ?? '';
+    expect(classes.split(' ')).toContain('shrink');
+    expect(classes.split(' ')).not.toContain('shrink-0');
+    expect(classes).toContain('[overflow-wrap:anywhere]');
+  });
+
+  it('puts the safe answer first, and the one that does it in the delete voice after it', () => {
+    const markup = render();
+    expect(markup.indexOf('>Cancel<')).toBeLessThan(markup.indexOf('>Delete Ava<'));
+    expect(tag(markup, 'Delete Ava')).toMatch(/class="[^"]*\bbg-destructive\b/);
+  });
+
+  it('is aria-disabled on both buttons while its write is on its way, and never disabled, which would drop the focus', () => {
+    const busy = render({ busy: true });
+    expect(tag(busy, 'Cancel')).toContain('aria-disabled="true"');
+    expect(tag(busy, 'Delete Ava')).toContain('aria-disabled="true"');
+    for (const markup of [busy, render()]) expect(markup).not.toMatch(/\sdisabled(=|\s|>)/);
+    expect(tag(render(), 'Cancel')).not.toContain('aria-disabled="');
+  });
+
+  it('says what went wrong under the buttons, as an alert, and tied to the answer it is on', () => {
+    const markup = render({ problem: { words: NOT_SAVED } });
+    expect(markup).toContain('role="alert"');
+    expect(markup.indexOf('>Delete Ava<')).toBeLessThan(markup.indexOf(NOT_SAVED));
+    const problemId = /<p id="([^"]*)" role="alert"/.exec(markup)?.[1];
+    expect(problemId).toBeDefined();
+    expect(tag(markup, 'Cancel')).toContain(problemId!);
+    expect(render()).not.toContain('role="alert"');
+  });
+
+  it('says what went wrong in the question about deleting a person too', () => {
+    const markup = renderToStaticMarkup(createElement(DeletePerson, { name: 'Ava', problem: { words: NOT_SAVED_OFFLINE }, onCancel: () => undefined, onDelete: () => undefined }));
+    expect(words(markup)).toContain(DELETE_PERSON_WORDS);
+    expect(words(markup)).toContain(NOT_SAVED_OFFLINE);
+  });
+});
+
+// A name the database refused is tied to the field that was refused.
+describe('what a person is asked for, after a write did not go through', () => {
+  const render = (problem?: { id: string; refused: boolean }) =>
+    renderToStaticMarkup(createElement(PersonFields, { draft: { name: ' ', color: hex(2) }, profiles: [], problem, onChange: () => undefined }));
+  const nameField = (markup: string) => /<input(?![^>]*type="radio")[^>]*>/.exec(markup)?.[0] ?? '';
+
+  it('ties the sentence to the name when the name was refused', () => {
+    const field = nameField(render({ id: 'problem-add', refused: true }));
+    expect(field).toContain('aria-invalid="true"');
+    expect(field).toContain('aria-describedby="problem-add"');
+  });
+
+  it('does not call the name wrong when the trouble was the connection or the server', () => {
+    const field = nameField(render({ id: 'problem-add', refused: false }));
+    expect(field).not.toContain('aria-invalid');
+    expect(field).not.toContain('aria-describedby');
+    expect(nameField(render())).not.toContain('aria-invalid');
+  });
+});
+
+// Who an event is for, on the phone's list of the events added in Nidus: the schedule's rule (pillPeople), read as words.
+describe("the phone's list of events", () => {
+  let EventRow: typeof EventRowType;
+  beforeAll(async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+    ({ EventRow } = await import('../src/EventsSection'));
+  });
+
+  const family = [
+    { id: 'p-cory', name: 'Cory', color: hex(7), avatar_url: null, sort_order: 0 },
+    { id: 'p-sam', name: 'Sam', color: hex(9), avatar_url: null, sort_order: 1 },
+    { id: 'p-ava', name: 'Ava', color: hex(2), avatar_url: null, sort_order: 2 },
+  ];
+  const crowd = [...family, { id: 'p-ben', name: 'Ben', color: hex(4), avatar_url: null, sort_order: 3 }];
+  const event = (profileIds: string[]): Occurrence => ({
+    source: 'native',
+    id: 'e1',
+    calendar_id: null,
+    calendar_name: 'Nidus',
+    title: 'Plumber coming',
+    description: null,
+    location: null,
+    starts_at: '2026-10-02T19:00:00Z',
+    ends_at: '2026-10-02T20:00:00Z',
+    is_all_day: false,
+    profile_id: profileIds[0] ?? null,
+    color: null,
+    profile_ids: profileIds,
+    colors: [],
+  });
+  const row = (profileIds: string[], profiles = family) => renderToStaticMarkup(createElement(EventRow, { event: event(profileIds), profiles, timezone: 'America/Chicago', onOpen: () => undefined }));
+  const forWords = (markup: string) => /<span class="sr-only">([^<]*)<\/span>/.exec(markup)?.[1]?.replace(/<!-- -->/g, '');
+
+  it('says who an event is for, as the schedule does', () => {
+    expect(forWords(row([]))).toBe('For everyone');
+    expect(forWords(row(['p-ava']))).toBe('For Ava');
+    expect(forWords(row(['p-ava', 'p-cory']))).toBe('For Cory and Ava');
+    expect(forWords(row(['p-cory', 'p-sam', 'p-ava']))).toBe('For everyone');
+    expect(forWords(row(['p-cory', 'p-sam'], crowd))).toBe('For Cory and Sam');
+  });
+
+  it("draws the Wall pill's own discs: the house, a disc for one or two, a disc and a count for more", () => {
+    expect(row([])).toContain('bg-primary');
+    expect(words(row(['p-ava']))).toContain('A');
+    expect(words(row(['p-cory', 'p-ava']))).toMatch(/\bC\b.*\bA\b/);
+    expect(words(row(['p-cory', 'p-sam', 'p-ava'], crowd))).toContain('+2');
+  });
+
+  it('puts the pin before the title of a Native Event, and the time under it', () => {
+    const markup = row([]);
+    expect(markup.indexOf('<svg')).toBeLessThan(markup.indexOf('Plumber coming'));
+    expect(words(markup)).toMatch(/Plumber coming.*Fri, Oct 2/);
+  });
+});
+
+// Nothing the phone's pages draw that has, or may have, the focus is ever `disabled`: a button that is disabled while it has focus
+// drops it to the page. A busy one is `aria-disabled` and its handler ignores the press (the Button draws both the same).
+describe("the phone's buttons", () => {
+  const files = ['AdminApp', 'SettingsPage', 'ProfilesSection', 'WeatherSection', 'DevicesSection', 'CalendarAccountsSection', 'EventsSection', 'components/phone', 'components/PersonEditor'];
+  const source = (file: string) => readFileSync(new URL(`../src/${file}.tsx`, import.meta.url), 'utf8').replace(/\s+/g, ' ');
+
+  it('are never `disabled` where the person has pressed them', () => {
+    for (const file of files) expect(source(file), file).not.toMatch(/<Button\b[^>]*\sdisabled[=\s>{]/);
+  });
+
+  it('draw a busy button as a switched off one, which does nothing when it is tapped and keeps the focus', () => {
+    const markup = renderToStaticMarkup(createElement(Button, { 'aria-disabled': true }, 'Save'));
+    expect(markup).toContain('aria-disabled="true"');
+    expect(markup).toMatch(/\baria-disabled:opacity-40\b/);
+    // It still takes a tap, which only keeps the focus where it was: pointer events off would hand the tap to what is under it.
+    expect(markup).not.toMatch(/\baria-disabled:pointer-events-none\b/);
+    expect(markup).not.toMatch(/\sdisabled(=|\s|>)/);
   });
 });

@@ -93,20 +93,6 @@ export function colorOwners<T extends { color: string }>(profiles: readonly T[],
   return profiles.filter((profile) => profile.color.toLowerCase() === hex.toLowerCase());
 }
 
-// Names as a sentence has them: "Cory", "Cory and Sam", "Cory, Sam and Ava".
-export function namesInWords(names: readonly string[]): string {
-  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-}
-
-// Who an event is for, as the phone draws it: the people it names, in the people's own order, or everyone when it names nobody
-// or every person of a Household of two or more (docs/look.md, People). With the people not read yet it draws nobody, which is
-// not everyone.
-export function eventPeople<T extends { id: string }>(profileIds: readonly string[], profiles: readonly T[]): { everyone: boolean; people: T[] } {
-  const named = profiles.filter((profile) => profileIds.includes(profile.id));
-  const everyone = profileIds.length === 0 || (profiles.length >= 2 && named.length === profiles.length);
-  return { everyone, people: everyone ? [] : named };
-}
-
 // ---- Household Account writes; Household Account or Device reads ----------------
 
 export async function loadProfiles(client: SupabaseClient): Promise<Profile[]> {
