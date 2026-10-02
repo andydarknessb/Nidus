@@ -24,6 +24,8 @@ const NO_DAYS: SunDay[] = [];
 // forecast to go on, whether the weather is off or the first read failed.
 export function useForecast(household: Household | null): { forecast: Forecast | null; sun: SunDay[] | null } {
   const [reading, setReading] = useState<Reading | null>(null);
+  // ponytail: a first read that never settles (a WebView without AbortSignal.timeout on a dead connection, see
+  // requestInit) keeps the mode as it was for good, as the spec has it; give that wait a deadline if it is ever seen.
   const [days, setDays] = useState<SunDay[] | null>(null);
   // The clock as of the latest attempt to read, or of the reading in hand turning too old (the timer
   // below): what forecastToShow judges the reading's age against. Failed attempts move it on too.
