@@ -76,12 +76,14 @@ export function createPressGate(holdMs: number = PRESS_HOLD_MS): PressGate {
 }
 
 // What the button says and is called. A row's "More" names what is in the row ("More people"); a column's names whose it is
-// ("More of Ava's routines"), since the word alone would not say which of several columns it moves. The visible word is always
-// in the name, so a name spoken from the screen finds it. At the end the button reads "Back" and returns to the start.
+// ("More of Ava's routines"), since the word alone would not say which of several columns it moves. A row that is marked with its
+// own word at its left end, as the Day view's two are ("Earlier" and "Later"), is `short`: it reads just "More" and is still named
+// for what moves ("More earlier events"). The visible word is always in the name, so a name spoken from the screen finds it. At the
+// end the button reads "Back" and returns to the start.
 export type Words = { text: string; name: string };
 
-export function overflowWords(axis: Axis, of: string): { more: Words; back: Words } {
+export function overflowWords(axis: Axis, of: string, short = false): { more: Words; back: Words } {
   return axis === 'x'
-    ? { more: { text: `More ${of}`, name: `More ${of}` }, back: { text: 'Back', name: `Back to the first ${of}` } }
+    ? { more: { text: short ? 'More' : `More ${of}`, name: `More ${of}` }, back: { text: 'Back', name: `Back to the first ${of}` } }
     : { more: { text: 'More', name: `More of ${of}` }, back: { text: 'Back', name: `Back to the top of ${of}` } };
 }

@@ -18,6 +18,7 @@ import { focusEvent } from '../lib/focus';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { householdDay } from '../lib/routines';
+import { useOverflow } from '../lib/use-overflow';
 import { useNow, useOccurrences } from '../lib/wall-hooks';
 import { forecastDay, type Forecast } from '../lib/weather';
 import { HourGrid, PillRow } from './DayGrid';
@@ -194,11 +195,11 @@ const FIT_UNTIL_MEASURED = 8;
 // The Day view: the hour grid, 3 rem an hour (docs/look.md; spec 0003, Day view). Above it one row holds the day's all-day
 // events and then the timed ones that ended before its first hour; below it one row holds the ones that start after its last.
 // Both rows keep their place whatever they hold, so the hours the grid shows (the whole hours that fit in what is left, measured
-// here and decided by planDay) never depend on them. A row with more pills than fit scrolls sideways. Events that overlap sit
-// side by side, two at most; a cluster of more folds into a "+N" in the second lane that opens a list of it. The blocks wait for
-// the Profiles, as the schedule's pills do, and are filled from them. Tapping an event opens its details; after an event is
-// deleted from its sheet, or moved by an edit, focus goes to its new pill or block, or to the page title (`focusHeading`) if it is
-// not on the day any more, and never to the page (EventSheets).
+// here and decided by planDay) never depend on them. A row with more pills than fit scrolls sideways, and says so with a "More"
+// button beside it (PillRow). Events that overlap sit side by side, two at most; a cluster of more folds into a "+N" in the second
+// lane that opens a list of it. The blocks wait for the Profiles, as the schedule's pills do, and are filled from them. Tapping an
+// event opens its details; after an event is deleted from its sheet, or moved by an edit, focus goes to its new pill or block, or
+// to the page title (`focusHeading`) if it is not on the day any more, and never to the page (EventSheets).
 function DayView({
   timezone,
   now,
@@ -243,6 +244,10 @@ function DayView({
 
   const plan = planDay({ occurrences: loaded ? occurrences : [], day, now, fit });
 
+  // Whether each row holds more than it shows. The buttons sit in the rows' own 52 px, so they never change the room for the grid.
+  const earlierRow = useOverflow('x', 'beside');
+  const laterRow = useOverflow('x', 'beside');
+
   return (
     <section
       aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`}
@@ -253,7 +258,17 @@ function DayView({
           Could not load the calendar. Check your connection.
         </p>
       )}
-      <PillRow label="Earlier" name="All day and earlier" pills={plan.above} day={day} people={people} empty={loaded ? emptyRowWords('earlier', day.isToday) : ''} onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })} />
+      <PillRow
+        label="Earlier"
+        name="All day and earlier"
+        of="earlier events"
+        control={earlierRow}
+        pills={plan.above}
+        day={day}
+        people={people}
+        empty={loaded ? emptyRowWords('earlier', day.isToday) : ''}
+        onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })}
+      />
       <div ref={room} className="flex min-h-0 flex-1 flex-col gap-2">
         <HourGrid
           plan={plan}
@@ -266,6 +281,8 @@ function DayView({
           ref={later}
           label="Later"
           name="Later"
+          of="later events"
+          control={laterRow}
           pills={plan.below}
           day={day}
           people={people}

@@ -38,12 +38,13 @@ const SURFACE: Record<Surface, { fade: string; button: string }> = {
 
 const LABEL = 'col-start-1 row-start-1 flex items-center justify-center gap-1';
 
-// `className` is for the box this draws: the button, in a row; the foot that holds it, in a column.
-export function OverflowButton({ control, of, surface = 'card', className }: { control: OverflowControl; of: string; surface?: Surface; className?: string }) {
+// `className` is for the box this draws: the button, in a row; the foot that holds it, in a column. `short` is for a row that has its
+// own word at its left end (the Day view's "Earlier" and "Later"): the button reads "More" and is still named for what it moves.
+export function OverflowButton({ control, of, surface = 'card', short = false, className }: { control: OverflowControl; of: string; surface?: Surface; short?: boolean; className?: string }) {
   if (!control.overflowing) return null;
   const { axis, atEnd } = control;
   const column = axis === 'y';
-  const words = overflowWords(axis, of);
+  const words = overflowWords(axis, of, short);
   const Onward = column ? ChevronDown : ChevronRight;
   const Backward = column ? ChevronUp : ChevronLeft;
 
