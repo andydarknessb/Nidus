@@ -56,7 +56,8 @@ export type RoutinesToday = {
   done: Set<string>;
   // The Profiles whose Routines today are all done.
   finished: ReadonlySet<string>;
-  toggle: (routine: Routine) => Promise<void>;
+  // Ticks the Routine, or unticks it, and says whether that was saved.
+  toggle: (routine: Routine) => Promise<boolean>;
 };
 
 // The part of the day in `timezone`, drawn again only when a part begins and not on every minute. What was seen for another
@@ -125,7 +126,7 @@ export function useRoutinesToday(timezone: string | null): RoutinesToday {
   const groups = loaded ? groupByProfile(loaded.profiles, todaysRoutines(loaded.routines, day.weekday)) : [];
   const columns = loaded ? columnsOf(loaded.profiles, loaded.routines, day.weekday) : [];
 
-  async function toggle(routine: Routine) {
+  async function toggle(routine: Routine): Promise<boolean> {
     const date = day.date;
     const checking = !done.has(routine.id);
     const publish = (update: (ids: Set<string>) => Set<string>) =>
@@ -136,6 +137,7 @@ export function useRoutinesToday(timezone: string | null): RoutinesToday {
       );
     const stuck = await (reader.current ? reader.current.write(tap) : tap());
     setProblems((current) => afterTick(current, routine.profile_id, stuck, offline.current));
+    return stuck;
   }
 
   return { date: timezone === null ? null : day.date, loaded: loaded !== null, settled, failed, part, problems, groups, columns, done, finished: finishedProfiles(groups, done), toggle };

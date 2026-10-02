@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import { ArrowDown, ArrowUp, Moon, Star, Sun, Sunrise, type LucideIcon } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type Ref } from 'react';
 import { EmptyRing, MAX_PIPS, PersonDisc, Pips, Tick } from './components/people';
 import { Button } from './components/ui/button';
 import type { Household } from './lib/household';
@@ -96,16 +96,20 @@ export function RoutineTile({
   color,
   done = false,
   who,
+  ref,
   onTap,
 }: {
   routine: Routine;
   color: string;
   done?: boolean;
   who?: string;
+  // Called with the button as it appears and with null as it goes (Up next watches that, to keep the keyboard's place).
+  ref?: Ref<HTMLButtonElement>;
   onTap: (button: HTMLElement) => void;
 }) {
   return (
     <button
+      ref={ref}
       type="button"
       aria-pressed={done}
       {...(who === undefined ? {} : { 'aria-label': `Mark ${routine.title} done for ${who}` })}
@@ -173,7 +177,7 @@ function Column({
   held: ReadonlySet<string>;
   // What the last tick of this Profile's that did not save says; empty when it was saved.
   problem: string | undefined;
-  onToggle: (routine: Routine) => Promise<void>;
+  onToggle: (routine: Routine) => Promise<boolean>;
   // Set while a burst plays over this column.
   burst: Burst | undefined;
   // A tap on a Routine here finished the Profile, `at` px down the column; the burst's last piece has landed.
