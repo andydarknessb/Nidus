@@ -130,8 +130,8 @@ describe('the Routines on a person\'s pill', () => {
   });
 
   it('names the pill for a screen reader with the progress, since a button\'s own parts are not read apart', () => {
-    expect(pillOf(html, 'Ava')).toContain('aria-label="Ava, 3 of 5 Routines done"');
-    expect(pillOf(html, 'Cory')).toContain('aria-label="Cory, 1 of 1 Routine done"');
+    expect(pillOf(html, 'Ava')).toContain('aria-label="Ava, 3 of 5 routines done"');
+    expect(pillOf(html, 'Cory')).toContain('aria-label="Cory, 1 of 1 routine done"');
     expect(pillOf(html, 'Sam')).toContain('aria-label="Sam"');
   });
 });

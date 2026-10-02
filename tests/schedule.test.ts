@@ -599,8 +599,8 @@ describe('the words on the people strip', () => {
     expect(person).toMatchObject({ done: 1, total: 2, words: '1 of 2' });
   });
 
-  it('is named for a screen reader with its progress, in the singular for one Routine', () => {
+  it('is named for a screen reader with its progress in plain lower case words, in the singular for one routine', () => {
     const people = stripPeople([AVA, CORY, BEN], [group(AVA, 5), group(CORY, 1)], new Set(ticked('p-ava', 3)));
-    expect(people.map((person) => person.label)).toEqual(['Ava, 3 of 5 Routines done', 'Cory, 0 of 1 Routine done', 'Ben']);
+    expect(people.map((person) => person.label)).toEqual(['Ava, 3 of 5 routines done', 'Cory, 0 of 1 routine done', 'Ben']);
   });
 });

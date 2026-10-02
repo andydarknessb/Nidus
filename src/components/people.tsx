@@ -69,7 +69,7 @@ export const MAX_PIPS = 8;
 
 // Progress: one pip for each of `total`, filled in the person's strong colour for each one `done`, the others a
 // 1.5 px --input ring. It draws nothing for no Routines, or for more than MAX_PIPS: show the count instead. `label` is
-// what a screen reader hears ("Ava: 3 of 5 Routines done").
+// what a screen reader hears ("Ava, 3 of 5 routines done").
 export function Pips({ done, total, label, color, height = 6 }: { done: number; total: number; label: string; color: string; height?: number }) {
   if (total === 0 || total > MAX_PIPS) return null;
   return (

@@ -173,6 +173,7 @@ export function stripPeople(profiles: readonly Profile[], groups: readonly Profi
     const group = groups.find((each) => each.profile.id === profile.id);
     const { done, total } = group ? routineProgress(group.routines, doneIds) : { done: 0, total: 0 };
     const words = total === 0 ? '' : done === total ? 'All done' : `${done} of ${total}`;
-    return { profile, done, total, words, label: total === 0 ? profile.name : `${profile.name}, ${done} of ${total} ${total === 1 ? 'Routine' : 'Routines'} done` };
+    // Plain words for the family: "routines" in lower case ("Ava, 3 of 5 routines done"); the glossary's capitals are for code.
+    return { profile, done, total, words, label: total === 0 ? profile.name : `${profile.name}, ${done} of ${total} ${total === 1 ? 'routine' : 'routines'} done` };
   });
 }
