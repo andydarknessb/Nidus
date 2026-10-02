@@ -362,7 +362,12 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
               <ItemRow key={item.id} item={item} size="home" onToggle={() => void toggle(item)} />
             ))}
             {hidden > 0 && room >= HOME_MORE_PX && (
-              <Button variant="quiet" className="h-12 w-full shrink-0 justify-start rounded-[14px] px-1 text-sm font-medium focus-visible:-outline-offset-2" onClick={onOpenLists}>
+              <Button
+                variant="quiet"
+                aria-label={`and ${hidden} more on ${list.name}. Open lists`}
+                className="h-12 w-full shrink-0 justify-start rounded-[14px] px-1 text-sm font-medium focus-visible:-outline-offset-2"
+                onClick={onOpenLists}
+              >
                 and {hidden} more
               </Button>
             )}
