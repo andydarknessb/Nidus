@@ -54,9 +54,12 @@ function useMeals(from: string, to: string, saves = 0): { meals: Meal[] | null; 
   return read;
 }
 
-// "Thu 1": a day as the grid names it.
+// "Thu 1": a day as the grid names it, and "Thursday 1": the same in full, as a screen reader hears it.
 function dayLabel(day: WallDay): string {
   return `${WEEKDAYS[day.weekday]!.short} ${Number(day.date.slice(8))}`;
+}
+function dayName(day: WallDay): string {
+  return `${WEEKDAYS[day.weekday]!.name} ${Number(day.date.slice(8))}`;
 }
 
 // ---- The Meals screen: a week by slot ------------------------------------------------
@@ -155,7 +158,9 @@ function MealsGrid({ days }: { days: WallDay[] }) {
               </h3>
               {row.cells.map((meal, index) => {
                 const day = days[index]!;
+                // The sheet's title is drawn short; the cell is heard in full.
                 const heading = `${row.label}, ${dayLabel(day)}`;
+                const heard = `${row.label}, ${dayName(day)}`;
                 return (
                   <Button
                     key={day.date}
@@ -165,15 +170,15 @@ function MealsGrid({ days }: { days: WallDay[] }) {
                     // clamped to three lines (the whole of them are in the sheet), an empty slot's plus is in the middle.
                     className={`h-auto min-h-12 min-w-0 rounded-[14px] p-2.5 text-left text-[15px] leading-[19px] font-medium whitespace-normal ${meal ? 'items-start justify-start bg-everyone' : 'text-muted-foreground'}`}
                   >
-                    {/* The name a screen reader hears: "Dinner, Thu 1: Tacos", or "nothing planned"; while the Meals are unknown, just "Dinner, Thu 1". */}
-                    <span className="sr-only">{known ? `${heading}: ` : heading}</span>
+                    {/* The name a screen reader hears: "Dinner, Thursday 1: Tacos", or "Dinner, Thursday 1: nothing planned. Add a meal"; while the Meals are unknown, just "Dinner, Thursday 1". */}
+                    <span className="sr-only">{known ? `${heard}: ` : heard}</span>
                     {meal ? (
                       <span dir="auto" className="line-clamp-3 min-w-0 flex-1 text-start wrap-anywhere">{meal.title}</span>
                     ) : (
                       known && (
                         <>
                           <Plus aria-hidden className="size-[22px]" />
-                          <span className="sr-only">nothing planned</span>
+                          <span className="sr-only">nothing planned. Add a meal</span>
                         </>
                       )
                     )}
@@ -201,12 +206,12 @@ function MealsGrid({ days }: { days: WallDay[] }) {
 // A day's heading: the weekday over the date, which is the same 32 px tall on every day so the weekday words share a
 // line. Today says so in words, puts its date in a --primary disc and sits on --muted, so it never rests on a tint alone.
 function DayHeading({ day }: { day: WallDay }) {
-  const { name, short } = WEEKDAYS[day.weekday]!;
+  const { short } = WEEKDAYS[day.weekday]!;
   const date = Number(day.date.slice(8));
   return (
     <h3
       aria-current={day.isToday ? 'date' : undefined}
-      aria-label={`${name} ${date}${day.isToday ? ', today' : ''}`}
+      aria-label={`${dayName(day)}${day.isToday ? ', today' : ''}`}
       className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[14px] font-normal ${day.isToday ? 'bg-muted' : ''}`}
     >
       <span className={`text-sm leading-[18px] ${day.isToday ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{day.isToday ? 'Today' : short}</span>
