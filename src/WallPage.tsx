@@ -188,7 +188,7 @@ function SyncBadge() {
   const badge = staleSyncBadge(accounts, now);
   if (!badge) return null;
   return (
-    <p role="status" className="rounded-lg border border-border px-4 py-2 text-lg">
+    <p role="status" className="shrink-0 rounded-lg border border-border px-4 py-2 text-lg whitespace-nowrap">
       {badge}
     </p>
   );
@@ -365,15 +365,19 @@ function HomeShell({ owner }: { owner: boolean }) {
         onLists={() => setListsOpen(true)}
         onAdd={() => setAdding(true)}
       />
-      <header className="flex min-h-12 items-center gap-6">
-        <h1 className="min-w-0 truncate text-3xl font-semibold">{name}</h1>
+      {/* At 1280 px the header is 1144 px, and that is all of it. The clock and date, the weather and the
+          badges never shrink and never overlap anything; what is left goes to the Household's name and the
+          Profile chips. The name gives way first (its shrink factor dwarfs the chips'), down to a few
+          letters, and is capped at 15 rem so a long one never claims more than that; only then do the
+          chips scroll inside their own box. The badges sit straight in the header, not in a wrapper, so
+          that with none showing they cost no gap. */}
+      <header className="flex min-h-12 items-center gap-3">
+        <h1 className={`max-w-60 shrink-[1000] truncate text-lg font-semibold ${name ? 'min-w-24' : ''}`}>{name}</h1>
         {timezone && <WallClock timezone={timezone} />}
         {view.household && today && <WeatherNow forecast={forecast} unit={view.household.temperature_unit} today={today} />}
         <ProfileChips filter={filter} pressed={pressed} hidden={!onCalendar} />
-        <div className="ml-auto flex shrink-0 items-center gap-4">
-          <ConnectionBadge />
-          <SyncBadge />
-        </div>
+        <ConnectionBadge compact />
+        <SyncBadge />
       </header>
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
