@@ -7,6 +7,7 @@ import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { HomeRail } from './components/HomeRail';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { NavigationRail } from './components/NavigationRail';
+import { PeopleStrip } from './components/PeopleStrip';
 import { StatusLineProvider } from './components/StatusLine';
 import { WallHeader } from './components/WallHeader';
 import { useChangeTick } from './lib/change-feed';
@@ -263,9 +264,8 @@ function HomeShell({ owner }: { owner: boolean }) {
   const routines = useRoutinesToday(timezone);
 
   const today = timezone ? householdDay(timezone).date : null;
-  // The Profile chips are for the calendar screens; a screen that is not one (Routines, Meals) turns them off here.
-  // They are hidden, not unmounted, so they keep their Profiles.
-  const onCalendar = route.view !== 'meals' && route.view !== 'routines';
+  // The people strip is for the calendar screens (Home, Day, Week and Month), and for no other.
+  const onCalendar = route.view === 'home' || route.view === 'day' || route.view === 'week' || route.view === 'month';
 
   return (
     <main className="grid h-svh grid-cols-[6rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
@@ -281,7 +281,10 @@ function HomeShell({ owner }: { owner: boolean }) {
         onAdd={() => setAdding(true)}
         onToggleMode={toggleMode}
       />
-      <WallHeader household={view.household} today={today} forecast={forecast} filter={filter} pressed={pressed} chipsHidden={!onCalendar} />
+      <div className="flex min-w-0 flex-col gap-3">
+        <WallHeader household={view.household} today={today} forecast={forecast} />
+        {onCalendar && <PeopleStrip profiles={profiles} routines={routines} filter={filter} pressed={pressed} />}
+      </div>
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
           timezone ? (

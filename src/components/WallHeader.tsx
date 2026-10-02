@@ -4,12 +4,10 @@ import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from '../lib/ca
 import { formatClock, formatDate } from '../lib/calendar-occurrences';
 import { useChangeTick } from '../lib/change-feed';
 import type { Household } from '../lib/household';
-import type { ProfileFilter } from '../lib/profile-filter';
 import { supabase } from '../lib/supabase';
 import { useNow } from '../lib/wall-hooks';
 import type { Forecast } from '../lib/weather';
 import { ConnectionBadge } from './ConnectionBadge';
-import { ProfileChips } from './ProfileChips';
 import { WeatherNow } from './Weather';
 
 // How often the wall re-reads how fresh the mirror is, and re-words the badge as time passes.
@@ -77,35 +75,20 @@ function SyncBadge() {
   );
 }
 
-// The Wall's header: the clock, the Household's name over the date, the weather, the Profile chips and the Offline
-// and stale-sync marks. `household` is null until it has been read, `today` is its current Household date (null
-// then too), and `chipsHidden` turns the chips off on a screen that is not a calendar.
+// The Wall's header: the clock, the Household's name over the date, the weather and the Offline and stale-sync marks.
+// `household` is null until it has been read and `today` is its current Household date (null then too).
 //
 // At 1280 px the header is 1136 px. The clock, the date, the weather and the marks never shrink and never overlap
-// anything; what is left goes to the Profile chips, which scroll inside their own box when they do not fit, and
-// the Household's name gives way inside the date's own column. The marks sit straight in the header, not in a
-// wrapper, so that with none showing they cost no gap.
-export function WallHeader({
-  household,
-  today,
-  forecast,
-  filter,
-  pressed,
-  chipsHidden,
-}: {
-  household: Household | null;
-  today: string | null;
-  forecast: Forecast | null;
-  filter: ProfileFilter;
-  pressed: readonly string[];
-  chipsHidden: boolean;
-}) {
+// anything, and the Household's name gives way inside the date's own column. What is left goes to a spacer that keeps
+// the marks at the far right. The marks sit straight in the header, not in a wrapper, so that with none showing
+// they cost no gap.
+export function WallHeader({ household, today, forecast }: { household: Household | null; today: string | null; forecast: Forecast | null }) {
   const timezone = household?.timezone ?? null;
   return (
     <header className="flex h-21 items-center gap-6">
       {timezone && <WallTime name={household?.name ?? ''} timezone={timezone} />}
       {household && today && <WeatherNow forecast={forecast} unit={household.temperature_unit} today={today} />}
-      <ProfileChips filter={filter} pressed={pressed} hidden={chipsHidden} />
+      <div className="min-w-0 flex-auto" />
       <ConnectionBadge compact />
       <SyncBadge />
     </header>
