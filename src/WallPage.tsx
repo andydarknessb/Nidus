@@ -240,7 +240,7 @@ function NavigationRailEntry({ icon: Icon, label, current = false, className = '
 // entry, opens the Native Event sheet, and is drawn as the primary action. Above it, for a Household
 // Account only, sits the link to Settings: a Device is never offered a way into administration. Its column is its whole
 // width, border and padding included, and must stay at most 90 px: the five day columns at 1280 px need
-// 140 px each. The longest labels still to come (Routines, Settings) fit in it.
+// 140 px each. Its longest labels, Routines and Settings, fit in it.
 function NavigationRail({
   route,
   timezone,

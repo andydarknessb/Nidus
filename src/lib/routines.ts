@@ -158,8 +158,9 @@ export function finishedProfiles(groups: readonly ProfileRoutines[], doneIds: Re
 // ---- The celebration ------------------------------------------------------------------------
 
 // One burst of confetti over a Profile's group. Its id is new for each burst, so a Profile that finishes
-// twice plays it again, and the landing of an older burst ends nothing.
-export type Burst = { id: number };
+// twice plays it again, and the landing of an older burst ends nothing. `at` is how far down the group (px)
+// the Routine that finished the Profile is: where the burst starts.
+export type Burst = { id: number; at: number };
 
 // The bursts playing on one screen, by Profile id; the Household day they started on; and how many have
 // been started, which is where the next id comes from.
@@ -168,8 +169,8 @@ export type Celebration = { day: string | null; bursts: Readonly<Record<string, 
 export const noCelebration: Celebration = { day: null, bursts: {}, issued: 0 };
 
 export type CelebrationEvent =
-  // A tap on this screen finished the Profile.
-  | { type: 'finished'; profileId: string; day: string }
+  // A tap on this screen finished the Profile; the Routine tapped is `at` px down its group.
+  | { type: 'finished'; profileId: string; day: string; at: number }
   // The last piece of the Profile's burst `id` landed.
   | { type: 'landed'; profileId: string; id: number }
   // What the screen shows now: the Household day, and the Profiles whose groups are on it and all done.
@@ -191,7 +192,7 @@ export function celebrate(state: Celebration, event: CelebrationEvent): Celebrat
       const issued = state.issued + 1;
       // A burst left from another day is not this tap's to keep.
       const kept = event.day === state.day ? state.bursts : {};
-      return { day: event.day, bursts: { ...kept, [event.profileId]: { id: issued } }, issued };
+      return { day: event.day, bursts: { ...kept, [event.profileId]: { id: issued, at: event.at } }, issued };
     }
     case 'landed':
       return state.bursts[event.profileId]?.id === event.id ? withoutBursts(state, [event.profileId]) : state;

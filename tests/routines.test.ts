@@ -478,7 +478,8 @@ describe('the celebration of a finished Profile', () => {
   const friday = '2026-10-02';
   const saturday = '2026-10-03';
   const monday = '2026-10-05';
-  const finished = (profileId: string, day = friday): CelebrationEvent => ({ type: 'finished', profileId, day });
+  // `at` is how far down its group (px) the Routine that finished the Profile is.
+  const finished = (profileId: string, day = friday, at = 40): CelebrationEvent => ({ type: 'finished', profileId, day, at });
   const landed = (profileId: string, id: number): CelebrationEvent => ({ type: 'landed', profileId, id });
   // What the screen shows: the day, and the Profiles whose groups are on it and finished.
   const shown = (day: string | null, ...profileIds: string[]): CelebrationEvent => ({ type: 'shown', day, finished: new Set(profileIds) });
@@ -493,6 +494,22 @@ describe('the celebration of a finished Profile', () => {
 
   it('plays over two Profiles at once when two finish together', () => {
     expect(celebrating(play(finished('ava'), finished('ben')))).toEqual(['ava', 'ben']);
+  });
+
+  it('starts where the tapped Routine is in its group, each burst at its own', () => {
+    const state = play(finished('ava', friday, 120), finished('ben', friday, 15));
+    expect(state.bursts.ava!.at).toBe(120);
+    expect(state.bursts.ben!.at).toBe(15);
+  });
+
+  it('starts again where the new tap was when a Profile finishes again', () => {
+    const state = play(finished('ava', friday, 120), finished('ava', friday, 300));
+    expect(state.bursts.ava!.at).toBe(300);
+  });
+
+  it('stays where it started while the screen goes on showing the Profile finished', () => {
+    const state = play(finished('ava', friday, 120));
+    expect(celebrate(state, shown(friday, 'ava')).bursts.ava!.at).toBe(120);
   });
 
   it('plays again when a Profile finishes again, as a new burst', () => {
@@ -584,7 +601,7 @@ describe('the celebration of a finished Profile', () => {
   });
 
   it('never changes the state or the sets it is given', () => {
-    const frozen = Object.freeze({ day: friday, bursts: Object.freeze({ ava: Object.freeze({ id: 1 }) }), issued: 1 });
+    const frozen = Object.freeze({ day: friday, bursts: Object.freeze({ ava: Object.freeze({ id: 1, at: 0 }) }), issued: 1 });
     const finishedNow = Object.freeze(new Set(['ava']));
     expect(() => celebrate(frozen, finished('ben'))).not.toThrow();
     expect(() => celebrate(frozen, landed('ava', 1))).not.toThrow();
