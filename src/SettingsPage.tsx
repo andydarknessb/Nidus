@@ -73,10 +73,10 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
             <Button type="submit" variant="primary" size="phone" disabled={status === 'saving'}>
               Save
             </Button>
-            <p role="status" className="min-h-6 text-base">
-              {status === 'saved' && 'Saved.'}
-              {status === 'failed' && 'Could not save. Check the name and try again.'}
-            </p>
+            <div className="min-h-6 text-base">
+              <p role="status">{status === 'saved' && 'Saved.'}</p>
+              {status === 'failed' && <p role="alert">Could not save. Check the name and try again.</p>}
+            </div>
           </div>
         </form>
       </Card>
