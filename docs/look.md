@@ -72,7 +72,7 @@ An event for one person is that person's fill. A shared event is striped, one eq
 
 ## Type
 
-Two faces, shipped with the app: **Young Serif** (one weight, 400) for the clock, dates, names and titles, and **Lexend** (400, 500, 600) for everything else. The clock's digits sit in fixed-width cells so the time never shifts.
+Two faces, shipped with the app: **Young Serif** (one weight, 400) for the clock, dates, names and titles, and **Lexend** (400, 500, 600) for everything else. Young Serif's numerals are set lining and tabular (`font-variant-numeric: lining-nums tabular-nums`) wherever it is used: its default figures are old-style, which sit low and small in a clock, and tabular figures keep the time from shifting.
 
 | Role | Face | Size |
 | --- | --- | --- |
