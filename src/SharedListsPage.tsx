@@ -43,11 +43,18 @@ const LIST_TABLES = ['shared_lists', 'households'] as const;
 
 type ItemsState = { items: ListItem[]; loaded: boolean; problem: string };
 
+// A row shown for an item the server has not stored yet has an id that says so ("pending-1"). It cannot be crossed off or moved
+// until the stored row has taken its place, which is a moment.
+const PENDING = 'pending-';
+const isPending = (item: ListItem) => item.id.startsWith(PENDING);
+
 function useItems(listId: string) {
   const [state, setState] = useState<ItemsState>({ items: [], loaded: false, problem: '' });
   // The list this state belongs to, so a slow answer for the previous list is dropped.
   const current = useRef(listId);
   current.current = listId;
+  // How many rows have been shown before the server answered, so that each has an id of its own.
+  const pendings = useRef(0);
 
   const publish = useCallback((update: (rows: ListItem[]) => ListItem[]) => {
     setState((prev) => ({ ...prev, items: update(prev.items) }));
@@ -81,19 +88,26 @@ function useItems(listId: string) {
 
   const guarded = <T,>(work: () => Promise<T>): Promise<T> => (reader.current ? reader.current.write(work) : work());
 
-  // The item that was added, as stored, or null when it could not be.
+  // Adding does not wait for the server: the item shows at once, as a row that is not stored yet, and the stored row takes its
+  // place when the server has answered. If it cannot be added the row goes and the card says so. Returns the item as stored, or
+  // null when it could not be.
   async function add(text: string): Promise<ListItem | null> {
+    const pending: ListItem = { id: `${PENDING}${(pendings.current += 1)}`, list_id: listId, text: text.trim(), crossed_at: null, sort_order: nextSortOrder(state.items) };
+    publish((rows) => [...rows, pending]);
     try {
-      const created = await guarded(() => addItem(supabase, listId, text, nextSortOrder(state.items)));
-      if (current.current === listId) setState((prev) => ({ ...prev, items: [...prev.items, created], problem: '' }));
+      const created = await guarded(() => addItem(supabase, listId, text, pending.sort_order));
+      if (current.current === listId) setState((prev) => ({ ...prev, items: prev.items.map((row) => (row.id === pending.id ? created : row)), problem: '' }));
       return created;
     } catch {
-      fail('Could not add that item. Try again.');
+      if (current.current === listId) {
+        setState((prev) => ({ ...prev, items: prev.items.filter((row) => row.id !== pending.id), problem: 'Could not add that item. Try again.' }));
+      }
       return null;
     }
   }
 
   async function toggle(item: ListItem) {
+    if (isPending(item)) return;
     const stuck = await guarded(() =>
       crossOptimistically(publish, item.id, item.crossed_at === null, state.items, () => setCrossed(supabase, item.id, item.crossed_at === null)),
     );
@@ -106,6 +120,7 @@ function useItems(listId: string) {
   }
 
   async function move(id: string, offset: number) {
+    if (state.items.some(isPending)) return;
     const before = state.items;
     const ids = movedIds(before.map((item) => item.id), id, offset);
     publish((rows) => byPosition(ids.map((itemId, index) => ({ ...rows.find((row) => row.id === itemId)!, sort_order: index }))));
@@ -193,15 +208,18 @@ function ItemRow({ item, size, onToggle }: { item: ListItem; size: keyof typeof 
   );
 }
 
-// The field that adds an item, and its button: 52 px on the Wall, 56 on the phone. `onAdd` says whether the item was added,
-// and the field empties when it was.
+// The field that adds an item, and its button: 52 px on the Wall, 56 on the phone. `onAdd` says whether the item was added. The
+// field empties at once, so a second Enter while the first is still out has nothing to add; if the item could not be added the
+// words come back, unless something else has been typed there since.
 function AddRow({ listName, size = 'wall', onAdd }: { listName: string; size?: 'wall' | 'phone'; onAdd: (text: string) => Promise<boolean> }) {
   const [text, setText] = useState('');
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!text.trim()) return;
-    if (await onAdd(text)) setText('');
+    const words = text;
+    if (!words.trim()) return;
+    setText('');
+    if (!(await onAdd(words))) setText((now) => now || words);
   }
 
   return (
@@ -261,9 +279,9 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
       <AddRow
         listName={list.name}
         onAdd={async (text) => {
-          const item = await add(text);
-          if (item) setAdded((count) => count + 1);
-          return item !== null;
+          // The new row shows at once, as the last one: bring it into view now, not when the server has answered.
+          setAdded((count) => count + 1);
+          return (await add(text)) !== null;
         }}
       />
       {problem && (
@@ -362,6 +380,7 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
 
   // A tap crosses a row off, or puts back one crossed off here. The row stays where it is either way.
   function tap(item: ListItem) {
+    if (isPending(item)) return;
     const at = Date.now();
     setNow(at);
     setCrossedHere((before) => {
