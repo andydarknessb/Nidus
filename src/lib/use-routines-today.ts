@@ -16,10 +16,12 @@ import {
   noTickProblems,
   partOfDay,
   problemsOn,
+  seePart,
   tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
   type CelebrationEvent,
+  type PartSeen,
   type ProfileRoutines,
   type Routine,
   type TickProblems,
@@ -62,12 +64,13 @@ export type RoutinesToday = {
   toggle: (routine: Routine) => Promise<boolean>;
 };
 
-// The part of the day in `timezone`, drawn again only when a part begins and not on every minute. What was seen for another
-// zone is never used, so a Household Timezone that arrives or changes is right on the render it arrives in.
+// The part of the day in `timezone`, drawn again only when a part begins and not on every minute: it looks each minute, but
+// seePart hands back the same object while nothing has changed, and a state set to what it already is draws nothing. What was
+// seen for another zone is never used, so a Household Timezone that arrives or changes is right on the render it arrives in.
 function usePartOfDay(timezone: string): TimeOfDay {
-  const [seen, setSeen] = useState<{ timezone: string; part: TimeOfDay } | null>(null);
+  const [seen, setSeen] = useState<PartSeen | null>(null);
   useEffect(() => {
-    const read = () => setSeen({ timezone, part: partOfDay(timezone) });
+    const read = () => setSeen((was) => seePart(was, timezone));
     read();
     return watchMinute(read);
   }, [timezone]);

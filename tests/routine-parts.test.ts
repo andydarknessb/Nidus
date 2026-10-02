@@ -25,6 +25,7 @@ import {
   partView,
   pickPart,
   problemsOn,
+  seePart,
   todaysRoutines,
   upNext,
   upNextLink,
@@ -112,6 +113,45 @@ describe('which part of the day it is', () => {
     expect(partOfDay(CHICAGO, new Date(noon - 1))).toBe('morning');
     expect(partOfDay(CHICAGO, new Date(noon))).toBe('afternoon');
     expect(partOfDay(CHICAGO, new Date(noon + 59_999))).toBe('afternoon');
+  });
+});
+
+// A screen looks at the part of the day every minute and keeps what it saw in state: it must keep the very same object while
+// nothing has changed, or it is drawn again every minute for nothing.
+describe('the part of the day a screen has seen', () => {
+  const at = (date: string, time: string, timezone = CHICAGO) => new Date(wallMs(date, time, timezone));
+
+  it('says which part it is, and in which zone', () => {
+    expect(seePart(null, CHICAGO, at('2026-10-02', '08:00'))).toEqual({ timezone: CHICAGO, part: 'morning' });
+    expect(seePart(null, 'Pacific/Auckland', at('2026-10-02', '19:00', 'Pacific/Auckland'))).toEqual({ timezone: 'Pacific/Auckland', part: 'evening' });
+  });
+
+  it('is the same object, minute after minute, while the part has not changed', () => {
+    const first = seePart(null, CHICAGO, at('2026-10-02', '12:00'));
+    for (const time of ['12:01', '13:30', '16:58', '16:59']) expect(seePart(first, CHICAGO, at('2026-10-02', time)), time).toBe(first);
+  });
+
+  it('is a new object when a part begins, and the same again after it', () => {
+    const afternoon = seePart(null, CHICAGO, at('2026-10-02', '16:59'));
+    const evening = seePart(afternoon, CHICAGO, at('2026-10-02', '17:00'));
+    expect(evening).not.toBe(afternoon);
+    expect(evening.part).toBe('evening');
+    expect(seePart(evening, CHICAGO, at('2026-10-02', '17:01'))).toBe(evening);
+    // Midnight begins the morning.
+    expect(seePart(evening, CHICAGO, at('2026-10-03', '00:00')).part).toBe('morning');
+  });
+
+  it('is a new object for another zone, even when the part is the same', () => {
+    const chicago = seePart(null, CHICAGO, at('2026-10-02', '10:00'));
+    const other = seePart(chicago, 'America/New_York', at('2026-10-02', '10:00', 'America/New_York'));
+    expect(other).not.toBe(chicago);
+    expect(other).toEqual({ timezone: 'America/New_York', part: 'morning' });
+  });
+
+  it('never changes the object it is given', () => {
+    const was = Object.freeze({ timezone: CHICAGO, part: 'morning' as const });
+    expect(() => seePart(was, CHICAGO, at('2026-10-02', '17:30'))).not.toThrow();
+    expect(was).toEqual({ timezone: CHICAGO, part: 'morning' });
   });
 });
 

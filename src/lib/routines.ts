@@ -181,6 +181,16 @@ export function partOfDay(timezone: string, now: Date = new Date()): TimeOfDay {
   return hour >= EVENING_FROM ? 'evening' : hour >= AFTERNOON_FROM ? 'afternoon' : 'morning';
 }
 
+// The part of the day a screen last looked at, and in which zone.
+export type PartSeen = { timezone: string; part: TimeOfDay };
+
+// What a screen keeps after it looks at the part of the day again: the very same object while it is still the part it saw, in the
+// same zone, so a screen that holds it in state is not drawn again every minute for nothing, only when a part begins.
+export function seePart(was: PartSeen | null, timezone: string, now: Date = new Date()): PartSeen {
+  const part = partOfDay(timezone, now);
+  return was !== null && was.timezone === timezone && was.part === part ? was : { timezone, part };
+}
+
 // What the chart shows one Profile for one part of the day.
 export type PartView = {
   // The part's own Routines, ticked or not.
