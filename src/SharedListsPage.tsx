@@ -120,7 +120,11 @@ function useItems(listId: string) {
   return { ...state, add, toggle, clear, move };
 }
 
-function ListItems({ listId, reorderable }: { listId: string; reorderable: boolean }) {
+// The items of one list with the field that adds one and the button that clears the crossed ones. Given a
+// `title` (the wall's rail) the list's name and that button share the top row instead of the button
+// taking a row of its own below the items: beside Today's meals and the Routines, the rail has room
+// for little else than the items, and the button's own row left it one.
+function ListItems({ listId, reorderable, title }: { listId: string; reorderable: boolean; title?: string }) {
   const { items, loaded, problem, add, toggle, clear, move } = useItems(listId);
   const [text, setText] = useState('');
   const hasCrossed = items.some((item) => item.crossed_at !== null);
@@ -131,8 +135,20 @@ function ListItems({ listId, reorderable }: { listId: string; reorderable: boole
     if (await add(text)) setText('');
   }
 
+  const clearButton = (
+    <button type="button" className={`${quiet} disabled:opacity-40${title === undefined ? '' : ' shrink-0'}`} disabled={!hasCrossed} onClick={() => void clear()}>
+      Clear completed
+    </button>
+  );
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
+    <div className={`flex min-h-0 flex-1 flex-col ${title === undefined ? 'gap-4' : 'gap-3'}`}>
+      {title !== undefined && (
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="min-w-0 truncate text-2xl font-semibold">{title}</h2>
+          {clearButton}
+        </div>
+      )}
       <form onSubmit={(event) => void submit(event)} className="flex gap-2">
         <input
           className={field}
@@ -189,9 +205,7 @@ function ListItems({ listId, reorderable }: { listId: string; reorderable: boole
         })}
       </ul>
 
-      <button type="button" className={quiet} disabled={!hasCrossed} onClick={() => void clear()}>
-        Clear completed
-      </button>
+      {title === undefined && clearButton}
     </div>
   );
 }
@@ -227,12 +241,7 @@ export function PinnedListRail() {
         </p>
       )}
       {pinned === null && <p className="text-base">No list is pinned. Pin one in settings on your phone.</p>}
-      {pinned && (
-        <>
-          <h2 className="text-2xl font-semibold">{pinned.name}</h2>
-          <ListItems listId={pinned.id} reorderable={false} />
-        </>
-      )}
+      {pinned && <ListItems listId={pinned.id} reorderable={false} title={pinned.name} />}
     </aside>
   );
 }
