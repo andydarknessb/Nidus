@@ -82,7 +82,7 @@ describe('Realtime change feed', () => {
   // subscription, the feed was never live, and it must say so rather than stay "connecting" for good.
   it('reports offline when the subscription is never accepted', async () => {
     const { kitchen } = await setUp();
-    const feed = openChangeFeed(kitchen.client, { tables: ['not_in_the_publication'], giveUpMs: 1_000 });
+    const feed = openChangeFeed(kitchen.client, { tables: ['not_in_the_publication'], giveUpMs: 1_000 } as Parameters<typeof openChangeFeed>[1]);
     feeds.push(feed);
     const heard: string[] = [];
     feed.onStatus((status) => heard.push(status));
