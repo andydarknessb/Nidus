@@ -4,6 +4,7 @@ import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } fr
 import { formatCountdown } from './lib/device-format';
 import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
 import { ChangeFeedProvider } from './components/ChangeFeedProvider';
+import { EmptyWords } from './components/EmptyWords';
 import { HomeRail } from './components/HomeRail';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { NavigationRail } from './components/NavigationRail';
@@ -205,18 +206,20 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
 }
 
 // What stands in for a screen until the Household has been read (its Timezone says which day every screen
-// shows): an empty frame while the read is on its way and, once it has failed, the words that say so, in
-// the screen's own wording, so a Wall that cannot reach its server does not pass for a blank one.
-function BeforeHousehold({ label, failed, words }: { label: string; failed: boolean; words: string }) {
+// shows): a frame that says "Loading" while the read is on its way and, once it has failed, the words that say so, in
+// the screen's own wording, so a Wall that cannot reach its server does not pass for a blank one, nor a slow one for a broken one.
+export function BeforeHousehold({ label, failed, words }: { label: string; failed: boolean; words: string }) {
   return (
     <section aria-label={label} className="rounded-3xl bg-card">
-      {failed && (
+      {failed ? (
         <p role="alert" className="p-4 text-xl">
           {words}
         </p>
       )}
     </section>
   );
+      ) : (
+        <EmptyWords className="p-4">Loading</EmptyWords>
 }
 
 // What each view of the Wall is called in the document's title.
@@ -318,15 +321,17 @@ function HomeShell({ owner }: { owner: boolean }) {
           timezone ? (
             <RoutinesChart routines={routines} />
           ) : (
-            // The chart before the Household is read: an empty frame that says so if the read failed, as Up next does.
+            // The chart before the Household is read: a frame that says "Loading", or that the read failed, as Up next does.
             <section aria-label="Routines" className="rounded-3xl bg-card p-4">
-              {view.failed && (
+              {view.failed ? (
                 <p role="alert" className="text-base">
                   Could not load routines. Check your connection.
                 </p>
               )}
             </section>
           )
+              ) : (
+                <EmptyWords>Loading</EmptyWords>
         ) : route.view === 'meals' ? (
           // Meals is a screen of its own, not a calendar view: it takes the same slot, and before the Household is read it is an empty frame, or says it could not be read.
           timezone ? (

@@ -103,3 +103,47 @@ describe('a tick that did not save', () => {
     expect(list).not.toContain('did not save');
   });
 });
+
+describe('when Up next has nothing to show', () => {
+  // The words, and the one style every empty state has: 16 px in --muted-foreground (docs/look.md, Empty states).
+  const said = (html: string, text: string) => new RegExp(`<p class="([^"]*)">${text}</p>`).exec(html)?.[1]?.split(' ');
+
+  it('says nothing is scheduled when nobody has a Routine today', () => {
+    const html = card(routinesToday({}, FAMILY, []));
+    expect(said(html, 'Nothing scheduled today.')).toEqual(expect.arrayContaining(['px-1', 'text-base', 'text-muted-foreground']));
+  });
+
+  it('says nobody has anything left when every Routine is done', () => {
+    const done = new Set(ROUTINES.map((each) => each.id));
+    const html = card(routinesToday({ done }));
+    expect(said(html, 'Nobody has anything left right now.')).toEqual(expect.arrayContaining(['px-1', 'text-base', 'text-muted-foreground']));
+    expect(html).not.toContain('Mark ');
+  });
+
+  it('says "Loading" in the same style until the first read lands', () => {
+    const html = card(routinesToday({ loaded: false }));
+    expect(said(html, 'Loading')).toEqual(expect.arrayContaining(['px-1', 'text-base', 'text-muted-foreground']));
+  });
+});
+
+describe('Up next while it loads', () => {
+  // The height of three tiles: 3 x 80 and two gaps of 8, 256 px (16 rem). Home's list card under it would otherwise jump 232 px when the
+  // read lands: the card is 104 px with "Loading" and 336 with three tiles.
+  const reserved = (html: string) => /<div class="([^"]*\bmin-h-64\b[^"]*)">/.exec(html)?.[1];
+
+  it('holds the height of three tiles until the first read has landed', () => {
+    expect(reserved(card(routinesToday({ loaded: false })))).toBeDefined();
+    // Also when the read failed and nothing has been read: the card does not give the room up and take it back.
+    expect(reserved(card(routinesToday({ loaded: false, failed: true }), true))).toBeDefined();
+  });
+
+  it('takes the height it needs once it has: the tiles, or a line of words', () => {
+    expect(reserved(card(routinesToday()))).toBeUndefined();
+    expect(reserved(card(routinesToday({}, FAMILY, [])))).toBeUndefined();
+  });
+
+  it('keeps its heading row where it was, above the reserved room', () => {
+    const html = card(routinesToday({ loaded: false }));
+    expect(html.indexOf('Up next</h2>')).toBeLessThan(html.indexOf('min-h-64'));
+  });
+});

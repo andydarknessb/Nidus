@@ -5,6 +5,7 @@ import { holdEndsAt, tapFinishesProfile, upNext, upNextLink, type Routine, type 
 import { useStatusLine } from '../lib/status-line';
 import { useCelebration, type RoutinesToday } from '../lib/use-routines-today';
 import { Confetti, RoutineTile } from '../RoutinesPage';
+import { EmptyWords } from './EmptyWords';
 import { Button } from './ui/button';
 
 // Up next, at the top of Home's right rail (docs/look.md, spec 0003): a tile for each of the first three people with
@@ -85,14 +86,20 @@ export function UpNext({ routines, failed, onOpenRoutines }: { routines: Routine
           <ChevronRight aria-hidden className="size-5" />
         </Button>
       </div>
-      {!loaded && !failed && !routines.failed && <p className="px-1 text-base">Loading</p>}
-      {(failed || routines.failed) && !loaded && (
-        <p role="alert" className="px-1 text-base">
-          Could not load routines. Check your connection.
-        </p>
+      {/* Until the first read lands the card keeps the room of three tiles (3 x 80 and two gaps of 8: 16 rem), so the list card under it does
+          not jump 232 px when they arrive. Once read, it takes the height it needs. */}
+      {!loaded && (
+        <div className="min-h-64">
+          {!failed && !routines.failed && <EmptyWords className="px-1">Loading</EmptyWords>}
+          {(failed || routines.failed) && (
+            <p role="alert" className="px-1 text-base">
+              Could not load routines. Check your connection.
+            </p>
+          )}
+        </div>
       )}
-      {loaded && groups.length === 0 && <p className="px-1 text-base">Nothing scheduled today.</p>}
-      {loaded && groups.length > 0 && tiles.length === 0 && <p className="px-1 text-base">Nobody has anything left right now.</p>}
+      {loaded && groups.length === 0 && <EmptyWords className="px-1">Nothing scheduled today.</EmptyWords>}
+      {loaded && groups.length > 0 && tiles.length === 0 && <EmptyWords className="px-1">Nobody has anything left right now.</EmptyWords>}
       {tiles.length > 0 && (
         <ul className="flex flex-col gap-2">
           {tiles.map(({ profile, routine, done: held }) => (

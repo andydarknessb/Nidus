@@ -6,6 +6,7 @@ import { HOUR_REM, hourWords, type DayBlock, type DayPlan, type FoldTile } from 
 import type { Profile } from '../lib/profiles';
 import { pillName, pillPeople, type Pill, type PillPeople } from '../lib/schedule';
 import type { OverflowControl } from '../lib/use-overflow';
+import { EmptyWords } from './EmptyWords';
 import { EventDiscs, EventFill, EventPill } from './EventPill';
 import { OverflowButton } from './OverflowButton';
 import { Button } from './ui/button';
@@ -54,7 +55,7 @@ export function PillRow({
       </span>
       <div ref={control.scroller} className="flex min-w-0 flex-1 gap-2 overflow-x-auto overflow-y-hidden px-1.5 [scrollbar-width:none]">
         {pills.length === 0 ? (
-          <p className="flex items-center text-sm text-muted-foreground">{empty}</p>
+          <EmptyWords className="flex items-center">{empty}</EmptyWords>
         ) : (
           pills.map((pill) => (
             <div key={pill.occurrence.id} className="w-[220px] flex-none">

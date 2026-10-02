@@ -34,6 +34,7 @@ import { useStatusLine } from './lib/status-line';
 import { createSyncedReader, type SyncedReader } from './lib/synced-reader';
 import { useFailureWords } from './lib/use-failure-words';
 import { useOverflow } from './lib/use-overflow';
+import { EmptyWords } from './components/EmptyWords';
 import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, Tick } from './components/people';
 import { Button } from './components/ui/button';
@@ -320,7 +321,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
           return (await adding) !== null;
         }}
       />
-      {loaded && items.length === 0 && <p className="shrink-0 text-base">Nothing on this list.</p>}
+      {loaded && items.length === 0 && <EmptyWords className="shrink-0">Nothing on this list.</EmptyWords>}
       {items.length > 0 && (
         // At rest an item may sit partly under the "More" button at their foot; one that takes the focus, or is added, is scrolled clear of it.
         <div ref={more.scroller} className={`min-h-0 overflow-y-auto ${FOOT_CLEARANCE}`}>
@@ -389,7 +390,7 @@ export function ListsScreen() {
           Could not load lists. Check your connection.
         </p>
       )}
-      {read?.lists.length === 0 && <p className="text-xl">No lists yet. Add one from your phone.</p>}
+      {read?.lists.length === 0 && <EmptyWords>No lists yet. Add one on your phone.</EmptyWords>}
       <div
         ref={row.scroller}
         className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cards.length > 3 ? '[--card-w:calc((100%_-_3rem)/3.2)]' : '[--card-w:calc((100%_-_2rem)/3)]'}`}
@@ -475,20 +476,7 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
     <section ref={card} aria-label={loaded ? `${list.name}, ${left} left` : list.name} className={HOME_CARD}>
       <div className="flex h-12 shrink-0 items-center justify-between gap-2">
         <h2 className="min-w-0 flex-1 truncate px-1 font-display text-[22px] leading-7">{list.name}</h2>
-        <Button asChild variant="quiet" className="h-12 shrink-0 gap-0.5 rounded-[14px] pr-1 pl-3 text-[15px] font-medium">
-          <a
-            ref={link}
-            href="/lists"
-            aria-label={hidden > 0 ? `${hidden} more in ${list.name}. All lists` : 'All lists'}
-            onClick={(event) => {
-              event.preventDefault();
-              onOpenLists();
-            }}
-          >
-            {hidden > 0 ? `${hidden} more` : 'All lists'}
-            <ChevronRight aria-hidden className="size-5" strokeWidth={2.2} />
-          </a>
-        </Button>
+        <ListsLink ref={link} words={hidden > 0 ? `${hidden} more` : 'All lists'} name={hidden > 0 ? `${hidden} more in ${list.name}. All lists` : 'All lists'} onOpen={onOpenLists} />
       </div>
       <AddRow
         listName={list.name}
@@ -502,7 +490,7 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
       <div ref={region} className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
         {room !== null && (
           <>
-            {nothing && <p className="shrink-0 px-1 text-base text-muted-foreground">Nothing left to get.</p>}
+            {nothing && <EmptyWords className="shrink-0 px-1">Nothing left to get.</EmptyWords>}
             {rows.slice(0, shown).map((item) => (
               <ItemRow key={item.id} ref={watchRow} item={item} size="home" onToggle={() => tap(item)} />
             ))}
@@ -520,22 +508,58 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
   );
 }
 
+// The link in a card's heading row to the Lists screen: "All lists", or how many items still to get the card has no room for ("3 more").
+// Its name says where it goes, and starts with what is read.
+function ListsLink({ words, name, onOpen, ref }: { words: string; name: string; onOpen: () => void; ref?: Ref<HTMLAnchorElement> }) {
+  return (
+    <Button asChild variant="quiet" className="h-12 shrink-0 gap-0.5 rounded-[14px] pr-1 pl-3 text-[15px] font-medium">
+      <a
+        ref={ref}
+        href="/lists"
+        aria-label={name}
+        onClick={(event) => {
+          event.preventDefault();
+          onOpen();
+        }}
+      >
+        {words}
+        <ChevronRight aria-hidden className="size-5" strokeWidth={2.2} />
+      </a>
+    </Button>
+  );
+}
+
+// Home's list card when no list is on the home screen. It keeps its heading, "Lists", and says what to do: with no list at all, to add
+// one on the phone; with lists and none on the home screen, to put one there, and the link to the Lists screen is there to see them. (It
+// used to have no heading, and to say to open a list that does not exist.)
+export function EmptyListCard({ lists, onOpenLists }: { lists: number; onOpenLists: () => void }) {
+  return (
+    <aside aria-label="Pinned list" className={HOME_CARD}>
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2">
+        <h2 className="min-w-0 flex-1 truncate px-1 font-display text-[22px] leading-7">Lists</h2>
+        {lists > 0 && <ListsLink words="All lists" name="All lists" onOpen={onOpenLists} />}
+      </div>
+      <EmptyWords className="px-1">{lists === 0 ? 'No lists yet. Add one on your phone.' : 'No list here yet. On your phone, open a list and choose Show on home screen.'}</EmptyWords>
+    </aside>
+  );
+}
+
 // The pinned Shared List, under Up next in Home's right column.
 export function PinnedListCard({ onOpenLists }: { onOpenLists: () => void }) {
   const { read, failed } = useLists();
   // undefined until the first read; null when no list is pinned (or the pinned one is gone).
   const pinned = read ? (read.lists.find((list) => list.id === read.pinnedId) ?? null) : undefined;
   if (pinned) return <HomeList key={pinned.id} list={pinned} onOpenLists={onOpenLists} />;
+  if (pinned === null) return <EmptyListCard lists={read?.lists.length ?? 0} onOpenLists={onOpenLists} />;
 
   return (
     <aside aria-label="Pinned list" className={HOME_CARD}>
-      {pinned === undefined && !failed && <p className="text-base">Loading</p>}
-      {pinned === undefined && failed && (
+      {!failed && <EmptyWords>Loading</EmptyWords>}
+      {failed && (
         <p role="alert" className="text-base">
           Could not load lists. Check your connection.
         </p>
       )}
-      {pinned === null && <p className="text-base">No list here yet. On your phone, open a list and choose Show on home screen.</p>}
     </aside>
   );
 }

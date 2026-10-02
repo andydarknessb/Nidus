@@ -64,3 +64,32 @@ describe("a person's column", () => {
     expect(attributes).toContain('dir="auto"');
   });
 });
+
+// What a screen says when it holds nothing says what to do, in one style (docs/look.md, Empty states): 16 px in --muted-foreground, a
+// sentence and a clause with the way out.
+describe('what the chart says when it holds nothing', () => {
+  const EMPTY = 'text-base text-muted-foreground';
+
+  it('says no routines yet, and where to add some', () => {
+    const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], []));
+    expect(html).toContain(`<p class="${EMPTY}">No routines yet. Add some on your phone.</p>`);
+  });
+
+  it('says what a part holds when it holds nothing, in the same style', () => {
+    // Ava's one Routine is in the evening: the morning has none of its own, none left from earlier and none for any time.
+    const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], [routine('r-1', 'p-ava', 'Brush teeth')], { part: 'morning' }));
+    expect(html).toMatch(new RegExp(`<p class="${EMPTY} px-1">Nothing this morning\\.</p>`));
+  });
+
+  it('says "Loading" in the same style until the first read lands, and not "no routines yet"', () => {
+    const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], [], { loaded: false, settled: false }));
+    expect(html).toContain(`<p class="${EMPTY}">Loading</p>`);
+    expect(html).not.toContain('No routines yet');
+  });
+
+  it('never says an empty column is a failure: a person with nothing today is "Nothing today", under their name', () => {
+    const noWeekday = { ...routine('r-1', 'p-ava', 'Brush teeth'), days_of_week: 0 };
+    const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], [noWeekday]));
+    expect(html).not.toContain('role="alert"');
+  });
+});

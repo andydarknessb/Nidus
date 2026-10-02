@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import { ArrowDown, ArrowUp, Moon, Star, Sun, Sunrise, type LucideIcon } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type Ref } from 'react';
+import { EmptyWords } from './components/EmptyWords';
 import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, MAX_PIPS, PersonDisc, Pips, Tick } from './components/people';
 import { Button } from './components/ui/button';
@@ -332,7 +333,7 @@ function Column({
                         {tiles(view.anytime)}
                       </>
                     )}
-                    {view.own.length + view.earlier.length + view.anytime.length === 0 && <p className="px-1 text-[15px] text-muted-foreground">Nothing this {part}.</p>}
+                    {view.own.length + view.earlier.length + view.anytime.length === 0 && <EmptyWords className="px-1">Nothing this {part}.</EmptyWords>}
                   </>
                 )}
           </div>
@@ -419,14 +420,14 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
           <OverflowButton control={row} of="people" />
         </div>
       </div>
-      {!loaded && !failed && <p className="text-base">Loading</p>}
+      {!loaded && !failed && <EmptyWords>Loading</EmptyWords>}
       {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
       {failed && !loaded && (
         <p role="alert" className="text-base">
           Could not load routines. Check your connection.
         </p>
       )}
-      {loaded && columns.length === 0 && <p className="text-base">No routines yet.</p>}
+      {loaded && columns.length === 0 && <EmptyWords>No routines yet. Add some on your phone.</EmptyWords>}
       <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
         {columns.map(({ profile, routines: today }) => (
           <Column

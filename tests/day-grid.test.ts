@@ -320,6 +320,12 @@ describe('the rows above and below the grid', () => {
     expect(row({ empty: '' })).not.toContain('Nothing');
   });
 
+  it('say so in the one style every empty state has: 16 px in --muted-foreground, not smaller', () => {
+    const classes = (html: string) => /<p class="([^"]*)">Nothing later today<\/p>/.exec(html)?.[1]?.split(' ') ?? [];
+    expect(classes(row())).toEqual(expect.arrayContaining(['text-base', 'text-muted-foreground']));
+    expect(classes(row())).not.toContain('text-sm');
+  });
+
   it('hold pills 220 px wide, one line of title, side by side and scrolling sideways', () => {
     const above = plan([event('Standup', OCT1, '09:00', '09:30', ['p-cory']), event('Design review', OCT1, '13:00', '14:00', ['p-cory'])]).above;
     const html = row({ label: 'Earlier', name: 'All day and earlier', pills: above });
