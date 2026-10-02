@@ -42,7 +42,7 @@ export function EventDiscs({ people }: { people: PillPeople }) {
 }
 
 // "2:00 PM" with its AM or PM held to the time, so a narrow pill wraps between "Until" and the time, never inside it.
-const holdTime = (time: string) => time.replace(/ ([AP]M)$/, ' $1');
+const holdTime = (time: string) => time.replace(/ ([AP]M)$/, '\u00a0$1');
 
 // One event on the schedule (docs/look.md, The parts): at least 52 px tall and 14 round, the title on up to two lines
 // (it wraps between words and never inside one, then ends in an ellipsis), the time under it and who it is for at the

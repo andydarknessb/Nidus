@@ -299,7 +299,7 @@ describe('createProfileFilter', () => {
 
     it('says it in plain words, with no dash', () => {
       expect(FILTER_CLEARED_WORDS).toBe("Showing everyone's events again");
-      expect(FILTER_CLEARED_WORDS).not.toMatch(/[–—]/);
+      expect(FILTER_CLEARED_WORDS).not.toMatch(/[\u2013\u2014]/);
     });
 
     it('says it after a touch moved the deadline, at the new one', () => {
