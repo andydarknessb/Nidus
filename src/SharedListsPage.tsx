@@ -276,12 +276,6 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
   const rows = useRef<HTMLUListElement>(null);
   // Whether the items hold more than the card shows. The button is the items' last child, stuck to their foot.
   const more = useOverflow('y', 'over');
-  // How many items have been added here. The one just added is last: bring it into view when the list is longer than the card.
-  // ponytail: "last" holds while a new item always goes to the bottom (nextSortOrder); find it by id if one ever lands elsewhere.
-  const [added, setAdded] = useState(0);
-  useEffect(() => {
-    if (added > 0) rows.current?.lastElementChild?.scrollIntoView({ block: 'nearest' });
-  }, [added]);
 
   return (
     <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className="flex max-h-full w-(--card-w) shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3.5">
@@ -299,9 +293,17 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
       <AddRow
         listName={list.name}
         onAdd={async (text) => {
-          // The new row shows at once, as the last one: bring it into view now, not when the server has answered.
-          setAdded((count) => count + 1);
-          return (await add(text)) !== null;
+          // The new row shows at once, as the last one, and brings the foot with it when the list now scrolls for the first time: the
+          // foot is a render of its own, after the one that adds the row (the hook reads the list in a layout effect). Both are drawn
+          // here, before the row is brought into view, so it stops clear of the foot and not under it; and it is brought into view now,
+          // not when the server has answered. (An effect would run before the foot exists, and scroll to the end of a list that has none.)
+          // ponytail: "last" holds while a new item always goes to the bottom (nextSortOrder); find it by id if one ever lands elsewhere.
+          let adding!: Promise<ListItem | null>;
+          flushSync(() => {
+            adding = add(text);
+          });
+          rows.current?.lastElementChild?.scrollIntoView({ block: 'nearest' });
+          return (await adding) !== null;
         }}
       />
       {problem && (
@@ -311,7 +313,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
       )}
       {loaded && items.length === 0 && !problem && <p className="shrink-0 text-base">Nothing on this list.</p>}
       {items.length > 0 && (
-        // The items scroll to clear of the "More" button at their foot, a new one included, so none is left under it.
+        // At rest an item may sit partly under the "More" button at their foot; one that takes the focus, or is added, is scrolled clear of it.
         <div ref={more.scroller} className={`min-h-0 overflow-y-auto ${FOOT_CLEARANCE}`}>
           <ul ref={rows} className="flex flex-col gap-2">
             {items.map((item) => (
