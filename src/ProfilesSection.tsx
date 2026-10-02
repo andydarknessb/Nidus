@@ -1,8 +1,8 @@
 import { ArrowDown, ArrowUp, Pencil, Plus } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { ColorPicker, DeletePerson } from '@/components/PersonEditor';
+import { DeletePerson, PersonFields, type PersonDraft } from '@/components/PersonEditor';
 import { PersonDisc } from '@/components/people';
-import { Card, Field, fieldClass } from '@/components/phone';
+import { Card } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { useRefetchOn } from '@/lib/change-feed';
 import { createProfile, deleteProfile, firstFreeColor, loadProfiles, movedIds, nextSortOrder, reorderProfiles, updateProfile, type Profile } from '@/lib/profiles';
@@ -16,13 +16,10 @@ type Control = 'edit' | 'delete' | 'up' | 'down';
 const controlId = (profileId: string, control: Control) => `profile-${profileId}-${control}`;
 const ADD_ID = 'person-add';
 
-// What the name field and the colour hold while a form is open. The picture address is not here: it left the form, and no write
-// of a person names it.
-type Draft = { name: string; color: string };
-type Editing = { id: string; draft: Draft; deleting: boolean };
+type Editing = { id: string; draft: PersonDraft; deleting: boolean };
 
 // A form's title: the disc the person will be, which follows the name and the colour as they are chosen, and what the form does.
-function FormTitle({ draft, title }: { draft: Draft; title: string }) {
+function FormTitle({ draft, title }: { draft: PersonDraft; title: string }) {
   return (
     <div className="flex items-center gap-3">
       <PersonDisc name={draft.name} color={draft.color} size={44} />
@@ -37,7 +34,7 @@ function FormTitle({ draft, title }: { draft: Draft; title: string }) {
 export function ProfilesSection({ householdId }: { householdId: string }) {
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [adding, setAdding] = useState<Draft | null>(null);
+  const [adding, setAdding] = useState<PersonDraft | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState(false);
   const [focusNext, setFocusNext] = useState<string | null>(null);
@@ -63,7 +60,8 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   }, [refresh]);
   useRefetchOn(PROFILE_TABLES, () => void refresh());
 
-  // Runs a write, then reloads so the screen shows what is saved either way. One at a time: a second tap waits for the first.
+  // Runs a write, then reloads so the screen shows what is saved either way. One at a time: while one is on its way its buttons are
+  // off, and a second tap does nothing.
   async function change(write: () => Promise<void>, failure: string): Promise<boolean> {
     setBusy(true);
     try {
@@ -148,18 +146,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                   <>
                     <form onSubmit={(event) => void save(event)} className="flex flex-col gap-4">
                       <FormTitle draft={editing.draft} title={`Edit ${profile.name}`} />
-                      <Field label="Name">
-                        <input
-                          className={fieldClass}
-                          autoComplete="off"
-                          autoFocus
-                          value={editing.draft.name}
-                          onChange={(e) => setEditing({ ...editing, draft: { ...editing.draft, name: e.target.value } })}
-                          maxLength={100}
-                          required
-                        />
-                      </Field>
-                      <ColorPicker value={editing.draft.color} profiles={profiles} onChange={(color) => setEditing({ ...editing, draft: { ...editing.draft, color } })} />
+                      <PersonFields draft={editing.draft} profiles={profiles} onChange={(draft) => setEditing({ ...editing, draft })} />
                       <div className="flex gap-2">
                         <Button
                           variant="quiet"
@@ -228,10 +215,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
       {adding ? (
         <form onSubmit={(event) => void add(event)} className="flex flex-col gap-4 border-t border-border pt-4">
           <FormTitle draft={adding} title="New person" />
-          <Field label="Name">
-            <input className={fieldClass} autoComplete="off" autoFocus value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} maxLength={100} required />
-          </Field>
-          <ColorPicker value={adding.color} profiles={profiles ?? []} onChange={(color) => setAdding({ ...adding, color })} />
+          <PersonFields draft={adding} profiles={profiles ?? []} onChange={setAdding} />
           <div className="flex gap-2">
             <Button
               variant="quiet"

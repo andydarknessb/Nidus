@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CalendarsPage as CalendarsPageType } from '../src/CalendarsPage';
 import type { SettingsPage as SettingsPageType } from '../src/SettingsPage';
-import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson } from '../src/components/PersonEditor';
+import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '../src/components/PersonEditor';
 import { UPDATE_FAILED_WORDS, accountStatusText } from '../src/lib/calendar-accounts';
 import { seenWords } from '../src/lib/device-format';
 import type { Household } from '../src/lib/household';
@@ -294,6 +294,33 @@ describe('the colours a person can be given', () => {
     expect(new Set(groups).size).toBe(2);
     expect(new Set(groups.slice(0, 10)).size).toBe(1);
     expect(new Set(groups.slice(10)).size).toBe(1);
+  });
+});
+
+describe('what a person is asked for', () => {
+  const render = () => renderToStaticMarkup(createElement(PersonFields, { draft: { name: 'Ava', color: hex(2) }, profiles: [], onChange: () => undefined }));
+  const inputs = (markup: string) => [...markup.matchAll(/<input([^>]*)\/?>/g)].map(([, attributes]) => attributes ?? '');
+
+  it('is a name and a colour, and no picture address', () => {
+    const markup = render();
+    const found = inputs(markup);
+    const radios = found.filter((attributes) => /type="radio"/.test(attributes));
+    const others = found.filter((attributes) => !/type="radio"/.test(attributes));
+    expect(radios).toHaveLength(10);
+    expect(others).toHaveLength(1);
+    expect(others[0]).toMatch(/maxlength="100"/i);
+    expect(words(markup)).toContain('Name');
+    expect(words(markup)).toContain('Colour');
+    expect(words(markup)).not.toMatch(/picture|address|https/i);
+    expect(markup).not.toMatch(/type="url"|pattern="https/);
+  });
+
+  it("draws each colour's radio over the whole swatch, so that the control is as big as what is tapped", () => {
+    const radios = inputs(render()).filter((attributes) => /type="radio"/.test(attributes));
+    for (const attributes of radios) {
+      expect(attributes).toMatch(/class="[^"]*\binset-0\b[^"]*\bsize-full\b/);
+      expect(attributes).not.toContain('sr-only');
+    }
   });
 });
 

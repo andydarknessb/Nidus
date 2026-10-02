@@ -1,5 +1,6 @@
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { EmptyRing, Tick } from '@/components/people';
 import { Card, Confirm, Field, fieldClass, helpClass, labelClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { useRefetchOn } from '@/lib/change-feed';
@@ -34,8 +35,11 @@ function CalendarRow({
   const choice = { selected: calendar.selected, profile_id: calendar.profile_id, color: calendar.color };
   return (
     <li className="flex flex-col gap-2">
-      <label className="flex min-h-12 items-center gap-3 text-[17px]">
-        <input type="checkbox" className="size-6 shrink-0" checked={calendar.selected} onChange={(event) => onChange({ ...choice, selected: event.target.checked })} />
+      {/* The checkbox is the whole row, 48 tall, so that the control is what a finger lands on; what is drawn is the app's own tick, or
+          the empty ring a Routine waits in. */}
+      <label className="relative flex min-h-12 items-center gap-3 rounded-lg text-[17px] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring">
+        <input type="checkbox" className="absolute inset-0 size-full cursor-pointer opacity-0" checked={calendar.selected} onChange={(event) => onChange({ ...choice, selected: event.target.checked })} />
+        {calendar.selected ? <Tick size={28} /> : <EmptyRing size={28} width={2.5} />}
         <span className="min-w-0 break-words">{calendar.name}</span>
       </label>
       {calendar.selected && (
@@ -179,7 +183,7 @@ export function CalendarAccountsSection() {
           Copy a link for another adult
         </Button>
         {link && <input className={fieldClass} readOnly value={link} aria-label="Link for another adult" onFocus={(event) => event.target.select()} />}
-        <p role="status" className="min-h-6 text-base">
+        <p role="status" className="text-base">
           {notice}
         </p>
       </div>

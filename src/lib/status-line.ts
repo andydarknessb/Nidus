@@ -51,7 +51,7 @@ export function createStatusLine(): StatusLine {
 }
 
 // What a component says a line with: `const say = useStatusLine(); say('Added milk')`. With no provider (a screen
-// under test, the phone) saying does nothing.
+// under test) saying does nothing. The Wall and the phone's pages each have one.
 export const StatusLineContext = createContext<(words: string) => void>(() => undefined);
 
 export function useStatusLine(): (words: string) => void {

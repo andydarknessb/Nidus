@@ -1,10 +1,11 @@
 import { useId } from 'react';
 import { personStyle } from '@/lib/look';
 import { PROFILE_PALETTE, colorOwners, initialOf, namesInWords, type Profile } from '@/lib/profiles';
-import { Confirm, helpClass, labelClass } from './phone';
+import { Confirm, Field, fieldClass, helpClass, labelClass } from './phone';
 
-// The parts of the People card that say something to the family (docs/look.md; spec 0003, People): the colours a person can be
-// given and whose each one is, and what deleting a person takes with them. Drawn from what they are told, so a test renders them.
+// The parts of the People card that say something to the family (docs/look.md; spec 0003, People): what a person is asked for, the
+// colours they can be given and whose each one is, and what deleting a person takes with them. Drawn from what they are told, so a
+// test renders them.
 
 // What deleting a person takes with them, as the database does it: their Routines go, and every Routine Completion with them
 // (on delete cascade); an event added here that was only for them is left with no one named, and a Mirrored Calendar set to them
@@ -51,7 +52,7 @@ export function ColorPicker({
               <input
                 type="radio"
                 name={group}
-                className="sr-only"
+                className="absolute inset-0 size-full cursor-pointer rounded-full opacity-0"
                 value={hex}
                 checked={value.toLowerCase() === hex}
                 onChange={() => onChange(hex)}
@@ -64,6 +65,28 @@ export function ColorPicker({
       </div>
       {inUse && <p className={`${helpClass} mt-2`}>A letter marks a colour someone already has.</p>}
     </fieldset>
+  );
+}
+
+// What a person is asked for, to be added or to be changed: a name and a colour, and nothing else. There is no picture address.
+export type PersonDraft = { name: string; color: string };
+
+export function PersonFields({
+  draft,
+  profiles,
+  onChange,
+}: {
+  draft: PersonDraft;
+  profiles: readonly Pick<Profile, 'id' | 'name' | 'color'>[];
+  onChange: (draft: PersonDraft) => void;
+}) {
+  return (
+    <>
+      <Field label="Name">
+        <input className={fieldClass} autoComplete="off" autoFocus value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} maxLength={100} required />
+      </Field>
+      <ColorPicker value={draft.color} profiles={profiles} onChange={(color) => onChange({ ...draft, color })} />
+    </>
   );
 }
 
