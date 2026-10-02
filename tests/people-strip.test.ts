@@ -19,12 +19,12 @@ const BEN = profile('p-ben', 'Ben', 3, '#6ee7b7');
 const FAMILY = [CORY, SAM, AVA, BEN];
 
 const routines = (who: Profile, count: number): Routine[] =>
-  Array.from({ length: count }, (_, index) => ({ id: `${who.id}-${index}`, profile_id: who.id, title: `Routine ${index}`, days_of_week: 127, time_of_day: null, sort_order: index, archived_at: null }));
+  Array.from({ length: count }, (_, index) => ({ id: `${who.id}-${index}`, profile_id: who.id, title: `Routine ${index}`, days_of_week: 127, time_of_day: null, sort_order: index, archived_at: null, picture: null }));
 const group = (who: Profile, count: number): ProfileRoutines => ({ profile: who, routines: routines(who, count) });
 const ticked = (who: Profile, count: number) => routines(who, count).map((routine) => routine.id);
 
 function today(groups: ProfileRoutines[], done: string[] = []): RoutinesToday {
-  return { date: '2026-10-01', loaded: true, failed: false, problem: '', groups, done: new Set(done), finished: new Set(), toggle: async () => undefined };
+  return { date: '2026-10-01', loaded: true, settled: true, failed: false, part: 'evening', problems: {}, groups, columns: groups, done: new Set(done), finished: new Set(), toggle: async () => true };
 }
 
 function strip(profiles: Profile[] | null, groups: ProfileRoutines[] = [], done: string[] = [], pressed: string[] = []): string {
