@@ -150,7 +150,12 @@ function ConnectingScreen({ failedTries }: { failedTries: number }) {
   );
 }
 
-function PairingScreen({ pairing }: { pairing: PairingCode }) {
+// The screen of a tablet that is not paired: always light (useLightMode), in the look's own faces. The title and the code are
+// Young Serif, whose figures font-display makes lining and tabular as the clock's are, so the code's digits stand as tall as its
+// letters and each is one width. No monospace face is shipped, and none is asked for: the code is spaced out by letter-spacing
+// alone, with as much space before it as after it so that it sits in the middle. "sign in," is one unit, so the sentence never
+// leaves "sign" at the end of a line and "in" at the start of the next.
+export function PairingScreen({ pairing }: { pairing: PairingCode }) {
   useLightMode();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -161,20 +166,18 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
 
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-8 p-8 text-center">
-      <h1 className="text-4xl font-semibold">Pair this tablet</h1>
+      <h1 className="font-display text-[40px] leading-[44px]">Pair this tablet</h1>
       <p className="max-w-2xl text-2xl">
-        On your phone, open {window.location.origin}/settings, sign in, and enter this code.
+        On your phone, open {window.location.origin}/settings, <span className="whitespace-nowrap">sign in,</span> and enter this code.
       </p>
-      <p className="font-mono text-9xl font-bold tracking-[0.2em]">
-        {pairing.code}
-      </p>
+      <p className="font-display text-9xl leading-none tracking-[0.2em] pl-[0.2em]">{pairing.code}</p>
       <p role="timer" className="text-2xl">
         {remaining > 0 ? `Code expires in ${formatCountdown(remaining)}` : 'Getting a new code'}
       </p>
       {/* This tablet is not paired yet, so dropping its anonymous session loses nothing, and /settings then offers the Google sign-in instead of the Device dead end. */}
       <a
         href="/settings"
-        className="inline-flex min-h-12 items-center text-lg underline"
+        className="inline-flex min-h-12 items-center text-lg whitespace-nowrap underline"
         onClick={(event) => {
           event.preventDefault();
           leaving = true;
@@ -215,11 +218,11 @@ export function BeforeHousehold({ label, failed, words }: { label: string; faile
         <p role="alert" className="p-4 text-xl">
           {words}
         </p>
+      ) : (
+        <EmptyWords className="p-4">Loading</EmptyWords>
       )}
     </section>
   );
-      ) : (
-        <EmptyWords className="p-4">Loading</EmptyWords>
 }
 
 // What each view of the Wall is called in the document's title.
@@ -327,11 +330,11 @@ function HomeShell({ owner }: { owner: boolean }) {
                 <p role="alert" className="text-base">
                   Could not load routines. Check your connection.
                 </p>
+              ) : (
+                <EmptyWords>Loading</EmptyWords>
               )}
             </section>
           )
-              ) : (
-                <EmptyWords>Loading</EmptyWords>
         ) : route.view === 'meals' ? (
           // Meals is a screen of its own, not a calendar view: it takes the same slot, and before the Household is read it is an empty frame, or says it could not be read.
           timezone ? (
