@@ -366,6 +366,28 @@ describe('docs/look.md', () => {
     expect(percent(dark['fill'])).toBe(DARK_MIX.fill);
     expect(percent(dark['done picture'])).toBe(DARK_MIX.doneDisc);
   });
+
+  it('takes the light roles from the steps look.ts takes them from', () => {
+    const light = Object.fromEntries(table('| Role | Used for | Light | Dark |').map((row) => [row[0], row[2]!]));
+    for (const family of FAMILIES) {
+      // A cell names a step of the family (100, 200, 300, 800), `--ink`, or white; "white on 800" is the words, then the ground.
+      const step = (cell: string | undefined) => (cell === '--ink' ? TOKENS.light.ink : cell === 'white' ? '#FFFFFF' : family[Number(cell) as keyof Steps]);
+      const [onTick, tick] = light['tick']!.split(' on ').map(step);
+      const [donePicture, doneDisc] = light['done picture']!.split(' on ').map(step);
+      expect(personRoles('light', family), family.name).toMatchObject({
+        soft: step(light['soft']),
+        fill: step(light['fill']),
+        base: step(light['base']),
+        onBase: step(light['on base']),
+        strong: step(light['strong']),
+        onStrong: step(light['on strong']),
+        tick,
+        onTick,
+        doneDisc,
+        donePicture,
+      });
+    }
+  });
 });
 
 // ---- The button: the Selected look is the variant above, on the two voices that can be selected --------------------
