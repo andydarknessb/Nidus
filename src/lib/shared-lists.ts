@@ -42,6 +42,21 @@ export function withoutCrossed(items: ListItem[]): ListItem[] {
   return items.filter((item) => item.crossed_at === null);
 }
 
+// The Lists screen puts the Pinned List first and keeps the others in their order. A list that is no longer
+// pinned (none set, or deleted) leaves the order as it is.
+export function pinnedFirst(lists: SharedList[], pinnedId: string | null): SharedList[] {
+  const pinned = lists.find((list) => list.id === pinnedId);
+  return pinned ? [pinned, ...lists.filter((list) => list !== pinned)] : lists;
+}
+
+// How many of `count` rows a card holds in `room` px, the rows being `row` px tall and `gap` px apart. All of them
+// when they fit; otherwise as many as fit above the "and N more" button, which is `more` px tall and `gap` below the
+// last row (or none, which leaves the button alone). Whether the button itself fits is for the card to say.
+export function rowsThatFit({ count, room, row, gap, more }: { count: number; room: number; row: number; gap: number; more: number }): number {
+  if (count * row + (count - 1) * gap <= room) return count;
+  return Math.max(0, Math.floor((room - more) / (row + gap)));
+}
+
 // ---- Lists (Household Account writes) ------------------------------------------
 
 export async function loadLists(client: SupabaseClient): Promise<SharedList[]> {
