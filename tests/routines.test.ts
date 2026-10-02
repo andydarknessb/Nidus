@@ -1,20 +1,32 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_PALETTE, createProfile, deleteProfile, type Profile } from '../src/lib/profiles';
+import { PROFILE_PALETTE, createProfile, deleteProfile, movedIds, type Profile } from '../src/lib/profiles';
 import {
+  TIME_OF_DAY_GROUPS,
   WEEKDAYS,
   archiveRoutine,
+  celebrate,
   completeRoutine,
   createRoutine,
+  finishedProfiles,
   groupByProfile,
+  groupByTimeOfDay,
   householdDay,
   isScheduledOn,
   loadCompletions,
   loadRoutines,
   maskOf,
+  movedIdsInGroup,
+  noCelebration,
   reorderRoutines,
+  routineProgress,
+  showsTimeOfDayHeadings,
+  tapFinishesProfile,
   tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
+  updateRoutine,
+  type Celebration,
+  type CelebrationEvent,
   type Routine,
 } from '../src/lib/routines';
 import {
@@ -22,6 +34,7 @@ import {
   asDevice,
   asHouseholdAccount,
   asServiceRole,
+  asTablet,
   createHousehold,
   destroyHousehold,
   destroyTablet,
@@ -39,7 +52,15 @@ const SAT = 6;
 const SUN = 0;
 
 function routine(overrides: Partial<Routine> & Pick<Routine, 'id'>): Routine {
-  return { profile_id: 'p1', title: 'Brush teeth', days_of_week: 127, sort_order: 0, archived_at: null, ...overrides };
+  return { profile_id: 'p1', title: 'Brush teeth', days_of_week: 127, time_of_day: null, sort_order: 0, archived_at: null, ...overrides };
+}
+
+// The Household date `days` calendar days from `date` ('YYYY-MM-DD'). Stepping by 24 hours from now
+// instead lands on the same date during the repeated hour of a 25 hour day, and can skip one on a 23 hour day.
+function addDays(date: string, days: number): string {
+  const moved = new Date(`${date}T00:00:00Z`);
+  moved.setUTCDate(moved.getUTCDate() + days);
+  return moved.toISOString().slice(0, 10);
 }
 
 describe('weekday schedule', () => {
@@ -82,6 +103,16 @@ describe('the Household day', () => {
     expect(householdDay('America/Chicago', new Date('2026-11-02T05:59:00Z')).date).toBe('2026-11-01');
     expect(householdDay('America/Chicago', new Date('2026-11-02T06:00:00Z')).date).toBe('2026-11-02');
   });
+
+  it('steps by calendar days, where stepping by 24 hours repeats a date on a 25 hour day', () => {
+    expect(addDays('2026-10-01', -1)).toBe('2026-09-30');
+    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
+    // 23:30 CST, the last hour of the 25 hour day: 24 hours back is still the 1st, one calendar day back is the 31st.
+    const lastHour = new Date('2026-11-02T05:30:00Z');
+    expect(householdDay('America/Chicago', lastHour).date).toBe('2026-11-01');
+    expect(householdDay('America/Chicago', new Date(lastHour.getTime() - 24 * 60 * 60 * 1000)).date).toBe('2026-11-01');
+    expect(addDays('2026-11-01', -1)).toBe('2026-10-31');
+  });
 });
 
 describe("today's Routines", () => {
@@ -120,6 +151,127 @@ describe("today's Routines", () => {
     ];
     const groups = groupByProfile(profiles, todaysRoutines(rows, MON));
     expect(groups.map((g) => [g.profile.name, g.routines.map((r) => r.id)])).toEqual([['Sam', ['b', 'a']]]);
+  });
+});
+
+describe('Routines by time of day', () => {
+  const shown = (rows: Routine[]) => groupByTimeOfDay(rows).map((group) => [group.label, group.routines.map((r) => r.id)]);
+
+  it('names the groups in the order the day happens, Any time last', () => {
+    expect(TIME_OF_DAY_GROUPS.map((group) => [group.value, group.label])).toEqual([
+      ['morning', 'Morning'],
+      ['afternoon', 'Afternoon'],
+      ['evening', 'Evening'],
+      [null, 'Any time'],
+    ]);
+  });
+
+  it('groups Morning, Afternoon, Evening, then Any time, whatever order the Routines arrive in', () => {
+    const rows = [
+      routine({ id: 'any', time_of_day: null, sort_order: 0 }),
+      routine({ id: 'evening', time_of_day: 'evening', sort_order: 1 }),
+      routine({ id: 'morning', time_of_day: 'morning', sort_order: 2 }),
+      routine({ id: 'afternoon', time_of_day: 'afternoon', sort_order: 3 }),
+    ];
+    expect(shown(rows)).toEqual([
+      ['Morning', ['morning']],
+      ['Afternoon', ['afternoon']],
+      ['Evening', ['evening']],
+      ['Any time', ['any']],
+    ]);
+    // The list it was given is left as it was.
+    expect(rows.map((r) => r.id)).toEqual(['any', 'evening', 'morning', 'afternoon']);
+  });
+
+  it('leaves out the groups with nothing in them', () => {
+    expect(shown([routine({ id: 'any', time_of_day: null }), routine({ id: 'evening', time_of_day: 'evening' })])).toEqual([
+      ['Evening', ['evening']],
+      ['Any time', ['any']],
+    ]);
+    expect(shown([routine({ id: 'noon', time_of_day: 'afternoon' })])).toEqual([['Afternoon', ['noon']]]);
+    expect(groupByTimeOfDay([])).toEqual([]);
+  });
+
+  it('keeps each group in sort_order', () => {
+    const rows = [
+      routine({ id: 'm3', time_of_day: 'morning', sort_order: 7 }),
+      routine({ id: 'a2', time_of_day: null, sort_order: 9 }),
+      routine({ id: 'm1', time_of_day: 'morning', sort_order: 1 }),
+      routine({ id: 'm2', time_of_day: 'morning', sort_order: 5 }),
+      routine({ id: 'a1', time_of_day: null, sort_order: 2 }),
+    ];
+    expect(shown(rows)).toEqual([
+      ['Morning', ['m1', 'm2', 'm3']],
+      ['Any time', ['a1', 'a2']],
+    ]);
+  });
+
+  it('is a single Any time group when no Routine has a time of day', () => {
+    const groups = groupByTimeOfDay([routine({ id: 'b', sort_order: 1 }), routine({ id: 'a', sort_order: 0 })]);
+    expect(groups.map((group) => group.value)).toEqual([null]);
+    expect(shown([routine({ id: 'b', sort_order: 1 }), routine({ id: 'a', sort_order: 0 })])).toEqual([['Any time', ['a', 'b']]]);
+  });
+});
+
+describe("group headings over a Profile's Routines", () => {
+  it('are left off when every Routine is Any time, so a Household that never sets a time of day sees what it always has', () => {
+    expect(showsTimeOfDayHeadings([routine({ id: 'a' }), routine({ id: 'b', sort_order: 1 })])).toBe(false);
+    expect(showsTimeOfDayHeadings([routine({ id: 'a' })])).toBe(false);
+  });
+
+  it('show as soon as one Routine has a time of day, Any time ones included', () => {
+    expect(showsTimeOfDayHeadings([routine({ id: 'a' }), routine({ id: 'b', time_of_day: 'evening' })])).toBe(true);
+    expect(showsTimeOfDayHeadings([routine({ id: 'b', time_of_day: 'morning' })])).toBe(true);
+  });
+
+  it('show when every Routine has a time of day', () => {
+    expect(showsTimeOfDayHeadings([routine({ id: 'a', time_of_day: 'morning' }), routine({ id: 'b', time_of_day: 'afternoon' })])).toBe(true);
+  });
+
+  it('have nothing to head when there are no Routines', () => {
+    expect(showsTimeOfDayHeadings([])).toBe(false);
+  });
+});
+
+describe('moving a Routine inside its time of day group', () => {
+  // Shown as Morning [a, c, e], Evening [b], Any time [d]: not the order of sort_order (a, b, c, d, e).
+  const rows = [
+    routine({ id: 'a', time_of_day: 'morning', sort_order: 0 }),
+    routine({ id: 'b', time_of_day: 'evening', sort_order: 1 }),
+    routine({ id: 'c', time_of_day: 'morning', sort_order: 2 }),
+    routine({ id: 'd', time_of_day: null, sort_order: 3 }),
+    routine({ id: 'e', time_of_day: 'morning', sort_order: 4 }),
+  ];
+  const shownOrder = ['a', 'c', 'e', 'b', 'd'];
+
+  it('swaps a Routine with its neighbour in the same group and returns the whole list as shown', () => {
+    expect(movedIdsInGroup(rows, 'c', -1)).toEqual(['c', 'a', 'e', 'b', 'd']);
+    expect(movedIdsInGroup(rows, 'c', 1)).toEqual(['a', 'e', 'c', 'b', 'd']);
+    expect(movedIdsInGroup(rows, 'e', -1)).toEqual(['a', 'e', 'c', 'b', 'd']);
+  });
+
+  it('keeps the order as shown at the edge of a group, and for a Routine alone in its group', () => {
+    expect(movedIdsInGroup(rows, 'a', -1)).toEqual(shownOrder);
+    // The bottom of Morning does not cross into Evening, and the top of Evening does not cross into Morning.
+    expect(movedIdsInGroup(rows, 'e', 1)).toEqual(shownOrder);
+    expect(movedIdsInGroup(rows, 'b', -1)).toEqual(shownOrder);
+    expect(movedIdsInGroup(rows, 'b', 1)).toEqual(shownOrder);
+    expect(movedIdsInGroup(rows, 'd', -1)).toEqual(shownOrder);
+    expect(movedIdsInGroup(rows, 'd', 1)).toEqual(shownOrder);
+  });
+
+  it('leaves the order as shown for an id that is not in the list', () => {
+    expect(movedIdsInGroup(rows, 'nobody', 1)).toEqual(shownOrder);
+    expect(movedIdsInGroup([], 'a', 1)).toEqual([]);
+  });
+
+  it('is a plain move when every Routine is Any time', () => {
+    const plain = ['x', 'y', 'z'].map((id, index) => routine({ id, sort_order: index }));
+    for (const id of ['x', 'y', 'z']) {
+      for (const offset of [-1, 1]) {
+        expect(movedIdsInGroup(plain, id, offset)).toEqual(movedIds(['x', 'y', 'z'], id, offset));
+      }
+    }
   });
 });
 
@@ -162,6 +314,301 @@ describe('optimistic tick', () => {
     });
     expect(stuck).toBe(false);
     expect(view.get()).toEqual(['r1']);
+  });
+});
+
+describe("progress through a Profile's Routines today", () => {
+  const mine = ['brush', 'bag', 'homework'].map((id, index) => routine({ id, sort_order: index }));
+
+  it('is none done of all when nothing is ticked', () => {
+    expect(routineProgress(mine, new Set())).toEqual({ done: 0, total: 3 });
+  });
+
+  it('counts the Routines ticked', () => {
+    expect(routineProgress(mine, new Set(['bag']))).toEqual({ done: 1, total: 3 });
+    expect(routineProgress(mine, new Set(['brush', 'homework']))).toEqual({ done: 2, total: 3 });
+  });
+
+  it('is all done when every Routine is ticked', () => {
+    expect(routineProgress(mine, new Set(['brush', 'bag', 'homework']))).toEqual({ done: 3, total: 3 });
+  });
+
+  it('is nothing of nothing for a Profile with no Routines today', () => {
+    expect(routineProgress([], new Set())).toEqual({ done: 0, total: 0 });
+    expect(routineProgress([], new Set(['brush']))).toEqual({ done: 0, total: 0 });
+  });
+
+  it("ignores a completion that is not one of the Profile's Routines", () => {
+    expect(routineProgress(mine, new Set(['someone-elses', 'bag']))).toEqual({ done: 1, total: 3 });
+  });
+
+  it("counts only today's Routines: not an archived one, not one for another weekday, and not a completion of either", () => {
+    const daily = routine({ id: 'daily', sort_order: 0 });
+    const weekdays = routine({ id: 'weekdays', days_of_week: maskOf([1, 2, 3, 4, 5]), sort_order: 1 });
+    const weekend = routine({ id: 'weekend', days_of_week: maskOf([SAT, SUN]), sort_order: 2 });
+    const archived = routine({ id: 'archived', archived_at: '2026-09-01T00:00:00Z', sort_order: 3 });
+    const all = [daily, weekdays, weekend, archived];
+    // Every one of them has a completion today, as a read of the day's completions would find.
+    const everything = new Set(all.map((r) => r.id));
+
+    expect(routineProgress(todaysRoutines(all, MON), everything)).toEqual({ done: 2, total: 2 });
+    expect(routineProgress(todaysRoutines(all, SAT), new Set(['weekend']))).toEqual({ done: 1, total: 2 });
+    expect(routineProgress(todaysRoutines(all, SAT), new Set(['weekdays', 'archived']))).toEqual({ done: 0, total: 2 });
+  });
+
+  it('is worked out for each Profile on its own', () => {
+    const profiles: Profile[] = [
+      { id: 'p1', name: 'Mom', color: red, avatar_url: null, sort_order: 0 },
+      { id: 'p2', name: 'Sam', color: blue, avatar_url: null, sort_order: 1 },
+    ];
+    const rows = [
+      routine({ id: 'a', profile_id: 'p1' }),
+      routine({ id: 'b', profile_id: 'p2' }),
+      routine({ id: 'c', profile_id: 'p2', sort_order: 1 }),
+    ];
+    const groups = groupByProfile(profiles, todaysRoutines(rows, MON));
+    expect(groups.map((g) => routineProgress(g.routines, new Set(['a', 'b'])))).toEqual([
+      { done: 1, total: 1 },
+      { done: 1, total: 2 },
+    ]);
+  });
+});
+
+describe('a tap that finishes a Profile', () => {
+  const three = ['a', 'b', 'c'].map((id, index) => routine({ id, sort_order: index }));
+  // Whether ticking (or unticking) `id` finishes the Profile when `done` was ticked before the tap.
+  const finishes = (done: string[], id: string, checked: boolean, rows: Routine[] = three) => tapFinishesProfile(rows, new Set(done), id, checked);
+
+  it('is true for the tick of the last Routine left, whichever Routine that is', () => {
+    expect(finishes(['a', 'b'], 'c', true)).toBe(true);
+    expect(finishes(['c', 'a'], 'b', true)).toBe(true);
+    expect(finishes(['b', 'c'], 'a', true)).toBe(true);
+  });
+
+  it('is false for a tick that leaves another Routine unticked', () => {
+    expect(finishes([], 'a', true)).toBe(false);
+    expect(finishes(['a'], 'b', true)).toBe(false);
+    expect(finishes(['c'], 'a', true)).toBe(false);
+  });
+
+  it('is false for an untick, whether or not the Profile was done', () => {
+    expect(finishes(['a', 'b', 'c'], 'c', false)).toBe(false);
+    expect(finishes(['a', 'b', 'c'], 'a', false)).toBe(false);
+    expect(finishes(['a', 'b'], 'b', false)).toBe(false);
+    expect(finishes(['a'], 'a', false)).toBe(false);
+  });
+
+  it('is false for a tick when the Profile was already done', () => {
+    expect(finishes(['a', 'b', 'c'], 'c', true)).toBe(false);
+    expect(finishes(['a', 'b', 'c'], 'a', true)).toBe(false);
+  });
+
+  it('is true for the one tick of a Profile with one Routine', () => {
+    const only = [routine({ id: 'only' })];
+    expect(finishes([], 'only', true, only)).toBe(true);
+    expect(finishes(['only'], 'only', true, only)).toBe(false);
+    expect(finishes(['only'], 'only', false, only)).toBe(false);
+  });
+
+  it('is false for a Profile with no Routines today', () => {
+    expect(finishes([], 'a', true, [])).toBe(false);
+    expect(finishes(['a'], 'a', false, [])).toBe(false);
+  });
+
+  it("is false for the tick of a Routine that is not the Profile's, finished or not", () => {
+    expect(finishes(['a', 'b'], 'elsewhere', true)).toBe(false);
+    expect(finishes(['a', 'b', 'c'], 'elsewhere', true)).toBe(false);
+  });
+
+  it('counts only the Routines it is given, so a completion of an archived one does not finish a Profile early', () => {
+    const today = todaysRoutines([...three, routine({ id: 'old', archived_at: '2026-09-01T00:00:00Z' })], MON);
+    expect(finishes(['old', 'a'], 'b', true, today)).toBe(false);
+    expect(finishes(['old', 'a', 'b'], 'c', true, today)).toBe(true);
+  });
+
+  it('leaves the set it was given as it was', () => {
+    const before = new Set(['a', 'b']);
+    expect(tapFinishesProfile(three, before, 'c', true)).toBe(true);
+    expect([...before]).toEqual(['a', 'b']);
+  });
+
+  it('is true in exactly one case, over every state of three Routines and every tap: a tick of the one Routine left', () => {
+    const ids = three.map((r) => r.id);
+    for (let mask = 0; mask < 1 << ids.length; mask += 1) {
+      const done = new Set(ids.filter((_, index) => (mask >> index) & 1));
+      const left = ids.filter((id) => !done.has(id));
+      for (const tapped of [...ids, 'elsewhere']) {
+        for (const checked of [true, false]) {
+          const expected = checked && left.length === 1 && left[0] === tapped;
+          expect(tapFinishesProfile(three, done, tapped, checked), `done ${[...done]}, tapped ${tapped}, ticking ${checked}`).toBe(expected);
+        }
+      }
+    }
+  });
+});
+
+describe('the Profiles that are all done', () => {
+  const mom = { id: 'p1', name: 'Mom', color: red, avatar_url: null, sort_order: 0 };
+  const sam = { id: 'p2', name: 'Sam', color: blue, avatar_url: null, sort_order: 1 };
+  const groups = [
+    { profile: mom, routines: [routine({ id: 'a' }), routine({ id: 'b', sort_order: 1 })] },
+    { profile: sam, routines: [routine({ id: 'c', profile_id: 'p2' })] },
+  ];
+
+  it('are the ones with every Routine today ticked', () => {
+    expect([...finishedProfiles(groups, new Set(['a', 'b']))]).toEqual(['p1']);
+    expect([...finishedProfiles(groups, new Set(['c']))]).toEqual(['p2']);
+    expect([...finishedProfiles(groups, new Set(['a', 'b', 'c']))]).toEqual(['p1', 'p2']);
+  });
+
+  it('are none while every Profile has one left, or nothing is ticked', () => {
+    expect(finishedProfiles(groups, new Set()).size).toBe(0);
+    expect(finishedProfiles(groups, new Set(['a'])).size).toBe(0);
+  });
+
+  it('never include a Profile with no Routines today, or count a completion that is not its own', () => {
+    expect(finishedProfiles([], new Set(['a'])).size).toBe(0);
+    expect(finishedProfiles([{ profile: mom, routines: [] }], new Set(['a'])).size).toBe(0);
+    expect([...finishedProfiles(groups, new Set(['a', 'c', 'elsewhere']))]).toEqual(['p2']);
+  });
+});
+
+describe('the celebration of a finished Profile', () => {
+  // Friday night, the first minute of Saturday, and the Monday the Profile's Routines return.
+  const friday = '2026-10-02';
+  const saturday = '2026-10-03';
+  const monday = '2026-10-05';
+  // `at` is how far down its group (px) the Routine that finished the Profile is.
+  const finished = (profileId: string, day = friday, at = 40): CelebrationEvent => ({ type: 'finished', profileId, day, at });
+  const landed = (profileId: string, id: number): CelebrationEvent => ({ type: 'landed', profileId, id });
+  // What the screen shows: the day, and the Profiles whose groups are on it and finished.
+  const shown = (day: string | null, ...profileIds: string[]): CelebrationEvent => ({ type: 'shown', day, finished: new Set(profileIds) });
+  const play = (...events: CelebrationEvent[]): Celebration => events.reduce(celebrate, noCelebration);
+  const celebrating = (state: Celebration) => Object.keys(state.bursts).sort();
+
+  it('starts when a tap finishes a Profile, over that Profile only', () => {
+    const state = play(finished('ava'));
+    expect(celebrating(state)).toEqual(['ava']);
+    expect(celebrating(noCelebration)).toEqual([]);
+  });
+
+  it('plays over two Profiles at once when two finish together', () => {
+    expect(celebrating(play(finished('ava'), finished('ben')))).toEqual(['ava', 'ben']);
+  });
+
+  it('starts where the tapped Routine is in its group, each burst at its own', () => {
+    const state = play(finished('ava', friday, 120), finished('ben', friday, 15));
+    expect(state.bursts.ava!.at).toBe(120);
+    expect(state.bursts.ben!.at).toBe(15);
+  });
+
+  it('starts again where the new tap was when a Profile finishes again', () => {
+    const state = play(finished('ava', friday, 120), finished('ava', friday, 300));
+    expect(state.bursts.ava!.at).toBe(300);
+  });
+
+  it('stays where it started while the screen goes on showing the Profile finished', () => {
+    const state = play(finished('ava', friday, 120));
+    expect(celebrate(state, shown(friday, 'ava')).bursts.ava!.at).toBe(120);
+  });
+
+  it('plays again when a Profile finishes again, as a new burst', () => {
+    const first = play(finished('ava'));
+    const again = celebrate(first, finished('ava'));
+    expect(celebrating(again)).toEqual(['ava']);
+    expect(again.bursts.ava!.id).not.toBe(first.bursts.ava!.id);
+  });
+
+  it('ends when its animation ends', () => {
+    const state = play(finished('ava'), finished('ben'));
+    const ended = celebrate(state, landed('ava', state.bursts.ava!.id));
+    expect(celebrating(ended)).toEqual(['ben']);
+  });
+
+  it('is not ended by the landing of an older burst of the same Profile', () => {
+    const first = play(finished('ava'));
+    const second = celebrate(first, finished('ava'));
+    expect(celebrate(second, landed('ava', first.bursts.ava!.id))).toBe(second);
+  });
+
+  it('is not ended by a landing for a Profile that is not celebrating', () => {
+    const state = play(finished('ava'));
+    expect(celebrate(state, landed('ben', 1))).toBe(state);
+    expect(celebrate(noCelebration, landed('ava', 1))).toBe(noCelebration);
+  });
+
+  it('lasts while its Profile is still finished on the screen, and changes nothing', () => {
+    const state = play(finished('ava'));
+    expect(celebrate(state, shown(friday, 'ava'))).toBe(state);
+    expect(celebrate(state, shown(friday, 'ava', 'ben'))).toBe(state);
+    expect(celebrate(noCelebration, shown(friday, 'ava'))).toBe(noCelebration);
+  });
+
+  it('ends when the Profile is no longer finished, as with an untick, so nothing falls over "2 of 3"', () => {
+    const state = play(finished('ava'), shown(friday, 'ava'));
+    expect(celebrating(celebrate(state, shown(friday)))).toEqual([]);
+  });
+
+  it('ends when a tick is put back after a failed write, whichever tap it was', () => {
+    // Ticked, shown finished, then the write failed and the tick went back.
+    expect(celebrating(play(finished('ava'), shown(friday, 'ava'), shown(friday)))).toEqual([]);
+    // One Profile's tick put back while another Profile's burst plays: only the one that lost its finish ends.
+    expect(celebrating(play(finished('ava'), finished('ben'), shown(friday, 'ava', 'ben'), shown(friday, 'ben')))).toEqual(['ben']);
+  });
+
+  it('is not ended by an earlier tap failing while the Profile stays finished', () => {
+    // Done already, then unticked, then ticked again (a burst). The untick's write now fails and puts its
+    // Routine back: it is ticked either way, the Profile is still finished, and the burst plays on.
+    const state = play(shown(friday, 'ava'), shown(friday), finished('ava'), shown(friday, 'ava'));
+    expect(celebrating(state)).toEqual(['ava']);
+    expect(celebrate(state, shown(friday, 'ava'))).toBe(state);
+  });
+
+  it("ends when its Profile's group leaves the screen, and only that Profile's", () => {
+    const state = play(finished('ava'), finished('ben'));
+    expect(celebrating(celebrate(state, shown(friday, 'ben')))).toEqual(['ben']);
+  });
+
+  it('is cleared for every Profile when the Household day changes', () => {
+    const state = play(finished('ava'), finished('ben'));
+    // Even a Profile the new day's read shows finished does not keep a burst the old day started.
+    expect(celebrating(celebrate(state, shown(saturday, 'ava', 'ben')))).toEqual([]);
+    expect(celebrating(celebrate(state, shown(saturday)))).toEqual([]);
+  });
+
+  it('cannot replay when the group comes back: finished at 23:59:59 on a Friday, gone from Saturday, back on Monday', () => {
+    let state = play(finished('ava', friday));
+    // Midnight: the Profile's Routines are not scheduled for Saturday, so its group leaves the screen.
+    state = celebrate(state, shown(saturday));
+    expect(celebrating(state)).toEqual([]);
+    // Monday: the group comes back unfinished, and later finishes by a tick heard from another screen.
+    state = celebrate(state, shown(monday));
+    state = celebrate(state, shown(monday, 'ava'));
+    expect(celebrating(state)).toEqual([]);
+  });
+
+  it('cannot replay when a group comes back on the same day either', () => {
+    const state = play(finished('ava'), shown(friday), shown(friday, 'ava'));
+    expect(celebrating(state)).toEqual([]);
+  });
+
+  it('does not carry a burst from another day into a new tap', () => {
+    expect(celebrating(play(finished('ava', friday), finished('ben', saturday)))).toEqual(['ben']);
+  });
+
+  it('works on a screen that has no day yet', () => {
+    expect(celebrate(noCelebration, shown(null))).toBe(noCelebration);
+  });
+
+  it('never changes the state or the sets it is given', () => {
+    const frozen = Object.freeze({ day: friday, bursts: Object.freeze({ ava: Object.freeze({ id: 1, at: 0 }) }), issued: 1 });
+    const finishedNow = Object.freeze(new Set(['ava']));
+    expect(() => celebrate(frozen, finished('ben'))).not.toThrow();
+    expect(() => celebrate(frozen, landed('ava', 1))).not.toThrow();
+    expect(() => celebrate(frozen, { type: 'shown', day: friday, finished: finishedNow })).not.toThrow();
+    expect(() => celebrate(frozen, { type: 'shown', day: saturday, finished: finishedNow })).not.toThrow();
+    expect(frozen.bursts.ava.id).toBe(1);
+    expect([...finishedNow]).toEqual(['ava']);
   });
 });
 
@@ -208,6 +655,97 @@ describe('routines', () => {
     expect(kept.data?.archived_at).not.toBeNull();
   });
 
+  it('a Household Account creates a Routine with a time of day, and without one', async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+
+    const made = [
+      await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0),
+      await createRoutine(phone, householdId, profile.id, { title: 'Homework', days_of_week: everyDay, time_of_day: 'afternoon' }, 1),
+      await createRoutine(phone, householdId, profile.id, { title: 'Brush teeth', days_of_week: everyDay, time_of_day: 'evening' }, 2),
+      await createRoutine(phone, householdId, profile.id, { title: 'Walk the dog', days_of_week: everyDay, time_of_day: null }, 3),
+      // Not saying a time of day is the same as any time.
+      await createRoutine(phone, householdId, profile.id, { title: 'Water plants', days_of_week: everyDay }, 4),
+    ];
+    expect(made.map((r) => r.time_of_day)).toEqual(['morning', 'afternoon', 'evening', null, null]);
+    // What the database holds, read back, not only what the insert echoed.
+    expect((await loadRoutines(phone)).map((r) => [r.title, r.time_of_day])).toEqual([
+      ['Vitamins', 'morning'],
+      ['Homework', 'afternoon'],
+      ['Brush teeth', 'evening'],
+      ['Walk the dog', null],
+      ['Water plants', null],
+    ]);
+  });
+
+  it('refuses a time of day that is not morning, afternoon or evening, on create and on edit', async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0);
+
+    // The typed API cannot say "noon", so go around it: the database is what refuses.
+    const create = await phone
+      .from('routines')
+      .insert({ household_id: householdId, profile_id: profile.id, title: 'Brunch', days_of_week: 1, time_of_day: 'noon' });
+    expect(create.error?.code).toBe('23514');
+    for (const unknown of ['noon', 'Morning', '']) {
+      const edit = await phone.from('routines').update({ time_of_day: unknown }).eq('id', pills.id).select('id');
+      expect(edit.error?.code).toBe('23514');
+    }
+    expect(await loadRoutines(phone)).toEqual([pills]);
+  });
+
+  it("a Household Account edits a Routine's title, days and time of day, and its Routine Completions survive", async () => {
+    const { arranged, phone, profile, householdId } = await household('The Andersons');
+    const walk = await createRoutine(phone, householdId, profile.id, { title: 'Wlak the dog', days_of_week: everyDay }, 0);
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'evening' }, 1);
+    const today = householdDay(arranged.household.timezone).date;
+    const yesterday = addDays(today, -1);
+
+    // A day of history and today's tick, arranged as in the midnight test: tick, move it back a day, tick again.
+    const admin = asServiceRole();
+    await completeRoutine(phone, walk.id, today);
+    await admin.from('routine_completions').update({ completed_on: yesterday }).eq('routine_id', walk.id);
+    await completeRoutine(phone, walk.id, today);
+    const completions = async () => (await admin.from('routine_completions').select('id, completed_on, completed_at').eq('routine_id', walk.id).order('completed_on')).data;
+    const before = await completions();
+    expect(before?.map((c) => c.completed_on)).toEqual([yesterday, today]);
+
+    await updateRoutine(phone, walk.id, { title: ' Walk the dog ', days_of_week: maskOf([MON, WED]), time_of_day: 'morning' });
+
+    // The three fields changed (the title trimmed); nothing else about it did, and no other Routine moved.
+    const after = await loadRoutines(phone);
+    expect(after.find((r) => r.id === walk.id)).toEqual({ ...walk, title: 'Walk the dog', days_of_week: maskOf([MON, WED]), time_of_day: 'morning' });
+    expect(after.find((r) => r.id === pills.id)).toEqual(pills);
+    // The same completion rows, untouched: yesterday's history and today's tick.
+    expect(await completions()).toEqual(before);
+    expect(await loadCompletions(phone, today)).toEqual([walk.id]);
+
+    // The time of day can be taken away again: any time.
+    await updateRoutine(phone, walk.id, { title: 'Walk the dog', days_of_week: everyDay, time_of_day: null });
+    expect((await loadRoutines(phone)).find((r) => r.id === walk.id)).toEqual({ ...walk, title: 'Walk the dog', time_of_day: null });
+  });
+
+  it('refuses an edit that leaves a blank title or no days, and keeps the Routine as it was', async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0);
+
+    await expect(updateRoutine(phone, pills.id, { title: '   ', days_of_week: everyDay, time_of_day: 'evening' })).rejects.toMatchObject({ code: '23514' });
+    await expect(updateRoutine(phone, pills.id, { title: 'Vitamins', days_of_week: 0, time_of_day: 'evening' })).rejects.toMatchObject({ code: '23514' });
+    expect(await loadRoutines(phone)).toEqual([pills]);
+  });
+
+  it('refuses an edit to an archived Routine and leaves it as it was', async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0);
+    await archiveRoutine(phone, pills.id);
+
+    // It has left the phone's list, but a form left open on another screen can still hold its id.
+    await expect(updateRoutine(phone, pills.id, { title: 'Renamed', days_of_week: 1, time_of_day: 'evening' })).rejects.toBeTruthy();
+
+    const kept = await asServiceRole().from('routines').select('title, days_of_week, time_of_day, sort_order, archived_at').eq('id', pills.id).single();
+    expect(kept.data).toMatchObject({ title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning', sort_order: 0 });
+    expect(kept.data?.archived_at).not.toBeNull();
+  });
+
   it('rejects a blank title, an empty or out-of-range schedule, and another Household\'s Profile', async () => {
     const { phone, profile, householdId } = await household('The Andersons');
     const { profile: foreignProfile } = await household('Other');
@@ -234,6 +772,21 @@ describe('routines', () => {
     expect(await loadRoutines(ours.phone)).toEqual([mine]);
   });
 
+  it("another household's account and Device can neither read a Routine's time of day nor edit it", async () => {
+    const ours = await household('Ours');
+    const theirs = await household('Theirs');
+    const mine = await createRoutine(ours.phone, ours.householdId, ours.profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0);
+    const theirWall = await device(theirs.arranged);
+    const hijack = { title: 'Hijacked', days_of_week: 1, time_of_day: 'evening' } as const;
+
+    expect(await loadRoutines(theirs.phone)).toEqual([]);
+    expect(await loadRoutines(theirWall)).toEqual([]);
+    await expect(updateRoutine(theirs.phone, mine.id, hijack)).rejects.toBeTruthy();
+    await expect(updateRoutine(theirWall, mine.id, hijack)).rejects.toBeTruthy();
+    await expect(createRoutine(theirs.phone, ours.householdId, ours.profile.id, { ...hijack, title: 'Planted' }, 1)).rejects.toBeTruthy();
+    expect(await loadRoutines(ours.phone)).toEqual([mine]);
+  });
+
   it('a Device reads Routines but cannot create, edit, archive or reorder them', async () => {
     const { arranged, phone, profile, householdId } = await household('The Andersons');
     const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay }, 0);
@@ -246,6 +799,38 @@ describe('routines', () => {
     expect(update.data).toEqual([]);
     await expect(archiveRoutine(wall, pills.id)).resolves.toBeUndefined();
     await expect(reorderRoutines(wall, [pills.id])).rejects.toBeTruthy();
+    expect(await loadRoutines(phone)).toEqual([pills]);
+  });
+
+  it("a Device reads a Routine's time of day but can neither create nor edit one", async () => {
+    const { arranged, phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0);
+    const wall = await device(arranged);
+
+    expect((await loadRoutines(wall)).map((r) => r.time_of_day)).toEqual(['morning']);
+    expect(await loadRoutines(wall)).toEqual([pills]);
+
+    await expect(createRoutine(wall, householdId, profile.id, { title: 'Sneaky', days_of_week: 1, time_of_day: 'evening' }, 1)).rejects.toBeTruthy();
+    await expect(updateRoutine(wall, pills.id, { title: 'Renamed', days_of_week: 1, time_of_day: 'evening' })).rejects.toBeTruthy();
+    // Nor by writing the column on its own.
+    const raw = await wall.from('routines').update({ time_of_day: 'evening' }).eq('id', pills.id).select('id');
+    expect(raw.data ?? []).toEqual([]);
+    expect(await loadRoutines(phone)).toEqual([pills]);
+  });
+
+  it('an unpaired tablet reads no Routines and can neither create one nor edit one', async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0);
+    // An anonymous session that was never paired runs as `authenticated` and holds the column grants,
+    // time_of_day included, so only row-level security keeps it out.
+    const tablet = await asTablet();
+    tablets.push(tablet);
+
+    expect(await loadRoutines(tablet.client)).toEqual([]);
+    await expect(createRoutine(tablet.client, householdId, profile.id, { title: 'Planted', days_of_week: 1, time_of_day: 'evening' }, 1)).rejects.toBeTruthy();
+    await expect(updateRoutine(tablet.client, pills.id, { title: 'Hijacked', days_of_week: 1, time_of_day: 'evening' })).rejects.toBeTruthy();
+    const raw = await tablet.client.from('routines').update({ time_of_day: 'evening' }).eq('id', pills.id).select('id');
+    expect(raw.data ?? []).toEqual([]);
     expect(await loadRoutines(phone)).toEqual([pills]);
   });
 
@@ -284,8 +869,7 @@ describe('routines', () => {
     const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay }, 0);
     const wall = await device(arranged);
     const today = householdDay(arranged.household.timezone).date;
-    const yesterday = householdDay(arranged.household.timezone, new Date(Date.now() - 24 * 60 * 60 * 1000)).date;
-    expect(yesterday).not.toBe(today);
+    const yesterday = addDays(today, -1);
 
     // History arranged by moving today's completion back a day, as if ticked yesterday.
     await completeRoutine(wall, pills.id, today);
@@ -312,8 +896,9 @@ describe('routines', () => {
     const { arranged, phone, profile, householdId } = await household('The Andersons');
     const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay }, 0);
     const wall = await device(arranged);
-    const yesterday = householdDay(arranged.household.timezone, new Date(Date.now() - 24 * 60 * 60 * 1000)).date;
-    const tomorrow = householdDay(arranged.household.timezone, new Date(Date.now() + 24 * 60 * 60 * 1000)).date;
+    const today = householdDay(arranged.household.timezone).date;
+    const yesterday = addDays(today, -1);
+    const tomorrow = addDays(today, 1);
 
     await expect(completeRoutine(wall, pills.id, yesterday)).rejects.toMatchObject({ code: '23514' });
     await expect(completeRoutine(wall, pills.id, tomorrow)).rejects.toMatchObject({ code: '23514' });
@@ -359,6 +944,17 @@ describe('routines', () => {
     await expect(completeRoutine(visitor, pills.id, householdDay('America/Chicago').date)).rejects.toBeTruthy();
   });
 
+  it("a visitor with no session can neither read a Routine's time of day nor create or edit one", async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0);
+
+    const visitor = asAnonymous();
+    expect((await visitor.from('routines').select('time_of_day')).error).toBeTruthy();
+    await expect(createRoutine(visitor, householdId, profile.id, { title: 'Planted', days_of_week: 1, time_of_day: 'evening' }, 1)).rejects.toBeTruthy();
+    await expect(updateRoutine(visitor, pills.id, { title: 'Hijacked', days_of_week: 1, time_of_day: 'evening' })).rejects.toBeTruthy();
+    expect(await loadRoutines(phone)).toEqual([pills]);
+  });
+
   it('deleting a Profile removes its Routines and their completions, and only its own', async () => {
     const { arranged, phone, profile, householdId } = await household('The Andersons');
     const sam = await createProfile(phone, householdId, { name: 'Sam', color: blue, avatar_url: null }, 1);
@@ -400,5 +996,35 @@ describe('routines', () => {
 
     expect((await loadRoutines(ours.phone)).map((r) => r.title)).toEqual(['A', 'B']);
     expect((await loadRoutines(other.phone)).map((r) => r.sort_order)).toEqual([0]);
+  });
+
+  it('a move inside a time of day group leaves sort_order equal to the order on screen', async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+    const make = (title: string, time_of_day: Routine['time_of_day'], sortOrder: number) =>
+      createRoutine(phone, householdId, profile.id, { title, days_of_week: everyDay, time_of_day }, sortOrder);
+    await make('A', 'morning', 0);
+    await make('B', 'evening', 1);
+    const c = await make('C', 'morning', 2);
+    await make('D', null, 3);
+    await make('E', 'morning', 4);
+
+    // What the phone lists: Morning [A, C, E], Evening [B], Any time [D], not the order of sort_order.
+    const onScreen = async () => groupByTimeOfDay(await loadRoutines(phone)).flatMap((group) => group.routines.map((r) => r.title));
+    expect(await onScreen()).toEqual(['A', 'C', 'E', 'B', 'D']);
+    expect((await loadRoutines(phone)).map((r) => r.title)).toEqual(['A', 'B', 'C', 'D', 'E']);
+
+    // Moving C up sends the whole list as shown, so the next read agrees with the screen.
+    await reorderRoutines(phone, movedIdsInGroup(await loadRoutines(phone), c.id, -1));
+    const moved = await loadRoutines(phone);
+    expect(moved.map((r) => [r.title, r.sort_order])).toEqual([['C', 0], ['A', 1], ['E', 2], ['B', 3], ['D', 4]]);
+    expect(await onScreen()).toEqual(['C', 'A', 'E', 'B', 'D']);
+
+    // Moving it down twice brings it to the bottom of Morning; a third move changes nothing and
+    // never carries it into Evening.
+    for (let step = 0; step < 3; step += 1) {
+      await reorderRoutines(phone, movedIdsInGroup(await loadRoutines(phone), c.id, 1));
+    }
+    expect((await loadRoutines(phone)).map((r) => [r.title, r.sort_order])).toEqual([['A', 0], ['E', 1], ['C', 2], ['B', 3], ['D', 4]]);
+    expect(await onScreen()).toEqual(['A', 'E', 'C', 'B', 'D']);
   });
 });

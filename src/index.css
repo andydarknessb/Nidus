@@ -62,3 +62,50 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+
+/* The confetti burst over a Profile's Routines when a tap finishes them (RoutinesPage.tsx). The burst fills
+   the group and starts --at down it, where the Routine was tapped. Each piece pops up and to one side, then
+   falls, turning, and fades out at the end, in 1.5 s. A piece starts 20 ms after the one before it, so the
+   whole burst is over in under two seconds. Sideways is a percentage of the group's width (the burst is a
+   size container); up and down are rem, so the burst is the same size over a short group and a tall one. */
+@keyframes confetti-burst {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+    animation-timing-function: ease-out;
+  }
+  35% {
+    transform: translate(calc(var(--sideways) * 0.6cqw), calc(var(--rise) * 1rem)) rotate(calc(var(--turn) * 0.3));
+    opacity: 1;
+    animation-timing-function: ease-in;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(var(--sideways) * 1cqw), calc(var(--fall) * 1rem)) rotate(var(--turn));
+    opacity: 0;
+  }
+}
+
+.confetti {
+  container-type: size;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: var(--at);
+  left: 50%;
+  width: 0.625rem;
+  height: 1rem;
+  border-radius: 1px;
+  animation: confetti-burst 1.5s both;
+  animation-delay: var(--delay);
+}
+
+/* For someone who asked for less motion nothing animates and no piece is drawn. */
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
+}

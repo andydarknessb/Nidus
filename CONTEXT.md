@@ -19,7 +19,7 @@ A person in the Household, used for attribution and colour-coding. Has no creden
 _Avoid_: User, member, account, kiosk
 
 **Device**:
-A tablet paired to a Household so it can show the display without a sign-in. It may read everything, tick Routines and list items, and manage Native Events, but never administer the Household. A Device is not a Profile.
+A tablet paired to a Household so it can show the display without a sign-in. It may read everything, tick Routines and list items, plan Meals, and manage Native Events, but never administer the Household. A Device is not a Profile.
 _Avoid_: Kiosk profile, terminal
 
 **Pairing Code**:
@@ -50,7 +50,7 @@ _Avoid_: Local event, manual event
 ### Tasks & lists
 
 **Routine**:
-A habit owned by one Profile on a days-of-week schedule. It resets to unchecked at Household midnight regardless of whether it was done.
+A habit owned by one Profile on a days-of-week schedule, optionally placed in a time of day (morning, afternoon or evening). It resets to unchecked at Household midnight regardless of whether it was done.
 _Avoid_: Habit, daily task, chore
 
 **Routine Completion**:
@@ -64,3 +64,9 @@ _Avoid_: Todo list, checklist
 **Pinned List**:
 The one Shared List a Household shows on the home screen's rail (`households.pinned_list_id`). A new Household starts with Groceries pinned; only the Household Account changes it. The other lists open from the tablet's Lists screen.
 _Avoid_: Favourite list, default list
+
+### Meals
+
+**Meal**:
+What the Household plans to eat for one slot (breakfast, lunch, dinner or snack) on one Household date. Free text, at most one per slot per day; the Household Account or a Device writes, changes or clears it.
+_Avoid_: Recipe, menu, meal plan entry
