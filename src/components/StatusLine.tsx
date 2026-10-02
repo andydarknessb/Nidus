@@ -6,15 +6,22 @@ import { StatusLineContext, createStatusLine } from '../lib/status-line';
 // The region is always on the page and only its line changes, so a screen reader announces each new line, politely. The
 // line is keyed on how many times anything has been said, so the same words said twice are two lines, and are announced
 // twice: a screen reader announces a change, and the same text set again is none.
+//
+// The screen is held in a wrapper that has no box of its own, which is what a sheet makes inert while it is open (BEHIND_SHEETS,
+// lib/inert-behind.ts), and the line is beside it, not in it: a line said as a sheet closes (an event saved, a meal planned) is
+// announced, not lost to a page that is still inert when it arrives.
 export function StatusLineProvider({ children }: { children: ReactNode }) {
   const [status] = useState(createStatusLine);
-  const line = useSyncExternalStore(status.subscribe, status.line);
-  const said = useSyncExternalStore(status.subscribe, status.count);
+  // (The third argument is what a render to markup reads, which a test does: the same.)
+  const line = useSyncExternalStore(status.subscribe, status.line, status.line);
+  const said = useSyncExternalStore(status.subscribe, status.count, status.count);
   useEffect(() => () => status.dispose(), [status]);
 
   return (
     <StatusLineContext.Provider value={status.say}>
-      {children}
+      <div data-behind-sheets="" className="contents">
+        {children}
+      </div>
       <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-4 bottom-4 z-30 flex justify-center">
         {line && (
           <p key={said} className="max-w-xl rounded-2xl bg-foreground px-5 py-3 text-center text-base font-medium text-background">

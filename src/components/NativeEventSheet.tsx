@@ -1,8 +1,9 @@
 import { Calendar, CircleAlert, MapPin, Minus, Pin, Plus, Trash2, X } from 'lucide-react';
-import { useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type FormEvent, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import type { Occurrence } from '../lib/calendar-occurrences';
 import { dialogKeys } from '../lib/dialog';
+import { appBehind, holdBackground } from '../lib/inert-behind';
 import { personStyle } from '../lib/look';
 import {
   addedSentence,
@@ -28,6 +29,7 @@ import { useStatusLine } from '../lib/status-line';
 import { supabase } from '../lib/supabase';
 import { useFailureWords } from '../lib/use-failure-words';
 import { useOverflow } from '../lib/use-overflow';
+import { InBody } from './InBody';
 import { HouseDisc, PersonDisc } from './people';
 import { SheetBody } from './Sheet';
 import { Button } from './ui/button';
@@ -133,8 +135,9 @@ function Stepper({ id, words, noun, time, earlierStuck, laterStuck, onStep }: { 
 // typed or changed; Close, Cancel and Escape always do. After a save, an edit or a delete the status line says what
 // happened, from whichever screen opened the sheet (the Wall's, and the phone's pages have one too). On the Wall, a
 // save or a delete clears the Profile filter, which would otherwise hide the event just written (or the gap where
-// it was).
-export function NativeEventSheet({
+// it was). The page behind it is inert while it is open, so a screen reader cannot swipe out of it (NativeEventSheet, below, draws it
+// in the body, outside what is made inert).
+function EventSheetForm({
   timezone,
   date,
   occurrence,
@@ -194,10 +197,16 @@ export function NativeEventSheet({
     return moved;
   };
 
-  useEffect(() => {
+  // The page behind is inert for as long as the sheet is open, and let go of before focus goes back to what opened it (an inert element
+  // takes no focus). The opener is noted first: making the page inert takes the focus off it.
+  useLayoutEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
+    const release = holdBackground(appBehind());
     dialog.current?.focus();
-    return () => opener?.focus();
+    return () => {
+      release();
+      opener?.focus();
+    };
   }, []);
 
   // A button that had focus may go (Keep it) or be switched off (saving): focus then falls to the page behind, and
@@ -467,5 +476,15 @@ export function NativeEventSheet({
         </div>
       </form>
     </div>
+  );
+}
+
+// The sheet, drawn in the body: outside the page it holds inert (InBody), so a screen reader on the phone or the Wall cannot swipe out of
+// it to what is behind.
+export function NativeEventSheet(props: ComponentProps<typeof EventSheetForm>) {
+  return (
+    <InBody>
+      <EventSheetForm {...props} />
+    </InBody>
   );
 }

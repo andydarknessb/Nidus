@@ -1,9 +1,11 @@
 import { ChevronLeft, ChevronRight, Cookie, Moon, Plus, Sun, Sunrise, X, type LucideIcon } from 'lucide-react';
-import { Fragment, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { InBody } from './components/InBody';
 import { Button } from './components/ui/button';
 import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
 import { useRefetchOn } from './lib/change-feed';
 import { dialogKeys } from './lib/dialog';
+import { appBehind, holdBackground } from './lib/inert-behind';
 import { loadMeals, mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
 import { startReadLoop, type ReadLoop } from './lib/read-loop';
 import { householdDay, WEEKDAYS } from './lib/routines';
@@ -186,14 +188,17 @@ function MealsGrid({ days }: { days: WallDay[] }) {
         })}
       </div>
       {editing && (
-        <MealSheet
-          editing={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            setSaves((count) => count + 1);
-          }}
-        />
+        // Drawn in the body, outside the page it holds inert while it is open (InBody).
+        <InBody>
+          <MealSheet
+            editing={editing}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              setSaves((count) => count + 1);
+            }}
+          />
+        </InBody>
       )}
     </section>
   );
@@ -232,10 +237,16 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
   // A stray tap on the scrim never throws away what was typed.
   const untouched = title === (editing.meal?.title ?? '');
 
-  useEffect(() => {
+  // The page behind is inert for as long as the sheet is open, and let go of before focus goes back to the cell (an inert element takes
+  // no focus). The opener is noted first: making the page inert takes the focus off it.
+  useLayoutEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
+    const release = holdBackground(appBehind());
     input.current?.focus();
-    return () => opener?.focus();
+    return () => {
+      release();
+      opener?.focus();
+    };
   }, []);
 
   // A button that had focus is disabled while saving: focus then falls to the page behind (the

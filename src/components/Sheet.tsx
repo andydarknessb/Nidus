@@ -1,15 +1,18 @@
 import { cn } from 'cn';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { dialogKeys } from '../lib/dialog';
+import { appBehind, holdBackground } from '../lib/inert-behind';
 import { useOverflow, type OverflowControl } from '../lib/use-overflow';
+import { InBody } from './InBody';
 import { BODY_CLEARANCE, OverflowButton } from './OverflowButton';
 
 // A sheet over the Wall (docs/look.md): a card, 28 round, on the scrim. It is the one frame of an event's details and of the list
 // a crowded cluster opens. A modal dialog: focus moves in on open and back to what opened it on close, Tab and Shift+Tab stay
-// inside it (aria-modal), and Escape and a tap on the scrim close it. `labelledBy` is the id of the title in `header`, and `title`
-// is the same words, which name the body's button ("More of Piano"). The title row (`header`) and the footer stay in view whatever
-// the body holds: the dialog does not scroll, the body between them does (SheetBody). The Add event sheet keeps a frame of its own,
-// because a tap outside it closes it only while nothing has been typed; it has a SheetBody too.
+// inside it (aria-modal), and Escape and a tap on the scrim close it. The page behind it is inert while it is open, so a screen
+// reader cannot swipe out of it, and it is drawn in the body, outside what is made inert (InBody). `labelledBy` is the id of the
+// title in `header`, and `title` is the same words, which name the body's button ("More of Piano"). The title row (`header`) and the
+// footer stay in view whatever the body holds: the dialog does not scroll, the body between them does (SheetBody). The Add event
+// sheet keeps a frame of its own, because a tap outside it closes it only while nothing has been typed; it has a SheetBody too.
 export function Sheet({
   labelledBy,
   title,
@@ -30,35 +33,43 @@ export function Sheet({
   const dialog = useRef<HTMLDivElement>(null);
   const body = useOverflow('y', 'over');
 
-  useEffect(() => {
+  // The page behind is inert for as long as the sheet is open, and let go of before focus goes back to what opened the sheet (an inert
+  // element takes no focus). The opener is noted first: making the page inert takes the focus off it.
+  useLayoutEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
+    const release = holdBackground(appBehind());
     dialog.current?.focus();
-    return () => opener?.focus();
+    return () => {
+      release();
+      opener?.focus();
+    };
   }, []);
 
   return (
-    <div
-      className="fixed inset-0 z-10 flex items-center justify-center bg-scrim p-4"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
+    <InBody>
       <div
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={labelledBy}
-        tabIndex={-1}
-        onKeyDown={(event) => dialogKeys(event, onClose)}
-        className={cn('flex max-h-full min-h-0 w-full flex-col gap-5 rounded-[28px] bg-card p-6 outline-none', className)}
+        className="fixed inset-0 z-10 flex items-center justify-center bg-scrim p-4"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
       >
-        {header}
-        <SheetBody title={title} control={body}>
-          {children}
-        </SheetBody>
-        {footer}
+        <div
+          ref={dialog}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={labelledBy}
+          tabIndex={-1}
+          onKeyDown={(event) => dialogKeys(event, onClose)}
+          className={cn('flex max-h-full min-h-0 w-full flex-col gap-5 rounded-[28px] bg-card p-6 outline-none', className)}
+        >
+          {header}
+          <SheetBody title={title} control={body}>
+            {children}
+          </SheetBody>
+          {footer}
+        </div>
       </div>
-    </div>
+    </InBody>
   );
 }
 
