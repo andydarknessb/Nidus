@@ -168,7 +168,7 @@ function MealsGrid({ days }: { days: WallDay[] }) {
                     {/* The name a screen reader hears: "Dinner, Thu 1: Tacos", or "nothing planned"; while the Meals are unknown, just "Dinner, Thu 1". */}
                     <span className="sr-only">{known ? `${heading}: ` : heading}</span>
                     {meal ? (
-                      <span className="line-clamp-3 min-w-0 flex-1 wrap-anywhere">{meal.title}</span>
+                      <span dir="auto" className="line-clamp-3 min-w-0 flex-1 text-start wrap-anywhere">{meal.title}</span>
                     ) : (
                       known && (
                         <>
@@ -299,7 +299,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
         </div>
         <label className="flex flex-col gap-2">
           <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
-          <input ref={input} className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+          <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
         </label>
         <p role="alert" className="min-h-6 text-lg empty:hidden">
           {problem}
@@ -358,7 +358,7 @@ function NextMealButton({ timezone, onOpen }: { timezone: string; onOpen: () => 
       </span>
       <span className="flex min-w-0 flex-col text-left">
         <span className="truncate text-sm leading-[18px] text-muted-foreground">{words}</span>
-        <span className="truncate font-display text-[22px] leading-7">{next.title}</span>
+        <span dir="auto" className="truncate font-display text-[22px] leading-7">{next.title}</span>
       </span>
       <ChevronRight aria-hidden className="size-[22px] text-muted-foreground" strokeWidth={2.2} />
     </Button>
