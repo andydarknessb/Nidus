@@ -246,9 +246,9 @@ export function columnsOf(profiles: Profile[], routines: Routine[], weekday: num
 // ---- Up next -------------------------------------------------------------------------------------
 
 // Up next on Home shows a tile for this many people at most.
-export const UP_NEXT_TILES = 3;
+const UP_NEXT_TILES = 3;
 
-export type UpNextTile = { profile: Profile; routine: Routine };
+type UpNextTile = { profile: Profile; routine: Routine };
 
 // `tiles`: one for each of the first Profiles in order that have something left, each showing that Profile's first Routine
 // not ticked among the part's own, what is left from earlier, and Any time. `more`: today's Routines not ticked that no

@@ -255,8 +255,9 @@ function Column({
                 <>
                   <GroupLabel
                     icon={PART_ICON[part]}
+                    // Keyed by the part: a part already done is not announced when it is switched to, only a tick that makes it so is.
                     status={
-                      <span role="status" className="flex items-center gap-1.5 text-[14.5px] leading-[18px] font-semibold">
+                      <span key={part} role="status" className="flex items-center gap-1.5 text-[14.5px] leading-[18px] font-semibold">
                         {partDone(view, done) && (
                           <>
                             <span className="sr-only">
