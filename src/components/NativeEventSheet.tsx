@@ -26,6 +26,7 @@ import { loadProfiles, type Profile } from '../lib/profiles';
 import { householdDay } from '../lib/routines';
 import { useStatusLine } from '../lib/status-line';
 import { supabase } from '../lib/supabase';
+import { useFailureWords } from '../lib/use-failure-words';
 import { useOverflow } from '../lib/use-overflow';
 import { HouseDisc, PersonDisc } from './people';
 import { SheetBody } from './Sheet';
@@ -155,6 +156,7 @@ export function NativeEventSheet({
   const body = useOverflow('y', 'over');
   const { clear: clearFilter } = useContext(ProfileFilterContext);
   const say = useStatusLine();
+  const failureWords = useFailureWords();
   // The form as the sheet opened with it: what "nothing has been typed or changed" is measured against. A new event opens at
   // the next whole hour when it is for today, and at 9:00 AM otherwise.
   const [opened] = useState<EventForm>(() => (occurrence ? eventFormFromOccurrence(occurrence, timezone) : { ...blankEventForm(date), ...openingTimes(date, timezone) }));
@@ -215,15 +217,16 @@ export function NativeEventSheet({
     };
   }, []);
 
-  async function run(work: () => Promise<void>, failure: string, said: string) {
+  async function run(work: () => Promise<void>, said: string) {
     setBusy(true);
     try {
       await work();
       clearFilter();
       say(said);
       onSaved();
-    } catch {
-      setProblem(failure);
+    } catch (error) {
+      // The Wall's one vocabulary for a write that did not go through, which says "No internet" when that is the trouble.
+      setProblem(failureWords(error));
       setBusy(false);
     }
   }
@@ -236,11 +239,7 @@ export function NativeEventSheet({
       return;
     }
     setProblem('');
-    void run(
-      () => saveNativeEvent(supabase, input, occurrence?.id).then(() => undefined),
-      'Could not save the event. Check your connection and try again.',
-      editing ? savedSentence(input, timezone) : addedSentence(input, timezone),
-    );
+    void run(() => saveNativeEvent(supabase, input, occurrence?.id).then(() => undefined), editing ? savedSentence(input, timezone) : addedSentence(input, timezone));
   }
 
   // Everyone is nobody pressed: pressing a person lets Everyone go, pressing Everyone lets every person go.
@@ -427,7 +426,7 @@ export function NativeEventSheet({
                   aria-label={`Delete ${occurrence.title}`}
                   disabled={busy}
                   className={`${footerButton} ${main}`}
-                  onClick={() => void run(() => deleteNativeEvent(supabase, occurrence.id), 'Could not delete the event. Check your connection and try again.', `Deleted ${occurrence.title}`)}
+                  onClick={() => void run(() => deleteNativeEvent(supabase, occurrence.id), `Deleted ${occurrence.title}`)}
                 >
                   Delete
                 </Button>

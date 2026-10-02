@@ -8,6 +8,7 @@ import { loadMeals, mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type 
 import { startReadLoop, type ReadLoop } from './lib/read-loop';
 import { householdDay, WEEKDAYS } from './lib/routines';
 import { supabase } from './lib/supabase';
+import { useFailureWords } from './lib/use-failure-words';
 import { useHouseholdDay, useNow } from './lib/wall-hooks';
 
 // Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the header's button for the
@@ -226,6 +227,8 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
   const [title, setTitle] = useState(editing.meal?.title ?? '');
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
+  // What a save that did not go through says: the Wall's one vocabulary for it (write-failure.ts).
+  const failureWords = useFailureWords();
   // A stray tap on the scrim never throws away what was typed.
   const untouched = title === (editing.meal?.title ?? '');
 
@@ -256,8 +259,8 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
     try {
       await setMeal(supabase, editing.date, editing.slot, next);
       onSaved();
-    } catch {
-      setProblem('Could not save the meal. Check your connection and try again.');
+    } catch (error) {
+      setProblem(failureWords(error));
       setBusy(false);
     }
   }
@@ -302,7 +305,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
           <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
           <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
         </label>
-        <p role="alert" className="min-h-6 text-lg empty:hidden">
+        <p role="alert" className="min-h-6 text-[15px] leading-5 font-medium empty:hidden">
           {problem}
         </p>
         <div className="flex flex-wrap items-center justify-end gap-3">

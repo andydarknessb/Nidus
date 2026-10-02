@@ -32,6 +32,7 @@ import type { Household } from './lib/household';
 import { useChangeTick, useRefetchOn } from './lib/change-feed';
 import { useStatusLine } from './lib/status-line';
 import { createSyncedReader, type SyncedReader } from './lib/synced-reader';
+import { useFailureWords } from './lib/use-failure-words';
 import { useOverflow } from './lib/use-overflow';
 import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, Tick } from './components/people';
@@ -51,8 +52,18 @@ type ItemsState = { items: ListItem[]; loaded: boolean; problem: string };
 const PENDING = 'pending-';
 const isPending = (item: ListItem) => item.id.startsWith(PENDING);
 
+// Runs `work` and notes in `why` what it failed with, which the words need: crossOptimistically and clearOptimistically say only
+// whether the write stuck.
+const noting = (why: { error?: unknown }, work: () => Promise<void>) => () =>
+  work().catch((error: unknown) => {
+    why.error = error;
+    throw error;
+  });
+
 function useItems(listId: string) {
   const [state, setState] = useState<ItemsState>({ items: [], loaded: false, problem: '' });
+  // What a write that did not go through says: the one vocabulary of the Wall and the phone (write-failure.ts).
+  const failureWords = useFailureWords();
   // The list this state belongs to, so a slow answer for the previous list is dropped.
   const current = useRef(listId);
   current.current = listId;
@@ -101,9 +112,9 @@ function useItems(listId: string) {
       const created = await guarded(() => addItem(supabase, listId, text, pending.sort_order));
       if (current.current === listId) setState((prev) => ({ ...prev, items: prev.items.map((row) => (row.id === pending.id ? created : row)), problem: '' }));
       return created;
-    } catch {
+    } catch (error) {
       if (current.current === listId) {
-        setState((prev) => ({ ...prev, items: prev.items.filter((row) => row.id !== pending.id), problem: 'Could not add that item. Try again.' }));
+        setState((prev) => ({ ...prev, items: prev.items.filter((row) => row.id !== pending.id), problem: failureWords(error) }));
       }
       return null;
     }
@@ -111,15 +122,17 @@ function useItems(listId: string) {
 
   async function toggle(item: ListItem) {
     if (isPending(item)) return;
+    const why: { error?: unknown } = {};
     const stuck = await guarded(() =>
-      crossOptimistically(publish, item.id, item.crossed_at === null, state.items, () => setCrossed(supabase, item.id, item.crossed_at === null)),
+      crossOptimistically(publish, item.id, item.crossed_at === null, state.items, noting(why, () => setCrossed(supabase, item.id, item.crossed_at === null))),
     );
-    fail(stuck ? '' : 'Could not update that item. It has been put back.');
+    fail(stuck ? '' : failureWords(why.error));
   }
 
   async function clear() {
-    const stuck = await guarded(() => clearOptimistically(publish, state.items, () => clearCompleted(supabase, listId)));
-    fail(stuck ? '' : 'Could not clear the crossed off items. They have been put back.');
+    const why: { error?: unknown } = {};
+    const stuck = await guarded(() => clearOptimistically(publish, state.items, noting(why, () => clearCompleted(supabase, listId))));
+    fail(stuck ? '' : failureWords(why.error));
   }
 
   async function move(id: string, offset: number) {
@@ -307,7 +320,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
         }}
       />
       {problem && (
-        <p role="alert" className="shrink-0 text-base">
+        <p role="alert" className="shrink-0 text-[15px] leading-5">
           {problem}
         </p>
       )}
@@ -466,7 +479,7 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
         {room !== null && (
           <>
             {words && (
-              <p role={problem ? 'alert' : undefined} className="flex h-12 shrink-0 items-center px-1 text-sm leading-[18px]">
+              <p role={problem ? 'alert' : undefined} className="flex h-12 shrink-0 items-center px-1 text-[15px] leading-5">
                 {words}
               </p>
             )}
