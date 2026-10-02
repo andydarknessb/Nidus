@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import { ArrowDown, ArrowUp, ChevronRight, List, Pin, Plus } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import {
@@ -210,8 +211,18 @@ function ItemRow({ item, size, onToggle }: { item: ListItem; size: keyof typeof 
 
 // The field that adds an item, and its button: 52 px on the Wall, 56 on the phone. `onAdd` says whether the item was added. The
 // field empties at once, so a second Enter while the first is still out has nothing to add; if the item could not be added the
-// words come back, unless something else has been typed there since.
-function AddRow({ listName, size = 'wall', onAdd }: { listName: string; size?: 'wall' | 'phone'; onAdd: (text: string) => Promise<boolean> }) {
+// words come back, unless something else has been typed there since. `inputRef` is for a screen that needs to put focus in the field.
+function AddRow({
+  listName,
+  size = 'wall',
+  inputRef,
+  onAdd,
+}: {
+  listName: string;
+  size?: 'wall' | 'phone';
+  inputRef?: RefObject<HTMLInputElement | null>;
+  onAdd: (text: string) => Promise<boolean>;
+}) {
   const [text, setText] = useState('');
 
   async function submit(event: FormEvent) {
@@ -225,6 +236,7 @@ function AddRow({ listName, size = 'wall', onAdd }: { listName: string; size?: '
   return (
     <form onSubmit={(event) => void submit(event)} className="flex shrink-0 gap-2">
       <input
+        ref={inputRef}
         className={`min-w-0 flex-1 text-[17px] ${size === 'phone' ? 'h-14' : ''}`}
         value={text}
         onChange={(event) => setText(event.target.value)}
@@ -258,6 +270,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
   const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
   const crossed = items.length - withoutCrossed(items).length;
   const rows = useRef<HTMLUListElement>(null);
+  const field = useRef<HTMLInputElement>(null);
   // How many items have been added here. The one just added is last: bring it into view when the list is longer than the card.
   // ponytail: "last" holds while a new item always goes to the bottom (nextSortOrder); find it by id if one ever lands elsewhere.
   const [added, setAdded] = useState(0);
@@ -278,6 +291,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
       {pinned && <PinnedMark />}
       <AddRow
         listName={list.name}
+        inputRef={field}
         onAdd={async (text) => {
           // The new row shows at once, as the last one: bring it into view now, not when the server has answered.
           setAdded((count) => count + 1);
@@ -300,7 +314,15 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
         </ul>
       )}
       {crossed > 0 && (
-        <Button variant="secondary" className="h-12 w-full shrink-0 rounded-[14px]" onClick={() => void clear()}>
+        <Button
+          variant="secondary"
+          className="h-12 w-full shrink-0 rounded-[14px]"
+          // The button goes when nothing is crossed off any more, and focus would fall to the page with it: put it in the field, which stays.
+          onClick={() => {
+            field.current?.focus();
+            void clear();
+          }}
+        >
           Clear {crossed} crossed off
         </Button>
       )}
@@ -470,10 +492,11 @@ const ICON_ACTION = 'size-12 rounded-full px-0';
 function ItemsEditor({ listId, listName }: { listId: string; listName: string }) {
   const { items, loaded, problem, add, toggle, clear, move } = useItems(listId);
   const crossed = items.length - withoutCrossed(items).length;
+  const field = useRef<HTMLInputElement>(null);
 
   return (
     <div className="flex flex-col gap-4">
-      <AddRow listName={listName} size="phone" onAdd={async (text) => (await add(text)) !== null} />
+      <AddRow listName={listName} size="phone" inputRef={field} onAdd={async (text) => (await add(text)) !== null} />
       {problem && (
         <p role="alert" className="text-base">
           {problem}
@@ -498,7 +521,16 @@ function ItemsEditor({ listId, listName }: { listId: string; listName: string })
         </ul>
       )}
       {crossed > 0 && (
-        <Button variant="secondary" size="phone" className="w-full" onClick={() => void clear()}>
+        <Button
+          variant="secondary"
+          size="phone"
+          className="w-full"
+          // As on the Wall: the button goes when nothing is crossed off any more, so focus moves to the field, which stays.
+          onClick={() => {
+            field.current?.focus();
+            void clear();
+          }}
+        >
           Clear {crossed} crossed off
         </Button>
       )}
@@ -557,6 +589,7 @@ export function SharedListsPage({ household }: { household: Household }) {
     await change(async () => {
       await renameList(supabase, id, name);
       setRenaming(null);
+      document.getElementById(`rename-${id}`)?.focus();
     }, 'Could not rename that list. Try again.');
   }
 
@@ -615,7 +648,14 @@ export function SharedListsPage({ household }: { household: Household }) {
                     <Button type="submit" variant="secondary" className={ACTION}>
                       Save
                     </Button>
-                    <Button variant="quiet" className={ACTION} onClick={() => setRenaming(null)}>
+                    <Button
+                      variant="quiet"
+                      className={ACTION}
+                      onClick={() => {
+                        setRenaming(null);
+                        document.getElementById(`rename-${list.id}`)?.focus();
+                      }}
+                    >
                       Cancel
                     </Button>
                   </div>
@@ -638,7 +678,7 @@ export function SharedListsPage({ household }: { household: Household }) {
                 <Button variant="secondary" className={ACTION} aria-expanded={open === list.id} onClick={() => setOpen(open === list.id ? null : list.id)}>
                   {open === list.id ? 'Hide items' : 'Items'}
                 </Button>
-                <Button variant="secondary" className={ACTION} onClick={() => setRenaming({ id: list.id, name: list.name })}>
+                <Button id={`rename-${list.id}`} variant="secondary" className={ACTION} onClick={() => setRenaming({ id: list.id, name: list.name })}>
                   Rename
                 </Button>
                 {list.id !== pinnedId && (
@@ -655,12 +695,21 @@ export function SharedListsPage({ household }: { household: Household }) {
                     <Button variant="delete" className="h-auto min-h-12 px-4 py-2 whitespace-normal" onClick={() => void remove(list.id)}>
                       Delete {list.name} and its items
                     </Button>
-                    <Button variant="quiet" className={ACTION} onClick={() => setConfirming(null)}>
+                    <Button
+                      autoFocus
+                      variant="quiet"
+                      className={ACTION}
+                      onClick={() => {
+                        // Delete is not on the page while this is asked: draw it again, then put focus back on it.
+                        flushSync(() => setConfirming(null));
+                        document.getElementById(`delete-${list.id}`)?.focus();
+                      }}
+                    >
                       Keep it
                     </Button>
                   </>
                 ) : (
-                  <Button variant="quiet" className={ACTION} onClick={() => setConfirming(list.id)}>
+                  <Button id={`delete-${list.id}`} variant="quiet" className={ACTION} onClick={() => setConfirming(list.id)}>
                     Delete
                   </Button>
                 )}
