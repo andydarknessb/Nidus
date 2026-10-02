@@ -44,10 +44,19 @@ const DEBOUNCE_MS = 150;
 // How long after the server closes the channel before a new one is opened.
 const REJOIN_MS = 5_000;
 
-type Watcher = { tables: ReadonlySet<WatchedTable>; onChange: () => void; timer: ReturnType<typeof setTimeout> | undefined };
+// A feed that has not come live this long after it was opened reports offline. The server refuses a
+// channel naming a table it does not publish (a frontend deployed ahead of its migration) and says
+// nothing a screen could show; without this the feed would read "connecting" for good.
+const GIVE_UP_MS = 30_000;
 
-export function openChangeFeed(client: SupabaseClient, options: { debounceMs?: number } = {}): ChangeFeed {
+type Watcher = { tables: ReadonlySet<string>; onChange: () => void; timer: ReturnType<typeof setTimeout> | undefined };
+
+export function openChangeFeed(
+  client: SupabaseClient,
+  options: { debounceMs?: number; tables?: readonly string[]; giveUpMs?: number } = {},
+): ChangeFeed {
   const debounceMs = options.debounceMs ?? DEBOUNCE_MS;
+  const tables = options.tables ?? WATCHED_TABLES;
   const watchers = new Set<Watcher>();
   const listeners = new Set<(status: Connection) => void>();
   let channelState: Connection = 'connecting';
@@ -55,6 +64,7 @@ export function openChangeFeed(client: SupabaseClient, options: { debounceMs?: n
   let networkUp = typeof navigator === 'undefined' || navigator.onLine !== false;
   let current: Connection = networkUp ? channelState : 'offline';
   let wasLive = false;
+  let gaveUp = false;
   let closed = false;
   let markReady: () => void = () => undefined;
   const ready = new Promise<void>((resolve) => {
@@ -88,7 +98,7 @@ export function openChangeFeed(client: SupabaseClient, options: { debounceMs?: n
     let next: RealtimeChannel = client.channel(`household-changes-${Math.random().toString(36).slice(2)}`, {
       config: { postgres_changes_options: { wait: true } },
     });
-    for (const table of WATCHED_TABLES) {
+    for (const table of tables) {
       next = next.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
         for (const watcher of watchers) if (watcher.tables.has(table)) poke(watcher);
       });
@@ -97,6 +107,8 @@ export function openChangeFeed(client: SupabaseClient, options: { debounceMs?: n
     next.subscribe((state) => {
       if (closed || channel !== next) return;
       if (state === 'SUBSCRIBED') {
+        clearTimeout(giveUp);
+        gaveUp = false;
         channelState = 'online';
         markReady();
         // A change made before the feed went live (between a screen's first read and now) or while it
@@ -104,7 +116,7 @@ export function openChangeFeed(client: SupabaseClient, options: { debounceMs?: n
         pokeAll();
         wasLive = true;
       } else {
-        channelState = wasLive ? 'offline' : 'connecting';
+        channelState = wasLive || gaveUp ? 'offline' : 'connecting';
         if (state === 'CLOSED') {
           clearTimeout(rejoin);
           rejoin = setTimeout(() => {
@@ -120,6 +132,14 @@ export function openChangeFeed(client: SupabaseClient, options: { debounceMs?: n
     });
   };
   join();
+
+  // Started once, at open: a rejoin after CLOSED does not restart it. A later SUBSCRIBED still wins.
+  const giveUp = setTimeout(() => {
+    if (closed || wasLive) return;
+    gaveUp = true;
+    channelState = 'offline';
+    update();
+  }, options.giveUpMs ?? GIVE_UP_MS);
 
   const onNetwork = () => {
     networkUp = navigator.onLine;
@@ -157,6 +177,7 @@ export function openChangeFeed(client: SupabaseClient, options: { debounceMs?: n
         window.removeEventListener('offline', onNetwork);
       }
       clearTimeout(rejoin);
+      clearTimeout(giveUp);
       if (channel) void client.removeChannel(channel);
     },
   };

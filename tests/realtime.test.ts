@@ -78,6 +78,18 @@ describe('Realtime change feed', () => {
     expect(feed.status()).toBe('online');
   });
 
+  // A frontend deployed ahead of the migration that publishes a watched table: the server refuses the
+  // subscription, the feed was never live, and it must say so rather than stay "connecting" for good.
+  it('reports offline when the subscription is never accepted', async () => {
+    const { kitchen } = await setUp();
+    const feed = openChangeFeed(kitchen.client, { tables: ['not_in_the_publication'], giveUpMs: 1_000 });
+    feeds.push(feed);
+    const heard: string[] = [];
+    feed.onStatus((status) => heard.push(status));
+    await expect.poll(() => feed.status(), { timeout: 5_000 }).toBe('offline');
+    expect(heard).toContain('offline');
+  });
+
   it('shows a tick made on one Device to another Device', async () => {
     const { account, phone, kitchen, hallway, profile } = await setUp();
     const routine = await createRoutine(phone, account.household.id, profile.id, { title: 'Feed the dog', days_of_week: 127 }, 0);
