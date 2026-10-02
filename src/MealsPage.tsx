@@ -153,7 +153,7 @@ function MealsGrid({ days }: { days: WallDay[] }) {
                   disabled={!known}
                   onClick={() => setEditing({ date: day.date, slot: row.slot, heading, meal })}
                   // The inset ring stays inside the cell, where the scrolling grid cannot clip it.
-                  className={`flex min-h-12 w-full items-center justify-center border-t border-l border-border px-2 py-2 text-center text-lg leading-snug focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-foreground ${day.isToday ? 'bg-muted/60' : ''}`}
+                  className={`flex min-h-12 w-full items-center justify-center border-t border-l border-border px-2 py-2 text-center text-lg leading-snug focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-foreground ${day.isToday ? 'bg-muted' : ''}`}
                 >
                   {/* The name a screen reader hears: "Dinner, Thu 1: Tacos", or "nothing planned"; while the Meals are unknown, just "Dinner, Thu 1". */}
                   <span className="sr-only">{known ? `${heading}: ` : heading}</span>
@@ -193,7 +193,7 @@ function DayHeading({ day }: { day: WallDay }) {
   return (
     <h3
       aria-current={day.isToday ? 'date' : undefined}
-      className={`border-l border-border px-2 py-3 text-center text-2xl font-semibold ${day.isToday ? 'bg-muted/60 underline decoration-4 underline-offset-8' : ''}`}
+      className={`border-l border-border px-2 py-3 text-center text-2xl font-semibold ${day.isToday ? 'bg-muted underline decoration-4 underline-offset-8' : ''}`}
     >
       {dayLabel(day)}
       {day.isToday && <span className="sr-only"> (today)</span>}

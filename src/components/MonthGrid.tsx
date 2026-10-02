@@ -228,7 +228,7 @@ function DayCell({
       aria-current={day.isToday ? 'date' : undefined}
       aria-label={describeCell(day.date, occurrences === null ? null : occurrences.length)}
       onClick={() => onOpen(day.date)}
-      className={`flex min-h-0 w-full flex-col overflow-hidden pt-1 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-foreground ${day.isToday ? 'bg-muted/60' : ''} ${dim}`}
+      className={`flex min-h-0 w-full flex-col overflow-hidden pt-1 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-foreground ${day.isToday ? 'bg-muted' : ''} ${dim}`}
     >
       {date}
       {shown.map((occurrence) => (

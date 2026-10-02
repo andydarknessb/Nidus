@@ -245,7 +245,7 @@ function CalendarGrid({
           ))}
         </div>
         {days.map((day, index) => (
-          <div key={day.date} className={`relative my-3 border-l border-border ${day.isToday ? 'bg-muted/60' : ''}`}>
+          <div key={day.date} className={`relative my-3 border-l border-border ${day.isToday ? 'bg-muted' : ''}`}>
             {hours.slice(1, -1).map((hour) => (
               <div key={hour} aria-hidden className="absolute inset-x-0 border-t border-border" style={{ top: `${((hour - startHour) / (endHour - startHour)) * 100}%` }} />
             ))}
@@ -340,7 +340,7 @@ function DayHeading({
     </h2>
   );
   return (
-    <div className={`border-l border-border ${day.isToday ? 'bg-muted/60' : ''} ${beside ? 'flex items-center justify-center gap-4' : ''}`}>
+    <div className={`border-l border-border ${day.isToday ? 'bg-muted' : ''} ${beside ? 'flex items-center justify-center gap-4' : ''}`}>
       {heading}
       {room &&
         (beside ? (
