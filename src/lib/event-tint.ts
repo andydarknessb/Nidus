@@ -4,15 +4,20 @@ import type { Occurrence } from './calendar-occurrences';
 // How an occurrence is coloured on the wall, shared by the five-day grid and the month's cells.
 
 // Events with no colour (a whole-Household calendar) still need an edge to read against.
-const NEUTRAL = '#d4d4d8';
+const NEUTRAL = 'var(--muted-foreground)';
+
+// How much of the colour the wash holds.
+export const WASH_PERCENT = 24;
 
 // A tinted block in the event's colour: the colour is the edge and a wash, never the text, so
-// the words stay white on a dark ground whatever colour the Profile picked.
+// the words stay --foreground whatever colour the Profile picked. The wash is the colour mixed into
+// the card, so it is a light tint of it by day and a dark one by night, and the words clear 7:1 on
+// it in both (tests/event-tint.test.ts).
 // An event for several Profiles splits its edge into one stripe of each colour, `edgePx` wide: the width
 // of the border-left of the block it is drawn on, 8 px on the time grid and 4 px on a month line.
 export function tint(occurrence: Occurrence, edgePx = 8): CSSProperties {
   const edge = occurrence.color ?? NEUTRAL;
-  const wash = `color-mix(in srgb, ${edge} 24%, #18181b)`;
+  const wash = `color-mix(in srgb, ${edge} ${WASH_PERCENT}%, var(--card))`;
   const { colors } = occurrence;
   if (colors.length < 2) return { borderLeftColor: edge, backgroundColor: wash };
   const stops = colors.map((color, index) => `${color} ${(index * 100) / colors.length}% ${((index + 1) * 100) / colors.length}%`).join(', ');

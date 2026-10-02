@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
-import { tint } from '../src/lib/event-tint';
+import { WASH_PERCENT, tint } from '../src/lib/event-tint';
+import { FAMILIES, TOKENS, mix, type Mode } from '../src/lib/look';
+import { contrastRatio } from '../src/lib/profiles';
 
 function occurrence(colors: string[], color: string | null = colors[0] ?? null): Occurrence {
   return {
@@ -23,11 +25,20 @@ function occurrence(colors: string[], color: string | null = colors[0] ?? null):
 
 describe('tint', () => {
   it('colours the edge of an event and washes its ground in the same colour', () => {
-    expect(tint(occurrence(['#93c5fd']))).toEqual({ borderLeftColor: '#93c5fd', backgroundColor: 'color-mix(in srgb, #93c5fd 24%, #18181b)' });
+    expect(tint(occurrence(['#93c5fd']))).toEqual({ borderLeftColor: '#93c5fd', backgroundColor: 'color-mix(in srgb, #93c5fd 24%, var(--card))' });
   });
 
-  it('gives an event with no colour a neutral edge', () => {
-    expect(tint(occurrence([], null))).toMatchObject({ borderLeftColor: '#d4d4d8' });
+  it('gives an event with no colour a neutral edge, from a token', () => {
+    expect(tint(occurrence([], null))).toMatchObject({ borderLeftColor: 'var(--muted-foreground)' });
+  });
+
+  it('mixes the wash into the card, so it is a light tint by day and a dark one by night with the same words on it', () => {
+    for (const mode of ['light', 'dark'] as Mode[]) {
+      const t = TOKENS[mode];
+      for (const colour of [...FAMILIES.map((family) => family[300]), t['muted-foreground']]) {
+        expect(contrastRatio(t.foreground, mix(colour, WASH_PERCENT, t.card)), `${mode}: words on ${colour}`).toBeGreaterThanOrEqual(7);
+      }
+    }
   });
 
   it('splits the edge of an event for several Profiles into a stripe of each colour, 8 px wide by default', () => {
