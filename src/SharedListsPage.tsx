@@ -234,6 +234,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
   const crossed = items.length - withoutCrossed(items).length;
   const rows = useRef<HTMLUListElement>(null);
   // How many items have been added here. The one just added is last: bring it into view when the list is longer than the card.
+  // ponytail: "last" holds while a new item always goes to the bottom (nextSortOrder); find it by id if one ever lands elsewhere.
   const [added, setAdded] = useState(0);
   useEffect(() => {
     if (added > 0) rows.current?.lastElementChild?.scrollIntoView({ block: 'nearest' });
@@ -316,6 +317,8 @@ export function ListsScreen() {
 
 // From the drawing (v2/home.js): a row is 48 px (h-12) and rows are 8 px apart (gap-2). "And N more" is a button, so it is 48 px
 // as well, where the drawing's line of words is 20: nothing a finger taps is smaller.
+// ponytail: these sit beside the classes they stand for and are not measured; if a larger text size (#69) ever grows a row,
+// measure the first row instead.
 const HOME_ROW_PX = 48;
 const HOME_GAP_PX = 8;
 const HOME_MORE_PX = 48;
