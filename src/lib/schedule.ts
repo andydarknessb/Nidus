@@ -1,0 +1,133 @@
+import { dayOccurrences, describeCell, formatClock, type Occurrence, type WallDay } from './calendar-occurrences';
+import type { Profile } from './profiles';
+import { routineProgress, type ProfileRoutines } from './routines';
+
+// The schedule (docs/look.md, The parts): Home and Week draw each day as a column of event pills, and the people strip
+// above them shows each person's Routines. Everything they decide is here and pure, so it is tested without a screen
+// (tests/schedule.test.ts): which pills a day lists and what each says under its title, which one is on now, how many
+// a column holds, who a pill is for, and the words on the strip. Every date is read in the Household Timezone, which a
+// WallDay carries; nothing reads the machine's.
+
+// ---- The columns -----------------------------------------------------------------------------------
+
+// One event on one day: what the pill says under its title, and whether it is the one on now.
+export type Pill = { occurrence: Occurrence; time: string; onNow: boolean };
+
+export type ScheduleColumn = { day: WallDay; pills: Pill[] };
+
+// What a pill says under its title on `day`: "All day" on each day an all-day event covers and on a day a timed event
+// covers from end to end; "Until 2:00 AM" on the last day of a timed event that began on an earlier one; otherwise the
+// start time, "9:00 AM". It reads the event's real span, as the month's cells do, never the padding the hour grid gives
+// a short event.
+export function pillTime(occurrence: Occurrence, day: WallDay): string {
+  if (occurrence.is_all_day) return 'All day';
+  const start = Date.parse(occurrence.starts_at);
+  const end = Date.parse(occurrence.ends_at);
+  if (start <= day.startMs && end >= day.endMs) return 'All day';
+  if (start < day.startMs) return `Until ${formatClock(end, day.timezone)}`;
+  return formatClock(start, day.timezone);
+}
+
+// Whether the pill of `occurrence` on `day` is the one that is on now: a timed event that has started and not ended, in
+// today's column. A timed event that runs on past midnight is on now in today's column only.
+export function isOnNow(occurrence: Occurrence, day: WallDay, now: Date): boolean {
+  if (occurrence.is_all_day || !day.isToday) return false;
+  const at = now.getTime();
+  return Date.parse(occurrence.starts_at) <= at && at < Date.parse(occurrence.ends_at);
+}
+
+// A column for each of `days`: the occurrences on that day, all-day first, then by start, then by title
+// (dayOccurrences, which the month's cells use), each with the words under its title. The Profile filter has been
+// applied to `occurrences` already, where they are read.
+export function scheduleColumns(occurrences: Occurrence[], days: WallDay[], now: Date): ScheduleColumn[] {
+  return days.map((day) => ({
+    day,
+    pills: dayOccurrences(occurrences, day).map((occurrence) => ({ occurrence, time: pillTime(occurrence, day), onNow: isOnNow(occurrence, day, now) })),
+  }));
+}
+
+// ---- How many pills fit ----------------------------------------------------------------------------
+
+// How many of a column's pills to draw. The pills, in order, and then the "+N more" button stack in a column `heightPx`
+// tall with `gapPx` between them: every pill when they all fit, and no button; otherwise as many as fit above the button,
+// which is then drawn, and at least none. `pillPx` are the pills' own heights, measured, so a title of two lines counts for
+// what it takes. The measuring is the screen's; this only decides.
+export function pillsThatFit({ heightPx, pillPx, gapPx, morePx }: { heightPx: number; pillPx: readonly number[]; gapPx: number; morePx: number }): number {
+  const all = pillPx.reduce((sum, px) => sum + px, 0) + gapPx * Math.max(pillPx.length - 1, 0);
+  if (all <= heightPx) return pillPx.length;
+  // The button first, then each pill with the gap that follows it (the next pill, or the button).
+  let used = morePx;
+  let shown = 0;
+  for (const px of pillPx) {
+    used += px + gapPx;
+    if (used > heightPx) break;
+    shown += 1;
+  }
+  return shown;
+}
+
+// ---- Who a pill is for -----------------------------------------------------------------------------
+
+// A pill shows at most this many bands, and at most this many discs before a "+N" disc counts the rest.
+const MAX_BANDS = 3;
+const MAX_DISCS = 2;
+
+// The whole Household's look (--everyone and the house disc), or the Profiles the pill is for: one equal band for each of
+// the first three, the first two of them as discs, and `more` the people the "+N" disc counts. `names` is everyone, for a
+// screen reader.
+export type PillPeople = { kind: 'everyone' } | { kind: 'people'; bands: Profile[]; discs: Profile[]; more: number; names: string[] };
+
+// Who `occurrence` is for, from its `profile_ids` and the Household's Profiles, in the Profiles' own order. The view's
+// `color` and `colors` are a Mirrored Calendar's and are never read: a Profile's own colour is drawn from the Profile. An
+// event for no Profile, for every Profile of the Household, or for none the Household has any more is the whole
+// Household's.
+export function pillPeople(occurrence: Occurrence, profiles: readonly Profile[]): PillPeople {
+  const people = profiles.filter((profile) => occurrence.profile_ids.includes(profile.id));
+  if (people.length === 0 || people.length === profiles.length) return { kind: 'everyone' };
+  return {
+    kind: 'people',
+    bands: people.slice(0, MAX_BANDS),
+    discs: people.slice(0, MAX_DISCS),
+    more: Math.max(people.length - MAX_DISCS, 0),
+    names: people.map((profile) => profile.name),
+  };
+}
+
+// "Ava", "Ava and Ben", "Cory, Sam and Ava".
+function listNames(names: readonly string[]): string {
+  return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
+// What a screen reader hears of a pill: the title, who it is for, the day and the time, then "on now" when it is, and
+// "added here" for a Native Event, which lives only in Nidus.
+export function pillName(pill: Pill, day: WallDay, people: PillPeople): string {
+  const { occurrence } = pill;
+  return [
+    occurrence.title,
+    people.kind === 'everyone' ? 'everyone' : listNames(people.names),
+    describeCell(day.date, null),
+    pill.time,
+    pill.onNow ? 'on now' : '',
+    occurrence.source === 'native' ? 'added here' : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+}
+
+// ---- The people strip ------------------------------------------------------------------------------
+
+// One person's pill on the strip: how far through today's Routines, in words ("3 of 5", "All done", or none when there
+// are none today), and the name a screen reader hears. The pips are drawn from done and total (and give way to the count
+// alone past eight, in the atom).
+export type StripPerson = { profile: Profile; done: number; total: number; words: string; label: string };
+
+// A person for every Profile, in the order given, with what they have done of the Routines `groups` hold for today
+// (groupByProfile leaves out a Profile with none) out of `doneIds`.
+export function stripPeople(profiles: readonly Profile[], groups: readonly ProfileRoutines[], doneIds: ReadonlySet<string>): StripPerson[] {
+  return profiles.map((profile) => {
+    const group = groups.find((each) => each.profile.id === profile.id);
+    const { done, total } = group ? routineProgress(group.routines, doneIds) : { done: 0, total: 0 };
+    const words = total === 0 ? '' : done === total ? 'All done' : `${done} of ${total}`;
+    return { profile, done, total, words, label: total === 0 ? profile.name : `${profile.name}, ${done} of ${total} ${total === 1 ? 'Routine' : 'Routines'} done` };
+  });
+}
