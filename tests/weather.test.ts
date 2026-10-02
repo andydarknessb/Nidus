@@ -344,17 +344,26 @@ describe('requestInit', () => {
     }
   });
 
-  // AbortSignal.timeout is newer than some WebViews. A Wall that loses its weather entirely for want of
-  // it is worse than one that waits, so without it the request goes out with no limit.
-  it('still sends the question, with no limit, where the browser has no AbortSignal.timeout', () => {
+  // AbortSignal.timeout is newer than some WebViews. Without it the limit is built from an
+  // AbortController, so a request that never settles cannot end the read loop for the life of the page.
+  it('still gives each request a thirty second limit where the browser has no AbortSignal.timeout', () => {
     const timeout = AbortSignal.timeout;
     Object.defineProperty(AbortSignal, 'timeout', { value: undefined, configurable: true, writable: true });
+    vi.useFakeTimers();
     try {
       const init = requestInit();
 
-      expect('signal' in init).toBe(false);
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      expect(init.signal?.aborted).toBe(false);
       expect(init).toMatchObject({ credentials: 'omit', referrerPolicy: 'no-referrer' });
+      expect(requestInit().signal).not.toBe(init.signal);
+
+      vi.advanceTimersByTime(29_999);
+      expect(init.signal?.aborted).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(init.signal?.aborted).toBe(true);
     } finally {
+      vi.useRealTimers();
       Object.defineProperty(AbortSignal, 'timeout', { value: timeout, configurable: true, writable: true });
     }
   });

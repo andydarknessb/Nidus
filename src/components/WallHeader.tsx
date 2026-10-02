@@ -24,7 +24,7 @@ const SYNC_TABLES = ['calendar_accounts', 'mirrored_calendars'] as const;
 // by one digit only when the hour gains or loses one, twice a day. The date never shrinks. Their column is as wide as
 // the longer of the name and the date while the header has the room, and gives way down to the date's width when it does
 // not: the name may break anywhere, so the least the column can be is the date, and its one line then ends in an ellipsis.
-function WallTime({ name, timezone }: { name: string; timezone: string }) {
+export function WallTime({ name, timezone }: { name: string; timezone: string }) {
   const now = useNow(timezone).getTime();
   const [time, period] = formatClock(now, timezone).split(/\s/);
   return (

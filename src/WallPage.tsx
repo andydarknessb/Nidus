@@ -9,11 +9,12 @@ import { NativeEventSheet } from './components/NativeEventSheet';
 import { NavigationRail } from './components/NavigationRail';
 import { PeopleStrip } from './components/PeopleStrip';
 import { StatusLineProvider } from './components/StatusLine';
-import { WallHeader } from './components/WallHeader';
+import { WallHeader, WallTime } from './components/WallHeader';
 import { useChangeTick } from './lib/change-feed';
 import { mealsPath, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
+import { deviceStorage, gateWords, recallHousehold, rememberHousehold } from './lib/remembered-household';
 import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useStatusLine } from './lib/status-line';
@@ -66,6 +67,8 @@ async function ensureSession(): Promise<Session> {
 // offered a way into administration.
 export function WallPage() {
   const [state, setState] = useState<WallState>({ kind: 'connecting' });
+  // Failed tries in a row: the gate says "No internet" from the third; a successful step sets it back to zero.
+  const [failedTries, setFailedTries] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -98,8 +101,10 @@ export function WallPage() {
       let delay = RETRY_MS;
       try {
         delay = await step();
+        if (live) setFailedTries(0);
       } catch {
         // Offline or the server is restarting: keep what the wall shows and try again.
+        if (live) setFailedTries((tries) => tries + 1);
       }
       if (live) timer = setTimeout(() => void loop(), delay);
     }
@@ -121,10 +126,24 @@ export function WallPage() {
     );
   }
   if (state.kind === 'unpaired') return <PairingScreen pairing={state.pairing} />;
+  return <ConnectingScreen failedTries={failedTries} />;
+}
+
+// The gate before the server has answered. The Household's name and a clock in its Household Timezone
+// show at once when this Device remembers them; nothing else is drawn from memory, so a revoked Device
+// shows a name and a clock and no calendar, Routine or list. A Wall with nothing remembered shows the words alone.
+function ConnectingScreen({ failedTries }: { failedTries: number }) {
+  const [remembered] = useState(() => recallHousehold(deviceStorage()));
   return (
-    <main className="flex min-h-svh items-center justify-center p-8">
+    <main className="flex min-h-svh flex-col items-center justify-center gap-6 p-8 text-center">
+      {remembered && (
+        // The header's own clock, name and date, alone on the screen: what the Wall shows first is what stays.
+        <div className="flex max-w-full items-center gap-6 text-left">
+          <WallTime name={remembered.name} timezone={remembered.timezone} />
+        </div>
+      )}
       <p role="status" className="text-2xl">
-        Connecting
+        {gateWords(failedTries)}
       </p>
     </main>
   );
@@ -240,6 +259,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         outcome = { failed: true };
       }
       if (!live) return;
+      if ('household' in outcome) rememberHousehold(deviceStorage(), outcome.household);
       setView((prev) => householdViewAfter(prev, outcome));
       // After a failed read retry sooner, so Up next appears once the connection is back.
       timer = setTimeout(() => void read(), 'household' in outcome ? HOUSEHOLD_REFRESH_MS : HOUSEHOLD_RETRY_MS);

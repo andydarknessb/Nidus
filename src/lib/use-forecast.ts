@@ -13,10 +13,11 @@ const NO_DAYS: SunDay[] = [];
 // Household Timezone changes. A failed read keeps the last forecast and is tried again sooner, with
 // a longer wait for each failure in a row; once the forecast was read more than two hours ago it no
 // longer claims the current conditions (forecastToShow), while the days stay, keyed by date. A
-// timer set for that moment makes it so, rather than the next attempt finishing, which a request
-// that never settles would put off for good. A change of place or unit drops the forecast first,
-// since one for another place or unit is a wrong number. Kept out of components/Weather.tsx so that
-// file exports only components, which Fast Refresh needs.
+// timer set for that moment makes it so: every request carries a thirty second limit, but without
+// the timer an old temperature would stay up until the next attempt finished, up to a retry delay
+// and that limit late. A change of place or unit drops the forecast first, since one for another
+// place or unit is a wrong number. Kept out of components/Weather.tsx so that file exports only
+// components, which Fast Refresh needs.
 //
 // It also says what the Wall's mode goes on for the sun (`sun`, src/lib/use-mode.ts): the days of the last forecast
 // read, which a change of place or unit does not drop, so the mode does not flip while the new forecast is read.
@@ -24,9 +25,8 @@ const NO_DAYS: SunDay[] = [];
 // Dark and the switch do not); empty when there is no forecast to go on, whether the weather is off or the first read failed.
 export function useForecast(household: Household | null): { forecast: Forecast | null; sun: SunDay[] | null } {
   const [reading, setReading] = useState<Reading | null>(null);
-  // ponytail: a first read that never settles (a WebView without AbortSignal.timeout on a dead connection, see
-  // requestInit) leaves Auto on the mode the screen had for good, as the spec has it; Light, Dark and the switch still
-  // work. Give that wait a deadline if it is ever seen.
+  // The first read always finishes or fails: every request carries a thirty second limit (requestInit), so Auto never
+  // waits on the mode the screen had for longer than that.
   const [days, setDays] = useState<SunDay[] | null>(null);
   // The clock as of the latest attempt to read, or of the reading in hand turning too old (the timer
   // below): what forecastToShow judges the reading's age against. Failed attempts move it on too.
@@ -74,9 +74,9 @@ export function useForecast(household: Household | null): { forecast: Forecast |
   }, [weatherOn, latitude, longitude, unit, timezone]);
 
   // The moment the reading in hand turns too old, `now` moves on to it by itself, so the current
-  // conditions go on time even when no attempt finishes to notice: a WebView without
-  // AbortSignal.timeout sends no limit, and a request that leads nowhere would otherwise leave an old
-  // temperature up for good. A newer reading sets its own timer and this one is cleared, as it is when
+  // conditions go on time even when no attempt finishes to notice: every request carries a thirty
+  // second limit, but without this timer an old temperature would stay up until the next attempt
+  // finished, up to a retry delay and that limit late. A newer reading sets its own timer and this one is cleared, as it is when
   // the Wall closes or the place changes and the reading is dropped.
   useEffect(() => {
     if (reading === null) return;

@@ -2,9 +2,10 @@ import { ChevronLeft, ChevronRight, Cookie, Moon, Plus, Sun, Sunrise, X, type Lu
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { Button } from './components/ui/button';
 import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
-import { useChangeTick } from './lib/change-feed';
+import { useRefetchOn } from './lib/change-feed';
 import { dialogKeys } from './lib/dialog';
 import { loadMeals, mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
+import { startReadLoop, type ReadLoop } from './lib/read-loop';
 import { householdDay, WEEKDAYS } from './lib/routines';
 import { supabase } from './lib/supabase';
 import { useHouseholdDay, useNow } from './lib/wall-hooks';
@@ -28,29 +29,22 @@ const SLOT_PICTURES: Record<MealSlot, LucideIcon> = { breakfast: Sunrise, lunch:
 // Callers are keyed on the span, so a turned page never shows the last page's Meals.
 function useMeals(from: string, to: string, saves = 0): { meals: Meal[] | null; failed: boolean } {
   const [read, setRead] = useState<{ meals: Meal[] | null; failed: boolean }>({ meals: null, failed: false });
-  const changes = useChangeTick(MEAL_TABLES);
+  // A change pokes the loop instead of restarting it, so a read in flight lands and one more follows.
+  const loop = useRef<ReadLoop | null>(null);
+  useRefetchOn(MEAL_TABLES, () => loop.current?.poke());
   useEffect(() => {
-    let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function load() {
-      let delay = REFRESH_MS;
-      try {
-        const meals = await loadMeals(supabase, from, to);
-        if (live) setRead({ meals, failed: false });
-      } catch {
-        if (live) setRead((prev) => ({ ...prev, failed: true }));
-        delay = RETRY_MS;
-      }
-      if (live) timer = setTimeout(() => void load(), delay);
-    }
-
-    void load();
+    loop.current = startReadLoop({
+      read: () => loadMeals(supabase, from, to),
+      onResult: (meals) => setRead({ meals, failed: false }),
+      onFail: () => setRead((prev) => ({ ...prev, failed: true })),
+      refreshMs: REFRESH_MS,
+      retryMs: RETRY_MS,
+    });
     return () => {
-      live = false;
-      clearTimeout(timer);
+      loop.current?.stop();
+      loop.current = null;
     };
-  }, [from, to, saves, changes]);
+  }, [from, to, saves]);
   return read;
 }
 
