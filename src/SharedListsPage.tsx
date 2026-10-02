@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
-import { ArrowDown, ArrowUp, Check, Circle, List, Pin, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, List, Pin, Plus } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import {
   addItem,
@@ -36,11 +36,6 @@ import { Button } from './components/ui/button';
 const ITEM_TABLES = ['list_items'] as const;
 const ITEM_REFRESH_MS = 30_000;
 const LIST_TABLES = ['shared_lists', 'households'] as const;
-
-const field = 'w-full text-base';
-const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
-const quiet = `${action} border border-border`;
-const iconAction = 'inline-flex size-12 shrink-0 items-center justify-center rounded-lg border border-border';
 
 // ---- Items of one list: the same on the wall's cards and on the phone --------------
 
@@ -105,7 +100,7 @@ function useItems(listId: string) {
 
   async function clear() {
     const stuck = await guarded(() => clearOptimistically(publish, state.items, () => clearCompleted(supabase, listId)));
-    fail(stuck ? '' : 'Could not clear completed items. They have been put back.');
+    fail(stuck ? '' : 'Could not clear the crossed off items. They have been put back.');
   }
 
   async function move(id: string, offset: number) {
@@ -125,96 +120,6 @@ function useItems(listId: string) {
   }
 
   return { ...state, add, toggle, clear, move };
-}
-
-// The items of one list with the field that adds one and the button that clears the crossed ones. Given a
-// `title` (the wall's rail) the list's name and that button share the top row instead of the button
-// taking a row of its own below the items: beside Today's meals and the Routines, the rail has room
-// for little else than the items, and the button's own row left it one.
-function ListItems({ listId, reorderable, title }: { listId: string; reorderable: boolean; title?: string }) {
-  const { items, loaded, problem, add, toggle, clear, move } = useItems(listId);
-  const [text, setText] = useState('');
-  const hasCrossed = items.some((item) => item.crossed_at !== null);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!text.trim()) return;
-    if (await add(text)) setText('');
-  }
-
-  const clearButton = (
-    <button type="button" className={`${quiet} disabled:opacity-40${title === undefined ? '' : ' shrink-0'}`} disabled={!hasCrossed} onClick={() => void clear()}>
-      Clear completed
-    </button>
-  );
-
-  return (
-    <div className={`flex min-h-0 flex-1 flex-col ${title === undefined ? 'gap-4' : 'gap-3'}`}>
-      {title !== undefined && (
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="min-w-0 truncate text-2xl font-semibold">{title}</h2>
-          {clearButton}
-        </div>
-      )}
-      <form onSubmit={(event) => void submit(event)} className="flex gap-2">
-        <input
-          className={field}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          maxLength={200}
-          placeholder="Add an item"
-          aria-label="New item"
-        />
-        <button type="submit" className={`${action} bg-primary text-primary-foreground`}>
-          Add
-        </button>
-      </form>
-
-      {problem && (
-        <p role="alert" className="text-base">
-          {problem}
-        </p>
-      )}
-      {loaded && items.length === 0 && !problem && <p className="text-base">Nothing on this list.</p>}
-
-      <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {items.map((item, index) => {
-          const crossed = item.crossed_at !== null;
-          return (
-            <li key={item.id} className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-pressed={crossed}
-                onClick={() => void toggle(item)}
-                className="flex min-h-12 flex-1 items-center gap-3 rounded-lg border border-border px-3 text-left text-lg"
-              >
-                {crossed ? <Check aria-hidden className="size-6 shrink-0" /> : <Circle aria-hidden className="size-6 shrink-0" />}
-                <span className={crossed ? 'line-through decoration-2' : ''}>{item.text}</span>
-              </button>
-              {reorderable && (
-                <>
-                  <button type="button" className={iconAction} aria-label={`Move ${item.text} up`} disabled={index === 0} onClick={() => void move(item.id, -1)}>
-                    <ArrowUp aria-hidden className="size-5" />
-                  </button>
-                  <button
-                    type="button"
-                    className={iconAction}
-                    aria-label={`Move ${item.text} down`}
-                    disabled={index === items.length - 1}
-                    onClick={() => void move(item.id, 1)}
-                  >
-                    <ArrowDown aria-hidden className="size-5" />
-                  </button>
-                </>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-
-      {title === undefined && clearButton}
-    </div>
-  );
 }
 
 // ---- The wall ------------------------------------------------------------------------
@@ -258,8 +163,9 @@ function useHeight(ref: RefObject<HTMLElement | null>): number | null {
   return height;
 }
 
-// The height of an item's row in each place, from the drawings: 52 px in a card on the Lists screen, 48 px on Home.
-const ROW_HEIGHT = { card: 'h-13', home: 'h-12' } as const;
+// The height of an item's row in each place, from the drawings: 52 px in a card on the Lists screen, 48 px on Home and
+// 56 px on the phone, where every row is.
+const ROW_HEIGHT = { card: 'h-13', home: 'h-12', phone: 'h-14' } as const;
 
 // One item. The whole row is the button: a tap crosses the item off, another puts it back. To get, it is an empty ring;
 // crossed off, a tick and struck-through words, so it never rests on colour alone.
@@ -280,8 +186,9 @@ function ItemRow({ item, size, onToggle }: { item: ListItem; size: keyof typeof 
   );
 }
 
-// The field that adds an item, and its button. `onAdd` says whether the item was added, and the field empties when it was.
-function AddRow({ listName, onAdd }: { listName: string; onAdd: (text: string) => Promise<boolean> }) {
+// The field that adds an item, and its button: 52 px on the Wall, 56 on the phone. `onAdd` says whether the item was added,
+// and the field empties when it was.
+function AddRow({ listName, size = 'wall', onAdd }: { listName: string; size?: 'wall' | 'phone'; onAdd: (text: string) => Promise<boolean> }) {
   const [text, setText] = useState('');
 
   async function submit(event: FormEvent) {
@@ -292,11 +199,28 @@ function AddRow({ listName, onAdd }: { listName: string; onAdd: (text: string) =
 
   return (
     <form onSubmit={(event) => void submit(event)} className="flex shrink-0 gap-2">
-      <input className="min-w-0 flex-1 text-[17px]" value={text} onChange={(event) => setText(event.target.value)} maxLength={200} placeholder="Add an item" aria-label={`Add an item to ${listName}`} />
-      <Button type="submit" variant="secondary" aria-label={`Add to ${listName}`} className="w-13 px-0">
+      <input
+        className={`min-w-0 flex-1 text-[17px] ${size === 'phone' ? 'h-14' : ''}`}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        maxLength={200}
+        placeholder="Add an item"
+        aria-label={`Add an item to ${listName}`}
+      />
+      <Button type="submit" variant="secondary" size={size} aria-label={`Add to ${listName}`} className={size === 'phone' ? 'w-14 px-0' : 'w-13 px-0'}>
         <Plus aria-hidden className="size-6" strokeWidth={2.6} />
       </Button>
     </form>
+  );
+}
+
+// The mark on the Pinned List, on the Wall's card and on the phone's.
+function PinnedMark() {
+  return (
+    <p className="flex h-8 shrink-0 items-center gap-2 self-start rounded-full bg-muted px-3 text-sm text-muted-foreground">
+      <Pin aria-hidden className="size-4" />
+      On the home screen
+    </p>
   );
 }
 
@@ -325,12 +249,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
         <h3 className="min-w-0 flex-1 truncate font-display text-2xl leading-[30px]">{list.name}</h3>
         {loaded && <span className="shrink-0 text-[15px] text-muted-foreground">{items.length - crossed} to get</span>}
       </div>
-      {pinned && (
-        <p className="flex h-8 shrink-0 items-center gap-2 self-start rounded-full bg-muted px-3 text-sm text-muted-foreground">
-          <Pin aria-hidden className="size-4" />
-          On the home screen
-        </p>
-      )}
+      {pinned && <PinnedMark />}
       <AddRow
         listName={list.name}
         onAdd={async (text) => {
@@ -476,6 +395,53 @@ export function PinnedListCard({ onOpenLists }: { onOpenLists: () => void }) {
 
 // ---- The phone: manage lists (Household Account only) ---------------------------------
 
+// The phone's parts, from the drawing (v2/phone.js): a card has 16 px of padding round its parts, 16 apart, and its title in the
+// display face at 22 px. A field, a row and the big button are 56 px; the smaller actions are 48.
+const CARD = 'flex flex-col gap-4 rounded-3xl bg-card p-4';
+const CARD_TITLE = 'font-display text-[22px] leading-7';
+const ACTION = 'h-12 px-4';
+const ICON_ACTION = 'size-12 rounded-full px-0';
+
+// One list's items on the phone: the rows of the Wall's cards, with the arrows that reorder them, which only the phone has.
+function ItemsEditor({ listId, listName }: { listId: string; listName: string }) {
+  const { items, loaded, problem, add, toggle, clear, move } = useItems(listId);
+  const crossed = items.length - withoutCrossed(items).length;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <AddRow listName={listName} size="phone" onAdd={async (text) => (await add(text)) !== null} />
+      {problem && (
+        <p role="alert" className="text-base">
+          {problem}
+        </p>
+      )}
+      {loaded && items.length === 0 && !problem && <p className="text-base">Nothing on this list.</p>}
+      {items.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {items.map((item, index) => (
+            <li key={item.id} className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <ItemRow item={item} size="phone" onToggle={() => void toggle(item)} />
+              </div>
+              <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${item.text} up`} disabled={index === 0} onClick={() => void move(item.id, -1)}>
+                <ArrowUp aria-hidden className="size-5" />
+              </Button>
+              <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${item.text} down`} disabled={index === items.length - 1} onClick={() => void move(item.id, 1)}>
+                <ArrowDown aria-hidden className="size-5" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {crossed > 0 && (
+        <Button variant="secondary" size="phone" className="w-full" onClick={() => void clear()}>
+          Clear {crossed} crossed off
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function SharedListsPage({ household }: { household: Household }) {
   const [lists, setLists] = useState<SharedList[] | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
@@ -542,94 +508,102 @@ export function SharedListsPage({ household }: { household: Household }) {
   }
 
   return (
-    <main className="mx-auto flex min-h-svh max-w-md flex-col gap-6 p-4">
-      <h1 className="text-2xl font-semibold">Shared Lists</h1>
+    <main className="mx-auto flex max-w-md flex-col gap-3 px-4 pt-2 pb-6">
+      <h1 className="sr-only">Lists</h1>
 
-      <form onSubmit={(event) => void create(event)} className="flex gap-2">
-        <input className={field} value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={100} placeholder="New list name" aria-label="New list name" />
-        <button type="submit" className={`${action} bg-primary text-primary-foreground`}>
-          Create
-        </button>
-      </form>
+      <section aria-labelledby="new-list-title" className={CARD}>
+        <h2 id="new-list-title" className={CARD_TITLE}>
+          New list
+        </h2>
+        <form onSubmit={(event) => void create(event)} className="flex flex-col gap-4">
+          <label className="flex flex-col gap-2 text-[15px] text-muted-foreground">
+            Name
+            <input className="h-14 text-[17px]" value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={100} />
+          </label>
+          <Button type="submit" variant="primary" size="phone" className="w-full text-[17px]">
+            Add list
+          </Button>
+        </form>
+      </section>
 
       {problem && (
-        <p role="alert" className="text-base">
+        <p role="alert" className="px-1 text-base">
           {problem}
         </p>
       )}
-      {lists?.length === 0 && <p className="text-base">No lists yet.</p>}
+      {lists?.length === 0 && <p className="px-1 text-base">No lists yet.</p>}
 
-      <ul className="flex flex-col gap-4">
+      <ul className="flex flex-col gap-3">
         {lists?.map((list, index) => (
-          <li key={list.id} className="flex flex-col gap-3 rounded-lg border border-border p-3">
-            {renaming?.id === list.id ? (
-              <form onSubmit={(event) => void rename(event)} className="flex gap-2">
-                <input
-                  className={field}
-                  value={renaming.name}
-                  onChange={(e) => setRenaming({ id: list.id, name: e.target.value })}
-                  maxLength={100}
-                  aria-label={`Name for ${list.name}`}
-                  autoFocus
-                />
-                <button type="submit" className={`${action} bg-primary text-primary-foreground`}>
-                  Save
-                </button>
-                <button type="button" className={quiet} onClick={() => setRenaming(null)}>
-                  Cancel
-                </button>
-              </form>
-            ) : (
-              <p className="text-lg font-medium">
-                {list.name}
-                {list.id === pinnedId && <span className="ml-2 text-base font-normal">(pinned to the wall)</span>}
-              </p>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className={quiet} aria-expanded={open === list.id} onClick={() => setOpen(open === list.id ? null : list.id)}>
-                {open === list.id ? 'Hide items' : 'Items'}
-              </button>
-              <button
-                type="button"
-                className={quiet}
-                disabled={list.id === pinnedId}
-                onClick={() => void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.')}
-              >
-                {list.id === pinnedId ? 'Pinned' : 'Pin to wall'}
-              </button>
-              <button type="button" className={quiet} onClick={() => setRenaming({ id: list.id, name: list.name })}>
-                Rename
-              </button>
-              <button type="button" className={iconAction} aria-label={`Move ${list.name} up`} disabled={index === 0} onClick={() => void move(list.id, -1)}>
-                <ArrowUp aria-hidden className="size-5" />
-              </button>
-              <button
-                type="button"
-                className={iconAction}
-                aria-label={`Move ${list.name} down`}
-                disabled={index === lists.length - 1}
-                onClick={() => void move(list.id, 1)}
-              >
-                <ArrowDown aria-hidden className="size-5" />
-              </button>
-              {confirming === list.id ? (
-                <>
-                  <button type="button" className={`${action} border-2 border-destructive bg-primary text-primary-foreground`} onClick={() => void remove(list.id)}>
-                    Delete {list.name} and its items
-                  </button>
-                  <button type="button" className={quiet} onClick={() => setConfirming(null)}>
-                    Keep it
-                  </button>
-                </>
+          <li key={list.id}>
+            <section aria-label={list.name} className={CARD}>
+              {renaming?.id === list.id ? (
+                <form onSubmit={(event) => void rename(event)} className="flex flex-col gap-3">
+                  <input
+                    className="h-14 text-[17px]"
+                    value={renaming.name}
+                    onChange={(e) => setRenaming({ id: list.id, name: e.target.value })}
+                    maxLength={100}
+                    aria-label={`Name for ${list.name}`}
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <Button type="submit" variant="secondary" className={ACTION}>
+                      Save
+                    </Button>
+                    <Button variant="quiet" className={ACTION} onClick={() => setRenaming(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
               ) : (
-                <button type="button" className={quiet} onClick={() => setConfirming(list.id)}>
-                  Delete
-                </button>
+                // The arrows move the whole card, so they sit with its name.
+                <div className="flex items-center gap-2">
+                  <h2 className={`${CARD_TITLE} min-w-0 flex-1 break-words`}>{list.name}</h2>
+                  <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} up`} disabled={index === 0} onClick={() => void move(list.id, -1)}>
+                    <ArrowUp aria-hidden className="size-5" />
+                  </Button>
+                  <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} down`} disabled={index === lists.length - 1} onClick={() => void move(list.id, 1)}>
+                    <ArrowDown aria-hidden className="size-5" />
+                  </Button>
+                </div>
               )}
-            </div>
+              {list.id === pinnedId && <PinnedMark />}
 
-            {open === list.id && <ListItems listId={list.id} reorderable />}
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" className={ACTION} aria-expanded={open === list.id} onClick={() => setOpen(open === list.id ? null : list.id)}>
+                  {open === list.id ? 'Hide items' : 'Items'}
+                </Button>
+                <Button variant="secondary" className={ACTION} onClick={() => setRenaming({ id: list.id, name: list.name })}>
+                  Rename
+                </Button>
+                {list.id !== pinnedId && (
+                  <Button
+                    variant="secondary"
+                    className={ACTION}
+                    onClick={() => void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.')}
+                  >
+                    Show on home screen
+                  </Button>
+                )}
+                {confirming === list.id ? (
+                  <>
+                    <Button variant="delete" className="h-auto min-h-12 px-4 py-2 whitespace-normal" onClick={() => void remove(list.id)}>
+                      Delete {list.name} and its items
+                    </Button>
+                    <Button variant="quiet" className={ACTION} onClick={() => setConfirming(null)}>
+                      Keep it
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="quiet" className={ACTION} onClick={() => setConfirming(list.id)}>
+                    Delete
+                  </Button>
+                )}
+              </div>
+
+              {open === list.id && <ItemsEditor listId={list.id} listName={list.name} />}
+            </section>
           </li>
         ))}
       </ul>
