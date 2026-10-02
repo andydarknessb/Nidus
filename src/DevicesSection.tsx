@@ -1,12 +1,15 @@
+import { ChevronDown, ChevronRight, Plus, Tablet } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice, type Device } from './lib/device';
-import { lastSeenLabel } from './lib/device-format';
-import { useRefetchOn } from './lib/change-feed';
+import { Card, Field } from '@/components/phone';
+import { Button } from '@/components/ui/button';
+import { useRefetchOn } from '@/lib/change-feed';
+import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice, type Device } from '@/lib/device';
+import { seenWords } from '@/lib/device-format';
 
 const DEVICE_TABLES = ['devices'] as const;
 
-const field = 'w-full text-base';
-const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
+const field = 'h-14 w-full text-[17px]';
+const PAIR_ID = 'tablet-pair';
 
 type PairStatus = 'idle' | 'pairing' | 'paired' | 'invalid' | 'tooMany' | 'failed';
 
@@ -19,24 +22,32 @@ const pairMessages: Record<PairStatus, string> = {
   failed: 'Could not pair. Try again.',
 };
 
-// Settings, phone only: pair a tablet with the code it shows, see when each
-// Device was last seen, and revoke one.
+// Settings, phone only: the Wall tablets (Devices). Pair one with the code it shows, see when each was last seen, and unpair one
+// (revoke its Device), which sends it back to asking for a code. A Device never gets this screen.
 export function DevicesSection() {
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [now, setNow] = useState(() => new Date());
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [code, setCode] = useState('');
-  const [name, setName] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const [pairing, setPairing] = useState<{ code: string; name: string } | null>(null);
   const [pairStatus, setPairStatus] = useState<PairStatus>('idle');
-  const [confirming, setConfirming] = useState<string | null>(null);
+  // The tablet whose row is open, and whether it is being asked to be sure.
+  const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
+  const [focusNext, setFocusNext] = useState<string | null>(null);
+
+  // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
+  useEffect(() => {
+    if (focusNext === null) return;
+    document.getElementById(focusNext)?.focus();
+    setFocusNext(null);
+  }, [focusNext]);
 
   const refresh = useCallback(async () => {
     try {
       setDevices(await listDevices());
       setNow(new Date());
-      setLoadFailed(false);
+      setProblem(null);
     } catch {
-      setLoadFailed(true);
+      setProblem('Could not load tablets. Check your connection.');
     }
   }, []);
 
@@ -50,97 +61,137 @@ export function DevicesSection() {
 
   async function pair(event: FormEvent) {
     event.preventDefault();
+    if (!pairing || pairStatus === 'pairing') return;
     setPairStatus('pairing');
     try {
-      await claimPairingCode(code, name);
-      setCode('');
-      setName('');
+      await claimPairingCode(pairing.code, pairing.name);
+      setPairing(null);
       setPairStatus('paired');
+      setFocusNext(PAIR_ID);
       await refresh();
     } catch (error) {
       setPairStatus(isInvalidCode(error) ? 'invalid' : isTooManyAttempts(error) ? 'tooMany' : 'failed');
     }
   }
 
-  async function revoke(id: string) {
+  async function unpair(id: string) {
     try {
       await revokeDevice(id);
-      setConfirming(null);
+      setOpen(null);
+      setFocusNext(PAIR_ID);
       await refresh();
     } catch {
-      setLoadFailed(true);
+      setProblem('Could not unpair the tablet. Try again.');
     }
   }
 
   return (
-    <section aria-labelledby="devices-heading" className="flex flex-col gap-4">
-      <h2 id="devices-heading" className="text-xl font-semibold">
-        Devices
-      </h2>
+    <Card title="Wall tablets">
+      {problem && (
+        <p role="alert" className="text-base">
+          {problem}
+        </p>
+      )}
+      {devices?.length === 0 && <p className="text-base">No tablet is paired yet.</p>}
+      <ul className="flex flex-col gap-2">
+        {devices?.map((device) => {
+          const expanded = open?.id === device.id;
+          return (
+            <li key={device.id} className="flex flex-col gap-4">
+              <Button
+                id={`tablet-${device.id}`}
+                variant="secondary"
+                aria-expanded={expanded}
+                className="h-14 w-full justify-start gap-3 px-3.5 text-left font-medium"
+                onClick={() => setOpen(expanded ? null : { id: device.id, confirming: false })}
+              >
+                <Tablet aria-hidden className="size-[22px]" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-[17px] leading-[22px] font-medium">{device.name}</span>
+                  <span className="text-sm leading-[18px] font-normal text-muted-foreground">{seenWords(device.last_seen_at, now)}</span>
+                </span>
+                {expanded ? <ChevronDown aria-hidden className="size-[22px] text-muted-foreground" /> : <ChevronRight aria-hidden className="size-[22px] text-muted-foreground" />}
+              </Button>
+              {expanded &&
+                (open.confirming ? (
+                  <div className="flex flex-col gap-3">
+                    <h3 className="text-[17px] leading-6 font-semibold">Unpair {device.name}?</h3>
+                    <p className="text-base leading-6">The tablet stops showing your household and goes back to showing a code. You can pair it again any time.</p>
+                    <div className="flex gap-2">
+                      <Button variant="secondary" size="phone" className="flex-1" onClick={() => setOpen({ id: device.id, confirming: false })}>
+                        Cancel
+                      </Button>
+                      <Button variant="delete" size="phone" className="h-auto min-h-14 flex-[2] py-2 whitespace-normal" onClick={() => void unpair(device.id)}>
+                        Unpair {device.name}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button variant="secondary" size="phone" className="h-auto min-h-14 py-2 whitespace-normal" onClick={() => setOpen({ id: device.id, confirming: true })}>
+                    Unpair {device.name}
+                  </Button>
+                ))}
+            </li>
+          );
+        })}
+      </ul>
 
-      <form onSubmit={(event) => void pair(event)} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-2 text-base">
-          Code shown on the tablet
-          <input
-            className={`${field} font-mono uppercase tracking-widest`}
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            maxLength={12}
-            autoCapitalize="characters"
-            autoComplete="off"
-            spellCheck={false}
-            required
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-base">
-          Device name
-          <input
-            className={field}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={100}
-            placeholder="Kitchen"
-            required
-          />
-        </label>
-        <button type="submit" className={`${action} bg-primary text-primary-foreground`} disabled={pairStatus === 'pairing'}>
-          Pair tablet
-        </button>
+      <div className="flex flex-col gap-2">
+        {pairing ? (
+          <form onSubmit={(event) => void pair(event)} className="flex flex-col gap-4 border-t border-border pt-4">
+            <Field label="Code shown on the tablet">
+              <input
+                className={`${field} uppercase tracking-widest`}
+                autoFocus
+                value={pairing.code}
+                onChange={(e) => setPairing({ ...pairing, code: e.target.value.toUpperCase() })}
+                maxLength={12}
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
+                required
+              />
+            </Field>
+            <Field label="Tablet name">
+              <input className={field} value={pairing.name} onChange={(e) => setPairing({ ...pairing, name: e.target.value })} maxLength={100} placeholder="Kitchen" required />
+            </Field>
+            <div className="flex gap-2">
+              <Button
+                variant="quiet"
+                size="phone"
+                className="flex-1"
+                onClick={() => {
+                  setPairing(null);
+                  setPairStatus('idle');
+                  setFocusNext(PAIR_ID);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="secondary" size="phone" className="flex-1" disabled={pairStatus === 'pairing'}>
+                Pair tablet
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <Button
+            id={PAIR_ID}
+            variant="secondary"
+            size="phone"
+            className="w-full"
+            onClick={() => {
+              setPairing({ code: '', name: '' });
+              setPairStatus('idle');
+            }}
+          >
+            <Plus aria-hidden />
+            Pair a tablet
+          </Button>
+        )}
         <p role="status" className="min-h-6 text-base">
           {pairMessages[pairStatus]}
         </p>
-      </form>
-
-      {loadFailed && (
-        <p role="alert" className="text-base">
-          Could not load Devices. Check your connection.
-        </p>
-      )}
-      {devices?.length === 0 && <p className="text-base">No Devices paired yet.</p>}
-      <ul className="flex flex-col gap-3">
-        {devices?.map((device) => (
-          <li key={device.id} className="flex flex-col gap-3 rounded-lg border border-border p-3">
-            <div>
-              <p className="text-base font-medium">{device.name}</p>
-              <p className="text-base">Last seen: {lastSeenLabel(device.last_seen_at, now)}</p>
-            </div>
-            {confirming === device.id ? (
-              <div className="flex gap-3">
-                <button type="button" className={`${action} flex-1 bg-primary text-primary-foreground`} onClick={() => void revoke(device.id)}>
-                  Revoke {device.name}
-                </button>
-                <button type="button" className={`${action} border border-border`} onClick={() => setConfirming(null)}>
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button type="button" className={`${action} border border-border`} onClick={() => setConfirming(device.id)}>
-                Revoke
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
+      </div>
+    </Card>
   );
 }

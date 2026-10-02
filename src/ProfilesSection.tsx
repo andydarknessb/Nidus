@@ -1,89 +1,47 @@
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, Pencil, Plus } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import {
-  PROFILE_PALETTE,
-  cleanAvatarUrl,
-  createProfile,
-  deleteProfile,
-  loadProfiles,
-  movedIds,
-  nextSortOrder,
-  paletteColorName,
-  reorderProfiles,
-  updateProfile,
-  type Profile,
-} from '@/lib/profiles';
-import { supabase } from '@/lib/supabase';
+import { ColorPicker, DeletePerson } from '@/components/PersonEditor';
+import { PersonDisc } from '@/components/people';
+import { Card, Field } from '@/components/phone';
+import { Button } from '@/components/ui/button';
 import { useRefetchOn } from '@/lib/change-feed';
+import { createProfile, deleteProfile, firstFreeColor, loadProfiles, movedIds, nextSortOrder, reorderProfiles, updateProfile, type Profile } from '@/lib/profiles';
+import { supabase } from '@/lib/supabase';
 
 const PROFILE_TABLES = ['profiles'] as const;
-
-const field = 'w-full text-base';
-const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
-const iconAction = 'flex size-12 items-center justify-center rounded-lg border border-border disabled:opacity-40';
 
 type Control = 'edit' | 'delete' | 'up' | 'down';
 
 // Ids for a row's buttons, so focus can go back to one after the screen swaps controls.
 const controlId = (profileId: string, control: Control) => `profile-${profileId}-${control}`;
+const ADD_ID = 'person-add';
 
-type Draft = { name: string; color: string; avatar: string };
+// What the name field and the colour hold while a form is open. The picture address is not here: it left the form, and no write
+// of a person names it.
+type Draft = { name: string; color: string };
+type Editing = { id: string; draft: Draft; deleting: boolean };
 
-const emptyDraft: Draft = { name: '', color: PROFILE_PALETTE[0].hex, avatar: '' };
+const nameField = 'h-14 w-full text-[17px]';
 
-// The fixed palette as a radio group: colour is never the only cue, each swatch
-// is named and the chosen one carries a check mark and a ring.
-function ColorPicker({ value, onChange, label }: { value: string; onChange: (hex: string) => void; label: string }) {
+// A form's title: the disc the person will be, which follows the name and the colour as they are chosen, and what the form does.
+function FormTitle({ draft, title }: { draft: Draft; title: string }) {
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="text-base">{label}</legend>
-      <div className="flex flex-wrap gap-2">
-        {PROFILE_PALETTE.map((color) => (
-          <label
-            key={color.hex}
-            className="relative flex size-12 cursor-pointer items-center justify-center rounded-full has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-foreground"
-            style={{ backgroundColor: color.hex, boxShadow: value === color.hex ? '0 0 0 3px var(--background), 0 0 0 6px var(--foreground)' : undefined }}
-          >
-            <input
-              type="radio"
-              name={`${label}-color`}
-              className="sr-only"
-              value={color.hex}
-              checked={value === color.hex}
-              onChange={() => onChange(color.hex)}
-              aria-label={color.name}
-            />
-            {value === color.hex && (
-              <span aria-hidden="true" className="text-xl font-bold text-ink">
-                ✓
-              </span>
-            )}
-          </label>
-        ))}
-      </div>
-    </fieldset>
+    <div className="flex items-center gap-3">
+      <PersonDisc name={draft.name} color={draft.color} size={44} />
+      <h3 className="font-display text-[22px] leading-7">{title}</h3>
+    </div>
   );
 }
 
-function Swatch({ profile }: { profile: Profile }) {
-  return (
-    <span
-      role="img"
-      aria-label={`${paletteColorName(profile.color) ?? 'Custom'} colour`}
-      className="size-12 shrink-0 rounded-full"
-      style={{ backgroundColor: profile.color }}
-    />
-  );
-}
-
-// Settings, phone only: the Household's Profiles. Add, edit, reorder, and delete
-// with a confirmation. A Device reads Profiles but never gets this screen.
+// Settings, phone only: the Household's people (Profiles). Each is a row with a pencil, which opens the person to change their
+// name and colour, move them up or down, or delete them; a new person starts on the first colour nobody has. A Device reads
+// Profiles but never gets this screen.
 export function ProfilesSection({ householdId }: { householdId: string }) {
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [adding, setAdding] = useState<Draft>(emptyDraft);
-  const [editing, setEditing] = useState<{ id: string; draft: Draft } | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [adding, setAdding] = useState<Draft | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [busy, setBusy] = useState(false);
   const [focusNext, setFocusNext] = useState<string | null>(null);
 
   // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
@@ -98,7 +56,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
       setProfiles(await loadProfiles(supabase));
       setProblem(null);
     } catch {
-      setProblem('Could not load Profiles. Check your connection.');
+      setProblem('Could not load people. Check your connection.');
     }
   }, []);
 
@@ -107,8 +65,9 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   }, [refresh]);
   useRefetchOn(PROFILE_TABLES, () => void refresh());
 
-  // Runs a write, then reloads so the screen shows what is saved either way.
+  // Runs a write, then reloads so the screen shows what is saved either way. One at a time: a second tap waits for the first.
   async function change(write: () => Promise<void>, failure: string): Promise<boolean> {
+    setBusy(true);
     try {
       await write();
       setProblem(null);
@@ -118,32 +77,29 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
       setProblem(failure);
       await refresh();
       return false;
+    } finally {
+      setBusy(false);
     }
   }
 
   async function add(event: FormEvent) {
     event.preventDefault();
+    if (!adding || busy) return;
     const ok = await change(
-      () =>
-        createProfile(
-          supabase,
-          householdId,
-          { name: adding.name, color: adding.color, avatar_url: cleanAvatarUrl(adding.avatar) },
-          nextSortOrder(profiles ?? []),
-        ).then(() => undefined),
-      'Could not add the Profile. Check the name and the picture address, then try again.',
+      () => createProfile(supabase, householdId, adding, nextSortOrder(profiles ?? [])).then(() => undefined),
+      'Could not add the person. Check the name and try again.',
     );
-    if (ok) setAdding(emptyDraft);
+    if (ok) {
+      setAdding(null);
+      setFocusNext(ADD_ID);
+    }
   }
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (!editing) return;
+    if (!editing || busy) return;
     const { id, draft } = editing;
-    const ok = await change(
-      () => updateProfile(supabase, id, { name: draft.name, color: draft.color, avatar_url: cleanAvatarUrl(draft.avatar) }),
-      'Could not save the Profile. Check the name and the picture address, then try again.',
-    );
+    const ok = await change(() => updateProfile(supabase, id, draft), 'Could not save the person. Check the name and try again.');
     if (ok) {
       setEditing(null);
       setFocusNext(controlId(id, 'edit'));
@@ -151,160 +107,155 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   }
 
   async function remove(id: string) {
-    const ok = await change(() => deleteProfile(supabase, id), 'Could not delete the Profile. Try again.');
-    if (ok) setConfirming(null);
+    const ok = await change(() => deleteProfile(supabase, id), 'Could not delete the person. Try again.');
+    if (ok) {
+      setEditing(null);
+      setFocusNext(ADD_ID);
+    }
   }
 
   async function move(id: string, offset: number) {
     const ids = movedIds((profiles ?? []).map((profile) => profile.id), id, offset);
-    // A row that reaches an end disables the button just pressed; hand focus to its sibling arrow.
     const at = ids.indexOf(id);
-    if (at === 0 && offset < 0) setFocusNext(controlId(id, 'down'));
-    if (at === ids.length - 1 && offset > 0) setFocusNext(controlId(id, 'up'));
-    await change(() => reorderProfiles(supabase, ids), 'Could not reorder Profiles. Try again.');
+    // Moving a row takes the button just pressed with it, or switches it off at an end: the focus goes to whichever is there.
+    const atEnd = (at === 0 && offset < 0) || (at === ids.length - 1 && offset > 0);
+    const ok = await change(() => reorderProfiles(supabase, ids), 'Could not reorder people. Try again.');
+    if (ok) setFocusNext(controlId(id, (offset < 0) !== atEnd ? 'up' : 'down'));
   }
 
   return (
-    <section aria-labelledby="profiles-heading" className="flex flex-col gap-4">
-      <h2 id="profiles-heading" className="text-xl font-semibold">
-        Profiles
-      </h2>
-
-      <form onSubmit={(event) => void add(event)} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-2 text-base">
-          Name
-          <input
-            className={field}
-            value={adding.name}
-            onChange={(e) => setAdding({ ...adding, name: e.target.value })}
-            maxLength={100}
-            required
-          />
-        </label>
-        <ColorPicker label="New Profile colour" value={adding.color} onChange={(color) => setAdding({ ...adding, color })} />
-        <label className="flex flex-col gap-2 text-base">
-          Picture address (optional, starts with https://)
-          <input
-            className={field}
-            type="url"
-            pattern="https://.*"
-            inputMode="url"
-            value={adding.avatar}
-            onChange={(e) => setAdding({ ...adding, avatar: e.target.value })}
-            placeholder="https://"
-            autoComplete="off"
-          />
-        </label>
-        <button type="submit" className={`${action} bg-primary text-primary-foreground`}>
-          Add Profile
-        </button>
-      </form>
-
-      <p role="status" className="min-h-6 text-base">
-        {problem}
-      </p>
-      {profiles?.length === 0 && <p className="text-base">No Profiles yet.</p>}
-      <ul className="flex flex-col gap-3">
+    <Card title="People">
+      {problem && (
+        <p role="alert" className="text-base">
+          {problem}
+        </p>
+      )}
+      {profiles?.length === 0 && <p className="text-base">No one yet. Add the people who live here.</p>}
+      <ul className="flex flex-col gap-2">
         {profiles?.map((profile, index) => (
-          <li key={profile.id} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+          <li key={profile.id}>
             {editing?.id === profile.id ? (
-              <form onSubmit={(event) => void save(event)} className="flex flex-col gap-4">
-                <label className="flex flex-col gap-2 text-base">
-                  Name
-                  <input
-                    className={field}
-                    autoFocus
-                    value={editing.draft.name}
-                    onChange={(e) => setEditing({ id: profile.id, draft: { ...editing.draft, name: e.target.value } })}
-                    maxLength={100}
-                    required
-                  />
-                </label>
-                <ColorPicker
-                  label={`${profile.name} colour`}
-                  value={editing.draft.color}
-                  onChange={(color) => setEditing({ id: profile.id, draft: { ...editing.draft, color } })}
-                />
-                <label className="flex flex-col gap-2 text-base">
-                  Picture address (optional, starts with https://)
-                  <input
-                    className={field}
-                    type="url"
-                    pattern="https://.*"
-                    inputMode="url"
-                    value={editing.draft.avatar}
-                    onChange={(e) => setEditing({ id: profile.id, draft: { ...editing.draft, avatar: e.target.value } })}
-                    autoComplete="off"
-                  />
-                </label>
-                <div className="flex gap-3">
-                  <button type="submit" className={`${action} flex-1 bg-primary text-primary-foreground`}>
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    className={`${action} border border-border`}
-                    onClick={() => {
-                      setEditing(null);
-                      setFocusNext(controlId(profile.id, 'edit'));
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <>
-                <div className="flex items-center gap-3">
-                  <Swatch profile={profile} />
-                  <p className="flex-1 text-base font-medium">{profile.name}</p>
-                  <button type="button" id={controlId(profile.id, 'up')} className={iconAction} aria-label={`Move ${profile.name} up`} disabled={index === 0} onClick={() => void move(profile.id, -1)}>
-                    <ArrowUp aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    id={controlId(profile.id, 'down')}
-                    className={iconAction}
-                    aria-label={`Move ${profile.name} down`}
-                    disabled={index === profiles.length - 1}
-                    onClick={() => void move(profile.id, 1)}
-                  >
-                    <ArrowDown aria-hidden="true" />
-                  </button>
-                </div>
-                {confirming === profile.id ? (
-                  <div className="flex gap-3">
-                    <button type="button" autoFocus className={`${action} flex-1 border-2 border-destructive bg-primary text-primary-foreground`} onClick={() => void remove(profile.id)}>
-                      Delete {profile.name}
-                    </button>
-                    <button type="button" className={`${action} border border-border`} onClick={() => {
-                      setConfirming(null);
+              <div className="flex flex-col gap-4 border-y border-border py-4">
+                {editing.deleting ? (
+                  <DeletePerson
+                    name={profile.name}
+                    busy={busy}
+                    onCancel={() => {
+                      setEditing({ ...editing, deleting: false });
                       setFocusNext(controlId(profile.id, 'delete'));
-                    }}>
-                      Cancel
-                    </button>
-                  </div>
+                    }}
+                    onDelete={() => void remove(profile.id)}
+                  />
                 ) : (
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      className={`${action} flex-1 border border-border`}
-                      id={controlId(profile.id, 'edit')}
-                      aria-label={`Edit ${profile.name}`}
-                      onClick={() => setEditing({ id: profile.id, draft: { name: profile.name, color: profile.color, avatar: profile.avatar_url ?? '' } })}
+                  <>
+                    <form onSubmit={(event) => void save(event)} className="flex flex-col gap-4">
+                      <FormTitle draft={editing.draft} title={`Edit ${profile.name}`} />
+                      <Field label="Name">
+                        <input
+                          className={nameField}
+                          autoFocus
+                          value={editing.draft.name}
+                          onChange={(e) => setEditing({ ...editing, draft: { ...editing.draft, name: e.target.value } })}
+                          maxLength={100}
+                          required
+                        />
+                      </Field>
+                      <ColorPicker value={editing.draft.color} profiles={profiles} onChange={(color) => setEditing({ ...editing, draft: { ...editing.draft, color } })} />
+                      <div className="flex gap-2">
+                        <Button
+                          variant="quiet"
+                          size="phone"
+                          className="flex-1"
+                          onClick={() => {
+                            setEditing(null);
+                            setFocusNext(controlId(profile.id, 'edit'));
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button type="submit" variant="secondary" size="phone" className="flex-1" disabled={busy}>
+                          Save person
+                        </Button>
+                      </div>
+                    </form>
+                    <div className="flex gap-2">
+                      <Button id={controlId(profile.id, 'up')} variant="quiet" size="phone" className="flex-1" disabled={index === 0 || busy} onClick={() => void move(profile.id, -1)}>
+                        <ArrowUp aria-hidden />
+                        Move up
+                      </Button>
+                      <Button
+                        id={controlId(profile.id, 'down')}
+                        variant="quiet"
+                        size="phone"
+                        className="flex-1"
+                        disabled={index === profiles.length - 1 || busy}
+                        onClick={() => void move(profile.id, 1)}
+                      >
+                        <ArrowDown aria-hidden />
+                        Move down
+                      </Button>
+                    </div>
+                    <Button
+                      id={controlId(profile.id, 'delete')}
+                      variant="quiet"
+                      size="phone"
+                      className="h-auto min-h-14 py-2 whitespace-normal"
+                      onClick={() => setEditing({ ...editing, deleting: true })}
                     >
-                      Edit
-                    </button>
-                    <button type="button" id={controlId(profile.id, 'delete')} className={`${action} flex-1 border border-border`} aria-label={`Delete ${profile.name}`} onClick={() => setConfirming(profile.id)}>
-                      Delete
-                    </button>
-                  </div>
+                      Delete {profile.name}
+                    </Button>
+                  </>
                 )}
-              </>
+              </div>
+            ) : (
+              <div className="flex h-14 items-center gap-3 rounded-2xl bg-muted pr-1 pl-1.5">
+                <PersonDisc name={profile.name} color={profile.color} size={44} />
+                <span className="min-w-0 flex-1 truncate text-[17px] font-medium">{profile.name}</span>
+                <Button
+                  id={controlId(profile.id, 'edit')}
+                  variant="quiet"
+                  aria-label={`Edit ${profile.name}`}
+                  className="size-12 rounded-full p-0"
+                  onClick={() => setEditing({ id: profile.id, draft: { name: profile.name, color: profile.color }, deleting: false })}
+                >
+                  <Pencil aria-hidden className="size-[22px]" />
+                </Button>
+              </div>
             )}
           </li>
         ))}
       </ul>
-    </section>
+
+      {adding ? (
+        <form onSubmit={(event) => void add(event)} className="flex flex-col gap-4 border-t border-border pt-4">
+          <FormTitle draft={adding} title="New person" />
+          <Field label="Name">
+            <input className={nameField} autoFocus value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} maxLength={100} required />
+          </Field>
+          <ColorPicker value={adding.color} profiles={profiles ?? []} onChange={(color) => setAdding({ ...adding, color })} />
+          <div className="flex gap-2">
+            <Button
+              variant="quiet"
+              size="phone"
+              className="flex-1"
+              onClick={() => {
+                setAdding(null);
+                setFocusNext(ADD_ID);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" variant="secondary" size="phone" className="flex-1" disabled={busy}>
+              Add person
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <Button id={ADD_ID} variant="secondary" size="phone" className="w-full" disabled={profiles === null} onClick={() => setAdding({ name: '', color: firstFreeColor(profiles ?? []) })}>
+          <Plus aria-hidden />
+          Add a person
+        </Button>
+      )}
+    </Card>
   );
 }

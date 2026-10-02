@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   PROFILE_PALETTE,
   byPosition,
-  cleanAvatarUrl,
   contrastRatio,
   createProfile,
   deleteProfile,
@@ -64,11 +63,6 @@ describe('profile helpers', () => {
     expect(initialOf('élise')).toBe('É');
     expect(initialOf('🐶 Rex')).toBe('🐶');
     expect(initialOf('   ')).toBe('');
-  });
-
-  it('treats a blank avatar as none', () => {
-    expect(cleanAvatarUrl('  ')).toBeNull();
-    expect(cleanAvatarUrl(' https://example.com/a.png ')).toBe('https://example.com/a.png');
   });
 });
 

@@ -79,12 +79,6 @@ export function movedIds(ids: string[], id: string, offset: number): string[] {
   return next;
 }
 
-// A blank avatar field means no avatar.
-export function cleanAvatarUrl(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
-}
-
 // The colour a new person starts on: the one the fewest people have, and the first in the palette among those tied. So it is the
 // first colour nobody has (a gap is filled before the end is extended), and once all ten are taken it is the one least shared.
 // A colour is compared as the palette writes it, in lower case: one stored in capitals is the same colour, and one that is not in

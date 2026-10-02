@@ -1,8 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { Fragment, createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { SettingsPage as SettingsPageType } from '../src/SettingsPage';
+import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson } from '../src/components/PersonEditor';
+import { seenWords } from '../src/lib/device-format';
+import type { Household } from '../src/lib/household';
 import { PROFILE_PALETTE, colorOwners, eventPeople, firstFreeColor, namesInWords } from '../src/lib/profiles';
+import { timezoneName, timezoneOptions } from '../src/lib/timezones';
 
-// The phone's settings (spec 0003, People): what is pure about them. The first free colour, whose a colour is, and who an event is
-// for. What the database does with a Profile's picture address is in tests/profiles.test.ts, which needs the local stack.
+// The phone's settings (spec 0003, Phone settings and People): what is pure about them. The first free colour, whose a colour is,
+// who an event is for, the time zone names, the words for a tablet last seen, and the parts the People card is made of, rendered
+// to markup so that what is asserted is what the browser is given. What the database does with a Profile's picture address is in
+// tests/profiles.test.ts, which needs the local stack.
 
 const hexes = PROFILE_PALETTE.map((color) => color.hex);
 const hex = (index: number) => hexes[index]!;
@@ -90,5 +99,235 @@ describe('who an event is for', () => {
 
   it('is nobody drawn, and not everyone, while the people are not read yet', () => {
     expect(eventPeople(['p1'], [])).toEqual({ everyone: false, people: [] });
+  });
+});
+
+describe('time zones, listed by name', () => {
+  it('say what the zone is called and the city it is named for', () => {
+    expect(timezoneName('America/Chicago')).toBe('Central Time (Chicago)');
+    expect(timezoneName('America/New_York')).toBe('Eastern Time (New York)');
+    expect(timezoneName('America/Denver')).toBe('Mountain Time (Denver)');
+    expect(timezoneName('America/Los_Angeles')).toBe('Pacific Time (Los Angeles)');
+  });
+
+  it('take the city from the last part of the id, with its underscores as spaces', () => {
+    expect(timezoneName('America/Argentina/Buenos_Aires')).toMatch(/\(Buenos Aires\)$/);
+    expect(timezoneName('America/Indiana/Indianapolis')).toMatch(/\(Indianapolis\)$/);
+  });
+
+  it('call UTC by its name, which has no city', () => {
+    expect(timezoneName('UTC')).toBe('Coordinated Universal Time');
+  });
+
+  it('give a zone the browser does not know as it was stored', () => {
+    expect(timezoneName('Mars/Olympus_Mons')).toBe('Mars/Olympus_Mons');
+  });
+
+  it('are listed with the stored value still the IANA id', () => {
+    const options = timezoneOptions('America/Chicago');
+    expect(options.find((option) => option.name === 'Central Time (Chicago)')).toEqual({ id: 'America/Chicago', name: 'Central Time (Chicago)' });
+    expect(options.find((option) => option.id === 'UTC')?.name).toBe('Coordinated Universal Time');
+    for (const { id, name } of options) {
+      expect(id, name).toMatch(/^(UTC|[A-Za-z_]+(\/[A-Za-z_+-]+)+)$/);
+      if (id.includes('/')) expect(name.endsWith(`(${id.slice(id.lastIndexOf('/') + 1).replaceAll('_', ' ')})`), `${id}: ${name}`).toBe(true);
+    }
+  });
+
+  it('are in the order of their names, each zone once', () => {
+    const options = timezoneOptions('America/Chicago');
+    const names = options.map((option) => option.name);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'en') || 0));
+    expect(new Set(options.map((option) => option.id)).size).toBe(options.length);
+  });
+
+  it('always hold the Household\'s own zone, even one the browser does not list', () => {
+    expect(timezoneOptions('Mars/Olympus_Mons')).toContainEqual({ id: 'Mars/Olympus_Mons', name: 'Mars/Olympus_Mons' });
+    expect(timezoneOptions('America/Chicago').filter((option) => option.id === 'America/Chicago')).toHaveLength(1);
+  });
+});
+
+describe('when a tablet was last seen', () => {
+  const now = new Date('2026-10-01T19:21:00Z');
+  const ago = (seconds: number) => new Date(now.getTime() - seconds * 1000).toISOString();
+
+  it('says Seen, and how long ago, in words', () => {
+    expect(seenWords(ago(2 * 60), now)).toBe('Seen 2 minutes ago');
+    expect(seenWords(ago(60 * 60), now)).toBe('Seen 1 hour ago');
+    expect(seenWords(ago(3 * 24 * 3600), now)).toBe('Seen 3 days ago');
+  });
+
+  it('says Seen just now for a tablet that has only just been', () => {
+    expect(seenWords(ago(10), now)).toBe('Seen just now');
+  });
+
+  it('says Not seen yet for a tablet that never has been', () => {
+    expect(seenWords(null, now)).toBe('Not seen yet');
+  });
+});
+
+// The markup of a part, with its tags gone and the entities React writes read back.
+const words = (markup: string) =>
+  markup
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+describe('the colours a person can be given', () => {
+  const cory = { id: 'p1', name: 'Cory', color: hex(7), avatar_url: null, sort_order: 0 };
+  const sam = { id: 'p2', name: 'Sam', color: hex(9), avatar_url: null, sort_order: 1 };
+  const render = (props: Partial<Parameters<typeof ColorPicker>[0]> = {}) =>
+    renderToStaticMarkup(createElement(ColorPicker, { value: hex(0), profiles: [cory, sam], onChange: () => undefined, ...props }));
+  const radios = (markup: string) =>
+    [...markup.matchAll(/<label[^>]*>\s*<input([^>]*)\/?>([\s\S]*?)<\/label>/g)].map(([, attributes, rest]) => ({
+      name: /aria-label="([^"]*)"/.exec(attributes ?? '')?.[1] ?? '',
+      value: /value="([^"]*)"/.exec(attributes ?? '')?.[1] ?? '',
+      checked: /\bchecked(=|\s|\/|>)/.test(attributes ?? ''),
+      disabled: /\bdisabled(=|\s|\/|>)/.test(attributes ?? ''),
+      shown: words(rest ?? ''),
+    }));
+
+  it('offers all ten, named, in the palette\'s order, with the one chosen checked', () => {
+    const found = radios(render({ value: hex(3) }));
+    expect(found.map((radio) => radio.value)).toEqual(hexes);
+    expect(found.filter((radio) => radio.checked).map((radio) => radio.value)).toEqual([hex(3)]);
+    expect(found[0]?.name).toBe('Red');
+    expect(found[3]?.name).toBe('Lime');
+  });
+
+  it('shows whose a colour is, by their initial on it and in its name', () => {
+    const found = radios(render());
+    expect(found[7]).toMatchObject({ name: 'Blue, in use by Cory', shown: 'C' });
+    expect(found[9]).toMatchObject({ name: 'Pink, in use by Sam', shown: 'S' });
+    expect(found[0]).toMatchObject({ name: 'Red', shown: '' });
+  });
+
+  it('lets a colour in use be chosen all the same', () => {
+    const found = radios(render({ value: hex(7) }));
+    expect(found.some((radio) => radio.disabled)).toBe(false);
+    expect(found[7]?.checked).toBe(true);
+    expect(radios(render({ value: hex(9) }))[9]?.checked).toBe(true);
+  });
+
+  it('shows everyone who has a colour that more than one has', () => {
+    const alex = { id: 'p3', name: 'Alex', color: hex(7), avatar_url: null, sort_order: 2 };
+    const ben = { id: 'p4', name: 'Ben', color: hex(7), avatar_url: null, sort_order: 3 };
+    expect(radios(render({ profiles: [cory, alex] }))[7]).toMatchObject({ name: 'Blue, in use by Cory and Alex', shown: 'CA' });
+    expect(radios(render({ profiles: [cory, alex, ben] }))[7]).toMatchObject({ name: 'Blue, in use by Cory, Alex and Ben' });
+  });
+
+  it('says what the letters are only when there are any', () => {
+    expect(words(render())).toContain('A letter marks a colour someone already has.');
+    expect(words(render({ profiles: [] }))).not.toContain('A letter marks');
+  });
+
+  it('is one group of radios, and a form to add and a form to edit open together do not share it', () => {
+    const together = renderToStaticMarkup(
+      createElement(
+        Fragment,
+        null,
+        createElement(ColorPicker, { value: hex(0), profiles: [cory], onChange: () => undefined }),
+        createElement(ColorPicker, { value: hex(1), profiles: [cory], onChange: () => undefined }),
+      ),
+    );
+    const groups = [...together.matchAll(/<input[^>]*\bname="([^"]*)"/g)].map(([, name]) => name);
+    expect(groups).toHaveLength(20);
+    expect(new Set(groups).size).toBe(2);
+    expect(new Set(groups.slice(0, 10)).size).toBe(1);
+    expect(new Set(groups.slice(10)).size).toBe(1);
+  });
+});
+
+describe('deleting a person', () => {
+  const render = () => renderToStaticMarkup(createElement(DeletePerson, { name: 'Ava', onCancel: () => undefined, onDelete: () => undefined }));
+
+  it('says what goes with them', () => {
+    expect(DELETE_PERSON_WORDS).toBe("Their Routines and every tick go. Events only for them, and calendars set to them, become everyone's.");
+  });
+
+  it('says so before the button that deletes, and names who is to go', () => {
+    const shown = words(render());
+    expect(shown).toContain(DELETE_PERSON_WORDS);
+    expect(shown.indexOf(DELETE_PERSON_WORDS)).toBeLessThan(shown.lastIndexOf('Delete Ava'));
+    expect(shown).toContain('Delete Ava?');
+    const buttons = [...render().matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)].map(([, inner]) => words(inner ?? ''));
+    expect(buttons).toEqual(['Cancel', 'Delete Ava']);
+  });
+});
+
+// The Household page as it is first drawn, before anything is read: the cards it is made of, in order, and the words in them.
+// They import the Supabase client, which is built on import and is not used to draw: a placeholder URL and key are enough to load
+// them (as tests/appearance-section.test.ts does for the Appearance section).
+describe('the Household page, as it is first drawn', () => {
+  let SettingsPage: typeof SettingsPageType;
+  beforeAll(async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+    ({ SettingsPage } = await import('../src/SettingsPage'));
+  });
+
+  const household: Household = {
+    id: 'h1',
+    name: 'The Andersons',
+    timezone: 'America/Chicago',
+    weather_place: 'Austin, Texas',
+    latitude: 30.27,
+    longitude: -97.74,
+    temperature_unit: 'fahrenheit',
+    appearance: 'auto',
+  };
+  const householdPage = () => renderToStaticMarkup(createElement(SettingsPage, { household, onSaved: () => undefined, onSignOut: () => undefined }));
+
+  const headings = (markup: string) => [...markup.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map(([, inner]) => words(inner ?? ''));
+  const buttons = (markup: string) => [...markup.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)].map(([, attributes, inner]) => ({ attributes: attributes ?? '', name: words(inner ?? '') }));
+  const primaries = (markup: string) => buttons(markup).filter(({ attributes }) => /class="[^"]*\bbg-primary\b/.test(attributes));
+
+  // What the glossary calls things, which is for code, tests and tickets: the family reads people, tablets, time zone, lists, unpair.
+  const GLOSSARY = /\b(Profiles?|Devices?|Household Timezone|Shared Lists?|Revoke|Calendar Accounts?|Mirrored Calendars?|Native Events?)\b/;
+
+  it('hold Household, Appearance, Weather, People and Wall tablets, in that order, then Sign out', () => {
+    const markup = householdPage();
+    expect(headings(markup)).toEqual(['Household', 'Appearance', 'Weather', 'People', 'Wall tablets']);
+    expect(buttons(markup).at(-1)?.name).toBe('Sign out');
+  });
+
+  it('put Appearance in a card of its own, between Household and Weather', () => {
+    const markup = householdPage();
+    const [household, appearance, weather] = ['household', 'appearance', 'weather'].map((card) => markup.search(new RegExp(`<h2[^>]*>${card}</h2>`, 'i')));
+    expect(household).toBeLessThan(appearance!);
+    expect(appearance).toBeLessThan(weather!);
+    // The section brings its own heading, and its card is the one shell every card has.
+    expect(markup).toMatch(/<div class="flex flex-col gap-4 rounded-3xl bg-card p-4"><section aria-labelledby="appearance-heading"/);
+  });
+
+  it('have one primary action, Save, and never two bare Saves', () => {
+    expect(primaries(householdPage()).map(({ name }) => name)).toEqual(['Save']);
+    expect(buttons(householdPage()).filter(({ name }) => name === 'Save')).toHaveLength(1);
+  });
+
+  it('list time zones by name, the stored one chosen, each with the IANA id as its value', () => {
+    const markup = householdPage();
+    expect(markup).toContain('<option value="America/Chicago" selected="">Central Time (Chicago)</option>');
+    expect(markup).not.toMatch(/<option[^>]*>America\//);
+  });
+
+  it("say people, tablets, time zone, lists and unpair, and none of the glossary's words", () => {
+    for (const markup of [householdPage()]) {
+      expect(words(markup)).not.toMatch(GLOSSARY);
+    }
+    expect(words(householdPage())).toContain('Time zone');
+    expect(words(householdPage())).toContain('Add a person');
+    expect(words(householdPage())).toContain('Pair a tablet');
+  });
+
+  it('has no em-dash or en-dash', () => {
+    for (const markup of [householdPage()]) expect(markup).not.toMatch(/[–—]/);
+  });
+
+  it('have no picture address field, and nothing that names one', () => {
+    const markup = householdPage();
+    expect(words(markup)).not.toMatch(/picture address|https:\/\//i);
+    expect(markup).not.toMatch(/type="url"/);
   });
 });
