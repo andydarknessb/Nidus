@@ -89,7 +89,7 @@ An initial inside a disc is the one exception to the 14 px floor: it is never un
 
 ## Shape and space
 
-Cards 24, tiles and fields 16 to 18, rows and event pills 14, pills and discs round. Spacing steps 4, 6, 8, 12, 16, 24. No shadows, no gradients (a shared event's stripes are flat bands), no coloured side borders.
+Cards 24, tiles and fields 16 to 18, rows and event pills 14, pills and discs round. Spacing steps 4, 6, 8, 12, 16, 24. No shadows, no gradients (a shared event's stripes are flat bands; the one fade is Overflow's, below), no coloured side borders.
 
 ## The parts
 
@@ -104,6 +104,7 @@ Cards 24, tiles and fields 16 to 18, rows and event pills 14, pills and discs ro
 - **A Routine tile.** The whole tile is the button, 80 tall, radius 18: the picture in a 52 px disc, the words, then a 44 px ring. To do, the tile is `--card` and the ring is the person's strong colour. Done, the tile is the person's base colour with a tick; the words stay as they are, not struck through.
 - **Progress.** One pip for each Routine: filled in the person's strong colour, or a 1.5 px `--input` ring. Past eight, the count alone.
 - **The people strip.** Everyone, then a pill for each Profile on its soft colour: the disc, the name, "3 of 5" and the pips. Pressed, a pill filters the calendar: Everyone takes the Selected look, and a person's pill keeps its soft colour, takes the ring and shows a tick in place of the initial. A pill too narrow for the count and the pips (under about 166 px) shrinks to its disc and name, and past that the row scrolls sideways beside a "More people" button.
+- **Overflow.** The Wall's tablet draws no scrollbars, so wherever something scrolls it says so with a button. A row that holds more than it shows has "More people" (the people strip, beside the row; the Routines chart, in its heading row) or "More lists" (the Lists screen, in its heading row), which moves it on by most of a page. A column or a card whose items scroll has a 48 px "More" at its foot, over a short fade in the colour it sits on (the one gradient the look has), and its items scroll to stop short of it, so none is left under it and the last can always be scrolled clear. At the end the button reads "Back", with a chevron pointing back (up, for a column), and returns to the start, so it is never switched off. It is a secondary button, as wide as the wider of its two labels so that it does not move when it changes, at least 48 px both ways. Its accessible name says what moves ("More of Ava's routines", "Back to the top of Groceries"). Under reduced motion it scrolls instantly.
 - **The status line.** One line at the foot of the screen that says what just happened, for six seconds.
 - **Beyond the calendar's range.** A hatch in `--input`.
 
