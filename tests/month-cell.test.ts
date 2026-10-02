@@ -59,12 +59,13 @@ const nameOf = (html: string) => /aria-label="([^"]*)"/.exec(html)?.[1];
 const classesOf = (tag: string) => /class="([^"]*)"/.exec(tag)?.[1]?.split(' ') ?? [];
 // The classes of the cell itself: its opening tag.
 const cellClasses = (html: string) => classesOf(html.slice(0, html.indexOf('>') + 1));
-// The classes of the span whose only content is `text`: the date, a title, "+3 more".
-function spanWith(html: string, text: string): string[] {
+// The opening tag of the span whose only content is `text`: the date, a title, "+3 more".
+function tagWith(html: string, text: string): string {
   const at = html.indexOf(`>${text}<`);
   if (at < 0) throw new Error(`no element has only "${text}" in it:\n${html}`);
-  return classesOf(html.slice(html.lastIndexOf('<span', at), at + 1));
+  return html.slice(html.lastIndexOf('<span', at), at + 1);
 }
+const spanWith = (html: string, text: string) => classesOf(tagWith(html, text));
 const lineTag = (html: string) => /<span[^>]*data-testid="event-line"[^>]*>/.exec(html)?.[0] ?? '';
 // The 300 step a Profile's element carries, which only that Profile's own colour can put in the markup.
 const step300 = (who: Profile) => (personStyle(who.color) as Record<string, string>)['--person-300']!;
@@ -216,6 +217,11 @@ describe('an event line', () => {
     expect(html).not.toContain('line-clamp');
     expect(html).not.toContain('whitespace-normal');
     expect(html).not.toContain('break-all');
+  });
+
+  it('starts its title where the title starts, whichever way it is written, so a right-to-left one is cut at its end', () => {
+    const title = 'Bonjour';
+    expect(tagWith(cell('2026-10-01', { occurrences: [event(title, ['p-ava'])] }), title)).toContain('dir="auto"');
   });
 
   it('is not drawn until its week has been read, and each is when it has', () => {

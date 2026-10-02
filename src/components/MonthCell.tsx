@@ -101,7 +101,8 @@ export function DayCell({
 // ellipsis, and at the end who it is for, in discs (EventDiscs, by the pill's rule, at 16 px): colour alone does not say whose an
 // event is, as two people can share a colour to the eye and four of five draw the same three bands as three. A timed event that
 // began on an earlier day only continues, so it shows no time, as in the week view. The words are --foreground, on a fill that
-// holds 7:1 for them. It is one line and never wider than its cell: the title gives way, and the discs never shrink.
+// holds 7:1 for them. It is one line and never wider than its cell: the title gives way, and the discs never shrink. The title
+// starts where it starts, whichever way it is written (dir="auto"), so a right-to-left one is cut at its end.
 function EventLine({ occurrence, day, timezone, people }: { occurrence: Occurrence; day: WallDay; timezone: string; people: PillPeople }) {
   const start = Date.parse(occurrence.starts_at);
   const time = !occurrence.is_all_day && start >= day.startMs ? formatCompactClock(start, timezone) : null;
@@ -110,7 +111,9 @@ function EventLine({ occurrence, day, timezone, people }: { occurrence: Occurren
       <EventFill people={people} />
       {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="relative size-3.5 shrink-0" />}
       {time && <span className="relative shrink-0 text-sm font-medium tabular-nums">{time}</span>}
-      <span className="relative min-w-0 truncate text-[0.9375rem] leading-5 font-semibold">{occurrence.title}</span>
+      <span dir="auto" className="relative min-w-0 truncate text-[0.9375rem] leading-5 font-semibold">
+        {occurrence.title}
+      </span>
       <span className="relative ml-auto flex shrink-0">
         <EventDiscs people={people} size={16} />
       </span>
