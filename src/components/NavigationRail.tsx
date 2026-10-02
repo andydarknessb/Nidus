@@ -24,11 +24,12 @@ function NavigationRailEntry({ icon: Icon, label, current = false, ...props }: {
 // switch between light and dark, the link to Settings and Add event.
 // Day, Week and Month keep the date the wall is on (navigationRailDate), read at the tap so one just after
 // Household midnight is right, and wait for the Household Timezone. Meals always opens this week, with
-// no date in its address, so it needs no Household Timezone to open. Lists opens the Lists screen over
-// this one rather than going anywhere. The switch changes the mode on this screen until the next sunrise or
-// sunset (it waits for the Household Timezone too, which says when that is). Add event is an action, not a
-// section: it is never the current entry, opens the Native Event sheet, and is the primary action. Above them,
-// for a Household Account only, sits the link to Settings: a Device is never offered a way into administration.
+// no date in its address, so it needs no Household Timezone to open, and neither does Lists, a screen of
+// its own like Routines that is today's page when it is left. The switch changes the mode on this screen
+// until the next sunrise or sunset (it waits for the Household Timezone too, which says when that is).
+// Add event is an action, not a section: it is never the current entry, opens the Native Event sheet, and is the
+// primary action. Above them, for a Household Account only, sits the link to Settings: a Device is never
+// offered a way into administration.
 // The rail is 96 px wide, its padding included; with the Settings link its entries, switch and Add event
 // need 724 of the 768 px the 800 px screen leaves it.
 export function NavigationRail({
@@ -66,7 +67,7 @@ export function NavigationRail({
       <NavigationRailEntry icon={CalendarDays} label="Month" current={route.view === 'month'} disabled={!timezone} onClick={() => open('month')} />
       <NavigationRailEntry icon={CircleCheck} label="Routines" current={route.view === 'routines'} onClick={onRoutines} />
       <NavigationRailEntry icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={onMeals} />
-      <NavigationRailEntry icon={List} label="Lists" aria-haspopup="dialog" onClick={onLists} />
+      <NavigationRailEntry icon={List} label="Lists" current={route.view === 'lists'} onClick={onLists} />
       <div className="mt-auto flex flex-col gap-2.5">
         <Button
           aria-label={mode === 'dark' ? 'Switch to light' : 'Switch to dark'}
