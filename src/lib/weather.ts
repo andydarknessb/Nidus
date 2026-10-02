@@ -236,11 +236,20 @@ export function describeWeather(code: number, isDay = true): { words: string; ic
 
 // What every request to Open-Meteo carries and nothing more: no cookies and no referrer, and a
 // thirty second limit, so a connection that leads nowhere cannot hold up the refresh loop or the
-// staleness check behind it. AbortSignal.timeout is newer than some WebViews; a Wall that loses its
-// weather entirely for want of it is worse than one that waits, so without it there is no limit.
+// staleness check behind it. AbortSignal.timeout is newer than some WebViews, so without it the
+// limit is an AbortController aborted by a timer: every request has the limit, and a request that
+// never settles cannot end the refresh loop for the life of the page.
 export function requestInit(): RequestInit {
+  let signal: AbortSignal;
+  if (typeof AbortSignal.timeout === 'function') {
+    signal = AbortSignal.timeout(30_000);
+  } else {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 30_000);
+    signal = controller.signal;
+  }
   return {
-    ...(typeof AbortSignal.timeout === 'function' ? { signal: AbortSignal.timeout(30_000) } : {}),
+    signal,
     referrerPolicy: 'no-referrer',
     credentials: 'omit',
   };
