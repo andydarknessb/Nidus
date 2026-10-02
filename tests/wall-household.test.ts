@@ -9,6 +9,7 @@ const home: Household = {
   latitude: null,
   longitude: null,
   temperature_unit: 'fahrenheit',
+  appearance: 'auto',
 };
 
 // household.ts builds the Supabase client on import; the pure decision under test
