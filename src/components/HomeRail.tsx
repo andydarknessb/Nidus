@@ -7,8 +7,7 @@ import { UpNext } from './UpNext';
 // Shared List. `timezone` is null until the Household is read, and `failed` says that read has failed, so
 // Up next can say so.
 //
-// Up next takes the height it needs and the pinned list takes the rest of the rail, shrinking and scrolling
-// past it, so the wall never does.
+// Up next takes the height it needs and the pinned list takes the rest of the rail.
 export function HomeRail({
   timezone,
   routines,
