@@ -25,7 +25,7 @@ function recorded(name: string) {
 }
 
 describe('forecastUrl', () => {
-  it('asks for the current reading and a week of daily highs, lows and codes, with no key', () => {
+  it('asks for the current reading and a week of daily highs, lows, codes, sunrise and sunset, with no key', () => {
     const url = new URL(forecastUrl(30.27, -97.74, 'fahrenheit', 'America/Chicago'));
 
     expect(`${url.origin}${url.pathname}`).toBe('https://api.open-meteo.com/v1/forecast');
@@ -33,11 +33,20 @@ describe('forecastUrl', () => {
       latitude: '30.27',
       longitude: '-97.74',
       current: 'temperature_2m,weather_code,is_day',
-      daily: 'weather_code,temperature_2m_max,temperature_2m_min',
+      daily: 'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset',
       temperature_unit: 'fahrenheit',
       timezone: 'America/Chicago',
       forecast_days: '7',
     });
+  });
+
+  // The Wall's mode goes on these two (src/lib/mode.ts). Open-Meteo answers in the Household's wall clock only because the
+  // request names the Household Timezone, so the two must always travel together.
+  it('asks for sunrise and sunset in the Household Timezone, so they are Household wall-clock times', () => {
+    const url = new URL(forecastUrl(30.27, -97.74, 'fahrenheit', 'America/Chicago'));
+
+    expect(url.searchParams.get('daily')?.split(',')).toEqual(expect.arrayContaining(['sunrise', 'sunset']));
+    expect(url.searchParams.get('timezone')).toBe('America/Chicago');
   });
 
   it('writes the Household Timezone URL-encoded, so the daily dates are Household dates', () => {
@@ -71,8 +80,29 @@ describe('parseForecast', () => {
       '2026-10-06',
       '2026-10-07',
     ]);
-    expect(forecast.days[0]).toEqual({ date: '2026-10-01', high: 84, low: 75, code: 82 });
-    expect(forecast.days[6]).toEqual({ date: '2026-10-07', high: 90, low: 74, code: 0 });
+    expect(forecast.days[0]).toEqual({ date: '2026-10-01', high: 84, low: 75, code: 82, sunrise: '2026-10-01T07:24', sunset: '2026-10-01T19:17' });
+    expect(forecast.days[6]).toEqual({ date: '2026-10-07', high: 90, low: 74, code: 0, sunrise: '2026-10-07T07:28', sunset: '2026-10-07T19:10' });
+  });
+
+  // Open-Meteo sends them as the Household's wall clock with no offset ('2026-10-01T07:24'). They stay exactly that here:
+  // src/lib/mode.ts turns each into an instant through the Household Timezone, and nothing may Date.parse one.
+  it("keeps each day's sunrise and sunset as the wall-clock text Open-Meteo sent, on that day", () => {
+    const forecast = parseForecast(recorded('open-meteo-forecast'));
+
+    for (const day of forecast.days) {
+      expect(day.sunrise, day.date).toMatch(new RegExp(`^${day.date}T\\d{2}:\\d{2}$`));
+      expect(day.sunset, day.date).toMatch(new RegExp(`^${day.date}T\\d{2}:\\d{2}$`));
+      expect(day.sunrise < day.sunset, day.date).toBe(true);
+    }
+  });
+
+  // Polar day: Open-Meteo has the sun set at the next midnight, so a time may be on a later date than its day.
+  it('reads a sunset on the date after its day, as in the polar summer', () => {
+    const body = recorded('open-meteo-forecast');
+    body.daily.sunrise[0] = '2026-10-01T00:00';
+    body.daily.sunset[0] = '2026-10-02T00:00';
+
+    expect(parseForecast(body).days[0]).toMatchObject({ sunrise: '2026-10-01T00:00', sunset: '2026-10-02T00:00' });
   });
 
   it('gives whole degrees only', () => {
@@ -120,17 +150,29 @@ describe('parseForecast', () => {
     ['no weather codes', withDaily({ weather_code: undefined })],
     ['no highs', withDaily({ temperature_2m_max: undefined })],
     ['no lows', withDaily({ temperature_2m_min: undefined })],
+    ['no sunrises', withDaily({ sunrise: undefined })],
+    ['no sunsets', withDaily({ sunset: undefined })],
     ['a list that is not a list', withDaily({ temperature_2m_max: 84 })],
     ['one high fewer than dates', withDaily({ temperature_2m_max: rest(good.daily.temperature_2m_max) })],
     ['one low fewer than dates', withDaily({ temperature_2m_min: rest(good.daily.temperature_2m_min) })],
     ['one code fewer than dates', withDaily({ weather_code: rest(good.daily.weather_code) })],
+    ['one sunrise fewer than dates', withDaily({ sunrise: rest(good.daily.sunrise) })],
+    ['one sunset fewer than dates', withDaily({ sunset: rest(good.daily.sunset) })],
     ['one date fewer than highs', withDaily({ time: rest(good.daily.time) })],
     ['a high that is text', withDaily({ temperature_2m_max: ['84', ...rest(good.daily.temperature_2m_max)] })],
     ['a low that is missing', withDaily({ temperature_2m_min: [null, ...rest(good.daily.temperature_2m_min)] })],
     ['a code that is text', withDaily({ weather_code: ['82', ...rest(good.daily.weather_code)] })],
+    ['a sunrise that is missing', withDaily({ sunrise: [null, ...rest(good.daily.sunrise)] })],
+    ['a sunset that is missing', withDaily({ sunset: [null, ...rest(good.daily.sunset)] })],
+    ['a sunrise that is a number', withDaily({ sunrise: [1759303440, ...rest(good.daily.sunrise)] })],
+    ['a sunrise that is a date with no time', withDaily({ sunrise: ['2026-10-01', ...rest(good.daily.sunrise)] })],
+    ['a sunset that is not a time', withDaily({ sunset: ['dusk', ...rest(good.daily.sunset)] })],
+    // An instant, not the Household's wall clock: read as one it would be hours out.
+    ['a sunset in UTC', withDaily({ sunset: ['2026-10-02T00:17Z', ...rest(good.daily.sunset)] })],
+    ['a sunset with seconds and an offset', withDaily({ sunset: ['2026-10-01T19:17:00-05:00', ...rest(good.daily.sunset)] })],
     ['a date that is not a date', withDaily({ time: ['soon', ...rest(good.daily.time)] })],
     ['a date that is a number', withDaily({ time: [20261001, ...rest(good.daily.time)] })],
-    ['no days at all', withDaily({ time: [], weather_code: [], temperature_2m_max: [], temperature_2m_min: [] })],
+    ['no days at all', withDaily({ time: [], weather_code: [], temperature_2m_max: [], temperature_2m_min: [], sunrise: [], sunset: [] })],
     ['a temperature now that is text', withCurrent({ temperature_2m: '75.9' })],
     ['no temperature now', withCurrent({ temperature_2m: undefined })],
     ['a code now that is missing', withCurrent({ weather_code: null })],
@@ -494,7 +536,7 @@ describe('forecastDay', () => {
   const forecast = parseForecast(recorded('open-meteo-forecast'));
 
   it('finds the day for a Household date', () => {
-    expect(forecastDay(forecast, '2026-10-03')).toEqual({ date: '2026-10-03', high: 79, low: 73, code: 63 });
+    expect(forecastDay(forecast, '2026-10-03')).toEqual({ date: '2026-10-03', high: 79, low: 73, code: 63, sunrise: '2026-10-03T07:25', sunset: '2026-10-03T19:14' });
     expect(forecastDay(forecast, '2026-10-01')).toBe(forecast.days[0]);
     expect(forecastDay(forecast, '2026-10-07')).toBe(forecast.days[6]);
   });
