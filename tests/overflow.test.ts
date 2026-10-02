@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { FOOT_CLEARANCE, OverflowButton } from '../src/components/OverflowButton';
-import { overflowState, overflowWords, PAGE_STEP, type Axis, type Scroll } from '../src/lib/overflow';
+import { createPressGate, overflowState, overflowWords, PAGE_STEP, PRESS_HOLD_MS, type Axis, type Scroll } from '../src/lib/overflow';
 import type { OverflowControl } from '../src/lib/use-overflow';
 
 // Where the Wall scrolls it says so, with a button (docs/look.md, The parts). A tablet in a kiosk browser draws no scrollbars,
@@ -269,6 +269,69 @@ describe('where one press goes', () => {
   it('still moves on in a box too short for its button, a pixel at a time at least, rather than stand still', () => {
     const state = overflowState({ scrollSize: 300, clientSize: 40, scrollOffset: 0, buttonSize: 64, over: true });
     expect(state.next).toBeGreaterThan(0);
+  });
+});
+
+describe('a press while the box is still moving', () => {
+  // A smooth scroll takes most of a second. A second press that reads the box mid-scroll takes it from where it is and not from where
+  // it is going: "Back" pressed twice, 60 ms apart, left the box at its end (the second read the offset in the middle, and the sliver
+  // rule sent it on). So a press is taken only when the scroll the last one began has ended; the gate is told when it has (`end`, from
+  // scrollend, or from a scroll that has stopped coming in a browser with no scrollend), and `now` is the clock, so this runs without one.
+  it('takes the first press', () => {
+    expect(createPressGate().take(0)).toBe(true);
+  });
+
+  it('takes none until the scroll the first began has ended', () => {
+    const gate = createPressGate();
+    expect(gate.take(1000)).toBe(true);
+    expect(gate.take(1060)).toBe(false);
+    expect(gate.take(1300)).toBe(false);
+    gate.end();
+    expect(gate.take(1301)).toBe(true);
+  });
+
+  it('takes the next once the scroll has ended, and then holds that one in turn', () => {
+    const gate = createPressGate();
+    expect(gate.take(0)).toBe(true);
+    gate.end();
+    expect(gate.take(10)).toBe(true);
+    expect(gate.take(20)).toBe(false);
+    gate.end();
+    expect(gate.take(30)).toBe(true);
+  });
+
+  it('lets go of a scroll that never ends, so a press that moved nothing, or a browser that says nothing, never leaves the button dead', () => {
+    const gate = createPressGate();
+    expect(gate.take(0)).toBe(true);
+    expect(gate.take(PRESS_HOLD_MS - 1)).toBe(false);
+    expect(gate.take(PRESS_HOLD_MS)).toBe(true);
+    // And holds the one it took then for as long.
+    expect(gate.take(PRESS_HOLD_MS + 1)).toBe(false);
+    expect(gate.take(2 * PRESS_HOLD_MS)).toBe(true);
+  });
+
+  it('holds for a second, which is longer than any scroll the Wall starts', () => {
+    expect(PRESS_HOLD_MS).toBe(1000);
+  });
+
+  it('is not troubled by an end with nothing held, which scrollend says after any scroll, a swipe included', () => {
+    const gate = createPressGate();
+    gate.end();
+    gate.end();
+    expect(gate.take(5)).toBe(true);
+    expect(gate.take(6)).toBe(false);
+  });
+
+  it('is its own for each box: one list being scrolled does not hold another', () => {
+    const one = createPressGate();
+    const other = createPressGate();
+    expect(one.take(0)).toBe(true);
+    expect(other.take(1)).toBe(true);
+    expect(one.take(2)).toBe(false);
+    expect(other.take(3)).toBe(false);
+    one.end();
+    expect(one.take(4)).toBe(true);
+    expect(other.take(5)).toBe(false);
   });
 });
 

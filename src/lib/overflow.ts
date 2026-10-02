@@ -51,6 +51,30 @@ export function overflowState({ scrollSize, clientSize, scrollOffset, buttonSize
   return { overflowing, atEnd, next: atEnd ? 0 : sliver ? farthest : target };
 }
 
+// A press is taken only when the scroll the last one began has ended. A smooth scroll takes most of a second, and a second press that
+// reads the box in the middle of it takes it from where it is and not from where it is going: "Back" pressed twice, 60 ms apart, left the
+// box at its end (the second read the offset in the middle, and the rule above sent it on). The gate is told when the scroll has
+// ended (`end`: scrollend, or a scroll that has stopped coming in a browser with none); `take` is given the clock, so that it needs none.
+// A scroll that is never heard to end (a press that moved nothing, a browser that says nothing) is let go of after PRESS_HOLD_MS, longer
+// than any scroll the Wall starts, so the button is never left dead.
+export const PRESS_HOLD_MS = 1000;
+
+export type PressGate = { take: (now: number) => boolean; end: () => void };
+
+export function createPressGate(holdMs: number = PRESS_HOLD_MS): PressGate {
+  let busyUntil = -Infinity;
+  return {
+    take(now) {
+      if (now < busyUntil) return false;
+      busyUntil = now + holdMs;
+      return true;
+    },
+    end() {
+      busyUntil = -Infinity;
+    },
+  };
+}
+
 // What the button says and is called. A row's "More" names what is in the row ("More people"); a column's names whose it is
 // ("More of Ava's routines"), since the word alone would not say which of several columns it moves. The visible word is always
 // in the name, so a name spoken from the screen finds it. At the end the button reads "Back" and returns to the start.

@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { overflowState, type Axis, type Scroll } from './overflow';
+import { createPressGate, overflowState, type Axis, type Scroll } from './overflow';
 
 // Does this scrolling box hold more than it shows, is it at its end, and move it on one step. The rule is overflowState's
 // (src/lib/overflow.ts); this measures a box and acts on it. A tablet in a kiosk browser draws no scrollbars, so the box is
@@ -24,10 +24,15 @@ export type OverflowControl = {
 // What a box says when there is no box, or before it has been measured: nothing to scroll.
 const NOTHING = { overflowing: false, atEnd: false };
 
+// In a browser with no scrollend, a scroll has ended when no more of it has come for this long (a smooth scroll comes every frame).
+const SCROLL_STOPPED_MS = 100;
+
 export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
   const box = useRef<HTMLElement | null>(null);
   const piece = useRef<HTMLElement | null>(null);
   const [state, setState] = useState(NOTHING);
+  // Takes a press only when the scroll the last one began has ended (createPressGate).
+  const [gate] = useState(createPressGate);
   const sideways = axis === 'x';
 
   // What the browser says about the box now, and what the button holds back while it is drawn: its size, and beside the box the gap
@@ -77,16 +82,26 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
     if (event.target instanceof HTMLElement && event.target.matches(':focus-visible')) event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, []);
 
-  // The box is watched for its size, for being scrolled and for the fonts: a font that arrives changes how words wrap, and so
-  // how much the box holds. A callback ref, so that a box that arrives after the first render (a column with nothing to show
-  // has none) is watched from the moment it does.
+  // The box is watched for its size, for being scrolled (and for the scroll ending) and for the fonts: a font that arrives changes how
+  // words wrap, and so how much the box holds. A callback ref, so that a box that arrives after the first render (a column with
+  // nothing to show has none) is watched from the moment it does.
   const scroller = useCallback(
     (element: HTMLElement | null) => {
       if (!element) return;
       box.current = element;
       const observer = new ResizeObserver(measure);
       observer.observe(element);
-      element.addEventListener('scroll', measure, { passive: true });
+      // A scroll has ended when the browser says so (scrollend), or, in one that does not, when no more has come for a moment.
+      const hasScrollEnd = 'onscrollend' in element;
+      let stopped: ReturnType<typeof setTimeout> | undefined;
+      const scrolled = () => {
+        measure();
+        if (hasScrollEnd) return;
+        clearTimeout(stopped);
+        stopped = setTimeout(gate.end, SCROLL_STOPPED_MS);
+      };
+      element.addEventListener('scroll', scrolled, { passive: true });
+      if (hasScrollEnd) element.addEventListener('scrollend', gate.end);
       element.addEventListener('focusin', reveal);
       let live = true;
       void document.fonts.ready.then(() => live && measure());
@@ -94,7 +109,9 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
       return () => {
         live = false;
         observer.disconnect();
-        element.removeEventListener('scroll', measure);
+        clearTimeout(stopped);
+        element.removeEventListener('scroll', scrolled);
+        element.removeEventListener('scrollend', gate.end);
         element.removeEventListener('focusin', reveal);
         document.fonts.removeEventListener('loadingdone', measure);
         box.current = null;
@@ -103,7 +120,7 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
         setState(NOTHING);
       };
     },
-    [measure, reveal],
+    [measure, reveal, gate],
   );
   const holder = useCallback((element: HTMLElement | null) => {
     piece.current = element;
@@ -112,14 +129,16 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
   useLayoutEffect(measure);
 
   // One press, on what the box is now: on by most of a page, or from the end back to the start. Not smoothly for someone who
-  // asked for less motion.
+  // asked for less motion. A press while the last one's scroll is still running is ignored (createPressGate).
   const step = useCallback(() => {
     const scroll = read();
-    if (!box.current || !scroll) return;
-    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    if (!box.current || !scroll || !gate.take(performance.now())) return;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const { next } = overflowState(scroll);
-    box.current.scrollTo(sideways ? { left: next, behavior } : { top: next, behavior });
-  }, [read, sideways]);
+    box.current.scrollTo(sideways ? { left: next, behavior: reduced ? 'auto' : 'smooth' } : { top: next, behavior: reduced ? 'auto' : 'smooth' });
+    // An instant scroll, or one that goes nowhere, has nothing to wait for.
+    if (reduced || Math.abs(next - scroll.scrollOffset) < 1) gate.end();
+  }, [read, sideways, gate]);
 
   return { axis, overflowing: state.overflowing, atEnd: state.atEnd, scroller, piece: holder, step };
 }
