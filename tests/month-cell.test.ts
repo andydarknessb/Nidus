@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DayCell } from '../src/components/MonthCell';
 import { monthWeeks, type Occurrence } from '../src/lib/calendar-occurrences';
-import { personStyle } from '../src/lib/look';
-import type { Profile } from '../src/lib/profiles';
+import { personStyle, TOKENS, type Mode } from '../src/lib/look';
+import { contrastRatio, type Profile } from '../src/lib/profiles';
 
 // A month's day cell rendered to markup (as tests/event-pill.test.ts does for the pill), so what is asserted is what the browser is
 // given: the date, with today's in a filled disc and no underline; the event lines, each filled from the Profiles it is for and
@@ -248,6 +248,12 @@ describe("a day beyond the calendar's range", () => {
     expect(html).toContain('repeating-linear-gradient');
     expect(html).toContain('var(--input)');
     expect(html).not.toContain('var(--border)');
+  });
+
+  it('draws it in a colour that is at least 3:1 against the cell, which is the card, in both modes', () => {
+    for (const mode of ['light', 'dark'] as Mode[]) {
+      expect(contrastRatio(TOKENS[mode].input, TOKENS[mode].card), mode).toBeGreaterThanOrEqual(3);
+    }
   });
 
   it('keeps its date on a --card ground, so the hatch never runs under the digits', () => {
