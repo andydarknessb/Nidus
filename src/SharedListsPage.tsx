@@ -32,6 +32,8 @@ import type { Household } from './lib/household';
 import { useChangeTick, useRefetchOn } from './lib/change-feed';
 import { useStatusLine } from './lib/status-line';
 import { createSyncedReader, type SyncedReader } from './lib/synced-reader';
+import { useOverflow } from './lib/use-overflow';
+import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, Tick } from './components/people';
 import { Button } from './components/ui/button';
 
@@ -264,13 +266,16 @@ function PinnedMark() {
 // ---- The Lists screen: a card for every list ----------------------------------------------
 
 // One Shared List as a card: its picture, name and how many items are left to get, whether it is the Pinned List, the field
-// that adds an item, then its items, which scroll inside the card when the card is shorter than the list. A card is as tall as
-// its items, up to the height of the screen. Items are crossed off here and cleared; reordering is for the phone.
+// that adds an item, then its items, which scroll inside the card when the card is shorter than the list, with a "More" button
+// at their foot that says so (OverflowButton). A card is as tall as its items, up to the height of the screen. Items are crossed
+// off here and cleared; reordering is for the phone.
 function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
   const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
   const left = withoutCrossed(items).length;
   const crossed = items.length - left;
   const rows = useRef<HTMLUListElement>(null);
+  // Whether the items hold more than the card shows. The button is the items' last child, stuck to their foot.
+  const more = useOverflow('y', 'over');
   // How many items have been added here. The one just added is last: bring it into view when the list is longer than the card.
   // ponytail: "last" holds while a new item always goes to the bottom (nextSortOrder); find it by id if one ever lands elsewhere.
   const [added, setAdded] = useState(0);
@@ -306,13 +311,17 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
       )}
       {loaded && items.length === 0 && !problem && <p className="shrink-0 text-base">Nothing on this list.</p>}
       {items.length > 0 && (
-        <ul ref={rows} className="flex min-h-0 flex-col gap-2 overflow-y-auto">
-          {items.map((item) => (
-            <li key={item.id} className="shrink-0">
-              <ItemRow item={item} size="card" onToggle={() => void toggle(item)} />
-            </li>
-          ))}
-        </ul>
+        // The items scroll to clear of the "More" button at their foot, a new one included, so none is left under it.
+        <div ref={more.scroller} className={`min-h-0 overflow-y-auto ${FOOT_CLEARANCE}`}>
+          <ul ref={rows} className="flex flex-col gap-2">
+            {items.map((item) => (
+              <li key={item.id} className="shrink-0">
+                <ItemRow item={item} size="card" onToggle={() => void toggle(item)} />
+              </li>
+            ))}
+          </ul>
+          <OverflowButton control={more} of={list.name} />
+        </div>
       )}
       {crossed > 0 && (
         <Button
@@ -333,17 +342,23 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
 }
 
 // The Wall's Lists screen: every Shared List as a card, the Pinned List first. Three cards fill the screen's width. With more,
-// the fourth shows in part and the row scrolls sideways, so a list is never left off the screen with no sign of it, and each card
-// still scrolls its own items up and down.
+// the fourth shows in part and the row scrolls sideways, and the heading row holds a "More lists" button that says so, so a list
+// is never left off the screen with no sign of it; each card still scrolls its own items up and down.
 export function ListsScreen() {
   const { read, failed } = useLists();
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
+  // The row of cards, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row.
+  const row = useOverflow('x');
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <div className="flex h-13 shrink-0 items-center justify-between gap-4">
         <h2 className="font-display text-[30px] leading-9">Lists</h2>
-        <p className="text-[15px] text-muted-foreground">New lists are made on the phone.</p>
+        <div className="flex items-center gap-4">
+          <p className="text-[15px] text-muted-foreground">New lists are made on the phone.</p>
+          {/* The heading row is 52 px, so is the button. */}
+          <OverflowButton control={row} of="lists" className="h-13" />
+        </div>
       </div>
       {failed && read === null && (
         <p role="alert" className="text-xl">
@@ -352,6 +367,7 @@ export function ListsScreen() {
       )}
       {read?.lists.length === 0 && <p className="text-xl">No lists yet. Add one from your phone.</p>}
       <div
+        ref={row.scroller}
         className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cards.length > 3 ? '[--card-w:calc((100%_-_3rem)/3.2)]' : '[--card-w:calc((100%_-_2rem)/3)]'}`}
       >
         {cards.map((list) => (
