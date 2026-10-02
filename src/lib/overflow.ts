@@ -27,6 +27,7 @@ const SLACK_PX = 1;
 // "Most of a page": one press moves a box on by this much of what it shows, so that what was last in view is still in view.
 export const PAGE_STEP = 0.8;
 
+// ponytail: right-to-left offsets (scrollLeft is negative there) and a box shorter than its foot do not exist on the Wall; not handled.
 export function overflowState({ scrollSize, clientSize, scrollOffset, buttonSize, over = false }: Scroll): OverflowState {
   const farthest = scrollSize - clientSize;
   const atEnd = scrollOffset >= farthest - SLACK_PX;
@@ -38,11 +39,15 @@ export function overflowState({ scrollSize, clientSize, scrollOffset, buttonSize
   // A press keeps the rest of a page in view (the fifth it does not move by). When no more than that would be left beyond where it
   // lands, one more press would move the box by less than that: this one goes to the end.
   const sliver = farthest - target < Math.max((1 - PAGE_STEP) * page, 0);
-  // Once drawn (`buttonSize` is more than 0), the button stays until the box clearly fits, by the pixel of slack the other way.
-  // A button 136.7 px wide is reported as 137 and the room it leaves as 662 when it is 661.7, so the same box measured without the
-  // button and with it can differ by a pixel; a box that the one measure asks a button for and the other does not would draw it,
-  // lose it and draw it for ever. Asked for at more than the slack over, kept at more than the slack under: one answer always stands.
-  const overflowing = scrollSize > clientSize + buttonSize + (buttonSize > 0 ? -SLACK_PX : SLACK_PX);
+  // A foot over the box's end never changes what the box shows and adds exactly its own height to what the box holds, so the same box
+  // measures the same with it and without it: overflow is tested plainly, and the foot goes the moment the list fits.
+  //
+  // A button beside the box takes room from it, and a button once drawn (`buttonSize` is more than 0) stays until the box clearly
+  // fits, by the pixel of slack the other way. A button 136.7 px wide is reported as 137 and the room it leaves as 662 when it is
+  // 661.7, so the same box measured without the button and with it can differ by a pixel; a box that the one measure asks a button for
+  // and the other does not would draw it, lose it and draw it for ever. Asked for at more than the slack over, kept at more than the
+  // slack under: one answer always stands.
+  const overflowing = over ? scrollSize - buttonSize > clientSize + SLACK_PX : scrollSize > clientSize + buttonSize + (buttonSize > 0 ? -SLACK_PX : SLACK_PX);
   return { overflowing, atEnd, next: atEnd ? 0 : sliver ? farthest : target };
 }
 

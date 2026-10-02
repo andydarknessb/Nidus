@@ -94,7 +94,9 @@ describe('whether a box overflows', () => {
   });
 
   describe('with the button over the end of the box, which the box pads by what it covers while it is shown', () => {
-    // A column's foot is the last child of its list, so while it is shown the list holds its own height more.
+    // A column's foot is the last child of its list, so while it is shown the list holds its own height more. Unlike a button beside the
+    // box it never changes what the box shows, and what it adds is exactly its own height, so overflow is tested plainly: the same list
+    // gives the same answer with the foot and without it, and the foot goes the moment the list fits (nothing is kept).
     const BOX = 400;
     const FOOT = 64;
     const over = (content: number, shown: boolean): Scroll => ({ scrollSize: content + (shown ? FOOT : 0), clientSize: BOX, scrollOffset: 0, buttonSize: shown ? FOOT : 0, over: true });
@@ -107,12 +109,40 @@ describe('whether a box overflows', () => {
       expect(overflowState(over(500, true)).overflowing).toBe(true);
     });
 
-    it('never comes and goes: the foot it adds to the list never decides whether it is needed', () => {
-      for (let content = 0; content <= 1200; content += 1) {
-        const asked = overflowState(over(content, false)).overflowing;
-        const kept = overflowState(over(content, true)).overflowing;
-        expect(asked && !kept, `${content}`).toBe(false);
+    it('does not keep a foot on a list that fits: it goes when the content fits, or is a pixel over, drawn or not', () => {
+      // Nine items, "Clear crossed off", seven that exactly fit: the foot stayed, the list stayed scrolled and the first item was out of view.
+      for (const content of [0, 300, 399, 400, 401]) {
+        expect(overflowState(over(content, true)).overflowing, `${content} with the foot`).toBe(false);
+        expect(overflowState(over(content, false)).overflowing, `${content} without it`).toBe(false);
       }
+      expect(overflowState(over(402, true)).overflowing).toBe(true);
+    });
+
+    it('says the same drawn or not, for every list: the foot never decides whether it is needed', () => {
+      for (let content = 0; content <= 1200; content += 1) {
+        expect(overflowState(over(content, true)).overflowing, `${content}`).toBe(overflowState(over(content, false)).overflowing);
+      }
+    });
+
+    it('never comes and goes for a foot that is not a whole number of pixels tall, which a root font size can make it', () => {
+      // The foot's own height is measured exactly (a fraction), the list's sizes are whole pixels the browser rounds: the same list measured
+      // with and without the foot can differ by less than a pixel, and a foot that is asked for must be kept.
+      const FOOT_PX = 64.4;
+      let tested = 0;
+      for (let content = 300; content <= 700; content += 0.37) {
+        for (let box = 380; box <= 420; box += 0.41) {
+          const without: Scroll = { scrollSize: Math.round(content), clientSize: Math.round(box), scrollOffset: 0, buttonSize: 0, over: true };
+          const withIt: Scroll = { scrollSize: Math.round(content + FOOT_PX), clientSize: Math.round(box), scrollOffset: 0, buttonSize: FOOT_PX, over: true };
+          const asked = overflowState(without).overflowing;
+          const kept = overflowState(withIt).overflowing;
+          expect(asked && !kept, `${content} in ${box}`).toBe(false);
+          // A list that fits is never asked for a foot, and one that is 3 px too tall always is.
+          if (content <= box) expect(asked, `${content} fits in ${box}`).toBe(false);
+          if (content >= box + 3) expect(asked, `${content} does not fit in ${box}`).toBe(true);
+          tested += 1;
+        }
+      }
+      expect(tested).toBeGreaterThan(30000);
     });
   });
 });

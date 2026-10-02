@@ -31,14 +31,16 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
   const sideways = axis === 'x';
 
   // What the browser says about the box now, and what the button holds back while it is drawn: its size, and beside the box the gap
-  // the row puts between them, which is room too.
+  // the row puts between them, which is room too. A foot is measured exactly, not rounded: a root font size can make it a fraction
+  // of a pixel tall, and the rule (overflowState) relies on knowing exactly what it added to the list.
   const read = useCallback((): Scroll | null => {
     const element = box.current;
     if (!element) return null;
     const button = piece.current;
     let buttonSize = 0;
     if (fit && button) {
-      buttonSize = sideways ? button.offsetWidth : button.offsetHeight;
+      const exact = button.getBoundingClientRect();
+      buttonSize = fit === 'over' ? (sideways ? exact.width : exact.height) : sideways ? button.offsetWidth : button.offsetHeight;
       if (fit === 'beside' && button.parentElement) {
         const row = getComputedStyle(button.parentElement);
         buttonSize += parseFloat(sideways ? row.columnGap : row.rowGap) || 0;
@@ -53,13 +55,20 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
     };
   }, [sideways, fit]);
 
+  // Whether the box overflowed at the last read.
+  const was = useRef(false);
+
   const measure = useCallback(() => {
     const scroll = read();
     if (!scroll) return;
     const { overflowing, atEnd } = overflowState(scroll);
+    // A box that stops overflowing (a list whose crossed off items were cleared, until it fits) is put back at its start: left
+    // where it was scrolled to, it would hide what is first.
+    if (was.current && !overflowing) box.current?.scrollTo(sideways ? { left: 0 } : { top: 0 });
+    was.current = overflowing;
     // The same answer is the same state, so a read that found nothing new is not a render.
     setState((last) => (last.overflowing === overflowing && last.atEnd === atEnd ? last : { overflowing, atEnd }));
-  }, [read]);
+  }, [read, sideways]);
 
   // Chrome gives the keyboard's focus to an element that is only partly in view without scrolling to it, so Tab could land on a pill
   // with 16 px of it showing. What takes the keyboard's focus in the box is brought fully into view (a touch or a click is left
@@ -90,6 +99,7 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
         document.fonts.removeEventListener('loadingdone', measure);
         box.current = null;
         // A box that goes (a list with its last item cleared) has nothing to scroll, so a new one does not start as the old one ended.
+        was.current = false;
         setState(NOTHING);
       };
     },
