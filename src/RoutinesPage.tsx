@@ -472,6 +472,9 @@ function RoutineForm({
   // last one did not go through: the form stays open with what was typed, and says so beside Save.
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
+  // How many Routines this form has added. The picture grid keeps its own open state, so it is keyed by this and starts closed
+  // again with the rest of the form.
+  const [added, setAdded] = useState(0);
   // What the labels name, so no two forms on the page share a label.
   const about = routine ? routine.title : `${profile.name}'s new Routine`;
 
@@ -488,6 +491,7 @@ function RoutineForm({
       setMask(allDays);
       setTimeOfDay(null);
       setPicture(null);
+      setAdded((count) => count + 1);
     }
   }
 
@@ -539,7 +543,7 @@ function RoutineForm({
           ))}
         </select>
       </label>
-      <PictureField about={about} picture={picture} onChange={setPicture} />
+      <PictureField key={added} about={about} picture={picture} onChange={setPicture} />
       <div className="flex gap-3">
         {/* A page of forms has one primary: the Save of the Routine being edited. Adding is secondary. */}
         <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" disabled={mask === 0 || saving}>
