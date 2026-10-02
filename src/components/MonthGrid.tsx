@@ -253,7 +253,7 @@ function EventLine({ occurrence, day, timezone }: { occurrence: Occurrence; day:
   const time = !occurrence.is_all_day && start >= day.startMs ? formatCompactClock(start, timezone) : null;
   return (
     <span className="mx-1 mb-0.5 flex h-5.5 shrink-0 items-center gap-1 rounded-sm border-l-4 px-1 text-base leading-5 text-foreground" style={tint(occurrence, EDGE_PX)}>
-      {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="size-4 shrink-0" />}
+      {occurrence.source === 'native' && <Pin aria-hidden className="size-4 shrink-0" />}
       {time && <span className="shrink-0 tabular-nums">{time}</span>}
       <span className="truncate">{occurrence.title}</span>
     </span>

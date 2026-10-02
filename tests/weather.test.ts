@@ -14,6 +14,7 @@ import {
   parsePlaces,
   readDelayMs,
   requestInit,
+  staleDelayMs,
   type WeatherIcon,
 } from '../src/lib/weather';
 
@@ -433,6 +434,59 @@ describe('forecastToShow', () => {
     forecastToShow(forecast, fetchedAt, fetchedAt + minutes(300));
 
     expect(forecast).toEqual(before);
+  });
+});
+
+describe('staleDelayMs', () => {
+  const forecast = parseForecast(recorded('open-meteo-forecast'));
+  const fetchedAt = Date.parse('2026-10-01T20:30:00Z');
+  const minutes = (count: number) => count * 60_000;
+
+  it('waits two hours and a millisecond for a reading that has just landed', () => {
+    // Exactly two hours is still current, so the reading stops being so in the millisecond after.
+    expect(staleDelayMs(fetchedAt, fetchedAt)).toBe(CURRENT_MAX_AGE_MS + 1);
+  });
+
+  it('waits what is left of the two hours, as the reading ages', () => {
+    expect(staleDelayMs(fetchedAt, fetchedAt + minutes(30))).toBe(minutes(90) + 1);
+    expect(staleDelayMs(fetchedAt, fetchedAt + minutes(119) + 59_999)).toBe(2);
+  });
+
+  it('waits the one millisecond that is left once the reading is exactly two hours old', () => {
+    expect(staleDelayMs(fetchedAt, fetchedAt + CURRENT_MAX_AGE_MS)).toBe(1);
+  });
+
+  it('has nothing to wait for once the reading is more than two hours old', () => {
+    for (const age of [CURRENT_MAX_AGE_MS + 1, minutes(3 * 60), minutes(26 * 60)]) {
+      expect(staleDelayMs(fetchedAt, fetchedAt + age), `after ${age} ms`).toBeNull();
+    }
+  });
+
+  it('has nothing to wait for when the clock reads earlier than the reading', () => {
+    // forecastToShow has already dropped the current conditions then: the clock cannot vouch for them.
+    for (const back of [1, minutes(10), minutes(26 * 60)]) {
+      expect(staleDelayMs(fetchedAt, fetchedAt - back), `${back} ms before the reading`).toBeNull();
+    }
+  });
+
+  it('ends exactly when forecastToShow drops the current conditions, never earlier and never later', () => {
+    for (const age of [0, 1, minutes(1), minutes(30), minutes(90), minutes(119), CURRENT_MAX_AGE_MS - 1, CURRENT_MAX_AGE_MS]) {
+      const now = fetchedAt + age;
+      const wait = staleDelayMs(fetchedAt, now);
+
+      expect(wait, `at ${age} ms`).not.toBeNull();
+      expect(forecastToShow(forecast, fetchedAt, now).current, `at ${age} ms`).not.toBeNull();
+      expect(forecastToShow(forecast, fetchedAt, now + wait! - 1).current, `1 ms before the end of the wait from ${age} ms`).not.toBeNull();
+      expect(forecastToShow(forecast, fetchedAt, now + wait!).current, `at the end of the wait from ${age} ms`).toBeNull();
+    }
+  });
+
+  it('says nothing to wait for exactly when forecastToShow has already dropped the current conditions', () => {
+    for (const age of [-minutes(26 * 60), -1, CURRENT_MAX_AGE_MS + 1, minutes(3 * 60)]) {
+      const now = fetchedAt + age;
+      expect(staleDelayMs(fetchedAt, now), `at ${age} ms`).toBeNull();
+      expect(forecastToShow(forecast, fetchedAt, now).current, `at ${age} ms`).toBeNull();
+    }
   });
 });
 

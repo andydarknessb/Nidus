@@ -240,7 +240,8 @@ function NavigationRailEntry({ icon: Icon, label, current = false, className = '
 // entry, opens the Native Event sheet, and is drawn as the primary action. Above it, for a Household
 // Account only, sits the link to Settings: a Device is never offered a way into administration. Its column is its whole
 // width, border and padding included, and must stay at most 90 px: the five day columns at 1280 px need
-// 140 px each. Its longest labels, Routines and Settings, fit in it.
+// 140 px each. Its longest label, Add event, wraps onto two lines; Routines and Settings, the longest
+// single words, fit on one.
 function NavigationRail({
   route,
   timezone,
@@ -299,9 +300,25 @@ function WallClock({ timezone }: { timezone: string }) {
   );
 }
 
+// What stands in for a screen until the Household has been read (its Timezone says which day every screen
+// shows): an empty frame while the read is on its way and, once it has failed, the words that say so, in
+// the screen's own wording, so a Wall that cannot reach its server does not pass for a blank one.
+function BeforeHousehold({ label, failed, words }: { label: string; failed: boolean; words: string }) {
+  return (
+    <section aria-label={label} className="rounded-xl border border-border">
+      {failed && (
+        <p role="alert" className="p-4 text-xl">
+          {words}
+        </p>
+      )}
+    </section>
+  );
+}
+
 // The landscape wall: a navigation rail down the left, then the header over the screen. The home
-// screen is the five-day calendar on the left and, on its right rail, today's Routines above the
-// pinned Shared List; the other lists open from the navigation rail.
+// screen is the five-day calendar on the left and, on its right rail, today's Meals (when any is
+// planned) above today's Routines above the pinned Shared List; the other lists open from the
+// navigation rail.
 function HomeShell({ owner }: { owner: boolean }) {
   const [route, openView, openHome, openMeals, openRoutines] = useWallRoute();
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
@@ -398,17 +415,25 @@ function HomeShell({ owner }: { owner: boolean }) {
             </section>
           )
         ) : route.view === 'meals' ? (
-          // Meals is a screen of its own, not a calendar view: it takes the same slot, and before the Household is read it is empty.
-          timezone ? <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} /> : <section aria-label="Meals" className="rounded-xl border border-border" />
+          // Meals is a screen of its own, not a calendar view: it takes the same slot, and before the Household is read it is an empty frame, or says it could not be read.
+          timezone ? (
+            <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} />
+          ) : (
+            <BeforeHousehold label="Meals" failed={view.failed} words="Could not load meals. Check your connection." />
+          )
         ) : route.view !== 'home' && timezone ? (
           <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} />
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
-          // under a navigation rail entry that marks Day or Week.
-          <section aria-label="Calendar" className="rounded-xl border border-border" />
+          // under a navigation rail entry that marks Day, Week or Month.
+          <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
         ) : (
         <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
-          {timezone ? <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} /> : <section aria-label="Calendar" className="rounded-xl border border-border" />}
+          {timezone ? (
+            <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} />
+          ) : (
+            <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
+          )}
           <div className="flex min-h-0 flex-col gap-4">
             {/* Today's meals take the height they need, and nothing at all when none is planned, so the Routines
                 rail and the pinned list then share the right rail exactly as before. The two keep 13 rem each

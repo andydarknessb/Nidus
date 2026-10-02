@@ -5,9 +5,11 @@ import { householdDay } from './routines';
 export { dayStartMs };
 
 // Occurrences on the wall (CONTEXT.md: Synced Event, Native Event). The `calendar_occurrences`
-// view unions every source with the Profile and colour it inherits; everything below is what
-// the five-day home screen does with them. All date logic uses the Household Timezone, never
-// the machine's zone, and is pure so it is tested without a screen.
+// view unions every source with the Profile and colour it inherits; everything below is what the
+// wall's calendar does with them: the five days of the home screen, the week, day and month views
+// and the routes between them, where each one sits in the time grid or in a month's cell, and the
+// words that say when. All date logic uses the Household Timezone, never the machine's zone, and is
+// pure so it is tested without a screen.
 
 export type Occurrence = {
   source: 'synced' | 'native';

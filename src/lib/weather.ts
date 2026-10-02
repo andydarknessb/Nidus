@@ -172,12 +172,28 @@ export function forecastDay(forecast: Forecast | null, date: string): ForecastDa
 // an old temperature off as what it is outside now.
 export const CURRENT_MAX_AGE_MS = 2 * 60 * 60_000;
 
-// What a forecast read at `fetchedAt` may still show at `now` (both in ms): the days always, since
-// each is keyed by its date, but the current conditions only while the reading is at most two hours
-// old. A clock that went back since the reading cannot say how old it is, so it cannot vouch for it.
-export function forecastToShow(forecast: Forecast, fetchedAt: number, now: number): Forecast {
+// Whether a reading taken at `fetchedAt` may be called current at `now` (both in ms): while it is at
+// most two hours old. A clock that went back since the reading cannot say how old it is, so it cannot
+// vouch for it.
+function isCurrent(fetchedAt: number, now: number): boolean {
   const age = now - fetchedAt;
-  return age < 0 || age > CURRENT_MAX_AGE_MS ? { ...forecast, current: null } : forecast;
+  return age >= 0 && age <= CURRENT_MAX_AGE_MS;
+}
+
+// What a forecast read at `fetchedAt` may still show at `now` (both in ms): the days always, since
+// each is keyed by its date, but the current conditions only while the reading is current, at most
+// two hours old.
+export function forecastToShow(forecast: Forecast, fetchedAt: number, now: number): Forecast {
+  return isCurrent(fetchedAt, now) ? forecast : { ...forecast, current: null };
+}
+
+// How long from `now` until a reading taken at `fetchedAt` is no longer current (both in ms), for a
+// timer to be set to: forecastToShow only moves on when something asks it again, and a Wall whose
+// reads never finish would never ask. A reading of exactly two hours is still current, so the wait
+// runs to the millisecond after that, and is never less than 1. Null when there is nothing to wait
+// for, because forecastToShow already drops the current conditions.
+export function staleDelayMs(fetchedAt: number, now: number): number | null {
+  return isCurrent(fetchedAt, now) ? CURRENT_MAX_AGE_MS - (now - fetchedAt) + 1 : null;
 }
 
 // A forecast moves slowly and Open-Meteo is a free service, so the Wall reads it every half hour.
