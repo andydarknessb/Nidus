@@ -51,6 +51,11 @@ export function paletteColorName(hex: string): string | undefined {
   return PROFILE_PALETTE.find((color) => color.hex === hex)?.name;
 }
 
+// The letter a person's disc carries: the first character of their name, in capitals.
+export function initialOf(name: string): string {
+  return [...name.trim()][0]?.toUpperCase() ?? '';
+}
+
 // Order the way the screen shows it: by position.
 export function byPosition<T extends { sort_order: number }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => a.sort_order - b.sort_order);

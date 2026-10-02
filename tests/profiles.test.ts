@@ -6,6 +6,7 @@ import {
   contrastRatio,
   createProfile,
   deleteProfile,
+  initialOf,
   loadProfiles,
   movedIds,
   nextSortOrder,
@@ -55,6 +56,14 @@ describe('profile helpers', () => {
     expect(movedIds(['a', 'b', 'c'], 'a', -1)).toEqual(['a', 'b', 'c']);
     expect(movedIds(['a', 'b', 'c'], 'a', 5)).toEqual(['b', 'c', 'a']);
     expect(movedIds(['a', 'b'], 'zzz', 1)).toEqual(['a', 'b']);
+  });
+
+  it("takes the first letter of a name, in capitals, for a person's disc", () => {
+    expect(initialOf('ava')).toBe('A');
+    expect(initialOf('  Ben ')).toBe('B');
+    expect(initialOf('élise')).toBe('É');
+    expect(initialOf('🐶 Rex')).toBe('🐶');
+    expect(initialOf('   ')).toBe('');
   });
 
   it('treats a blank avatar as none', () => {
