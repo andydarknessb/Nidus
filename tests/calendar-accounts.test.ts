@@ -78,6 +78,12 @@ function deps(google: FakeGoogle, extra: Partial<ConnectDeps> = {}): ConnectDeps
   return { env, admin: asServiceRole(), fetch: google.fetch, ...extra };
 }
 
+// The app writes no colour for a Mirrored Calendar (nothing draws one), but the column is still in the database with its rule, so what it
+// holds and what it refuses are still tested: these writes go straight to the table, as the app's own did. The error, or null.
+async function setColor(client: Awaited<ReturnType<typeof asHouseholdAccount>>, id: string, color: string | null) {
+  return (await client.from('mirrored_calendars').update({ color }).eq('id', id)).error;
+}
+
 async function jwtOf(account: HouseholdAccount): Promise<string> {
   const client = await asHouseholdAccount(account);
   const { data } = await client.auth.getSession();
@@ -223,7 +229,8 @@ describe('calendar-connect callback', () => {
     const id = await connect(account, 'parent@example.com', 'first-token');
     const phone = await asHouseholdAccount(account);
     const [family] = (await loadMirroredCalendars(phone)).filter((calendar) => calendar.name === 'Family');
-    await updateMirroredCalendar(phone, family!.id, { selected: true, profile_id: null, color: PROFILE_PALETTE[0].hex });
+    await updateMirroredCalendar(phone, family!.id, { selected: true, profile_id: null });
+    expect(await setColor(phone, family!.id, PROFILE_PALETTE[0].hex)).toBeNull();
 
     expect(await connect(account, 'parent@example.com', 'second-token')).toBe(id);
 
@@ -385,24 +392,26 @@ describe('Mirrored Calendar selection', () => {
     return { account, phone, calendars: calendarsOfAccount(await loadMirroredCalendars(phone), accountId), accountId };
   }
 
-  it('lets the Household Account select a calendar, assign a Profile, and override its colour', async () => {
+  it('lets the Household Account select a calendar and assign a Profile, and set and clear the colour the column still holds', async () => {
     const { account, phone, calendars } = await arrangeWithCalendars();
     const profile = await createProfile(phone, account.household.id, { name: 'Sam', color: PROFILE_PALETTE[1].hex, avatar_url: null }, 0);
     const target = calendars.find((calendar) => calendar.name === 'Family')!;
 
-    await updateMirroredCalendar(phone, target.id, { selected: true, profile_id: profile.id, color: PROFILE_PALETTE[4].hex });
+    await updateMirroredCalendar(phone, target.id, { selected: true, profile_id: profile.id });
+    expect(await setColor(phone, target.id, PROFILE_PALETTE[4].hex)).toBeNull();
 
     const after = (await loadMirroredCalendars(phone)).find((calendar) => calendar.id === target.id);
     expect(after).toMatchObject({ selected: true, profile_id: profile.id, color: PROFILE_PALETTE[4].hex });
 
-    await updateMirroredCalendar(phone, target.id, { selected: true, profile_id: null, color: null });
+    await updateMirroredCalendar(phone, target.id, { selected: true, profile_id: null });
+    expect(await setColor(phone, target.id, null)).toBeNull();
     expect((await loadMirroredCalendars(phone)).find((calendar) => calendar.id === target.id)).toMatchObject({ profile_id: null, color: null });
   });
 
   it('lists the account’s selected calendars first', async () => {
     const { phone, calendars, accountId } = await arrangeWithCalendars();
     const school = calendars.find((calendar) => calendar.name === 'School')!;
-    await updateMirroredCalendar(phone, school.id, { selected: true, profile_id: null, color: null });
+    await updateMirroredCalendar(phone, school.id, { selected: true, profile_id: null });
     expect(calendarsOfAccount(await loadMirroredCalendars(phone), accountId)[0]?.name).toBe('School');
   });
 
@@ -436,19 +445,19 @@ describe('Mirrored Calendar selection', () => {
     expect(await loadMirroredCalendars(strangerPhone)).toEqual([]);
     await strangerPhone.from('mirrored_calendars').update({ selected: true }).eq('id', target.id);
     expect((await loadMirroredCalendars(phone)).find((calendar) => calendar.id === target.id)?.selected).toBe(false);
-    await expect(updateMirroredCalendar(phone, target.id, { selected: true, profile_id: foreign.id, color: null })).rejects.toBeTruthy();
+    await expect(updateMirroredCalendar(phone, target.id, { selected: true, profile_id: foreign.id })).rejects.toBeTruthy();
   });
 
   it('refuses a colour that is not a #rrggbb hex', async () => {
     const { phone, calendars } = await arrangeWithCalendars();
-    await expect(updateMirroredCalendar(phone, calendars[0]!.id, { selected: true, profile_id: null, color: 'red' })).rejects.toBeTruthy();
+    expect(await setColor(phone, calendars[0]!.id, 'red')).not.toBeNull();
   });
 
   it('falls back to the whole Household when the assigned Profile is deleted', async () => {
     const { account, phone, calendars } = await arrangeWithCalendars();
     const profile = await createProfile(phone, account.household.id, { name: 'Sam', color: PROFILE_PALETTE[1].hex, avatar_url: null }, 0);
     const target = calendars[0]!;
-    await updateMirroredCalendar(phone, target.id, { selected: true, profile_id: profile.id, color: null });
+    await updateMirroredCalendar(phone, target.id, { selected: true, profile_id: profile.id });
 
     await phone.from('profiles').delete().eq('id', profile.id);
 
@@ -529,7 +538,8 @@ describe('reconnecting an account that needs reauth', () => {
     const admin = asServiceRole();
     const phone = await asHouseholdAccount(account);
     const [family] = (await loadMirroredCalendars(phone)).filter((calendar) => calendar.name === 'Family');
-    await updateMirroredCalendar(phone, family!.id, { selected: true, profile_id: null, color: PROFILE_PALETTE[0].hex });
+    await updateMirroredCalendar(phone, family!.id, { selected: true, profile_id: null });
+    expect(await setColor(phone, family!.id, PROFILE_PALETTE[0].hex)).toBeNull();
     await admin.from('calendar_accounts').update({ status: 'needs_reauth', last_error: 'Google no longer accepts this account. Reconnect it in settings.' }).eq('id', id);
 
     await connect(account, 'parent@example.com', 'second-token');

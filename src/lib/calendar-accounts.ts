@@ -21,7 +21,7 @@ export type MirroredCalendar = {
   calendar_account_id: string;
   google_calendar_id: string;
   name: string;
-  // Optional colour override; null means the calendar shows in its Profile's colour.
+  // A colour the Wall no longer draws: a Mirrored Calendar has none of its own (an event is its Profiles' colours). The column stays.
   color: string | null;
   // Null means the whole Household.
   profile_id: string | null;
@@ -29,9 +29,9 @@ export type MirroredCalendar = {
 };
 
 // What a write changes of a Mirrored Calendar: only the fields it names are written. The phone sends one at a time, `{ selected }`
-// for the switch and `{ profile_id }` for whose it is, so that a slow answer to one never writes the other's old value back, and
-// never `color`, which nothing draws any more (the column stays).
-export type MirroredCalendarChoice = { selected?: boolean; profile_id?: string | null; color?: string | null };
+// for the switch and `{ profile_id }` for whose it is, so that a slow answer to one never writes the other's old value back. There
+// is no colour to choose, since nothing draws one: nothing writes the column (it stays).
+export type MirroredCalendarChoice = { selected?: boolean; profile_id?: string | null };
 
 // Explicit column lists: `select *` on these tables is refused, because vault_secret_id
 // and sync_token are not granted to clients.
