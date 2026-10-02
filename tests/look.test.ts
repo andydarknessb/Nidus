@@ -208,11 +208,14 @@ describe('src/index.css', () => {
     }
   });
 
-  it('mixes the dark roles at the percentages look.ts exports', () => {
+  // The build lowers each color-mix() to its first operand where a browser lacks it, so that operand is the colour it is safe to
+  // be left with: the card for soft and fill (the words on them stay readable), the 300 for the done disc (so does its picture).
+  // look.ts says "the 300 mixed 13% into the card"; the card first at 87% is the same colour.
+  it('mixes the dark roles at the percentages look.ts exports, the safe colour first', () => {
     const dark = declarations(":root[data-mode='dark'] .person");
-    expect(dark.get('--person-soft')).toBe(`color-mix(in srgb, var(--person-300) ${DARK_MIX.soft}%, var(--card))`);
-    expect(dark.get('--person-fill')).toBe(`color-mix(in srgb, var(--person-300) ${DARK_MIX.fill}%, var(--card))`);
-    expect(dark.get('--person-done-disc')).toBe(`color-mix(in srgb, var(--ink) ${DARK_MIX.doneDisc}%, var(--person-300))`);
+    expect(dark.get('--person-soft')).toBe(`color-mix(in srgb, var(--card) ${100 - DARK_MIX.soft}%, var(--person-300))`);
+    expect(dark.get('--person-fill')).toBe(`color-mix(in srgb, var(--card) ${100 - DARK_MIX.fill}%, var(--person-300))`);
+    expect(dark.get('--person-done-disc')).toBe(`color-mix(in srgb, var(--person-300) ${100 - DARK_MIX.doneDisc}%, var(--ink))`);
   });
 
   it('maps every token and every person role to a Tailwind colour once, in @theme inline', () => {

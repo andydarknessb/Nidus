@@ -59,8 +59,10 @@
 /* A person (docs/look.md, People). An element with the class `person` carries four custom properties, the steps of
    its family (personStyle() in src/lib/look.ts sets them from a Profile's stored colour), and the roles below are
    derived from them, once for each mode. Light takes the steps as they are; dark mixes the 300 into --card with
-   color-mix(), at the percentages look.ts exports as DARK_MIX. Words on a soft or a fill are --foreground and never
-   a person's colour. */
+   color-mix(), at the percentages look.ts exports as DARK_MIX (the 300 at 13% for soft and 28% for fill, so the card
+   at 87% and 72%). The colour that is safe to be left with comes first: the build lowers a color-mix() to its first
+   operand where a browser has none, and words on the card are readable where words on a pastel are not. Words on a
+   soft or a fill are --foreground and never a person's colour. */
 .person {
   --person-soft: var(--person-100);
   --person-fill: var(--person-200);
@@ -75,15 +77,15 @@
 }
 
 :root[data-mode='dark'] .person {
-  --person-soft: color-mix(in srgb, var(--person-300) 13%, var(--card));
-  --person-fill: color-mix(in srgb, var(--person-300) 28%, var(--card));
+  --person-soft: color-mix(in srgb, var(--card) 87%, var(--person-300));
+  --person-fill: color-mix(in srgb, var(--card) 72%, var(--person-300));
   --person-base: var(--person-300);
   --person-on-base: var(--ink);
   --person-strong: var(--person-300);
   --person-on-strong: var(--ink);
   --person-tick: var(--ink);
   --person-on-tick: var(--person-300);
-  --person-done-disc: color-mix(in srgb, var(--ink) 20%, var(--person-300));
+  --person-done-disc: color-mix(in srgb, var(--person-300) 80%, var(--ink));
   --person-done-picture: var(--ink);
 }
 
