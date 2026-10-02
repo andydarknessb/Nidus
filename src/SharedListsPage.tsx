@@ -9,6 +9,8 @@ import {
   createList,
   crossOptimistically,
   deleteList,
+  HOME_HOLD_MS,
+  homeRows,
   loadItems,
   loadLists,
   loadPinnedListId,
@@ -326,18 +328,45 @@ const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-car
 
 // The Pinned List's card, under Up next in Home's right column: it is as tall as that column leaves it. A heading row holds the list's
 // name and a link to the Lists screen that says how many items still to get the card has no room for ("3 more"), or "All lists" when it
-// shows them all. Then the field that adds an item, and the items that fit under it (rowsThatFit). An item added here is said on the
-// status line, since it may not be one of the rows that fit.
+// shows them all. Then the field that adds an item, and the rows that fit under it (rowsThatFit): the items still to get, and any
+// crossed off on this card in the last HOME_HOLD_MS (homeRows), which stay where they are, ticked, so another tap can put them back.
+// An item added here is said on the status line, since it may not be one of the rows that fit.
 function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => void }) {
   const say = useStatusLine();
   const { items, loaded, problem, add, toggle } = useItems(list.id);
-  const toGet = withoutCrossed(items);
+  // What was crossed off on this card and when, and the time the card last looked at. Both go with the card, when Home is left.
+  const [crossedHere, setCrossedHere] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const [now, setNow] = useState(() => Date.now());
+  // One timer, for the row next to leave: it looks again then, and is cleared when another row is crossed off or put back, and
+  // with the card.
+  useEffect(() => {
+    const leaving = [...crossedHere.values()].map((at) => at + HOME_HOLD_MS).filter((time) => time > now);
+    if (leaving.length === 0) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.min(...leaving) - Date.now());
+    return () => clearTimeout(timer);
+  }, [crossedHere, now]);
+  const rows = homeRows(items, crossedHere, now);
   const region = useRef<HTMLDivElement>(null);
   const room = useHeight(region);
-  // A line of words, when there is one, takes the room of a row.
-  const words = problem || (loaded && toGet.length === 0 ? 'Nothing left to get.' : '');
-  const shown = room === null ? 0 : rowsThatFit({ count: toGet.length, room: room - (words ? HOME_ROW_PX + HOME_GAP_PX : 0), row: HOME_ROW_PX, gap: HOME_GAP_PX });
-  const hidden = toGet.length - shown;
+  // A line of words, when there is one, takes the room of a row. "Nothing left to get" waits until the last row has gone, so it
+  // never pushes a row that was just crossed off down from under the finger.
+  const words = problem || (loaded && rows.length === 0 ? 'Nothing left to get.' : '');
+  const shown = room === null ? 0 : rowsThatFit({ count: rows.length, room: room - (words ? HOME_ROW_PX + HOME_GAP_PX : 0), row: HOME_ROW_PX, gap: HOME_GAP_PX });
+  // The items still to get that the card has no room for.
+  const hidden = withoutCrossed(rows.slice(shown)).length;
+
+  // A tap crosses a row off, or puts back one crossed off here. The row stays where it is either way.
+  function tap(item: ListItem) {
+    const at = Date.now();
+    setNow(at);
+    setCrossedHere((before) => {
+      const next = new Map(before);
+      if (item.crossed_at === null) next.set(item.id, at);
+      else next.delete(item.id);
+      return next;
+    });
+    void toggle(item);
+  }
 
   return (
     <section aria-label={list.name} className={HOME_CARD}>
@@ -374,8 +403,8 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
                 {words}
               </p>
             )}
-            {toGet.slice(0, shown).map((item) => (
-              <ItemRow key={item.id} item={item} size="home" onToggle={() => void toggle(item)} />
+            {rows.slice(0, shown).map((item) => (
+              <ItemRow key={item.id} item={item} size="home" onToggle={() => tap(item)} />
             ))}
           </>
         )}

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { pinnedFirst, rowsThatFit, type SharedList } from '../src/lib/shared-lists';
+import { HOME_HOLD_MS, homeRows, pinnedFirst, rowsThatFit, type ListItem, type SharedList } from '../src/lib/shared-lists';
 
-// Pure rules for a Shared List's card on the Wall: how many rows Home's card holds, and which list comes first on the
-// Lists screen. They run without the local stack.
+// Pure rules for a Shared List's card on the Wall: how many rows Home's card holds, which rows it draws, and which list comes
+// first on the Lists screen. They run without the local stack.
 
 // Home's card, from the drawing (v2/home.js): a row is 48 px and the gap between rows 8.
 const ROW = 48;
@@ -77,6 +77,80 @@ describe('rowsThatFit', () => {
         before = shown;
       }
     }
+  });
+});
+
+describe('homeRows', () => {
+  // An instant, not a date: this rule is a length of time and takes no zone.
+  const NOW = Date.parse('2026-10-01T19:21:00-05:00');
+  const SECOND = 1_000;
+  const item = (id: string, crossedAt: number | null = null): ListItem => ({
+    id,
+    list_id: 'groceries',
+    text: id,
+    crossed_at: crossedAt === null ? null : new Date(crossedAt).toISOString(),
+    sort_order: 0,
+  });
+  const ids = (rows: ListItem[]) => rows.map((row) => row.id);
+  // What was crossed off on this card, and when.
+  const here = (entries: Record<string, number>) => new Map(Object.entries(entries));
+
+  it('holds a row for four seconds', () => {
+    expect(HOME_HOLD_MS).toBe(4 * SECOND);
+  });
+
+  it('draws the items still to get, in the list\x27s order', () => {
+    const items = [item('milk'), item('eggs'), item('bananas')];
+    expect(ids(homeRows(items, here({}), NOW))).toEqual(['milk', 'eggs', 'bananas']);
+    expect(homeRows([], here({}), NOW)).toEqual([]);
+  });
+
+  it('keeps an item crossed off on this card where it was, for four seconds', () => {
+    // Eggs was crossed off here a second ago: it stays between Milk and Bananas.
+    const items = [item('milk'), item('eggs', NOW - SECOND), item('bananas')];
+    expect(ids(homeRows(items, here({ eggs: NOW - SECOND }), NOW))).toEqual(['milk', 'eggs', 'bananas']);
+    // And still does a moment before the four seconds are up.
+    expect(ids(homeRows(items, here({ eggs: NOW - HOME_HOLD_MS + 1 }), NOW))).toEqual(['milk', 'eggs', 'bananas']);
+  });
+
+  it('lets it go four seconds after it was crossed off', () => {
+    const items = [item('milk'), item('eggs', NOW - HOME_HOLD_MS), item('bananas')];
+    expect(ids(homeRows(items, here({ eggs: NOW - HOME_HOLD_MS }), NOW))).toEqual(['milk', 'bananas']);
+    expect(ids(homeRows(items, here({ eggs: NOW - HOME_HOLD_MS - 60 * SECOND }), NOW))).toEqual(['milk', 'bananas']);
+  });
+
+  it('gives each row its own four seconds, from the moment it was crossed off', () => {
+    // Milk was crossed off five seconds ago and Eggs one second ago: Milk has gone, and Eggs has three seconds left.
+    const items = [item('milk', NOW - 5 * SECOND), item('eggs', NOW - SECOND), item('bananas')];
+    const crossed = here({ milk: NOW - 5 * SECOND, eggs: NOW - SECOND });
+    expect(ids(homeRows(items, crossed, NOW))).toEqual(['eggs', 'bananas']);
+    expect(ids(homeRows(items, crossed, NOW + 3 * SECOND - 1))).toEqual(['eggs', 'bananas']);
+    expect(ids(homeRows(items, crossed, NOW + 3 * SECOND))).toEqual(['bananas']);
+  });
+
+  it('draws an item that was crossed off here and put back as an open row, however long ago', () => {
+    const items = [item('milk'), item('eggs'), item('bananas')];
+    expect(ids(homeRows(items, here({ eggs: NOW - SECOND }), NOW))).toEqual(['milk', 'eggs', 'bananas']);
+    expect(ids(homeRows(items, here({ eggs: NOW - 60 * SECOND }), NOW))).toEqual(['milk', 'eggs', 'bananas']);
+  });
+
+  it('never draws an item crossed off anywhere else', () => {
+    // Coffee is crossed off, but not on this card: it is for the Lists screen until someone clears it.
+    const items = [item('milk'), item('coffee', NOW - SECOND), item('bananas')];
+    expect(ids(homeRows(items, here({}), NOW))).toEqual(['milk', 'bananas']);
+    // Nor does another item's entry bring it back.
+    expect(ids(homeRows(items, here({ milk: NOW - SECOND }), NOW))).toEqual(['milk', 'bananas']);
+  });
+
+  it('does not draw an item deleted elsewhere, though this card remembers crossing it off', () => {
+    const items = [item('milk'), item('bananas')];
+    expect(ids(homeRows(items, here({ eggs: NOW - SECOND }), NOW))).toEqual(['milk', 'bananas']);
+  });
+
+  it('does not change the items it is given', () => {
+    const items = [item('milk'), item('eggs', NOW - SECOND)];
+    homeRows(items, here({}), NOW);
+    expect(ids(items)).toEqual(['milk', 'eggs']);
   });
 });
 

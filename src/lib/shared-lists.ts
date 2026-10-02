@@ -55,6 +55,17 @@ export function rowsThatFit({ count, room, row, gap }: { count: number; room: nu
   return Math.min(count, Math.max(0, Math.floor((room + gap) / (row + gap))));
 }
 
+// How long, in ms, a row crossed off on Home stays where it is, ticked, so that a second tap can put it back.
+export const HOME_HOLD_MS = 4_000;
+
+// The rows Home's card draws, in the list's order: the items still to get, and any crossed off on this card (`crossedHere`: an
+// item's id and the time it was crossed off, in ms) less than HOME_HOLD_MS before `now`. Such a row stays where it was, so a tap
+// never slides the next row under the finger, and another tap puts it back; each row has its own hold. An item crossed off
+// anywhere else is not drawn (it is for the Lists screen until someone clears it), and one deleted elsewhere goes with it.
+export function homeRows(items: ListItem[], crossedHere: ReadonlyMap<string, number>, now: number): ListItem[] {
+  return items.filter((item) => item.crossed_at === null || now - (crossedHere.get(item.id) ?? -Infinity) < HOME_HOLD_MS);
+}
+
 // ---- Lists (Household Account writes) ------------------------------------------
 
 export async function loadLists(client: SupabaseClient): Promise<SharedList[]> {
