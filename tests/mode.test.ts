@@ -90,28 +90,31 @@ describe('resolveMode: the Appearance', () => {
 });
 
 // ---- The forecast's sunrise and sunset ----------------------------------------------------------
-// Open-Meteo sends them as Household wall-clock text with no offset, a day each ('2026-10-01T07:12'), and sunAt() turns the
-// ones of the Household date `now` falls on into instants through the Household Timezone. Chicago is on daylight time (UTC-5)
-// from 2026-03-08 to 2026-11-01 and on standard time (UTC-6) outside that.
+// The Wall holds the forecast's days as src/lib/weather.ts reads them: each day's Household date, and its sunrise and sunset as
+// instants (Open-Meteo sends wall-clock text at one offset for the whole answer, and parseForecast turns it into the instant it
+// is). sunAt() picks the ones of the Household date `now` falls on. Chicago is on daylight time (UTC-5) from 2026-03-08 to
+// 2026-11-01 and on standard time (UTC-6) outside that.
 const OCTOBER: SunDay[] = [
-  { date: '2026-10-01', sunrise: '2026-10-01T07:12', sunset: '2026-10-01T18:48' },
-  { date: '2026-10-02', sunrise: '2026-10-02T07:13', sunset: '2026-10-02T18:46' },
-  { date: '2026-10-03', sunrise: '2026-10-03T07:14', sunset: '2026-10-03T18:45' },
+  { date: '2026-10-01', sunrise: at('2026-10-01T12:12:00'), sunset: at('2026-10-01T23:48:00') }, // 07:12 and 18:48 in Chicago
+  { date: '2026-10-02', sunrise: at('2026-10-02T12:13:00'), sunset: at('2026-10-02T23:46:00') },
+  { date: '2026-10-03', sunrise: at('2026-10-03T12:14:00'), sunset: at('2026-10-03T23:45:00') },
 ];
-// The days either side of the spring change (Sunday 2026-03-08, 23 hours): the wall clock reads 59 minutes later at sunrise
-// and the instant is a minute earlier.
+// The days either side of the spring change (Sunday 2026-03-08, 23 hours).
 const SPRING: SunDay[] = [
-  { date: '2026-03-07', sunrise: '2026-03-07T06:27', sunset: '2026-03-07T18:09' },
-  { date: '2026-03-08', sunrise: '2026-03-08T07:26', sunset: '2026-03-08T19:10' },
+  { date: '2026-03-07', sunrise: at('2026-03-07T12:27:00'), sunset: at('2026-03-08T00:09:00') }, // 06:27 and 18:09 on standard time
+  { date: '2026-03-08', sunrise: at('2026-03-08T12:26:00'), sunset: at('2026-03-09T00:10:00') }, // 07:26 and 19:10 on daylight time
 ];
-// And either side of the fall change (Sunday 2026-11-01, 25 hours).
+// The days around the clocks going back in Chicago (Sunday 2025-11-02, 25 hours), with the sunrises Open-Meteo gave for Austin:
+// 7:45 AM on the 1st, on daylight time, and 6:46 AM on the 2nd, on standard time. Its text for the 2nd said 07:46, at the
+// answer's one offset, so the sunrise is the 6:46 AM of the Household's clock and never a 7:46 (tests/weather.test.ts).
 const FALL: SunDay[] = [
-  { date: '2026-10-31', sunrise: '2026-10-31T07:30', sunset: '2026-10-31T17:56' },
-  { date: '2026-11-01', sunrise: '2026-11-01T06:31', sunset: '2026-11-01T16:55' },
+  { date: '2025-11-01', sunrise: 1762001100000, sunset: at('2025-11-01T23:44:00') },
+  { date: '2025-11-02', sunrise: 1762087560000, sunset: at('2025-11-02T23:43:00') },
+  { date: '2025-11-03', sunrise: at('2025-11-03T12:46:00'), sunset: at('2025-11-03T23:42:00') },
 ];
 
-describe('sunAt: the forecast\'s sunrise and sunset as instants', () => {
-  it("turns the wall-clock text of the Household's date into instants, and the next day's sunrise", () => {
+describe("sunAt: the forecast's sun for the Household date", () => {
+  it("is the sunrise and sunset of the Household's date, and the next day's sunrise", () => {
     expect(sunAt(OCTOBER, CHICAGO, at('2026-10-01T15:00:00'))).toEqual({
       sunrise: at('2026-10-01T12:12:00'),
       sunset: at('2026-10-01T23:48:00'),
@@ -119,21 +122,19 @@ describe('sunAt: the forecast\'s sunrise and sunset as instants', () => {
     });
   });
 
-  it('reads the text in the Household Timezone, whatever zone the machine is in', () => {
-    const day: SunDay[] = [{ date: '2026-10-01', sunrise: '2026-10-01T07:12', sunset: '2026-10-01T18:48' }];
-    // The same text is 12:12 UTC in Chicago, 22:12 UTC the evening before in Tokyo and 17:12 UTC in Honolulu: the zone is the
-    // Household's, never a Date.parse of text that names none.
-    expect(sunAt(day, CHICAGO, at('2026-10-01T15:00:00'))).toMatchObject({ sunrise: at('2026-10-01T12:12:00'), sunset: at('2026-10-01T23:48:00') });
-    expect(sunAt(day, 'Asia/Tokyo', at('2026-10-01T03:00:00'))).toMatchObject({ sunrise: at('2026-09-30T22:12:00'), sunset: at('2026-10-01T09:48:00') });
-    expect(sunAt(day, 'Pacific/Honolulu', at('2026-10-01T20:00:00'))).toMatchObject({ sunrise: at('2026-10-01T17:12:00'), sunset: at('2026-10-02T04:48:00') });
-  });
-
-  it("goes by the Household's date, which is not the UTC date for hours of the evening", () => {
+  it("goes by the Household's date, which is not the UTC date for hours of the evening, and by the Household Timezone's", () => {
     // 02:00 UTC on the 2nd is 21:00 on the 1st in Chicago.
     expect(sunAt(OCTOBER, CHICAGO, at('2026-10-02T02:00:00'))).toMatchObject({ sunrise: at('2026-10-01T12:12:00') });
-    // 05:00 UTC is the Household's midnight: the 2nd begins, and with it the 2nd's sunrise.
+    // 05:00 UTC is the Household's midnight: the 2nd begins, and with it the 2nd's sun.
     expect(sunAt(OCTOBER, CHICAGO, at('2026-10-02T04:59:59.999'))).toMatchObject({ sunrise: at('2026-10-01T12:12:00') });
     expect(sunAt(OCTOBER, CHICAGO, at('2026-10-02T05:00:00'))).toMatchObject({ sunrise: at('2026-10-02T12:13:00'), sunset: at('2026-10-02T23:46:00') });
+    // The same instant is 11:00 on the 2nd in Tokyo: that Household is on the 2nd already.
+    expect(sunAt(OCTOBER, 'Asia/Tokyo', at('2026-10-02T02:00:00'))).toMatchObject({ sunrise: at('2026-10-02T12:13:00') });
+  });
+
+  it('gives the instants as they are: the Household Timezone only says which date it is', () => {
+    const now = at('2026-10-01T15:00:00');
+    expect(sunAt(OCTOBER, 'America/Denver', now)).toEqual(sunAt(OCTOBER, CHICAGO, now));
   });
 
   it('has none for a date the forecast does not cover, and none at all without a forecast', () => {
@@ -150,29 +151,29 @@ describe('sunAt: the forecast\'s sunrise and sunset as instants', () => {
     expect(sunAt(OCTOBER, CHICAGO, at('2026-10-03T15:00:00'))).toEqual({ sunrise: at('2026-10-03T12:14:00'), sunset: at('2026-10-03T23:45:00') });
   });
 
-  it('puts each time on its own date: a polar summer day ends at the next midnight', () => {
-    const polar: SunDay[] = [{ date: '2026-06-21', sunrise: '2026-06-21T00:00', sunset: '2026-06-22T00:00' }];
-    expect(sunAt(polar, 'Europe/Oslo', at('2026-06-21T10:00:00'))).toEqual({ sunrise: at('2026-06-20T22:00:00'), sunset: at('2026-06-21T22:00:00') });
+  it("turns the Household date over at the Household's midnight on the 25 hour day the clocks go back", () => {
+    // The clocks go back at 02:00 on the 2nd: the midnight that starts it is 05:00 UTC (daylight time) and the one that ends it
+    // is 06:00 UTC on the 3rd (standard time), 25 hours on.
+    expect(sunAt(FALL, CHICAGO, at('2025-11-02T04:59:59.999')).sunrise).toBe(1762001100000);
+    expect(sunAt(FALL, CHICAGO, at('2025-11-02T05:00:00')).sunrise).toBe(1762087560000);
+    expect(sunAt(FALL, CHICAGO, at('2025-11-03T05:59:59.999')).sunrise).toBe(1762087560000);
+    expect(sunAt(FALL, CHICAGO, at('2025-11-03T06:00:00')).sunrise).toBe(at('2025-11-03T12:46:00'));
+    // And the 2nd has the 3rd's sunrise to come.
+    expect(sunAt(FALL, CHICAGO, at('2025-11-02T18:00:00'))).toEqual({
+      sunrise: 1762087560000,
+      sunset: at('2025-11-02T23:43:00'),
+      nextSunrise: at('2025-11-03T12:46:00'),
+    });
   });
 
-  it('moves the wall clock, not the instant, across the spring change', () => {
-    // Saturday: 06:27 on standard time is 12:27 UTC. Sunday: 07:26 on daylight time is 12:26 UTC, a minute earlier.
-    expect(sunAt(SPRING, CHICAGO, at('2026-03-07T18:00:00'))).toEqual({
-      sunrise: at('2026-03-07T12:27:00'),
-      sunset: at('2026-03-08T00:09:00'),
-      nextSunrise: at('2026-03-08T12:26:00'),
-    });
-    expect(sunAt(SPRING, CHICAGO, at('2026-03-08T18:00:00'))).toEqual({ sunrise: at('2026-03-08T12:26:00'), sunset: at('2026-03-09T00:10:00') });
-  });
-
-  it('moves the wall clock, not the instant, across the fall change', () => {
-    // Saturday: 07:30 on daylight time is 12:30 UTC. Sunday: 06:31 on standard time is 12:31 UTC.
-    expect(sunAt(FALL, CHICAGO, at('2026-10-31T18:00:00'))).toEqual({
-      sunrise: at('2026-10-31T12:30:00'),
-      sunset: at('2026-10-31T22:56:00'),
-      nextSunrise: at('2026-11-01T12:31:00'),
-    });
-    expect(sunAt(FALL, CHICAGO, at('2026-11-01T18:00:00'))).toEqual({ sunrise: at('2026-11-01T12:31:00'), sunset: at('2026-11-01T22:55:00') });
+  it("turns the Household date over at the Household's midnight on the 23 hour day the clocks go forward", () => {
+    // The midnight that starts the 8th is 06:00 UTC (standard time) and the one that ends it is 05:00 UTC on the 9th (daylight
+    // time), 23 hours on.
+    expect(sunAt(SPRING, CHICAGO, at('2026-03-08T05:59:59.999')).sunrise).toBe(at('2026-03-07T12:27:00'));
+    expect(sunAt(SPRING, CHICAGO, at('2026-03-08T06:00:00')).sunrise).toBe(at('2026-03-08T12:26:00'));
+    expect(sunAt(SPRING, CHICAGO, at('2026-03-09T04:59:59.999')).sunrise).toBe(at('2026-03-08T12:26:00'));
+    // The 9th is past the days it holds.
+    expect(sunAt(SPRING, CHICAGO, at('2026-03-09T05:00:00'))).toEqual({});
   });
 });
 
@@ -230,15 +231,24 @@ describe('resolveMode: the Appearance with the forecast\'s sun, without one, and
     }
   });
 
-  it('Auto follows the sun across the fall change, where 7:00 on the wall moves an hour in UTC', () => {
-    // Sunrise 06:31 and sunset 16:55 on the 1st, both on standard time (UTC-6).
-    expect(mode('2026-11-01T12:30:59.999', 'auto', FALL)).toBe('dark');
-    expect(mode('2026-11-01T12:31:00', 'auto', FALL)).toBe('light');
-    expect(mode('2026-11-01T22:54:59.999', 'auto', FALL)).toBe('light');
-    expect(mode('2026-11-01T22:55:00', 'auto', FALL)).toBe('dark');
-    // The day before is on daylight time (UTC-5): sunrise 07:30 is 12:30 UTC.
-    expect(mode('2026-10-31T12:29:59.999', 'auto', FALL)).toBe('dark');
-    expect(mode('2026-10-31T12:30:00', 'auto', FALL)).toBe('light');
+  it('Auto goes light at 6:46 AM Chicago time on the day the clocks go back, not an hour later', () => {
+    // On the Household date 2025-11-02 the sunrise is 12:46 UTC, 6:46 AM on standard time, and the sunset is 23:43 UTC, 5:43 PM.
+    // The forecast's text for that sunrise said 07:46: read as 7:46 AM Chicago time it would be 13:46 UTC, an hour late.
+    expect(mode('2025-11-02T12:45:59.999', 'auto', FALL)).toBe('dark');
+    expect(mode('2025-11-02T12:46:00', 'auto', FALL)).toBe('light');
+    expect(mode('2025-11-02T13:30:00', 'auto', FALL)).toBe('light');
+    expect(mode('2025-11-02T23:42:59.999', 'auto', FALL)).toBe('light');
+    expect(mode('2025-11-02T23:43:00', 'auto', FALL)).toBe('dark');
+    // The day before is still on daylight time: its sunrise is 12:45 UTC, 7:45 AM.
+    expect(mode('2025-11-01T12:44:59.999', 'auto', FALL)).toBe('dark');
+    expect(mode('2025-11-01T12:45:00', 'auto', FALL)).toBe('light');
+    // The hour from 01:00 to 02:00 happens twice that night, at 06:30 UTC and again at 07:30 UTC: dark both times, and Light
+    // and Dark hold through it.
+    for (const iso of ['2025-11-02T06:30:00', '2025-11-02T07:30:00']) {
+      expect(mode(iso, 'auto', FALL), iso).toBe('dark');
+      expect(mode(iso, 'light', FALL), iso).toBe('light');
+      expect(mode(iso, 'dark', FALL), iso).toBe('dark');
+    }
   });
 
   it("the screen's switch still wins over each Appearance with the forecast, until it ends", () => {
@@ -320,12 +330,14 @@ describe('nextBoundary: when the switch\'s override ends', () => {
     expect(next('2026-10-04T01:00:00', OCTOBER)).toBe(at('2026-10-04T12:00:00'));
   });
 
-  it("is the next sunrise on the other side of a daylight saving change, from the forecast's wall-clock text", () => {
+  it("is the next sunrise on the other side of a daylight saving change, from the forecast's instants", () => {
     const next = (iso: string, days: SunDay[]) => boundary(iso, sunAt(days, CHICAGO, at(iso)));
-    // Saturday 2026-03-07 at 20:00 in Chicago, after the 18:09 sunset: Sunday's 07:26 is on daylight time, 12:26 UTC.
+    // Saturday 2026-03-07 at 20:00 in Chicago, after the 18:09 sunset: Sunday's sunrise is 12:26 UTC.
     expect(next('2026-03-08T02:00:00', SPRING)).toBe(at('2026-03-08T12:26:00'));
-    // Saturday 2026-10-31 at 20:00, after the 17:56 sunset: Sunday's 06:31 is on standard time, 12:31 UTC.
-    expect(next('2026-11-01T01:00:00', FALL)).toBe(at('2026-11-01T12:31:00'));
+    // Saturday 2025-11-01 at 20:00 (01:00 UTC on the 2nd), after the 6:44 PM sunset: Sunday's is 6:46 AM on standard time, 12:46 UTC.
+    expect(next('2025-11-02T01:00:00', FALL)).toBe(1762087560000);
+    // Sunday at 19:00 on standard time (01:00 UTC on the 3rd), after its 5:43 PM sunset: Monday's, 12:46 UTC.
+    expect(next('2025-11-03T01:00:00', FALL)).toBe(at('2025-11-03T12:46:00'));
   });
 
   it('is never before now', () => {

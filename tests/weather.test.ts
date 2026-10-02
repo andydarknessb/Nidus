@@ -24,6 +24,9 @@ function recorded(name: string) {
   return JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
 }
 
+// An instant written in UTC, so no test reads the machine's zone.
+const at = (iso: string) => Date.parse(`${iso}Z`);
+
 describe('forecastUrl', () => {
   it('asks for the current reading and a week of daily highs, lows, codes, sunrise and sunset, with no key', () => {
     const url = new URL(forecastUrl(30.27, -97.74, 'fahrenheit', 'America/Chicago'));
@@ -80,20 +83,98 @@ describe('parseForecast', () => {
       '2026-10-06',
       '2026-10-07',
     ]);
-    expect(forecast.days[0]).toEqual({ date: '2026-10-01', high: 84, low: 75, code: 82, sunrise: '2026-10-01T07:24', sunset: '2026-10-01T19:17' });
-    expect(forecast.days[6]).toEqual({ date: '2026-10-07', high: 90, low: 74, code: 0, sunrise: '2026-10-07T07:28', sunset: '2026-10-07T19:10' });
+    expect(forecast.days[0]).toEqual({ date: '2026-10-01', high: 84, low: 75, code: 82, sunrise: at('2026-10-01T12:24:00'), sunset: at('2026-10-02T00:17:00') });
+    expect(forecast.days[6]).toEqual({ date: '2026-10-07', high: 90, low: 74, code: 0, sunrise: at('2026-10-07T12:28:00'), sunset: at('2026-10-08T00:10:00') });
   });
 
-  // Open-Meteo sends them as the Household's wall clock with no offset ('2026-10-01T07:24'). They stay exactly that here:
-  // src/lib/mode.ts turns each into an instant through the Household Timezone, and nothing may Date.parse one.
-  it("keeps each day's sunrise and sunset as the wall-clock text Open-Meteo sent, on that day", () => {
+  // Open-Meteo sends them as wall-clock text ('2026-10-01T07:24') at ONE offset for the whole answer, its utc_offset_seconds
+  // (-18000 here: Austin on daylight time), and parseForecast turns each into the instant it is. The text is never read in the
+  // machine's zone, nor by the Household Timezone's rules for its day: see the answer that crosses a change, below.
+  it("reads each day's sunrise and sunset as the instant it is, at the offset the answer gives", () => {
     const forecast = parseForecast(recorded('open-meteo-forecast'));
 
-    for (const day of forecast.days) {
-      expect(day.sunrise, day.date).toMatch(new RegExp(`^${day.date}T\\d{2}:\\d{2}$`));
-      expect(day.sunset, day.date).toMatch(new RegExp(`^${day.date}T\\d{2}:\\d{2}$`));
-      expect(day.sunrise < day.sunset, day.date).toBe(true);
-    }
+    // 07:24 at UTC-5 is 12:24 UTC, and 19:17 is 00:17 UTC the day after.
+    expect(forecast.days.map((day) => new Date(day.sunrise).toISOString())).toEqual([
+      '2026-10-01T12:24:00.000Z',
+      '2026-10-02T12:25:00.000Z',
+      '2026-10-03T12:25:00.000Z',
+      '2026-10-04T12:26:00.000Z',
+      '2026-10-05T12:27:00.000Z',
+      '2026-10-06T12:27:00.000Z',
+      '2026-10-07T12:28:00.000Z',
+    ]);
+    expect(forecast.days.map((day) => new Date(day.sunset).toISOString())).toEqual([
+      '2026-10-02T00:17:00.000Z',
+      '2026-10-03T00:16:00.000Z',
+      '2026-10-04T00:14:00.000Z',
+      '2026-10-05T00:13:00.000Z',
+      '2026-10-06T00:12:00.000Z',
+      '2026-10-07T00:11:00.000Z',
+      '2026-10-08T00:10:00.000Z',
+    ]);
+  });
+
+  it.each([
+    ['west of Greenwich, on daylight time', -18000, '2026-10-01T07:24', '2026-10-01T12:24:00Z'],
+    ['on Greenwich time', 0, '2026-12-15T07:50', '2026-12-15T07:50:00Z'],
+    ['east of Greenwich', 3600, '2026-01-15T08:30', '2026-01-15T07:30:00Z'],
+    ['a half hour offset', 19800, '2026-10-01T06:10', '2026-10-01T00:40:00Z'],
+    ['far west', -36000, '2026-10-01T06:55', '2026-10-01T16:55:00Z'],
+    ['far east, where the wall clock is a day ahead of UTC', 46800, '2026-10-02T06:00', '2026-10-01T17:00:00Z'],
+  ])("reads the text with the answer's own offset: %s", (_name, offset, text, expected) => {
+    const body = recorded('open-meteo-forecast');
+    body.utc_offset_seconds = offset;
+    body.daily.sunrise[0] = text;
+
+    expect(parseForecast(body).days[0]?.sunrise).toBe(Date.parse(expected));
+  });
+
+  // Open-Meteo's answer for Austin, with timezone=America/Chicago, for 2025-10-31 to 2025-11-04. The clocks went back on Sunday
+  // 2025-11-02, and ONE offset serves every time in an answer: utc_offset_seconds is -18000 (daylight time) for all five days,
+  // though from the 2nd Chicago is on standard time (-21600). So "2025-11-02T07:46" is 12:46 UTC, which is 6:46 AM on the
+  // Household's own clock, and reading it as 7:46 AM in Chicago would be an hour late. The sunrises are as that answer gave them,
+  // and so are the same ones from timeformat=unixtime (to the second); the rest is the recorded fixture's, and the sunsets are
+  // filled in to match.
+  describe('an answer that crosses the clocks going back', () => {
+    const unix = [1761914673, 1762001119, 1762087565, 1762174012, 1762260459];
+    const crossing = {
+      ...recorded('open-meteo-forecast'),
+      utc_offset_seconds: -18000,
+      daily: {
+        time: ['2025-10-31', '2025-11-01', '2025-11-02', '2025-11-03', '2025-11-04'],
+        weather_code: [82, 82, 63, 53, 3],
+        temperature_2m_max: [84.1, 81.4, 78.9, 73.1, 84.7],
+        temperature_2m_min: [74.7, 73.8, 73.3, 72.1, 72.8],
+        sunrise: ['2025-10-31T07:44', '2025-11-01T07:45', '2025-11-02T07:46', '2025-11-03T07:46', '2025-11-04T07:47'],
+        sunset: ['2025-10-31T18:45', '2025-11-01T18:44', '2025-11-02T18:43', '2025-11-03T18:42', '2025-11-04T18:41'],
+      },
+    };
+    const days = () => parseForecast(crossing).days;
+
+    it('reads every sunrise as the instant the same answer gives with timeformat=unixtime, to the minute', () => {
+      expect(days().map((day) => day.sunrise)).toEqual(unix.map((seconds) => Math.floor(seconds / 60) * 60_000));
+    });
+
+    it('puts 2025-11-02T07:46 at 12:46 UTC and 2025-11-01T07:45 at 12:45 UTC', () => {
+      expect(days()[2]?.sunrise).toBe(1762087560000);
+      expect(days()[1]?.sunrise).toBe(1762001100000);
+    });
+
+    it("puts them at 7:44 and 7:45 AM before the change and 6:46 and 6:47 AM after it, on the Household's own clock", () => {
+      const chicago = (ms: number) => new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Chicago', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms);
+
+      expect(days().map((day) => chicago(day.sunrise))).toEqual(['07:44', '07:45', '06:46', '06:46', '06:47']);
+    });
+
+    it("puts each sunset 11 hours or so after the sunrise of its own day, and before the next day's sunrise", () => {
+      const all = days();
+      for (const [index, day] of all.entries()) {
+        const hours = (day.sunset - day.sunrise) / 3_600_000;
+        expect(hours, day.date).toBeGreaterThan(10.5);
+        expect(hours, day.date).toBeLessThan(11.5);
+        if (index > 0) expect(all[index - 1]!.sunset, day.date).toBeLessThan(day.sunrise);
+      }
+    });
   });
 
   // Polar day: Open-Meteo has the sun set at the next midnight, so a time may be on a later date than its day.
@@ -102,7 +183,7 @@ describe('parseForecast', () => {
     body.daily.sunrise[0] = '2026-10-01T00:00';
     body.daily.sunset[0] = '2026-10-02T00:00';
 
-    expect(parseForecast(body).days[0]).toMatchObject({ sunrise: '2026-10-01T00:00', sunset: '2026-10-02T00:00' });
+    expect(parseForecast(body).days[0]).toMatchObject({ sunrise: at('2026-10-01T05:00:00'), sunset: at('2026-10-02T05:00:00') });
   });
 
   it('gives whole degrees only', () => {
@@ -152,6 +233,9 @@ describe('parseForecast', () => {
     ['no lows', withDaily({ temperature_2m_min: undefined })],
     ['no sunrises', withDaily({ sunrise: undefined })],
     ['no sunsets', withDaily({ sunset: undefined })],
+    ['no utc offset', { ...good, utc_offset_seconds: undefined }],
+    ['a utc offset that is text', { ...good, utc_offset_seconds: '-18000' }],
+    ['a utc offset that is missing', { ...good, utc_offset_seconds: null }],
     ['a list that is not a list', withDaily({ temperature_2m_max: 84 })],
     ['one high fewer than dates', withDaily({ temperature_2m_max: rest(good.daily.temperature_2m_max) })],
     ['one low fewer than dates', withDaily({ temperature_2m_min: rest(good.daily.temperature_2m_min) })],
@@ -169,6 +253,7 @@ describe('parseForecast', () => {
     ['a sunset that is not a time', withDaily({ sunset: ['dusk', ...rest(good.daily.sunset)] })],
     // An instant, not the Household's wall clock: read as one it would be hours out.
     ['a sunset in UTC', withDaily({ sunset: ['2026-10-02T00:17Z', ...rest(good.daily.sunset)] })],
+    ['a sunrise that is on no calendar', withDaily({ sunrise: ['2026-13-45T25:61', ...rest(good.daily.sunrise)] })],
     ['a sunset with seconds and an offset', withDaily({ sunset: ['2026-10-01T19:17:00-05:00', ...rest(good.daily.sunset)] })],
     ['a date that is not a date', withDaily({ time: ['soon', ...rest(good.daily.time)] })],
     ['a date that is a number', withDaily({ time: [20261001, ...rest(good.daily.time)] })],
@@ -536,7 +621,7 @@ describe('forecastDay', () => {
   const forecast = parseForecast(recorded('open-meteo-forecast'));
 
   it('finds the day for a Household date', () => {
-    expect(forecastDay(forecast, '2026-10-03')).toEqual({ date: '2026-10-03', high: 79, low: 73, code: 63, sunrise: '2026-10-03T07:25', sunset: '2026-10-03T19:14' });
+    expect(forecastDay(forecast, '2026-10-03')).toEqual({ date: '2026-10-03', high: 79, low: 73, code: 63, sunrise: at('2026-10-03T12:25:00'), sunset: at('2026-10-04T00:14:00') });
     expect(forecastDay(forecast, '2026-10-01')).toBe(forecast.days[0]);
     expect(forecastDay(forecast, '2026-10-07')).toBe(forecast.days[6]);
   });

@@ -31,22 +31,18 @@ function sunToday(now: number, timezone: string, sunrise: number | undefined, su
 // left out, and resolveMode and nextBoundary use 7:00 and 19:00 for it.
 export type Sun = { sunrise?: number | undefined; sunset?: number | undefined; nextSunrise?: number | undefined };
 
-// A time as Open-Meteo sends it ('2026-10-02T07:05'): the Household's wall clock with no offset, as the instant it is in the
-// Household Timezone. Never Date.parse, which would read text that names no zone in the machine's.
-const instant = (wallTime: string, timezone: string) => wallMs(wallTime.slice(0, 10), wallTime.slice(11), timezone);
-
 // The sun of the Household date `now` falls on, from the forecast's days: that day's sunrise and sunset, and the next
-// day's sunrise, which is where nextBoundary goes after today's sunset. Each time carries its own date, so a polar summer
-// day that ends at the next midnight ends there. A date the forecast does not cover has no sun of its own, and Auto then
-// runs on 7:00 and 19:00. A caller asks again at each tick and does not keep the answer: the Household date moves on at
-// midnight, and the forecast's days already cover it.
+// day's sunrise, which is where nextBoundary goes after today's sunset. The days hold instants already (parseForecast reads
+// Open-Meteo's text with the offset it answers with), so the Household Timezone only says which date `now` is. A date the
+// forecast does not cover has no sun of its own, and Auto then runs on 7:00 and 19:00. A caller asks again at each tick and
+// does not keep the answer: the Household date moves on at midnight, and the forecast's days already cover it.
 export function sunAt(days: readonly SunDay[], timezone: string, now: number): Sun {
   const date = householdDay(timezone, new Date(now)).date;
   const today = days.find((day) => day.date === date);
   const next = days.find((day) => day.date === addDays(date, 1));
   return {
-    ...(today && { sunrise: instant(today.sunrise, timezone), sunset: instant(today.sunset, timezone) }),
-    ...(next && { nextSunrise: instant(next.sunrise, timezone) }),
+    ...(today && { sunrise: today.sunrise, sunset: today.sunset }),
+    ...(next && { nextSunrise: next.sunrise }),
   };
 }
 
