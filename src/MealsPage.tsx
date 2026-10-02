@@ -322,7 +322,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
 // room it has: its words are cut short with an ellipsis, and when there is not even room for the picture and a few
 // letters (11 rem) the button goes, before anything else in the header gives way. `onOpen` is null on the Meals
 // screen, where the button is not drawn.
-export function NextMeal({ timezone, onOpen }: { timezone: string; onOpen: (() => void) | null }) {
+export function HeaderNextMeal({ timezone, onOpen }: { timezone: string; onOpen: (() => void) | null }) {
   return <div className="@container flex min-w-0 flex-1 justify-end">{onOpen && <NextMealButton timezone={timezone} onOpen={onOpen} />}</div>;
 }
 
