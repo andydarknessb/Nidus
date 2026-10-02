@@ -1,5 +1,6 @@
 import { Calendar, CircleAlert, MapPin, Minus, Pin, Plus, Trash2, X } from 'lucide-react';
 import { useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import type { Occurrence } from '../lib/calendar-occurrences';
 import { dialogKeys } from '../lib/dialog';
 import { personStyle } from '../lib/look';
@@ -12,6 +13,8 @@ import {
   eventFormFromOccurrence,
   eventFormToInput,
   isUntouched,
+  moveToDay,
+  openingTimes,
   saveNativeEvent,
   stepEnd,
   stepStart,
@@ -29,42 +32,90 @@ import { Button } from './ui/button';
 const caption = 'text-[15px] leading-5 text-muted-foreground';
 // A pill in the "When" row and a chip in "Who is it for?": 52 tall, round, a ring and weight when pressed (look.md, Selected).
 const pill = 'h-13 rounded-full font-medium';
-// A person's chip keeps their soft colour when pressed, so only its ring answers.
-const chip = `${pill} gap-2 pr-4 pl-2 selected:ring-[2.5px]`;
+// A person's chip keeps their soft colour when pressed, so only its ring answers. It is never wider than its row: a long name
+// gives way inside it (the name is a truncating span).
+const chip = `${pill} max-w-full gap-2 pr-4 pl-2 selected:ring-[2.5px]`;
 const footerButton = 'h-14 text-[17px]';
 // The footer's two buttons wrap as one, so on a narrow screen the note has a row (with Delete beside it) and the buttons the next.
 // On the Wall they are the drawing's: 190 wide at the least, and the note takes the rest.
 const answers = 'flex flex-auto items-center gap-3 min-[960px]:flex-none';
 const main = 'min-w-0 flex-1 min-[960px]:min-w-[190px] min-[960px]:flex-none';
 
-// Starts or Ends: its words, the time between a minus and a plus. One press is a quarter hour. A press that cannot move
-// it (a limit) is dimmed rather than switched off, so a key or switch user's focus stays where it was. The drawing's 105 px
-// between the buttons holds "2:00 PM" in Young Serif and no more, and "10:00 AM" is wider, so the AM or PM is set small, as
-// the header's clock sets it.
-function Stepper({ id, words, noun, time, earlierStuck, laterStuck, onStep }: { id: string; words: string; noun: string; time: string; earlierStuck: boolean; laterStuck: boolean; onStep: (direction: 1 | -1) => void }) {
-  const [clock, meridiem] = clockWords(time).split(' ');
-  const step = (direction: 1 | -1, stuck: boolean, icon: ReactNode) => (
+// How long a finger holds a stepper before it steps again, and how often it steps after that.
+const HOLD_MS = 450;
+const REPEAT_MS = 120;
+
+// One of a stepper's two buttons. A press steps once at once; held, it steps again after a pause and then every little while,
+// until the finger lifts or leaves the button, or `step` says it has nowhere further to go (`step` moves, and says whether it
+// did). The pointer is captured, so the lift is heard wherever the finger has slid to. A click is for the keyboard and a
+// screen reader, which send it with no pointer behind it (`detail` 0): a tap has stepped already. A press that cannot move
+// the time (a limit) is dimmed, not switched off, so a key or switch user's focus stays where it was, and does nothing.
+function StepButton({ name, stuck, step, children }: { name: string; stuck: boolean; step: () => boolean; children: ReactNode }) {
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const stop = () => clearTimeout(timer.current);
+  const again = () => {
+    if (step()) timer.current = setTimeout(again, REPEAT_MS);
+  };
+  // No timer outlives the sheet.
+  useEffect(() => {
+    const held = timer;
+    return () => clearTimeout(held.current);
+  }, []);
+  return (
     <Button
-      aria-label={`${noun} ${direction > 0 ? 'later' : 'earlier'}`}
+      aria-label={name}
       aria-disabled={stuck || undefined}
-      onClick={() => onStep(direction)}
+      onPointerDown={(event) => {
+        if (stuck || event.button !== 0) return;
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // A pointer that is already gone has nothing to hold.
+        }
+        stop();
+        if (step()) timer.current = setTimeout(again, HOLD_MS);
+      }}
+      onPointerMove={(event) => {
+        const box = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) stop();
+      }}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onLostPointerCapture={stop}
+      onClick={(event) => {
+        if (event.detail === 0 && !stuck) step();
+      }}
       className="size-12 rounded-[10px] bg-accent p-0 aria-disabled:pointer-events-none aria-disabled:opacity-40"
     >
-      {icon}
+      {children}
     </Button>
   );
+}
+
+// Starts or Ends: its words, the time between a minus and a plus. One press is a quarter hour. The drawing's 105 px between
+// the buttons holds "2:00 PM" in Young Serif and no more, and "10:00 AM" is wider, so the AM or PM is set small, as the
+// header's clock sets it. The time is a live region that says which time it is ("Starts 9:15 AM") with a real space before the
+// AM or PM, so a screen reader hears what changed.
+function Stepper({ id, words, noun, time, earlierStuck, laterStuck, onStep }: { id: string; words: string; noun: string; time: string; earlierStuck: boolean; laterStuck: boolean; onStep: (direction: 1 | -1) => boolean }) {
+  const [clock, meridiem] = clockWords(time).split(' ');
   return (
     <div role="group" aria-labelledby={id} className="flex min-w-0 flex-col gap-2">
       <span id={id} className={caption}>
         {words}
       </span>
       <div className="flex h-15 items-center rounded-2xl bg-muted px-1.5">
-        {step(-1, earlierStuck, <Minus aria-hidden className="size-6" strokeWidth={2.4} />)}
+        <StepButton name={`${noun} earlier`} stuck={earlierStuck} step={() => onStep(-1)}>
+          <Minus aria-hidden className="size-6" strokeWidth={2.4} />
+        </StepButton>
         <output className="flex min-w-0 flex-1 items-baseline justify-center gap-1 whitespace-nowrap">
+          <span className="sr-only">{`${words} `}</span>
           <span className="font-display text-2xl">{clock}</span>
+          {' '}
           <span className="text-base font-medium">{meridiem}</span>
         </output>
-        {step(1, laterStuck, <Plus aria-hidden className="size-6" strokeWidth={2.4} />)}
+        <StepButton name={`${noun} later`} stuck={laterStuck} step={() => onStep(1)}>
+          <Plus aria-hidden className="size-6" strokeWidth={2.4} />
+        </StepButton>
       </div>
     </div>
   );
@@ -95,11 +146,17 @@ export function NativeEventSheet({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLFormElement>(null);
+  const dateField = useRef<HTMLInputElement>(null);
   const { clear: clearFilter } = useContext(ProfileFilterContext);
   const say = useStatusLine();
-  // The form as the sheet opened with it: what "nothing has been typed or changed" is measured against.
-  const [opened] = useState<EventForm>(() => (occurrence ? eventFormFromOccurrence(occurrence, timezone) : blankEventForm(date)));
+  // The form as the sheet opened with it: what "nothing has been typed or changed" is measured against. A new event opens at
+  // the next whole hour when it is for today, and at 9:00 AM otherwise.
+  const [opened] = useState<EventForm>(() => (occurrence ? eventFormFromOccurrence(occurrence, timezone) : { ...blankEventForm(date), ...openingTimes(date, timezone) }));
   const [form, setForm] = useState<EventForm>(opened);
+  // The form as the last change left it, which a step in a held press reads between renders. `change` is the one way to alter it.
+  const latest = useRef<EventForm>(opened);
+  // Once a stepper has moved the times, they stay when the day changes; so they do, always, for an event being edited.
+  const keepTimes = useRef(occurrence !== undefined);
   const days = dayChoices(householdDay(timezone).date);
   // "Another day" is a choice of its own, not what the date happens to be: a date picked in its field that is also today
   // or one of the next two must not take the field away from under the finger.
@@ -109,11 +166,24 @@ export function NativeEventSheet({
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const editing = occurrence !== undefined;
-  const change = (next: (form: EventForm) => EventForm) => {
+  // Makes a change to the form and says whether it was one. A change that is none (a stepper at its limit) leaves a problem
+  // that is showing where it is.
+  const change = (next: (form: EventForm) => EventForm): boolean => {
+    const before = latest.current;
+    const after = next(before);
+    if (after === before) return false;
+    latest.current = after;
     setProblem('');
-    setForm(next);
+    setForm(after);
+    return true;
   };
   const set = (changes: Partial<EventForm>) => change((prev) => ({ ...prev, ...changes }));
+  const pickDay = (picked: string) => change((prev) => moveToDay(prev, picked, keepTimes.current, timezone));
+  const stepTimes = (move: (form: EventForm) => EventForm) => {
+    const moved = change(move);
+    if (moved) keepTimes.current = true;
+    return moved;
+  };
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -174,6 +244,11 @@ export function NativeEventSheet({
   return (
     <div
       className="fixed inset-0 z-20 flex items-center justify-center bg-scrim p-3 min-[960px]:p-4"
+      // A press on the scrim must not take the focus off what had it. A sheet that stays open (something was typed) would
+      // otherwise have its focus on the page behind it, and Escape, which the sheet hears, would never reach it.
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) event.preventDefault();
+      }}
       onClick={(event) => {
         if (event.target === event.currentTarget && isUntouched(form, opened)) onClose();
       }}
@@ -205,7 +280,7 @@ export function NativeEventSheet({
             <div className="@container flex min-w-0 flex-col justify-between gap-[18px]">
               <label className="flex flex-col gap-2">
                 <span className={caption}>What is it?</span>
-                <input className="h-15 px-4 text-[19px]" value={form.title} onChange={(e) => set({ title: e.target.value })} maxLength={200} placeholder="Plumber" required />
+                <input className="h-15 px-4 text-[19px]" value={form.title} onChange={(e) => set({ title: e.target.value })} maxLength={200} required />
               </label>
 
               <div role="group" aria-labelledby="when-label" className="flex flex-col gap-2">
@@ -219,19 +294,32 @@ export function NativeEventSheet({
                       aria-pressed={!another && form.date === day.date}
                       onClick={() => {
                         setAnother(false);
-                        set({ date: day.date });
+                        pickDay(day.date);
                       }}
                       className={`${pill} flex-auto px-3`}
                     >
                       {day.label}
                     </Button>
                   ))}
-                  <Button aria-pressed={another} onClick={() => setAnother(true)} className={`${pill} flex-auto px-3`}>
+                  <Button
+                    aria-pressed={another}
+                    onClick={() => {
+                      // The field is on the page at once and asked for its picker in this same tap, which is the only moment a
+                      // browser lets it open. Where it cannot (it throws, or there is no showPicker), the field takes the focus.
+                      flushSync(() => setAnother(true));
+                      try {
+                        dateField.current?.showPicker();
+                      } catch {
+                        dateField.current?.focus();
+                      }
+                    }}
+                    className={`${pill} flex-auto px-3`}
+                  >
                     <Calendar aria-hidden />
                     Another day
                   </Button>
                 </div>
-                {another && <input type="date" aria-label="Date" className="h-13 w-full text-[17px]" value={form.date} onChange={(e) => set({ date: e.target.value })} required />}
+                {another && <input ref={dateField} type="date" aria-label="Date" className="h-13 w-full text-[17px]" value={form.date} onChange={(e) => pickDay(e.target.value)} required />}
               </div>
 
               {/* All day hides both. On the Wall they keep their room, so When and the switch stay where they were; on one
@@ -244,7 +332,7 @@ export function NativeEventSheet({
                   time={form.startTime}
                   earlierStuck={stepStart(form, -1) === form}
                   laterStuck={stepStart(form, 1) === form}
-                  onStep={(direction) => change((prev) => stepStart(prev, direction))}
+                  onStep={(direction) => stepTimes((prev) => stepStart(prev, direction))}
                 />
                 <Stepper
                   id="ends-label"
@@ -253,7 +341,7 @@ export function NativeEventSheet({
                   time={form.endTime}
                   earlierStuck={stepEnd(form, -1) === form}
                   laterStuck={stepEnd(form, 1) === form}
-                  onStep={(direction) => change((prev) => stepEnd(prev, direction))}
+                  onStep={(direction) => stepTimes((prev) => stepEnd(prev, direction))}
                 />
               </div>
 
@@ -293,7 +381,7 @@ export function NativeEventSheet({
                       className={`person ${chip} bg-person-soft text-foreground selected:bg-person-soft`}
                     >
                       <PersonDisc name={profile.name} color={profile.color} size={34} />
-                      {profile.name}
+                      <span className="truncate">{profile.name}</span>
                     </Button>
                   ))}
                 </div>
@@ -348,9 +436,11 @@ export function NativeEventSheet({
                 </Button>
               )}
               {problem ? (
-                <p role="alert" className="flex min-w-48 flex-1 items-center gap-2 text-[15px] font-medium">
+                // A problem has a row of its own on one column (with Delete above it, when editing), so a sentence as long as the
+                // clocks' one is read whole.
+                <p role="alert" className="flex min-w-48 grow basis-full items-center gap-2 text-[15px] font-medium min-[960px]:basis-0">
                   <CircleAlert aria-hidden className="size-[18px] shrink-0" />
-                  <span className="line-clamp-2 min-w-0 leading-5">{problem}</span>
+                  <span className="line-clamp-3 min-w-0 leading-5 min-[960px]:line-clamp-2">{problem}</span>
                 </p>
               ) : (
                 <p className="flex min-w-48 flex-1 items-center gap-2 text-[15px] text-muted-foreground">
