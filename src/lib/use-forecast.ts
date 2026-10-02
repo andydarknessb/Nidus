@@ -10,10 +10,11 @@ type Reading = { forecast: Forecast; fetchedAt: number };
 // Household Timezone changes. A failed read keeps the last forecast and is tried again sooner, with
 // a longer wait for each failure in a row; once the forecast was read more than two hours ago it no
 // longer claims the current conditions (forecastToShow), while the days stay, keyed by date. A
-// timer set for that moment makes it so, rather than the next attempt finishing, which a request
-// that never settles would put off for good. A change of place or unit drops the forecast first,
-// since one for another place or unit is a wrong number. Kept out of components/Weather.tsx so that
-// file exports only components, which Fast Refresh needs.
+// timer set for that moment makes it so: every request carries a thirty second limit, but without
+// the timer an old temperature would stay up until the next attempt finished, up to a retry delay
+// and that limit late. A change of place or unit drops the forecast first, since one for another
+// place or unit is a wrong number. Kept out of components/Weather.tsx so that file exports only
+// components, which Fast Refresh needs.
 export function useForecast(household: Household | null): Forecast | null {
   const [reading, setReading] = useState<Reading | null>(null);
   // The clock as of the latest attempt to read, or of the reading in hand turning too old (the timer
