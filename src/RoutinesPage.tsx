@@ -273,15 +273,21 @@ function Column({
                   <GroupLabel
                     icon={PART_ICON[part]}
                     // Keyed by the part: a part already done is not announced when it is switched to, only a tick that makes it so is.
+                    // And a finished day is announced once, by the heading ("Ben: All done"): this stays on the page, for the eye, and says
+                    // nothing more to a screen reader then.
                     status={
                       <span key={part} role="status" className="flex items-center gap-1.5 text-[14.5px] leading-[18px] font-semibold">
                         {partDone(view, done) && (
                           <>
-                            <span className="sr-only">
-                              {profile.name}: {timeWord(part)}{' '}
+                            {!finished && (
+                              <span className="sr-only">
+                                {profile.name}: {timeWord(part)}{' '}
+                              </span>
+                            )}
+                            <span aria-hidden={finished || undefined} className="flex items-center gap-1.5">
+                              <Tick size={20} color={profile.color} strong />
+                              Done
                             </span>
-                            <Tick size={20} color={profile.color} strong />
-                            Done
                           </>
                         )}
                       </span>
@@ -364,7 +370,8 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
         <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="font-display text-[30px] leading-9 outline-none">
           Routines
         </h2>
-        <div role="group" aria-label="Part of the day" className="flex h-14 flex-none gap-1 rounded-[18px] bg-card p-1">
+        {/* The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways. */}
+        <div role="group" aria-label="Part of the day" className="flex h-14 flex-none gap-2 rounded-[18px] bg-card p-1">
           {CHART_CHOICES.map(({ part, label, icon: Icon }) => (
             <Button
               key={part}
