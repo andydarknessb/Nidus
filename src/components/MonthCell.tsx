@@ -21,11 +21,12 @@ const BEYOND_RANGE = "Beyond the calendar's range";
 // its own, so the lines never run under the digits. Used nowhere else.
 const HATCH = 'bg-[repeating-linear-gradient(135deg,transparent_0_6px,var(--input)_6px_8px)]';
 
-// What the cell is called: the date drawn on it first, so a name spoken from the screen ("22") finds it, then the day in full and
-// how many events it holds. Until its week has been read there is no count to give, and "no events" would call a day free that
-// may not be.
-function cellName(date: string, occurrences: Occurrence[] | null): string {
-  return `${Number(date.slice(8))}, ${describeCell(date, occurrences === null ? null : occurrences.length)}`;
+// What the cell is called: the date drawn on it first, so a name spoken from the screen ("22") finds it, then "today" on today's
+// (which the disc says to the eye), then the day in full and how many events it holds. Until its week has been read there is no
+// count to give, and "no events" would call a day free that may not be.
+function cellName(day: WallDay, occurrences: Occurrence[] | null): string {
+  const date = Number(day.date.slice(8));
+  return `${date}, ${day.isToday ? 'today, ' : ''}${describeCell(day.date, occurrences === null ? null : occurrences.length)}`;
 }
 
 // `occurrences` are the day's own, in order, and null until its week has been read; `profiles` fill each line, and the lines wait
@@ -77,7 +78,7 @@ export function DayCell({
     <Button
       variant="quiet"
       aria-current={day.isToday ? 'date' : undefined}
-      aria-label={cellName(day.date, occurrences)}
+      aria-label={cellName(day, occurrences)}
       onClick={() => onOpen(day.date)}
       // A day of the neighbouring month is dimmed with the muted colour, which holds 7:1 on the card and on today's lifted ground.
       // The cell is a grid item and clips what it holds, so its focus ring is drawn inside it.
