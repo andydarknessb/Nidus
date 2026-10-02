@@ -248,21 +248,47 @@ export function columnsOf(profiles: Profile[], routines: Routine[], weekday: num
 // Up next on Home shows a tile for this many people at most.
 const UP_NEXT_TILES = 3;
 
-type UpNextTile = { profile: Profile; routine: Routine };
+// How long Up next keeps a Routine that was ticked on it where it is, in the done look, before it gives way to what that
+// person has next: long enough for a second tap to take the tick back, so a double tap never ticks the one that follows, and
+// for the celebration to play where the tile was.
+export const HOME_HOLD_MS = 4_000;
 
-// `tiles`: one for each of the first Profiles in order that have something left, each showing that Profile's first Routine
-// not ticked among the part's own, what is left from earlier, and Any time. `more`: today's Routines not ticked that no
-// tile shows, which include a later part's. `groups` are the Profiles' Routines today.
-export function upNext(groups: readonly ProfileRoutines[], done: ReadonlySet<string>, part: TimeOfDay): { tiles: UpNextTile[]; more: number } {
+// What was ticked on Up next and when (epoch milliseconds), by Routine id.
+export type TickedHere = Readonly<Record<string, number>>;
+
+// `done` says the tile is in the done look: a Routine ticked on Up next a moment ago, held where it is.
+type UpNextTile = { profile: Profile; routine: Routine; done: boolean };
+
+// `tiles`: one for each of the first Profiles in order that have a tile to show, each showing the Routine of theirs that was
+// ticked on Up next less than HOME_HOLD_MS ago and still is (the latest, held in the done look), else their first Routine not
+// ticked among the part's own, what is left from earlier, and Any time. So a person's last Routine goes only once its hold
+// has ended, and keeps its place among the three until then. `more`: today's Routines not ticked that no tile shows, which
+// include a later part's. `groups` are the Profiles' Routines today; `ticked` is what was ticked on Up next and when, and `now`
+// is the time, in the same milliseconds.
+export function upNext(groups: readonly ProfileRoutines[], done: ReadonlySet<string>, part: TimeOfDay, ticked: TickedHere, now: number): { tiles: UpNextTile[]; more: number } {
   const tiles = groups
-    .flatMap(({ profile, routines }) => {
+    .flatMap(({ profile, routines }): UpNextTile[] => {
+      const held = routines.reduce<Routine | undefined>((latest, candidate) => {
+        const at = ticked[candidate.id];
+        if (at === undefined || now - at >= HOME_HOLD_MS || !done.has(candidate.id)) return latest;
+        return latest === undefined || at > (ticked[latest.id] ?? 0) ? candidate : latest;
+      }, undefined);
       const view = partView(routines, done, part);
-      const routine = [...view.own, ...view.earlier, ...view.anytime].find((candidate) => !done.has(candidate.id));
-      return routine ? [{ profile, routine }] : [];
+      const next = [...view.own, ...view.earlier, ...view.anytime].find((candidate) => !done.has(candidate.id));
+      const routine = held ?? next;
+      return routine ? [{ profile, routine, done: held !== undefined }] : [];
     })
     .slice(0, UP_NEXT_TILES);
   const left = groups.reduce((count, { routines }) => count + routines.filter((routine) => !done.has(routine.id)).length, 0);
-  return { tiles, more: left - tiles.length };
+  return { tiles, more: left - tiles.filter((tile) => !tile.done).length };
+}
+
+// When the first of the holds that have not ended ends, or nothing when none is left: when Up next has to look again.
+export function holdEndsAt(ticked: TickedHere, now: number): number | null {
+  const ends = Object.values(ticked)
+    .map((at) => at + HOME_HOLD_MS)
+    .filter((end) => end > now);
+  return ends.length === 0 ? null : Math.min(...ends);
 }
 
 // The link in Up next's heading to the chart: "All routines", or, when the tiles do not show all that is left today, how many

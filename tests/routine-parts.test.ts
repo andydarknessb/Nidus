@@ -8,12 +8,14 @@ import { wallMs } from '../src/lib/native-events';
 import type { Profile } from '../src/lib/profiles';
 import { PictureField, RoutinePicture } from '../src/lib/routine-pictures';
 import {
+  HOME_HOLD_MS,
   PARTS,
   TICK_FAILED,
   TICK_OFFLINE,
   afterTick,
   columnsOf,
   followClock,
+  holdEndsAt,
   holdShown,
   maskOf,
   openChart,
@@ -27,6 +29,7 @@ import {
   type Chart,
   type ProfileRoutines,
   type Routine,
+  type TickedHere,
   type TimeOfDay,
 } from '../src/lib/routines';
 
@@ -406,6 +409,8 @@ describe('Up next', () => {
   const ava = profile('ava', 2, 'Ava');
   const ben = profile('ben', 3, 'Ben');
   const shown = (result: ReturnType<typeof upNext>) => result.tiles.map((tile) => [tile.profile.id, tile.routine.id]);
+  // Nothing was ticked on Up next itself, so nothing is held in place.
+  const upNextPlain = (groups: readonly ProfileRoutines[], done: ReadonlySet<string>, part: TimeOfDay) => upNext(groups, done, part, {}, 0);
 
   // The Evening drawing: Cory is done; Sam, Ava and Ben have one Routine each left in the evening and Sam and Ava one at any time.
   const drawing = [
@@ -417,7 +422,7 @@ describe('Up next', () => {
   const drawingDone = new Set(['bins', 'bed', 'teeth', 'brush']);
 
   it('is a tile for each of the first people with something left, each showing the first Routine left', () => {
-    const result = upNext(drawing, drawingDone, 'evening');
+    const result = upNextPlain(drawing, drawingDone, 'evening');
     expect(shown(result)).toEqual([
       ['sam', 'stretch'],
       ['ava', 'dog'],
@@ -426,55 +431,147 @@ describe('Up next', () => {
   });
 
   it('gives a Profile with nothing left no tile', () => {
-    expect(shown(upNext(drawing, drawingDone, 'evening')).map(([who]) => who)).not.toContain('cory');
-    expect(upNext([group(cory, [routine('bins', 'evening')])], new Set(['bins']), 'evening')).toEqual({ tiles: [], more: 0 });
+    expect(shown(upNextPlain(drawing, drawingDone, 'evening')).map(([who]) => who)).not.toContain('cory');
+    expect(upNextPlain([group(cory, [routine('bins', 'evening')])], new Set(['bins']), 'evening')).toEqual({ tiles: [], more: 0 });
   });
 
   it('stops at three people, the first three in Profile order who have something left', () => {
     const four = [group(cory, [routine('a', 'evening')]), group(sam, [routine('b', 'evening')]), group(ava, [routine('c', 'evening')]), group(ben, [routine('d', 'evening')])];
-    expect(shown(upNext(four, NONE, 'evening'))).toEqual([['cory', 'a'], ['sam', 'b'], ['ava', 'c']]);
+    expect(shown(upNextPlain(four, NONE, 'evening'))).toEqual([['cory', 'a'], ['sam', 'b'], ['ava', 'c']]);
     // Someone with nothing left does not use up one of the three.
-    expect(shown(upNext(four, new Set(['a']), 'evening'))).toEqual([['sam', 'b'], ['ava', 'c'], ['ben', 'd']]);
+    expect(shown(upNextPlain(four, new Set(['a']), 'evening'))).toEqual([['sam', 'b'], ['ava', 'c'], ['ben', 'd']]);
   });
 
   it("counts today's Routines not ticked and not shown", () => {
     // Left and not shown: Sam's plants, Ava's read.
-    expect(upNext(drawing, drawingDone, 'evening').more).toBe(2);
+    expect(upNextPlain(drawing, drawingDone, 'evening').more).toBe(2);
     // A fourth person's Routines are not shown either.
     const four = [group(cory, [routine('a', 'evening')]), group(sam, [routine('b', 'evening')]), group(ava, [routine('c', 'evening')]), group(ben, [routine('d', 'evening'), routine('e', null, 1)])];
-    expect(upNext(four, NONE, 'evening').more).toBe(2);
+    expect(upNextPlain(four, NONE, 'evening').more).toBe(2);
   });
 
   it('counts Routines of later parts, which have no tile yet', () => {
     const rows = [group(sam, [routine('m', 'morning'), routine('e1', 'evening', 1), routine('e2', 'evening', 2)])];
-    const result = upNext(rows, new Set(['m']), 'afternoon');
+    const result = upNextPlain(rows, new Set(['m']), 'afternoon');
     expect(result.tiles).toEqual([]);
     expect(result.more).toBe(2);
   });
 
   it("shows the first Routine not ticked among the part's own, then what is left from earlier, then Any time", () => {
     const rows = [group(sam, [routine('any', null, 0), routine('early', 'morning', 1), routine('own2', 'afternoon', 3), routine('own1', 'afternoon', 2)])];
-    expect(shown(upNext(rows, NONE, 'afternoon'))).toEqual([['sam', 'own1']]);
-    expect(shown(upNext(rows, new Set(['own1']), 'afternoon'))).toEqual([['sam', 'own2']]);
-    expect(shown(upNext(rows, new Set(['own1', 'own2']), 'afternoon'))).toEqual([['sam', 'early']]);
-    expect(shown(upNext(rows, new Set(['own1', 'own2', 'early']), 'afternoon'))).toEqual([['sam', 'any']]);
-    expect(upNext(rows, new Set(['own1', 'own2', 'early', 'any']), 'afternoon').tiles).toEqual([]);
+    expect(shown(upNextPlain(rows, NONE, 'afternoon'))).toEqual([['sam', 'own1']]);
+    expect(shown(upNextPlain(rows, new Set(['own1']), 'afternoon'))).toEqual([['sam', 'own2']]);
+    expect(shown(upNextPlain(rows, new Set(['own1', 'own2']), 'afternoon'))).toEqual([['sam', 'early']]);
+    expect(shown(upNextPlain(rows, new Set(['own1', 'own2', 'early']), 'afternoon'))).toEqual([['sam', 'any']]);
+    expect(upNextPlain(rows, new Set(['own1', 'own2', 'early', 'any']), 'afternoon').tiles).toEqual([]);
   });
 
   it("puts the part's own Routine before Any time, and shows Any time when the part has nothing of its own", () => {
     const rows = [group(sam, [routine('any', null, 0), routine('e', 'evening', 1)])];
-    expect(shown(upNext(rows, NONE, 'morning'))).toEqual([['sam', 'any']]);
-    expect(shown(upNext(rows, NONE, 'evening'))).toEqual([['sam', 'e']]);
+    expect(shown(upNextPlain(rows, NONE, 'morning'))).toEqual([['sam', 'any']]);
+    expect(shown(upNextPlain(rows, NONE, 'evening'))).toEqual([['sam', 'e']]);
   });
 
   it('says nothing is left, with nothing to count, when everyone has ticked everything', () => {
     const everything = new Set(['bins', 'bed', 'stretch', 'plants', 'teeth', 'dog', 'read', 'toys', 'brush']);
-    expect(upNext(drawing, everything, 'evening')).toEqual({ tiles: [], more: 0 });
-    expect(upNext([], NONE, 'evening')).toEqual({ tiles: [], more: 0 });
+    expect(upNextPlain(drawing, everything, 'evening')).toEqual({ tiles: [], more: 0 });
+    expect(upNextPlain([], NONE, 'evening')).toEqual({ tiles: [], more: 0 });
   });
 
   it('does not count a completion that is not one of the Routines it is given', () => {
-    expect(upNext([group(sam, [routine('a', 'evening')])], new Set(['elsewhere']), 'evening').tiles).toHaveLength(1);
+    expect(upNextPlain([group(sam, [routine('a', 'evening')])], new Set(['elsewhere']), 'evening').tiles).toHaveLength(1);
+  });
+
+  // A Routine ticked on Up next stays where it is, in the done look, for HOME_HOLD_MS: a double tap cannot tick the one that
+  // comes next, and a second tap takes the tick back. `ticked` is what was ticked here and when; the last argument is now.
+  describe('a Routine ticked on it', () => {
+    const t0 = 1_000_000;
+    const two = [group(sam, [routine('stretch', 'evening'), routine('plants', null, 1)])];
+    const stretched = new Set(['stretch']);
+    const tick = (id: string, at = t0): TickedHere => ({ [id]: at });
+    const tiles = (result: ReturnType<typeof upNext>) => result.tiles.map((tile) => [tile.profile.id, tile.routine.id, tile.done]);
+
+    it('is held for four seconds', () => {
+      expect(HOME_HOLD_MS).toBe(4_000);
+    });
+
+    it('stays where it is, in the done look, for the four seconds', () => {
+      for (const later of [0, 1, 1_500, HOME_HOLD_MS - 1]) {
+        expect(tiles(upNext(two, stretched, 'evening', tick('stretch'), t0 + later)), `${later} ms later`).toEqual([['sam', 'stretch', true]]);
+      }
+    });
+
+    it('is not counted among what is left, and what that person has next is', () => {
+      expect(upNext(two, stretched, 'evening', tick('stretch'), t0 + 1).more).toBe(1);
+    });
+
+    it('gives way to what that person has next once the four seconds have passed', () => {
+      expect(tiles(upNext(two, stretched, 'evening', tick('stretch'), t0 + HOME_HOLD_MS))).toEqual([['sam', 'plants', false]]);
+      expect(upNext(two, stretched, 'evening', tick('stretch'), t0 + 60_000).more).toBe(0);
+    });
+
+    it("is taken back by a second tap: not ticked, it is that person's first Routine left again, even if it is still remembered", () => {
+      expect(tiles(upNext(two, NONE, 'evening', {}, t0 + 1_000))).toEqual([['sam', 'stretch', false]]);
+      expect(tiles(upNext(two, NONE, 'evening', tick('stretch'), t0 + 1_000))).toEqual([['sam', 'stretch', false]]);
+    });
+
+    it("lets a person's last Routine go once its four seconds have passed", () => {
+      const only = [group(sam, [routine('stretch', 'evening')])];
+      expect(tiles(upNext(only, stretched, 'evening', tick('stretch'), t0 + HOME_HOLD_MS - 1))).toEqual([['sam', 'stretch', true]]);
+      expect(upNext(only, stretched, 'evening', tick('stretch'), t0 + HOME_HOLD_MS)).toEqual({ tiles: [], more: 0 });
+    });
+
+    it('keeps its place among the three, so the fourth person waits until it goes', () => {
+      const four = [group(cory, [routine('a', 'evening')]), group(sam, [routine('b', 'evening')]), group(ava, [routine('c', 'evening')]), group(ben, [routine('d', 'evening')])];
+      const ticked = new Set(['a']);
+      expect(tiles(upNext(four, ticked, 'evening', tick('a'), t0 + 1))).toEqual([['cory', 'a', true], ['sam', 'b', false], ['ava', 'c', false]]);
+      expect(tiles(upNext(four, ticked, 'evening', tick('a'), t0 + HOME_HOLD_MS))).toEqual([['sam', 'b', false], ['ava', 'c', false], ['ben', 'd', false]]);
+    });
+
+    it('holds only what was ticked here: one ticked somewhere else gives way at once', () => {
+      expect(tiles(upNext(two, stretched, 'evening', {}, t0 + 1))).toEqual([['sam', 'plants', false]]);
+    });
+
+    it('holds one for each person, each for its own four seconds', () => {
+      const rows = [group(cory, [routine('a', 'evening'), routine('a2', 'evening', 1)]), group(sam, [routine('b', 'evening'), routine('b2', 'evening', 1)])];
+      const both: TickedHere = { a: t0, b: t0 + 2_000 };
+      const ticked = new Set(['a', 'b']);
+      expect(tiles(upNext(rows, ticked, 'evening', both, t0 + 3_000))).toEqual([['cory', 'a', true], ['sam', 'b', true]]);
+      expect(tiles(upNext(rows, ticked, 'evening', both, t0 + 4_500))).toEqual([['cory', 'a2', false], ['sam', 'b', true]]);
+      expect(tiles(upNext(rows, ticked, 'evening', both, t0 + 6_000))).toEqual([['cory', 'a2', false], ['sam', 'b2', false]]);
+    });
+
+    it('holds the latest when one person has two ticked here that are both still inside their four seconds', () => {
+      const rows = [group(sam, [routine('x', 'evening'), routine('y', 'evening', 1), routine('z', 'evening', 2)])];
+      expect(tiles(upNext(rows, new Set(['x', 'y']), 'evening', { x: t0, y: t0 + 1_000 }, t0 + 2_000))).toEqual([['sam', 'y', true]]);
+    });
+
+    it('holds a Routine of the part before, or Any time, as well as the part\'s own', () => {
+      const rows = [group(sam, [routine('early', 'morning'), routine('any', null, 1), routine('own', 'evening', 2)])];
+      expect(tiles(upNext(rows, new Set(['early']), 'evening', tick('early'), t0 + 1))).toEqual([['sam', 'early', true]]);
+      expect(tiles(upNext(rows, new Set(['any']), 'evening', tick('any'), t0 + 1))).toEqual([['sam', 'any', true]]);
+    });
+
+    it('never changes the ticks it is given', () => {
+      const ticked = Object.freeze({ stretch: t0 });
+      expect(() => upNext(two, stretched, 'evening', ticked, t0 + 10)).not.toThrow();
+      expect(ticked).toEqual({ stretch: t0 });
+    });
+  });
+
+  describe('when a hold ends', () => {
+    const t0 = 1_000_000;
+
+    it('is when the earliest of the holds ends', () => {
+      expect(holdEndsAt({ a: t0, b: t0 + 1_000 }, t0 + 10)).toBe(t0 + HOME_HOLD_MS);
+      expect(holdEndsAt({ a: t0 + 500 }, t0)).toBe(t0 + 500 + HOME_HOLD_MS);
+    });
+
+    it('leaves out the holds that have ended, and is nothing when none is left', () => {
+      expect(holdEndsAt({ a: t0, b: t0 + 3_000 }, t0 + HOME_HOLD_MS)).toBe(t0 + 3_000 + HOME_HOLD_MS);
+      expect(holdEndsAt({ a: t0 }, t0 + HOME_HOLD_MS)).toBeNull();
+      expect(holdEndsAt({}, t0)).toBeNull();
+    });
   });
 });
 

@@ -90,7 +90,7 @@ export function Confetti({ at, onDone }: { at: number; onDone: () => void }) {
 // the words on up to two lines and a 44 px ring. To do, the ring is the person's strong colour; done, the tile is filled
 // with their base colour and shows a tick, and its words stay as they are, not struck through. On the chart it is a card
 // on the person's column and says whether it is ticked. In Up next, which names the person under the words (`who`), it is
-// a tile on a card, only ever ticks, and has no done look: the Routine leaves Up next once it is ticked.
+// a tile on a card; a Routine ticked there stays in the done look for a moment (HOME_HOLD_MS), and tapped then it is unticked.
 export function RoutineTile({
   routine,
   color,
@@ -107,7 +107,8 @@ export function RoutineTile({
   return (
     <button
       type="button"
-      {...(who === undefined ? { 'aria-pressed': done } : { 'aria-label': `Mark ${routine.title} done for ${who}` })}
+      aria-pressed={done}
+      {...(who === undefined ? {} : { 'aria-label': `Mark ${routine.title} done for ${who}` })}
       onClick={(event) => onTap(event.currentTarget)}
       className={cn(
         'person flex h-20 w-full items-center gap-3 rounded-[18px] px-2.5 text-left select-none transition-transform duration-75 active:translate-y-0.5',
@@ -125,8 +126,8 @@ export function RoutineTile({
         <span className={cn('line-clamp-2 min-w-0 flex-1 text-[19px] leading-[1.2]', done ? 'font-semibold' : 'font-medium')}>{routine.title}</span>
       ) : (
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[19px] leading-6 font-medium">{routine.title}</span>
-          <span className="text-sm leading-[18px] text-muted-foreground">{who}</span>
+          <span className={cn('truncate text-[19px] leading-6', done ? 'font-semibold' : 'font-medium')}>{routine.title}</span>
+          <span className={cn('text-sm leading-[18px]', !done && 'text-muted-foreground')}>{who}</span>
         </span>
       )}
       {done ? <Tick color={color} /> : <EmptyRing color={color} />}
