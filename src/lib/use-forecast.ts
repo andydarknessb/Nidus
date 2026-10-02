@@ -57,8 +57,8 @@ export function useForecast(household: Household | null): Forecast | null {
 
   // The moment the reading in hand turns too old, `now` moves on to it by itself, so the current
   // conditions go on time even when no attempt finishes to notice: every request carries a thirty
-  // second limit, but a read that keeps failing would otherwise leave an old temperature up
-  // for good. A newer reading sets its own timer and this one is cleared, as it is when
+  // second limit, but without this timer an old temperature would stay up until the next attempt
+  // finished, up to a retry delay and that limit late. A newer reading sets its own timer and this one is cleared, as it is when
   // the Wall closes or the place changes and the reading is dropped.
   useEffect(() => {
     if (reading === null) return;
