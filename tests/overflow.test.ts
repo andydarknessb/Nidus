@@ -450,15 +450,26 @@ describe('the button', () => {
   // The opening tags of a column's foot (the box over the list's end) and of its button.
   const tags = (html: string) => ({ foot: /^<div[^>]*>/.exec(html)?.[0] ?? '', button: /<button[^>]*>/.exec(html)?.[0] ?? '' });
 
-  it('is, in a column, a foot over a fade in the colour it sits on, that taps pass through but for the button itself', () => {
+  it('is, in a column, a foot over a fade in the colour it sits on', () => {
     const card = tags(render('y', false, 'Groceries', 'card'));
     const person = tags(render('y', false, "Ava's routines", 'person'));
     expect(card.foot).toContain('from-card');
     expect(person.foot).toContain('from-person-soft');
-    for (const { foot, button } of [card, person]) {
-      expect(foot).toContain('sticky');
-      expect(foot, 'taps go through the fade to the tiles under it').toMatch(/\bpointer-events-none\b/);
-      expect(button, 'and only the button takes them').toMatch(/\bpointer-events-auto\b/);
+    for (const { foot } of [card, person]) expect(foot).toContain('sticky');
+  });
+
+  it('has a fade that is a dead band: it takes a tap and does nothing with it, so a tap just above the button never ticks a tile under it', () => {
+    // A tile sits half under the foot at rest, and a click 8 px into a fade that let taps through ticked it. The foot is the whole 64 px:
+    // the button's 48 and the 16 px fade above it, and nothing in it lets a tap through (a standalone pointer-events utility, on the foot
+    // or on the button, would). A touch that starts on it still scrolls the list: the browser scrolls the nearest scrolling ancestor, which
+    // is the list, whatever it is that is touched. Every tile is still reached, by pressing More.
+    const alone = /[\s"]pointer-events-(none|auto)[\s"]/;
+    for (const html of [render('y', false, 'Groceries', 'card'), render('y', false, "Ava's routines", 'person'), render('y', true, 'Groceries', 'card')]) {
+      const { foot, button } = tags(html);
+      expect(foot).not.toMatch(alone);
+      expect(button).not.toMatch(alone);
+      expect(foot).toMatch(/\bh-16\b/);
+      expect(button).toMatch(/\bh-12\b/);
     }
   });
 
