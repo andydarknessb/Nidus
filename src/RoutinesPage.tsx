@@ -657,7 +657,8 @@ export function RoutinesPage({ household }: { household: Household }) {
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pt-2 pb-6">
       <h1 className="sr-only">Routines</h1>
-      <p role="status" className="min-h-6 text-base">
+      {/* On the page from the first draw, so a screen reader hears a sentence when it comes, and out of the layout while it has none: the first card starts where the Lists page's does. */}
+      <p role="status" className="text-base empty:sr-only">
         {problem}
       </p>
       {profiles?.length === 0 && (
