@@ -14,6 +14,7 @@ import { formatClock, formatDate, mealsPath, navigationRailDate, parseWallRoute,
 import { householdDay } from './lib/routines';
 import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
+import { deviceStorage, gateWords, recallHousehold, rememberHousehold } from './lib/remembered-household';
 import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useForecast } from './lib/use-forecast';
@@ -65,6 +66,9 @@ async function ensureSession(): Promise<Session> {
 // offered a way into administration.
 export function WallPage() {
   const [state, setState] = useState<WallState>({ kind: 'connecting' });
+  // Failed tries in a row while connecting: the gate says "No internet" from the third. It is only drawn
+  // before the first success, so nothing ever needs to reset it.
+  const [failedTries, setFailedTries] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -96,6 +100,7 @@ export function WallPage() {
         delay = await step();
       } catch {
         // Offline or the server is restarting: keep what the wall shows and try again.
+        if (live) setFailedTries((tries) => tries + 1);
       }
       if (live) timer = setTimeout(() => void loop(), delay);
     }
@@ -115,10 +120,24 @@ export function WallPage() {
     );
   }
   if (state.kind === 'unpaired') return <PairingScreen pairing={state.pairing} />;
+  return <ConnectingScreen failedTries={failedTries} />;
+}
+
+// The gate before the server has answered. The Household's name and a clock in its Household Timezone
+// show at once when this Device remembers them; nothing else is drawn from memory, so a revoked Device
+// shows a name and a clock and no calendar, Routine or list. A Wall with nothing remembered shows the words alone.
+function ConnectingScreen({ failedTries }: { failedTries: number }) {
+  const [remembered] = useState(() => recallHousehold(deviceStorage()));
   return (
-    <main className="flex min-h-svh items-center justify-center p-8">
+    <main className="flex min-h-svh flex-col items-center justify-center gap-6 p-8 text-center">
+      {remembered && (
+        <>
+          <h1 className="text-4xl font-semibold">{remembered.name}</h1>
+          <WallClock timezone={remembered.timezone} />
+        </>
+      )}
       <p role="status" className="text-2xl">
-        Connecting
+        {gateWords(failedTries)}
       </p>
     </main>
   );
@@ -347,6 +366,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         outcome = { failed: true };
       }
       if (!live) return;
+      if ('household' in outcome) rememberHousehold(deviceStorage(), outcome.household);
       setView((prev) => householdViewAfter(prev, outcome));
       // After a failed read retry sooner, so the Routines rail appears once the connection is back.
       timer = setTimeout(() => void read(), 'household' in outcome ? HOUSEHOLD_REFRESH_MS : HOUSEHOLD_RETRY_MS);
