@@ -180,7 +180,7 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
           void supabase.auth.signOut().finally(() => window.location.assign('/settings'));
         }}
       >
-        Own this Household? Sign in
+        Own this household? Sign in
       </a>
     </main>
   );
