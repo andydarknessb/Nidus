@@ -79,12 +79,13 @@ export function hourWindow({ occurrences, day, now, fit }: { occurrences: Occurr
 // rules), with `time` as the block says it: "4:00 to 4:45 PM". `topHour` and `bottomHour` are where it is drawn, in wall clock
 // hours inside the window and at least an hour apart, so a quarter hour is drawn an hour tall and one that would run past the
 // end of the grid is drawn up from it. `lane` and `lanes` put the events that overlap side by side (never more than two);
-// `narrow` leaves the right of the second lane to the "+N" that stands for the rest.
-export type DayBlock = { pill: Pill; topHour: number; bottomHour: number; lane: 0 | 1; lanes: 1 | 2; narrow: boolean };
+// `narrow` leaves the right of the second lane to the "+N" that stands for the rest. `cluster` counts the clusters of the day in time
+// order, so the "+N" of a cluster can follow that cluster's own blocks.
+export type DayBlock = { pill: Pill; topHour: number; bottomHour: number; lane: 0 | 1; lanes: 1 | 2; narrow: boolean; cluster: number };
 
 // The "+N" of a cluster that needs more than two lanes: `folded` events are not drawn (the short ones, when the longest keep the two
 // lanes), it spans what they take, and `pills` are every event of the cluster, in time order, for the list it opens.
-export type FoldTile = { pills: Pill[]; folded: number; topHour: number; bottomHour: number };
+export type FoldTile = { pills: Pill[]; folded: number; topHour: number; bottomHour: number; cluster: number };
 
 export type DayPlan = {
   window: HourWindow;
@@ -228,6 +229,7 @@ export function planDay({ occurrences, day, now, fit }: { occurrences: Occurrenc
             folded: folded.length,
             topHour: Math.min(...folded.map((index) => drawn[index]!.slot.top)),
             bottomHour: Math.max(...folded.map((index) => drawn[index]!.slot.bottom)),
+            cluster: placed[members[0]!]!.cluster,
           };
     if (tile) folds.push(tile);
     for (const index of ordered.filter((each) => !folded.includes(each))) {
@@ -239,6 +241,7 @@ export function planDay({ occurrences, day, now, fit }: { occurrences: Occurrenc
         lane: placed[index]!.lane === 0 ? 0 : 1,
         lanes: placed[index]!.lanes === 1 ? 1 : 2,
         narrow: tile !== null && placed[index]!.lane === 1 && slot.top < tile.bottomHour - EPS && slot.bottom > tile.topHour + EPS,
+        cluster: placed[index]!.cluster,
       });
     }
   }

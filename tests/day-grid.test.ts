@@ -62,9 +62,10 @@ function plan(occurrences: Occurrence[], date = OCT1): DayPlan {
 }
 const grid = (p: DayPlan, date = OCT1) => renderToStaticMarkup(createElement(HourGrid, { plan: p, day: dayOf(date), people: FAMILY, onOpen: () => undefined, onFold: () => undefined }));
 const count = (html: string, text: string) => html.split(text).length - 1;
-// The opening tag of the button named `name`, and all of that button.
-const block = (html: string, name: string) => new RegExp(`<button[^>]*aria-label="${name}[^"]*"[^>]*>`).exec(html)?.[0] ?? '';
-const inner = (html: string, name: string) => new RegExp(`<button[^>]*aria-label="${name}[^"]*"[^>]*>[\\s\\S]*?</button>`).exec(html)?.[0] ?? '';
+// The opening tag of the button named `name` (a name that starts so), and all of that button.
+const literally = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const block = (html: string, name: string) => new RegExp(`<button[^>]*aria-label="${literally(name)}[^"]*"[^>]*>`).exec(html)?.[0] ?? '';
+const inner = (html: string, name: string) => new RegExp(`<button[^>]*aria-label="${literally(name)}[^"]*"[^>]*>[\\s\\S]*?</button>`).exec(html)?.[0] ?? '';
 
 describe('the grid', () => {
   it('is 3 rem an hour: a hairline at each hour but the first, and a label at each', () => {
@@ -176,10 +177,10 @@ describe('the lanes', () => {
     expect(count(html, 'aria-label="A,')).toBe(1);
     expect(count(html, 'aria-label="B,')).toBe(1);
     expect(count(html, 'aria-label="C,')).toBe(0);
-    expect(html).toContain('aria-label="1 more event, show the list"');
+    expect(html).toContain('aria-label="+1 more, show the list"');
     expect(html).toContain('>+1<');
     // The tile is one 48 px target at the right of the grid; the second lane stops 8 px short of it.
-    const tile = block(html, '1 more event');
+    const tile = block(html, '+1 more');
     expect(tile).toContain('width:3rem');
     expect(tile).toContain('right-0');
     expect(block(html, 'B')).toContain('width:calc(50% - 4px - 3rem - 8px)');
@@ -188,16 +189,47 @@ describe('the lanes', () => {
 
   it('draw the "+N" short of its box too, so it is 2 px from a block that follows it', () => {
     const html = grid(plan([event('A', OCT1, '16:00', '17:00'), event('B', OCT1, '16:00', '17:00'), event('C', OCT1, '16:00', '17:00')]));
-    const tile = inner(html, '1 more event');
+    const tile = inner(html, '+1 more');
     expect(tile).toContain('height:max(3rem, 3rem)');
     expect(tile).toMatch(/<span[^>]*class="[^"]*\binset-x-0 top-0 bottom-0\.5\b[^"]*"[^>]*>/);
     expect(tile).toMatch(/class="[^"]*\bpb-0\.5\b/);
   });
 
-  it('say "events" for more than one', () => {
-    const html = grid(plan([event('A', OCT1, '16:00', '17:00'), event('B', OCT1, '16:00', '17:00'), event('C', OCT1, '16:00', '17:00'), event('D', OCT1, '16:00', '17:00')]));
-    expect(html).toContain('aria-label="2 more events, show the list"');
-    expect(html).toContain('>+2<');
+  it('are named by what is drawn on them, so a name spoken from the screen finds them: "+2 more, show the list"', () => {
+    const four = grid(plan([event('A', OCT1, '16:00', '17:00'), event('B', OCT1, '16:00', '17:00'), event('C', OCT1, '16:00', '17:00'), event('D', OCT1, '16:00', '17:00')]));
+    expect(four).toContain('aria-label="+2 more, show the list"');
+    expect(four).toContain('>+2<');
+    const twelve = grid(plan('ABCDEFGHIJKL'.split('').map((title) => event(title, OCT1, '16:00', '17:00'))));
+    expect(twelve).toContain('aria-label="+10 more, show the list"');
+    expect(twelve).toContain('>+10<');
+    // Whatever the count, the name starts with the words on the tile.
+    for (const html of [four, twelve]) {
+      const drawn = />(\+\d+)</.exec(html)?.[1];
+      expect(/aria-label="(\+\d+ more[^"]*)"/.exec(html)?.[1]?.startsWith(drawn ?? 'nothing drawn')).toBe(true);
+    }
+  });
+
+  it('are reached by Tab right after the blocks of their own cluster, not after every block of the day', () => {
+    const html = grid(
+      plan([
+        // A cluster of three: Alpha and Bravo are drawn, Charlie is the "+1".
+        event('Alpha', OCT1, '16:00', '17:00'),
+        event('Bravo', OCT1, '16:00', '17:00'),
+        event('Charlie', OCT1, '16:00', '17:00'),
+        // A block of its own between the clusters.
+        event('Dinner', OCT1, '18:30', '19:30'),
+        // A cluster of four: Whiskey and Xray are drawn, the other two are the "+2".
+        event('Xray', OCT1, '20:00', '21:00'),
+        event('Yankee', OCT1, '20:00', '21:00'),
+        event('Zulu', OCT1, '20:00', '21:00'),
+        event('Whiskey', OCT1, '20:00', '21:00'),
+      ]),
+    );
+    const at = (name: string) => html.indexOf(`aria-label="${name}`);
+    const order = ['Alpha', 'Bravo', '+1 more', 'Dinner', 'Whiskey', 'Xray', '+2 more'].map(at);
+    // Every name is there, and in this order: the tile of a cluster comes after the last block of that cluster and before the next.
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 });
 

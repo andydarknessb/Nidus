@@ -720,6 +720,27 @@ describe('a cluster that folds', () => {
     expect(lanes(v)).toEqual({ Long: [0, 2], Nap: [1, 2] });
   });
 
+  it('says which cluster each block and each "+N" belongs to, in time order, so a tile can follow its own blocks', () => {
+    const v = view(
+      [
+        at('A', TOMORROW, '09:00', '10:00'),
+        at('B', TOMORROW, '09:00', '10:00'),
+        at('C', TOMORROW, '09:00', '10:00'),
+        at('Dinner', TOMORROW, '11:30', '12:30'),
+        ...['W', 'X', 'Y', 'Z'].map((title) => at(title, TOMORROW, '13:00', '14:00')),
+      ],
+      { date: TOMORROW },
+    );
+    expect(v.blocks.map((block) => [block.pill.occurrence.title, block.cluster])).toEqual([
+      ['A', 0],
+      ['B', 0],
+      ['Dinner', 1],
+      ['W', 2],
+      ['X', 2],
+    ]);
+    expect(v.folds.map((fold) => fold.cluster)).toEqual([0, 2]);
+  });
+
   it('lays a cluster that fits two lanes out as before, whatever its lengths', () => {
     // Nap and Snack and nothing else: two lanes are enough, so nothing folds and the order is the order of the start.
     const v = view([at('Nap', TOMORROW, '13:00', '13:15'), at('Snack', TOMORROW, '13:15', '13:30')], { date: TOMORROW });

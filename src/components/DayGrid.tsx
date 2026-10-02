@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import { Pin } from 'lucide-react';
-import type { Ref } from 'react';
+import { Fragment, type Ref } from 'react';
 import type { Occurrence, WallDay } from '../lib/calendar-occurrences';
 import { HOUR_REM, hourWords, type DayBlock, type DayPlan, type FoldTile } from '../lib/day-view';
 import type { Profile } from '../lib/profiles';
@@ -96,12 +96,16 @@ export function HourGrid({
           </>
         )}
         <div className="absolute inset-x-1.5 inset-y-0">
-          {plan.blocks.map((block) => (
-            <EventBlock key={block.pill.occurrence.id} block={block} top={at(block.topHour)} day={day} people={pillPeople(block.pill.occurrence, people)} onOpen={onOpen} />
-          ))}
-          {plan.folds.map((fold) => (
-            <FoldButton key={fold.pills[0]!.occurrence.id} fold={fold} top={at(fold.topHour)} onFold={onFold} />
-          ))}
+          {plan.blocks.map((block, index) => {
+            // The "+N" of a cluster comes right after the last block of that cluster, so Tab reaches it from its own blocks.
+            const fold = plan.blocks[index + 1]?.cluster === block.cluster ? undefined : plan.folds.find((each) => each.cluster === block.cluster);
+            return (
+              <Fragment key={block.pill.occurrence.id}>
+                <EventBlock block={block} top={at(block.topHour)} day={day} people={pillPeople(block.pill.occurrence, people)} onOpen={onOpen} />
+                {fold && <FoldButton fold={fold} top={at(fold.topHour)} onFold={onFold} />}
+              </Fragment>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -155,13 +159,13 @@ function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top:
 }
 
 // The "+N" of a cluster that needs more than two lanes, at the right end of the second lane: how many events are not drawn.
-// It opens the list of the cluster. A tile on the card with a ring in --input, never a colour of its own, drawn short of its
+// It opens the list of the cluster. Its name starts with what is drawn on it ("+10 more, show the list"). A tile on the card with a ring in --input, never a colour of its own, drawn short of its
 // target as a block is (PAINTED); pressed, the tile takes --accent.
 function FoldButton({ fold, top, onFold }: { fold: FoldTile; top: string; onFold: (fold: FoldTile) => void }) {
   return (
     <Button
       variant="quiet"
-      aria-label={`${fold.folded} more ${fold.folded === 1 ? 'event' : 'events'}, show the list`}
+      aria-label={`+${fold.folded} more, show the list`}
       onClick={() => onFold(fold)}
       className="group absolute right-0 h-auto rounded-[14px] px-0 pt-0 pb-0.5 text-[15px] text-foreground focus-visible:-outline-offset-2 active:bg-transparent"
       style={{ top, height: heightOf(fold.bottomHour - fold.topHour), width: FOLD_WIDTH }}
