@@ -20,17 +20,17 @@ const SYNC_TABLES = ['calendar_accounts', 'mirrored_calendars'] as const;
 
 // The time, large, and the Household's name over the date, in the Household Timezone. useNow redraws them on each
 // minute and the moment Household midnight passes, so the minute turns on the minute and the date with no reload.
-// Young Serif's digits are drawn in fixed-width cells (tabular-nums), and the width of the widest time is kept, so
-// the clock never shifts as its digits change and the date beside it never moves when the hour gains or loses a
-// digit. The date never shrinks and sets its column's width; the name takes that width and gives way, with an
-// ellipsis, when it is longer.
+// The display face's figures are lining and tabular (font-display), so every digit is one width and the time never
+// shifts as they change. The width of the widest time is kept and the time sits at its right, so the "PM" beside it is
+// always 8 px away and the date never moves when the hour gains or loses a digit. The date never shrinks and sets its
+// column's width; the name takes that width and gives way, with an ellipsis, when it is longer.
 function WallTime({ name, timezone }: { name: string; timezone: string }) {
   const now = useNow(timezone).getTime();
   const [time, period] = formatClock(now, timezone).split(/\s/);
   return (
     <>
       <p className="flex shrink-0 items-baseline gap-2">
-        <span className="grid font-display text-[68px] leading-none tabular-nums">
+        <span className="grid justify-items-end font-display text-[68px] leading-none">
           <span className="col-start-1 row-start-1">{time}</span>
           <span aria-hidden className="invisible col-start-1 row-start-1">
             00:00
