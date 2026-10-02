@@ -172,7 +172,7 @@ function ProfileGroup({
     <section
       ref={group}
       aria-labelledby={`routines-${profile.id}`}
-      className={chart ? 'relative flex min-h-0 min-w-64 flex-1 flex-col gap-3 rounded-xl border border-border p-4' : 'relative flex flex-col gap-2'}
+      className={chart ? 'relative flex min-h-0 max-w-md min-w-64 flex-1 flex-col gap-3 rounded-xl border border-border p-4' : 'relative flex flex-col gap-2'}
     >
       {/* On the rail the header stays at the top of the rail while its group scrolls, on the rail's own ground so
           nothing shows through, so "All done" and the count are in view wherever the group is scrolled to. Its padding is

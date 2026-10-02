@@ -97,8 +97,11 @@ export function NativeEventSheet({
   }
 
   return (
+    // The sheet is taller than the tablet's 800 px, so it is centred by an auto margin (which gives way
+    // to the top edge when it does not fit), not by `items-center`, which would cut off its title with
+    // no way to scroll up to it.
     <div
-      className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-background/90 p-4 sm:items-center sm:p-8"
+      className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-background/90 p-4 sm:p-8"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -112,7 +115,7 @@ export function NativeEventSheet({
         noValidate
         onSubmit={submit}
         onKeyDown={(event) => dialogKeys(event, onClose)}
-        className="flex w-full max-w-xl flex-col gap-5 rounded-xl border-2 border-border bg-card p-6 outline-none"
+        className="flex w-full max-w-xl flex-col gap-5 rounded-xl border-2 border-border bg-card p-6 outline-none sm:my-auto"
       >
         <h2 id="native-event-title" className="text-3xl font-semibold">
           {editing ? 'Edit event' : 'New event'}

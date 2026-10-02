@@ -12,14 +12,15 @@ const RETRY_MS = 5_000;
 
 // One toggle chip: a dot in the Profile's colour (grey for everyone) with a check in it while pressed,
 // and the name. The check sits in the dot, so a tap never changes the chip's width, and the words stay
-// the default foreground, which clears 7:1 on either ground.
+// the default foreground, which clears 7:1 on either ground. As tight as the header can use: 48 px tall
+// and 16 px type are the least that may be, and the padding is what is left to give.
 function Chip({ name, color, on, onClick }: { name: string; color: string; on: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={`flex min-h-12 shrink-0 items-center gap-2 rounded-lg border-2 px-4 text-lg font-medium whitespace-nowrap ${on ? 'border-foreground bg-muted' : 'border-border'}`}
+      className={`flex min-h-12 shrink-0 items-center gap-1.5 rounded-lg border-2 px-2.5 text-base font-medium whitespace-nowrap ${on ? 'border-foreground bg-muted' : 'border-border'}`}
     >
       <span aria-hidden className="grid size-5 shrink-0 place-items-center rounded-full text-background" style={{ backgroundColor: color }}>
         {on && <Check className="size-4" strokeWidth={3} />}
@@ -62,21 +63,25 @@ export function ProfileChips({ filter, pressed, hidden }: { filter: ProfileFilte
     };
   }, [changes, filter]);
 
-  if (hidden || profiles.length < 2) return null;
   return (
-    // The padding gives a focus ring room inside the clip; the negative margin takes it back out of the header's height.
-    <div className="-my-1 min-w-0 flex-1 overflow-hidden py-1">
-      {/* The end padding is as wide as the fade, so the last chip clears it when scrolled to the end. */}
-      <div
-        role="group"
-        aria-label="Show events for"
-        className="-my-1 flex items-center gap-2 overflow-x-auto py-1 pr-8 [mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)] [scrollbar-width:none]"
-      >
-        <Chip name="Everyone" color="var(--muted-foreground)" on={pressed.length === 0} onClick={filter.clear} />
-        {profiles.map((profile) => (
-          <Chip key={profile.id} name={profile.name} color={profile.color} on={pressed.includes(profile.id)} onClick={() => filter.toggle(profile.id)} />
-        ))}
-      </div>
+    // The padding gives a focus ring room inside the clip; the negative margin takes it back out of the
+    // header's height. The wrapper is on the page even with no chips: it takes the room the header's other
+    // parts leave (so the badges stay at the far right), asks for the row's own width, and gives that up
+    // only after the Household's name has given up its own.
+    <div className="-my-1 min-w-0 flex-auto overflow-hidden py-1">
+      {!hidden && profiles.length >= 2 && (
+        // The end padding is as wide as the fade, so the last chip clears it when scrolled to the end.
+        <div
+          role="group"
+          aria-label="Show events for"
+          className="-my-1 flex items-center gap-1.5 overflow-x-auto py-1 pr-4 [mask-image:linear-gradient(to_right,#000_calc(100%-1rem),transparent)] [scrollbar-width:none]"
+        >
+          <Chip name="Everyone" color="var(--muted-foreground)" on={pressed.length === 0} onClick={filter.clear} />
+          {profiles.map((profile) => (
+            <Chip key={profile.id} name={profile.name} color={profile.color} on={pressed.includes(profile.id)} onClick={() => filter.toggle(profile.id)} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
