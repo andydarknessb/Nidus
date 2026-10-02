@@ -39,7 +39,7 @@ const calendarPlace = (id: string) => `calendar-${id}`;
 const problemId = (place: string) => `problem-${place}`;
 
 // A calendar's row: the switch for showing it, and, while it is shown, whose it is (the choice values a select can carry: '' is
-// "whole household"). A calendar has no colour to choose any more (the Wall draws an event in its person's colour). What is sent is
+// "Everyone", the whole Household, as the Wall says it). A calendar has no colour to choose any more (the Wall draws an event in its person's colour). What is sent is
 // only what was changed, `{ selected }` or `{ profile_id }`. `problem` is what a write of this row said when it did not go through.
 export function CalendarRow({
   calendar,
@@ -64,7 +64,7 @@ export function CalendarRow({
       {calendar.selected && (
         <Field label={`Whose calendar is ${calendar.name}?`}>
           <select className={fieldClass} value={calendar.profile_id ?? ''} onChange={(event) => onChange({ profile_id: event.target.value === '' ? null : event.target.value })}>
-            <option value="">Whole household</option>
+            <option value="">Everyone</option>
             {profiles.map((profile) => (
               <option key={profile.id} value={profile.id}>
                 {profile.name}

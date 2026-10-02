@@ -113,7 +113,7 @@ export function PagedCalendar({
   useEffect(() => heading.current?.focus(), [view, anchor]);
 
   return (
-    <div className="flex min-h-0 flex-col gap-3" onPointerDownCapture={touch}>
+    <div className="flex min-h-0 flex-col gap-4" onPointerDownCapture={touch}>
       <nav aria-label="Calendar paging" className="flex flex-none flex-wrap items-center gap-2">
         <Button aria-label={`Previous ${view}`} className={PAGE_ARROW} disabled={previous === null} onClick={() => previous && onNavigate(view, previous)}>
           <ChevronLeft aria-hidden className="size-6" strokeWidth={2.2} />

@@ -78,7 +78,7 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
   useEffect(() => heading.current?.focus(), [anchor]);
 
   return (
-    <div className="flex min-h-0 flex-col gap-3">
+    <div className="flex min-h-0 flex-col gap-4">
       {/* The paging row sits on the page, so its buttons are --card, as the plan under them is. */}
       <nav aria-label="Meals paging" className="flex h-12 flex-none items-center gap-2">
         <Button aria-label="Previous week" className="size-12 rounded-full bg-card p-0" disabled={previous === null} onClick={() => previous && open(previous)}>
@@ -217,7 +217,7 @@ function DayHeading({ day }: { day: WallDay }) {
       className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[14px] font-normal ${day.isToday ? 'bg-muted' : ''}`}
     >
       <span className={`text-sm leading-[18px] ${day.isToday ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{day.isToday ? 'Today' : short}</span>
-      <span className={`flex h-[38px] items-center justify-center font-display text-[22px] leading-none ${day.isToday ? 'size-[38px] rounded-full bg-primary text-primary-foreground' : ''}`}>{date}</span>
+      <span className={`flex h-[38px] items-center justify-center font-display leading-none ${day.isToday ? 'size-[38px] rounded-full bg-primary text-[21px] text-primary-foreground' : 'text-[22px]'}`}>{date}</span>
     </h3>
   );
 }

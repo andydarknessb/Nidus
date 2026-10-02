@@ -50,6 +50,15 @@ describe('an atom drawn in a person\'s colour', () => {
   });
 });
 
+describe("a person's disc", () => {
+  it('draws the initial in Lexend, whatever face the words around the disc are set in', () => {
+    // A disc beside a name in a Young Serif heading would otherwise take that face.
+    const inHeading = renderToStaticMarkup(createElement('h2', { className: 'font-display' }, createElement(PersonDisc, { name: 'Ava', color: AVA, size: 44 })));
+    expect(root(inHeading.replace(/^<h2[^>]*>/, '')).classes).toContain('font-sans');
+    expect(render(createElement(PersonDisc, { name: 'Ava', color: AVA, size: 24 })).classes).toContain('font-sans');
+  });
+});
+
 describe('an atom with no person to be', () => {
   it('is neutral and does not claim the class person: a ring in --input, a tick in --primary, the house in --primary', () => {
     const ring = render(createElement(EmptyRing, {}));

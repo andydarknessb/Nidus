@@ -467,7 +467,9 @@ describe('a Calendar Account and its calendars', () => {
   it('has whose it is to choose, and no colour to choose, though one is stored', () => {
     const markup = row();
     expect(markup.match(/<select/g)).toHaveLength(1);
-    expect([...markup.matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map(([, option]) => option)).toEqual(['Whole household', 'Cory', 'Sam']);
+    // The whole Household is "Everyone" here as it is on the Wall (the people strip, the Add event sheet, an event's details).
+    expect([...markup.matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map(([, option]) => option)).toEqual(['Everyone', 'Cory', 'Sam']);
+    expect(words(markup)).not.toContain('Whole household');
     expect(words(markup)).toContain('Whose calendar is Family?');
     expect(words(markup)).not.toMatch(/colou?r/i);
     for (const { name } of PROFILE_PALETTE) expect(markup).not.toContain(`>${name}<`);

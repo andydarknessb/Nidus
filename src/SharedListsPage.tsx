@@ -346,7 +346,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
       )}
       {crossed > 0 && (
         <Button
-          variant="secondary"
+          variant="quiet"
           aria-label={`Clear ${crossed} crossed off from ${list.name}`}
           className="h-12 w-full shrink-0 rounded-[14px]"
           // The button goes when nothing is crossed off any more, and focus would fall to the page with it.
@@ -377,14 +377,14 @@ export function ListsScreen() {
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <div className="flex h-13 shrink-0 items-center justify-between gap-4">
-        <h2 ref={heading} tabIndex={-1} className="font-display text-[30px] leading-9 outline-none">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-4">
+        <h2 ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
           Lists
         </h2>
         <div className="flex items-center gap-4">
           <p className="text-[15px] text-muted-foreground">New lists are made on the phone.</p>
-          {/* The heading row is 52 px, so is the button. */}
-          <OverflowButton control={row} of="lists" className="h-13" />
+          {/* The heading row is 48 px, and the button is the row's height. */}
+          <OverflowButton control={row} of="lists" className="h-12" />
         </div>
       </div>
       {failed && read === null && (

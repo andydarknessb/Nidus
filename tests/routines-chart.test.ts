@@ -93,3 +93,22 @@ describe('what the chart says when it holds nothing', () => {
     expect(html).not.toContain('role="alert"');
   });
 });
+
+// The chart's heading row is every screen's: a 28 px title in a 48 px row, and the first card 16 px under it (docs/look.md).
+describe("the chart's heading row", () => {
+  const html = () => chart(routinesToday([profile('p-ava', 'Ava', 0)], [routine('r-1', 'p-ava', 'Brush teeth')]));
+
+  it('has the 28 px title in a row 48 px tall, and the first card 16 px under it', () => {
+    expect(html()).toMatch(/^<section [^>]*class="flex min-h-0 flex-col gap-4"><div class="flex h-12 flex-none [^"]*"><h2 [^>]*class="font-display text-\[28px\] leading-\[34px\] outline-none">Routines<\/h2>/);
+  });
+
+  it('has a control for the part of the day as tall as the row, its buttons 48 px both ways, 8 px apart', () => {
+    const group = /<div role="group" aria-label="Part of the day" class="([^"]*)">/.exec(html())?.[1]?.split(' ') ?? [];
+    expect(group).toEqual(expect.arrayContaining(['h-12', 'gap-2']));
+    // No padding to take the buttons' height from the row: a button is the row.
+    expect(group).not.toContain('p-1');
+    const buttons = [...html().matchAll(/<button [^>]*class="([^"]*)"[^>]*aria-pressed=/g)].map(([, classes]) => classes?.split(' ') ?? []);
+    expect(buttons).toHaveLength(4);
+    for (const classes of buttons) expect(classes).toEqual(expect.arrayContaining(['h-12', 'min-w-12']));
+  });
+});

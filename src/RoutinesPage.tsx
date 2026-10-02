@@ -397,21 +397,22 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
   if (current !== chart) setChart(current);
 
   return (
-    <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-3">
-      <div className="flex h-14 flex-none items-center justify-between gap-4">
-        <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="font-display text-[30px] leading-9 outline-none">
+    <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-4">
+      {/* The heading row is 48 px, as on every screen, and the first card is 16 px under it. */}
+      <div className="flex h-12 flex-none items-center justify-between gap-4">
+        <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
           Routines
         </h2>
         <div className="flex flex-none items-center gap-4">
-          {/* The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways. */}
-          <div role="group" aria-label="Part of the day" className="flex h-14 flex-none gap-2 rounded-[18px] bg-card p-1">
+          {/* The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways: the control is as tall as one of them. */}
+          <div role="group" aria-label="Part of the day" className="flex h-12 flex-none gap-2 rounded-[18px] bg-card">
             {CHART_CHOICES.map(({ part, label, icon: Icon }) => (
               <Button
                 key={part}
                 variant="quiet"
                 aria-pressed={shown === part}
                 onClick={() => setChart(pickPart(current, part))}
-                className="h-12 gap-2 rounded-[14px] px-4 text-[15px] font-medium"
+                className="h-12 min-w-12 gap-2 rounded-[18px] px-4 text-[15px] font-medium"
               >
                 {Icon && <Icon aria-hidden className="size-5" />}
                 {label}
@@ -419,7 +420,7 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
             ))}
           </div>
           {/* More columns than fit is not a screen with fewer people on it: this says there are more, and moves on to them. */}
-          <OverflowButton control={row} of="people" />
+          <OverflowButton control={row} of="people" className="h-12" />
         </div>
       </div>
       {!loaded && !failed && <EmptyWords>Loading</EmptyWords>}

@@ -5,7 +5,8 @@ import { StatusLineContext, createStatusLine } from '../lib/status-line';
 // over the foot of the screen. It overlays, so it takes no room from the screen behind it and lets a tap through.
 // The region is always on the page and only its line changes, so a screen reader announces each new line, politely. The
 // line is keyed on how many times anything has been said, so the same words said twice are two lines, and are announced
-// twice: a screen reader announces a change, and the same text set again is none.
+// twice: a screen reader announces a change, and the same text set again is none. A line that wraps (a phone's narrow screen) is
+// balanced (text-balance), so it never leaves one word alone on its last line.
 //
 // The screen is held in a wrapper that has no box of its own, which is what a sheet makes inert while it is open (BEHIND_SHEETS,
 // lib/inert-behind.ts), and the line is beside it, not in it: a line said as a sheet closes (an event saved, a meal planned) is
@@ -24,7 +25,7 @@ export function StatusLineProvider({ children }: { children: ReactNode }) {
       </div>
       <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-4 bottom-4 z-30 flex justify-center">
         {line && (
-          <p key={said} className="max-w-xl rounded-2xl bg-foreground px-5 py-3 text-center text-base font-medium text-background">
+          <p key={said} className="max-w-xl rounded-2xl bg-foreground px-5 py-3 text-center text-base font-medium text-balance text-background">
             {line}
           </p>
         )}

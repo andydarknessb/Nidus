@@ -56,4 +56,8 @@ describe('the Lists screen', () => {
   it('takes the focus to its title when it opens, which it can: the title is reached by script and not by Tab', () => {
     expect(screen()).toMatch(/<h2 tabindex="-1" class="[^"]*">Lists<\/h2>/);
   });
+
+  it('has the 28 px title in a heading row 48 tall, and the first card 16 px under it, as every screen has', () => {
+    expect(screen()).toMatch(/^<div class="flex min-h-0 flex-col gap-4"><div class="flex h-12 shrink-0 [^"]*"><h2 tabindex="-1" class="font-display text-\[28px\] leading-\[34px\] outline-none">Lists<\/h2>/);
+  });
 });

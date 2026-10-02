@@ -20,12 +20,13 @@ const initialSize = (disc: number) => Math.max(11, Math.round(disc * 0.46));
 const iconSize = (px: number): CSSProperties => ({ width: px, height: px });
 
 // A person: a disc in their strong colour with their initial, at 16, 24, 34, 40, 44 or 56 px (the 16 px disc is for the end of
-// a Month line). The name is always beside it, so it is hidden from a screen reader.
+// a Month line). The name is always beside it, so it is hidden from a screen reader. The initial is always Lexend, whatever face the
+// words around the disc are set in (a heading in Young Serif, say).
 export function PersonDisc({ name, color, size = 40 }: { name: string; color: string; size?: number }) {
   return (
     <span
       aria-hidden
-      className="person flex shrink-0 items-center justify-center rounded-full bg-person-strong leading-none font-semibold text-person-on-strong"
+      className="person flex shrink-0 items-center justify-center rounded-full bg-person-strong font-sans leading-none font-semibold text-person-on-strong"
       style={{ ...personStyle(color), width: size, height: size, fontSize: initialSize(size) }}
     >
       {initialOf(name)}
