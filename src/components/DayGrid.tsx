@@ -1,3 +1,4 @@
+import { cn } from 'cn';
 import { Pin } from 'lucide-react';
 import type { Ref } from 'react';
 import type { Occurrence, WallDay } from '../lib/calendar-occurrences';
@@ -107,15 +108,18 @@ export function HourGrid({
   );
 }
 
-// How tall a block of `hours` hours is: its hours less 2 px, so blocks that follow each other show a gap, but never under one
-// hour (3 rem, 48 px): an hour-long event is exactly one hour tall.
-const heightOf = (hours: number) => `max(${HOUR_REM}rem, calc(${hours * HOUR_REM}rem - 2px))`;
+// How tall the target of a block of `hours` hours is: exactly its hours, never under one hour (3 rem, 48 px). The target is not
+// what is painted: the fill and the ring are drawn in a box that stops 2 px short of the target's bottom, so blocks that follow
+// each other, whose 48 px targets touch, never read as one block. Side by side, blocks and the "+N" are 8 px apart.
+const heightOf = (hours: number) => `max(${HOUR_REM}rem, ${hours * HOUR_REM}rem)`;
+const PAINTED = 'pointer-events-none absolute inset-x-0 top-0 bottom-0.5 rounded-[14px]';
 
 // One event in the grid: a flat fill in its people's colours with, on one line, the title (two lines when it is too long for one,
 // then ending in an ellipsis; never broken inside a word), its time, "On now" when it is, and its discs at the right. The title
 // gives way first: the time is never cut. A Native Event has the pin before its title. The one that is on now has the 2.5 px
-// ring in --foreground, drawn over the fill. The second lane of a lane pair starts 4 px past the middle, so the blocks are 8 px
-// apart; one that leaves room for the "+N" is 8 px short of it.
+// ring in --foreground, drawn over the fill. The fill and the ring stop 2 px short of the target (PAINTED), and the words are
+// centred on the fill. The second lane of a lane pair starts 4 px past the middle, so the blocks are 8 px apart; one that
+// leaves room for the "+N" is 8 px short of it.
 function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top: string; day: WallDay; people: PillPeople; onOpen: (occurrence: Occurrence) => void }) {
   const { pill } = block;
   const { occurrence } = pill;
@@ -125,7 +129,7 @@ function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top:
       variant="quiet"
       aria-label={pillName(pill, day, people)}
       onClick={() => onOpen(occurrence)}
-      className="absolute h-auto justify-start gap-3 rounded-[14px] px-0 py-0 pr-2.5 pl-3.5 text-left font-normal whitespace-normal text-foreground focus-visible:-outline-offset-2"
+      className="absolute h-auto justify-start gap-3 rounded-[14px] px-0 pt-0 pr-2.5 pb-0.5 pl-3.5 text-left font-normal whitespace-normal text-foreground focus-visible:-outline-offset-2 active:bg-transparent"
       style={{
         top,
         height: heightOf(block.bottomHour - block.topHour),
@@ -133,7 +137,9 @@ function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top:
         width: block.lanes === 1 ? '100%' : block.narrow ? `calc(50% - ${half}px - ${FOLD_WIDTH} - ${LANE_GAP_PX}px)` : `calc(50% - ${half}px)`,
       }}
     >
-      <EventFill people={people} />
+      <span aria-hidden className={PAINTED}>
+        <EventFill people={people} />
+      </span>
       <span className="relative line-clamp-2 min-w-0 text-base leading-5 font-semibold text-ellipsis">
         {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="mr-1 inline size-3.5 align-[-2px]" />}
         {occurrence.title}
@@ -143,23 +149,25 @@ function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top:
       <span className="relative flex shrink-0">
         <EventDiscs people={people} />
       </span>
-      {pill.onNow && <span aria-hidden className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0_0_2.5px_var(--foreground)]" />}
+      {pill.onNow && <span aria-hidden className={cn(PAINTED, 'shadow-[inset_0_0_0_2.5px_var(--foreground)]')} />}
     </Button>
   );
 }
 
 // The "+N" of a cluster that needs more than two lanes, at the right end of the second lane: how many events are not drawn.
-// It opens the list of the cluster. A tile on the card with a ring in --input, never a colour of its own.
+// It opens the list of the cluster. A tile on the card with a ring in --input, never a colour of its own, drawn short of its
+// target as a block is (PAINTED); pressed, the tile takes --accent.
 function FoldButton({ fold, top, onFold }: { fold: FoldTile; top: string; onFold: (fold: FoldTile) => void }) {
   return (
     <Button
       variant="quiet"
       aria-label={`${fold.folded} more ${fold.folded === 1 ? 'event' : 'events'}, show the list`}
       onClick={() => onFold(fold)}
-      className="absolute right-0 h-auto rounded-[14px] bg-card px-0 text-[15px] text-foreground shadow-[inset_0_0_0_1.5px_var(--input)] focus-visible:-outline-offset-2"
+      className="group absolute right-0 h-auto rounded-[14px] px-0 pt-0 pb-0.5 text-[15px] text-foreground focus-visible:-outline-offset-2 active:bg-transparent"
       style={{ top, height: heightOf(fold.bottomHour - fold.topHour), width: FOLD_WIDTH }}
     >
-      +{fold.folded}
+      <span aria-hidden className={cn(PAINTED, 'bg-card shadow-[inset_0_0_0_1.5px_var(--input)] group-active:bg-accent')} />
+      <span className="relative">{`+${fold.folded}`}</span>
     </Button>
   );
 }

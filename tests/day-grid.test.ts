@@ -62,8 +62,9 @@ function plan(occurrences: Occurrence[], date = OCT1): DayPlan {
 }
 const grid = (p: DayPlan, date = OCT1) => renderToStaticMarkup(createElement(HourGrid, { plan: p, day: dayOf(date), people: FAMILY, onOpen: () => undefined, onFold: () => undefined }));
 const count = (html: string, text: string) => html.split(text).length - 1;
-// The opening tag of the button named `name`.
+// The opening tag of the button named `name`, and all of that button.
 const block = (html: string, name: string) => new RegExp(`<button[^>]*aria-label="${name}[^"]*"[^>]*>`).exec(html)?.[0] ?? '';
+const inner = (html: string, name: string) => new RegExp(`<button[^>]*aria-label="${name}[^"]*"[^>]*>[\\s\\S]*?</button>`).exec(html)?.[0] ?? '';
 
 describe('the grid', () => {
   it('is 3 rem an hour: a hairline at each hour but the first, and a label at each', () => {
@@ -77,17 +78,34 @@ describe('the grid', () => {
     expect(html).not.toContain('>12 AM<');
   });
 
-  it('draws an hour-long event exactly an hour tall, and one shorter than an hour an hour tall too', () => {
+  it('makes the box of an hour-long event exactly an hour tall, and the box of one shorter than an hour an hour tall too', () => {
     const html = grid(plan([event('Book club', OCT1, '20:00', '21:00'), event('Piano', OCT1, '16:00', '16:45')]));
-    // One hour is 3 rem; the 2 px that show a gap between events that follow each other never take it under 3 rem.
-    expect(block(html, 'Book club')).toContain('height:max(3rem, calc(3rem - 2px))');
-    expect(block(html, 'Piano')).toContain('height:max(3rem, calc(3rem - 2px))');
+    // One hour is 3 rem, and the box is the target: never under it, and never shortened to make a gap.
+    expect(block(html, 'Book club')).toContain('height:max(3rem, 3rem)');
+    expect(block(html, 'Piano')).toContain('height:max(3rem, 3rem)');
   });
 
-  it('draws a longer event as tall as it lasts, less 2 px', () => {
+  it('makes the box of a longer event as tall as it lasts', () => {
     const html = grid(plan([event('Family dinner', OCT1, '18:30', '20:00')]));
     expect(block(html, 'Family dinner')).toContain('top:7.5rem');
-    expect(block(html, 'Family dinner')).toContain('height:max(3rem, calc(4.5rem - 2px))');
+    expect(block(html, 'Family dinner')).toContain('height:max(3rem, 4.5rem)');
+  });
+
+  it('draws the fill and the ring of every block 2 px short of its box, so blocks that follow each other never read as one', () => {
+    // Piano and Swim are both Ava's and follow each other: their boxes touch (3 rem and 3 rem further down), their fills do not.
+    const html = grid(plan([event('Piano', OCT1, '16:00', '17:00', ['p-ava']), event('Swim', OCT1, '17:00', '18:00', ['p-ava']), event('Family dinner', OCT1, '18:30', '20:00')]));
+    expect(block(html, 'Piano')).toContain('top:0rem');
+    expect(block(html, 'Swim')).toContain('top:3rem');
+    for (const title of ['Piano', 'Swim', 'Family dinner']) {
+      const inside = inner(html, title);
+      // The fill is a box of its own inside the target, short of its bottom by 2 px; the target itself is not painted.
+      expect(inside, title).toMatch(/<span[^>]*class="[^"]*\binset-x-0 top-0 bottom-0\.5\b[^"]*"[^>]*><span[^>]*><span[^>]*bg-(person-fill|everyone)/);
+      // So the words sit on the middle of the fill, not of the target.
+      expect(block(html, title), title).toMatch(/class="[^"]*\bpb-0\.5\b/);
+    }
+    // The ring of the event that is on now is drawn short too: in the same box as the fill.
+    expect(count(inner(html, 'Family dinner'), 'top-0 bottom-0.5')).toBe(2);
+    expect(count(inner(html, 'Piano'), 'top-0 bottom-0.5')).toBe(1);
   });
 
   it('fills a block from its people and never from the calendar it came from', () => {
@@ -166,6 +184,14 @@ describe('the lanes', () => {
     expect(tile).toContain('right-0');
     expect(block(html, 'B')).toContain('width:calc(50% - 4px - 3rem - 8px)');
     expect(block(html, 'A')).toContain('width:calc(50% - 4px)');
+  });
+
+  it('draw the "+N" short of its box too, so it is 2 px from a block that follows it', () => {
+    const html = grid(plan([event('A', OCT1, '16:00', '17:00'), event('B', OCT1, '16:00', '17:00'), event('C', OCT1, '16:00', '17:00')]));
+    const tile = inner(html, '1 more event');
+    expect(tile).toContain('height:max(3rem, 3rem)');
+    expect(tile).toMatch(/<span[^>]*class="[^"]*\binset-x-0 top-0 bottom-0\.5\b[^"]*"[^>]*>/);
+    expect(tile).toMatch(/class="[^"]*\bpb-0\.5\b/);
   });
 
   it('say "events" for more than one', () => {
