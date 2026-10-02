@@ -4,13 +4,11 @@ import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from '../lib/ca
 import { formatClock, formatDate } from '../lib/calendar-occurrences';
 import { useChangeTick } from '../lib/change-feed';
 import type { Household } from '../lib/household';
-import type { ProfileFilter } from '../lib/profile-filter';
 import { supabase } from '../lib/supabase';
 import { useNow } from '../lib/wall-hooks';
 import type { Forecast } from '../lib/weather';
 import { HeaderNextMeal } from '../MealsPage';
 import { ConnectionBadge } from './ConnectionBadge';
-import { ProfileChips } from './ProfileChips';
 import { WeatherNow } from './Weather';
 
 // How often the wall re-reads how fresh the mirror is, and re-words the badge as time passes.
@@ -23,8 +21,9 @@ const SYNC_TABLES = ['calendar_accounts', 'mirrored_calendars'] as const;
 // minute and the moment Household midnight passes, so the minute turns on the minute and the date with no reload.
 // The display face's figures are lining and tabular (font-display), so every digit is one width and the time does not
 // shift from minute to minute. The time starts at the header's edge, in line with the card under it; what follows moves
-// by one digit only when the hour gains or loses one, twice a day. The date never shrinks and sets its column's width;
-// the name takes that width and gives way, with an ellipsis, when it is longer.
+// by one digit only when the hour gains or loses one, twice a day. The date never shrinks. Their column is as wide as
+// the longer of the name and the date while the header has the room, and gives way down to the date's width when it does
+// not: the name may break anywhere, so the least the column can be is the date, and its one line then ends in an ellipsis.
 function WallTime({ name, timezone }: { name: string; timezone: string }) {
   const now = useNow(timezone).getTime();
   const [time, period] = formatClock(now, timezone).split(/\s/);
@@ -34,8 +33,8 @@ function WallTime({ name, timezone }: { name: string; timezone: string }) {
         <span className="font-display text-[68px] leading-none">{time}</span>
         <span className="text-[22px] font-medium text-muted-foreground">{period}</span>
       </p>
-      <div className="flex shrink-0 flex-col gap-0.5">
-        <h1 className="w-0 min-w-full truncate text-sm leading-[18px] font-medium text-muted-foreground">{name}</h1>
+      <div className="flex flex-col gap-0.5">
+        <h1 className="line-clamp-1 text-sm leading-[18px] font-medium wrap-anywhere text-muted-foreground">{name}</h1>
         <p className="font-display text-[40px] leading-[44px] whitespace-nowrap">{formatDate(now, timezone)}</p>
       </div>
     </>
@@ -78,40 +77,22 @@ function SyncBadge() {
   );
 }
 
-// The Wall's header: the clock, the Household's name over the date, the weather, the Profile chips and the Offline
-// and stale-sync marks. `household` is null until it has been read, `today` is its current Household date (null
-// then too), and `chipsHidden` turns the chips off on a screen that is not a calendar.
+// The Wall's header: the clock, the Household's name over the date, the weather and the Offline and stale-sync marks.
+// `household` is null until it has been read and `today` is its current Household date (null then too).
 //
 // At 1280 px the header is 1136 px. The clock, the date, the weather and the marks never shrink and never overlap
-// anything; what is left goes to the Profile chips, which scroll inside their own box when they do not fit, and
-// the Household's name gives way inside the date's own column. The marks sit straight in the header, not in a
-// wrapper, so that with none showing they cost no gap. The next meal (HeaderNextMeal) holds the end of the row, before
-// the marks, and gives way before anything else here does; `onMeals` opens Meals, and is null on the Meals screen,
-// where it is not drawn.
-export function WallHeader({
-  household,
-  today,
-  forecast,
-  filter,
-  pressed,
-  chipsHidden,
-  onMeals,
-}: {
-  household: Household | null;
-  today: string | null;
-  forecast: Forecast | null;
-  filter: ProfileFilter;
-  pressed: readonly string[];
-  chipsHidden: boolean;
-  onMeals: (() => void) | null;
-}) {
+// anything. What is left goes to the next meal (HeaderNextMeal), the header's one flexible box, which keeps the marks at
+// the far right whether or not it draws anything; `onMeals` opens Meals, and is null on the Meals screen, where the meal
+// is not drawn. When room runs out the next meal's words give way first, then the button goes, and only then does the
+// Household's name give way, down to the date's width (WallTime). The marks sit straight in the header, not in a wrapper,
+// so that with none showing they cost no gap.
+export function WallHeader({ household, today, forecast, onMeals }: { household: Household | null; today: string | null; forecast: Forecast | null; onMeals: (() => void) | null }) {
   const timezone = household?.timezone ?? null;
   return (
     <header className="flex h-21 items-center gap-6">
       {timezone && <WallTime name={household?.name ?? ''} timezone={timezone} />}
       {household && today && <WeatherNow forecast={forecast} unit={household.temperature_unit} today={today} />}
-      <ProfileChips filter={filter} pressed={pressed} hidden={chipsHidden} />
-      {timezone && <HeaderNextMeal timezone={timezone} onOpen={onMeals} />}
+      <HeaderNextMeal timezone={timezone} onOpen={onMeals} />
       <ConnectionBadge compact />
       <SyncBadge />
     </header>

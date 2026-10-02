@@ -219,14 +219,20 @@ export function describeMonth(date: string): string {
 }
 
 // The wall's routes: "/" is the home screen, "/week", "/day" and "/month" the secondary views, "/meals"
-// the Meals screen and "/routines" the Routines chart. The calendar views and Meals are anchored by
-// "?date=YYYY-MM-DD" (today's page, or for Meals this week, when it is missing or not a date); the
-// Routines chart is always today's. Only the calendar views keep a date; any other screen (the home
-// screen, Meals, the Routines chart) is today's page when it is left.
-export type WallRoute = { view: 'home' } | { view: 'routines' } | { view: CalendarView; date: string | null } | { view: 'meals'; date: string | null };
+// the Meals screen, "/routines" the Routines chart and "/lists" the Lists screen. The calendar views and
+// Meals are anchored by "?date=YYYY-MM-DD" (today's page, or for Meals this week, when it is missing or
+// not a date); the Routines chart and the Lists screen are always today's. Only the calendar views keep a
+// date; any other screen (the home screen, Meals, the Routines chart, Lists) is today's page when it is left.
+export type WallRoute =
+  | { view: 'home' }
+  | { view: 'routines' }
+  | { view: 'lists' }
+  | { view: CalendarView; date: string | null }
+  | { view: 'meals'; date: string | null };
 
 export function parseWallRoute(pathname: string, search: string): WallRoute {
   if (pathname === '/routines') return { view: 'routines' };
+  if (pathname === '/lists') return { view: 'lists' };
   const view = (['day', 'week', 'month', 'meals'] as const).find((candidate) => pathname === `/${candidate}`);
   if (!view) return { view: 'home' };
   const date = new URLSearchParams(search).get('date');

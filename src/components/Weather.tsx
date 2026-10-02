@@ -31,7 +31,7 @@ function Glyph({ icon, className }: { icon: WeatherIcon; className: string }) {
 // and low show, and with nothing to show at all, nothing. A screen reader hears one phrase, with the
 // condition in words, rather than a picture and bare numbers. It is kept compact (the icon, the
 // temperature, and the high and low stacked small) and never shrinks, because the header also has to
-// hold the Household's name, the clock and date, the Profile chips and the badges.
+// hold the Household's name, the clock and date and the badges.
 export function WeatherNow({ forecast, unit, today }: { forecast: Forecast | null; unit: TemperatureUnit; today: string }) {
   const day = forecastDay(forecast, today);
   const reading = forecast?.current ? { ...describeWeather(forecast.current.code, forecast.current.isDay), temperature: forecast.current.temperature } : null;
@@ -60,16 +60,16 @@ export function WeatherNow({ forecast, unit, today }: { forecast: Forecast | nul
   );
 }
 
-// A day's weather: the icon, then the high and the low on one compact line. Nothing for a date the
-// forecast does not cover, so a heading can pass whatever forecastDay found.
+// A day's weather: the icon, then the high and the low on one compact line, in secondary words at 14 px, the smallest
+// size. Nothing for a date the forecast does not cover, so a heading can pass whatever forecastDay found.
 export function DayWeather({ day }: { day: ForecastDay | undefined }) {
   if (!day) return null;
   const { words, icon } = describeWeather(day.code);
   return (
-    <span role="img" aria-label={`${words}, high ${day.high}, low ${day.low}`} className="inline-flex items-center gap-1 text-lg font-normal">
-      <Glyph icon={icon} className="size-6 shrink-0" />
+    <span role="img" aria-label={`${words}, high ${day.high}, low ${day.low}`} className="inline-flex items-center gap-1 text-sm leading-[18px] font-normal text-muted-foreground">
+      <Glyph icon={icon} className="size-[15px] shrink-0" />
       <span>
-        {day.high}°/{day.low}°
+        {day.high}° / {day.low}°
       </span>
     </span>
   );
