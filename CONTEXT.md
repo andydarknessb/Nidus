@@ -29,6 +29,10 @@ _Avoid_: PIN, token, invite
 **Household Timezone**:
 The one timezone stored on the Household. All display, rollover and reset logic uses it; source calendar timezones are converted on ingest.
 
+**Appearance**:
+How the Household wants the Wall to look: Auto (light from sunrise to sunset, dark otherwise), Light or Dark. The Household Account sets it. A screen's own switch overrides it on that screen until the next sunrise or sunset; that override is not stored on the Household.
+_Avoid_: Theme, skin, dark mode
+
 ### Calendar
 
 **Calendar Account**:
@@ -50,7 +54,7 @@ _Avoid_: Local event, manual event
 ### Tasks & lists
 
 **Routine**:
-A habit owned by one Profile on a days-of-week schedule, optionally placed in a time of day (morning, afternoon or evening). It resets to unchecked at Household midnight regardless of whether it was done.
+A habit owned by one Profile on a days-of-week schedule, optionally placed in a time of day (morning, afternoon or evening) and given a picture from the app's fixed set, so a child who cannot read can tell it apart. It resets to unchecked at Household midnight regardless of whether it was done.
 _Avoid_: Habit, daily task, chore
 
 **Routine Completion**:
@@ -62,7 +66,7 @@ A named household-wide list of text items (e.g. Groceries) anyone can add to or 
 _Avoid_: Todo list, checklist
 
 **Pinned List**:
-The one Shared List a Household shows on the home screen's rail (`households.pinned_list_id`). A new Household starts with Groceries pinned; only the Household Account changes it. The other lists open from the tablet's Lists screen.
+The one Shared List a Household shows on the home screen's rail (`households.pinned_list_id`). A new Household starts with Groceries pinned; only the Household Account changes it. Every list, the Pinned List first, is on the Wall's Lists screen.
 _Avoid_: Favourite list, default list
 
 ### Meals
