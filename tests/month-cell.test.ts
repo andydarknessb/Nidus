@@ -1,8 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { DayCell } from '../src/components/MonthCell';
-import { monthWeeks, type Occurrence } from '../src/lib/calendar-occurrences';
+import { CELL_HEAD_REM, CELL_LINE_REM, DayCell } from '../src/components/MonthCell';
+import { linesPerCell, monthWeeks, type Occurrence } from '../src/lib/calendar-occurrences';
 import { personStyle, TOKENS, type Mode } from '../src/lib/look';
 import { contrastRatio, type Profile } from '../src/lib/profiles';
 
@@ -120,6 +120,14 @@ describe("today's date", () => {
     expect(spanWith(html, '2')).toContain('font-display');
     expect(html).not.toContain('bg-primary');
     expect(html).not.toContain('underline');
+  });
+
+  // Every date is in a box of the same height, so the lines under a week's dates start at the same place. Today's is a 34 px disc
+  // with a 20 px number, and the other dates are 22 px.
+  it('is a 34 px disc with a 20 px number, in the same 34 px row as every other date', () => {
+    expect(spanWith(cell('2026-10-01'), '1')).toEqual(expect.arrayContaining(['h-8.5', 'w-8.5', 'text-xl', 'rounded-full']));
+    expect(spanWith(cell('2026-10-02'), '2')).toEqual(expect.arrayContaining(['h-8.5', 'text-[1.375rem]']));
+    expect(spanWith(cell('2026-10-02', { occurrences: null, beyond: true }), '2')).toContain('h-8.5');
   });
 
   it("lifts the cell's ground to --muted, as today's column is on Home and Week", () => {
@@ -344,5 +352,21 @@ describe("a day beyond the calendar's range", () => {
 
   it('draws no event line, whatever it is given', () => {
     expect(count(cell('2026-10-02', { occurrences: [event('A', [])], beyond: true }), 'data-testid="event-line"')).toBe(0);
+  });
+});
+
+// A cell is drawn to CELL_HEAD_REM above its first line and CELL_LINE_REM for each (MonthCell.tsx). At 1280 x 800 and a 16 px root the
+// week rows share 503 px under the weekday names, or 463 on the first and last pages, where a line of words sits above the grid
+// (measured in the preview). The date's row is 34 px so that today's number is as large as the other dates, and that is no change to
+// how many lines a cell shows: a month of 4, 5 and 6 weeks shows 3, 2 and 1, and the first and last pages 2.
+describe("a cell's lines at the Wall's size", () => {
+  const lines = (rowsPx: number, weeks: number) => linesPerCell(rowsPx / weeks, CELL_HEAD_REM * 16, CELL_LINE_REM * 16);
+
+  it('is 3, 2 and 1 lines for a month of 4, 5 and 6 weeks', () => {
+    expect([lines(503, 4), lines(503, 5), lines(503, 6)]).toEqual([3, 2, 1]);
+  });
+
+  it('is 2 lines for a month of 5 weeks on the first and last pages, with the line of words above the grid', () => {
+    expect(lines(463, 5)).toBe(2);
   });
 });

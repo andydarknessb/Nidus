@@ -10,9 +10,9 @@ import { Button } from './ui/button';
 // then the day's occurrences a line each, as many as fit, and "+N more" for the rest. Events are not tappable here, the day is.
 
 // A day cell is drawn to these sizes, in rem like the classes that draw it, so the lines measured to fit are the lines drawn at
-// any text size: CELL_HEAD_REM above its first line (pt-1, the date's h-7 and mb-0.5, and the divider over its row, with a pixel to
+// any text size: CELL_HEAD_REM above its first line (pt-1, the date's h-8.5 and mb-0.5, and the divider over its row, with a pixel to
 // spare) and CELL_LINE_REM for each line (h-5.5 and mb-0.5). The grid multiplies them by the root font size when measuring.
-export const CELL_HEAD_REM = 2.25;
+export const CELL_HEAD_REM = 2.625;
 export const CELL_LINE_REM = 1.5;
 
 const BEYOND_RANGE = "Beyond the calendar's range";
@@ -50,13 +50,14 @@ export function DayCell({
   timezone: string;
   onOpen: (date: string) => void;
 }) {
-  // Today's date is in a filled disc (the date in a --primary disc, on every view). The others are the date alone, in the display
-  // face; beyond the range it sits on the card so the hatch stays out from under it.
+  // Today's date is in a filled disc (the date in a --primary disc, on every view): 34 px with a 20 px number, where the other dates
+  // are 22 px in the display face. Every date has the same 34 px row, so the lines under a week's dates start at the same place.
+  // Beyond the range the date sits on the card, so the hatch stays out from under it.
   const date = (
     <span
       className={cn(
-        'mb-0.5 grid h-7 shrink-0 place-items-center self-start rounded-full font-display leading-none',
-        day.isToday ? 'w-7 bg-primary text-base text-primary-foreground' : 'min-w-7 px-1 text-[1.375rem]',
+        'mb-0.5 grid h-8.5 shrink-0 place-items-center self-start rounded-full font-display leading-none',
+        day.isToday ? 'w-8.5 bg-primary text-xl text-primary-foreground' : 'min-w-8.5 px-1 text-[1.375rem]',
         beyond && 'bg-card',
       )}
     >
