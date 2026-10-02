@@ -72,7 +72,12 @@ export function eventFormToInput(form: EventForm, timezone: string): NativeEvent
     }
     startsAt = wallMs(form.date, form.startTime, timezone);
     endsAt = wallMs(form.date, form.endTime, timezone);
-    if (endsAt <= startsAt) return { problem: 'The event must end after it starts.' };
+    if (endsAt <= startsAt) {
+      // An end after its start on the clock can still be at or before it here: a time inside the hour the clocks skip does
+      // not exist, and moves on by the hour (wallMs). Say which time that is, not that the end is before the start.
+      const skipped = form.endTime > form.startTime ? [form.startTime, form.endTime].find((time) => clock(wallMs(form.date, time, timezone), timezone) !== time) : undefined;
+      return { problem: skipped ? `The clocks go forward on this day, so there is no ${clockWords(skipped)}. Pick another time.` : 'The event must end after it starts.' };
+    }
   }
   return {
     title,
@@ -163,6 +168,31 @@ export function dayChoices(today: string): DayChoice[] {
     const weekday = WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]!.short;
     return { date, label: offset === 0 ? 'Today' : `${weekday} ${Number(date.slice(8))}` };
   });
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+// The times a new event on `date` opens with. When `date` is today in the Household Timezone, the next whole hour for an
+// hour; on any other day, 9:00 AM to 10:00 AM. The hour comes from the instant: `now` moved on to the start of the next hour
+// on the Household's clock, then read there, never from adding to a time written as text, so the night the clocks go
+// forward cannot give a time that does not exist. It stays inside the day: Starts is 11:00 PM at the latest, and Ends is an
+// hour after it or 11:45 PM, whichever comes first.
+export function openingTimes(date: string, timezone: string, now: Date = new Date()): { startTime: string; endTime: string } {
+  if (householdDay(timezone, now).date !== date) return { startTime: '09:00', endTime: '10:00' };
+  // How far into its hour `now` is on the Household's clock. Every zone is a whole number of minutes from UTC, so the
+  // seconds and milliseconds are UTC's.
+  const intoHour = (Number(clock(now.getTime(), timezone).slice(3)) * 60 + now.getUTCSeconds()) * 1000 + now.getUTCMilliseconds();
+  const startsAt = now.getTime() - intoHour + HOUR_MS;
+  // `at` as the Household's clock reads it while that is still today and before `last`; otherwise `last`.
+  const readOr = (at: number, last: string) => (householdDay(timezone, new Date(at)).date === date && clock(at, timezone) < last ? clock(at, timezone) : last);
+  return { startTime: readOr(startsAt, '23:00'), endTime: readOr(startsAt + HOUR_MS, '23:45') };
+}
+
+// The form with its date moved to `date`. A new event whose times no stepper has moved takes that day's opening times (today
+// at the next whole hour, any other day at 9:00 AM); once a stepper has moved them, and always for an event being edited
+// (`keepTimes`), they stay as they are.
+export function moveToDay(form: EventForm, date: string, keepTimes: boolean, timezone: string, now: Date = new Date()): EventForm {
+  return { ...form, date, ...(keepTimes ? {} : openingTimes(date, timezone, now)) };
 }
 
 // Whether nothing has been typed or changed since the form `opened`: the one question that decides whether a tap outside

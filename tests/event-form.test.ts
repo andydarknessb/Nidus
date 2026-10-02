@@ -8,6 +8,8 @@ import {
   eventFormFromOccurrence,
   eventFormToInput,
   isUntouched,
+  moveToDay,
+  openingTimes,
   stepEnd,
   stepStart,
   type EventForm,
@@ -139,18 +141,187 @@ describe('Starts and Ends', () => {
     }
   });
 
-  it('leaves the end-after-start check in place for what the steppers cannot see', () => {
-    // On the day clocks go forward in Chicago, 2:30 AM does not exist and moves on to 3:30 AM, past an end of 3:15 AM.
-    const gap = { ...blankEventForm('2027-03-14'), title: 'Early', startTime: '02:30', endTime: '03:15' };
-    expect(eventFormToInput(gap, CHICAGO)).toEqual({ problem: 'The event must end after it starts.' });
-  });
-
   it('says its times as the family reads them', () => {
     expect(clockWords('00:00')).toBe('12:00 AM');
     expect(clockWords('09:05')).toBe('9:05 AM');
     expect(clockWords('12:00')).toBe('12:00 PM');
     expect(clockWords('14:00')).toBe('2:00 PM');
     expect(clockWords('23:45')).toBe('11:45 PM');
+  });
+});
+
+describe('the times a new event opens with', () => {
+  const AUCKLAND = 'Pacific/Auckland';
+  const HONOLULU = 'Pacific/Honolulu';
+  const KIRITIMATI = 'Pacific/Kiritimati';
+  const KOLKATA = 'Asia/Kolkata';
+  const KATHMANDU = 'Asia/Kathmandu';
+  const LONDON = 'Europe/London';
+  const HAVANA = 'America/Havana';
+  const LORD_HOWE = 'Australia/Lord_Howe';
+  // The times for a new event on `date` with the clock at `now`, an instant written with its own offset so that nothing
+  // here depends on the machine's zone.
+  const opening = (date: string, timezone: string, now: string) => {
+    const { startTime, endTime } = openingTimes(date, timezone, new Date(now));
+    // What it gives is always something the form takes.
+    expect(eventFormToInput({ ...blankEventForm(date), title: 'Plumber', startTime, endTime }, timezone)).not.toHaveProperty('problem');
+    return [startTime, endTime];
+  };
+
+  it('is the next whole hour, for an hour, when the date is today', () => {
+    expect(opening('2026-10-01', CHICAGO, '2026-10-01T19:21:00-05:00')).toEqual(['20:00', '21:00']);
+    // On the hour it is the next one; a millisecond short of it, it is that one.
+    expect(opening('2026-10-01', CHICAGO, '2026-10-01T19:00:00.000-05:00')).toEqual(['20:00', '21:00']);
+    expect(opening('2026-10-01', CHICAGO, '2026-10-01T19:59:59.999-05:00')).toEqual(['20:00', '21:00']);
+  });
+
+  it('is 9:00 AM to 10:00 AM on any other day', () => {
+    for (const date of ['2026-09-30', '2026-10-02', '2026-12-25', '']) {
+      expect(openingTimes(date, CHICAGO, new Date('2026-10-01T19:21:00-05:00'))).toEqual({ startTime: '09:00', endTime: '10:00' });
+    }
+  });
+
+  it('stops Starts at 11:00 PM and Ends at 11:45 PM', () => {
+    expect(opening('2026-10-01', CHICAGO, '2026-10-01T22:15:00-05:00')).toEqual(['23:00', '23:45']);
+    // From 11:00 PM on it is 11:00 PM to 11:45 PM, even with the hour already half gone.
+    for (const now of ['2026-10-01T23:00:00-05:00', '2026-10-01T23:30:00-05:00', '2026-10-01T23:59:59.999-05:00']) {
+      expect(opening('2026-10-01', CHICAGO, now)).toEqual(['23:00', '23:45']);
+    }
+  });
+
+  it('reads the day and the hour on the Household clock, not UTC and not the machine', () => {
+    // 12:10 AM on Oct 2 in Auckland is still Oct 1 in UTC.
+    expect(opening('2026-10-02', AUCKLAND, '2026-10-02T00:10:00+13:00')).toEqual(['01:00', '02:00']);
+    expect(opening('2026-10-01', AUCKLAND, '2026-10-02T00:10:00+13:00')).toEqual(['09:00', '10:00']);
+    expect(opening('2026-10-01', KIRITIMATI, '2026-10-01T00:10:00+14:00')).toEqual(['01:00', '02:00']);
+    expect(opening('2026-10-02', AUCKLAND, '2026-10-02T23:30:00+13:00')).toEqual(['23:00', '23:45']);
+    // 11:30 PM on Oct 1 in Honolulu is already Oct 2 in UTC.
+    expect(opening('2026-10-01', HONOLULU, '2026-10-01T23:30:00-10:00')).toEqual(['23:00', '23:45']);
+    // Zones that are not whole hours from UTC: the next whole hour on their own clock.
+    expect(opening('2026-10-01', KOLKATA, '2026-10-01T19:21:00+05:30')).toEqual(['20:00', '21:00']);
+    expect(opening('2026-10-01', KATHMANDU, '2026-10-01T19:21:00+05:45')).toEqual(['20:00', '21:00']);
+  });
+
+  it('gives the same on whatever zone the machine is in', () => {
+    const machine = process.env.TZ;
+    // Minutes west of UTC for each, so the test knows the machine really did move.
+    const behind: Record<string, number> = { UTC: 0, 'Asia/Kolkata': -330, 'Pacific/Kiritimati': -840, 'Pacific/Pago_Pago': 660 };
+    try {
+      for (const [zone, offset] of Object.entries(behind)) {
+        process.env.TZ = zone;
+        expect(new Date('2026-10-01T12:00:00Z').getTimezoneOffset()).toBe(offset);
+        expect(opening('2026-10-02', AUCKLAND, '2026-10-02T00:10:00+13:00')).toEqual(['01:00', '02:00']);
+        expect(opening('2026-10-01', CHICAGO, '2026-10-01T19:21:00-05:00')).toEqual(['20:00', '21:00']);
+        expect(opening('2027-03-14', CHICAGO, '2027-03-14T01:30:00-06:00')).toEqual(['03:00', '04:00']);
+      }
+    } finally {
+      if (machine === undefined) delete process.env.TZ;
+      else process.env.TZ = machine;
+    }
+  });
+
+  it('never lands on a time the clocks skip', () => {
+    // Chicago, 2027-03-14: at 2:00 AM the clocks go to 3:00 AM. The next whole hour after 1:30 AM is 3:00 AM.
+    expect(opening('2027-03-14', CHICAGO, '2027-03-14T01:30:00-06:00')).toEqual(['03:00', '04:00']);
+    // The hour after Starts is an hour of real time too, so from 12:10 AM it ends at 3:00 AM on the clock.
+    expect(opening('2027-03-14', CHICAGO, '2027-03-14T00:10:00-06:00')).toEqual(['01:00', '03:00']);
+    // London, 2027-03-28: 1:00 AM does not exist.
+    expect(opening('2027-03-28', LONDON, '2027-03-28T00:30:00+00:00')).toEqual(['02:00', '03:00']);
+    // Havana, 2027-03-14: the change is at midnight, so the day's first hour is 1:00 AM.
+    expect(opening('2027-03-14', HAVANA, '2027-03-14T01:10:00-04:00')).toEqual(['02:00', '03:00']);
+    // The night before, the next whole hour is already tomorrow's 1:00 AM: Starts stays inside today.
+    expect(opening('2027-03-13', HAVANA, '2027-03-13T23:30:00-05:00')).toEqual(['23:00', '23:45']);
+    // Lord Howe, 2026-10-04: the clocks go forward by half an hour, 2:00 AM to 2:30 AM.
+    expect(opening('2026-10-04', LORD_HOWE, '2026-10-04T01:45:00+10:30')).toEqual(['02:30', '03:30']);
+  });
+});
+
+describe('moving a new event to another day', () => {
+  const now = new Date('2026-10-01T19:21:00-05:00');
+  const opened = { ...blankEventForm('2026-10-01'), ...openingTimes('2026-10-01', CHICAGO, now) };
+
+  it('takes the new day’s opening times while no stepper has moved them', () => {
+    expect(times(opened)).toEqual(['20:00', '21:00']);
+    const tomorrow = moveToDay(opened, '2026-10-02', false, CHICAGO, now);
+    expect(tomorrow).toMatchObject({ date: '2026-10-02', startTime: '09:00', endTime: '10:00' });
+    expect(moveToDay(tomorrow, '2026-10-01', false, CHICAGO, now)).toMatchObject({ date: '2026-10-01', startTime: '20:00', endTime: '21:00' });
+  });
+
+  it('keeps its times once a stepper has moved them', () => {
+    const moved = stepStart(opened, 1);
+    expect(times(moved)).toEqual(['20:15', '21:15']);
+    expect(moveToDay(moved, '2026-10-02', true, CHICAGO, now)).toEqual({ ...moved, date: '2026-10-02' });
+  });
+
+  it('changes nothing but the date and the times', () => {
+    const typed = { ...opened, title: 'Plumber', location: 'Home', notes: 'Key under the pot', profileIds: ['ava'], allDay: true };
+    expect(moveToDay(typed, '2026-10-03', false, CHICAGO, now)).toEqual({ ...typed, date: '2026-10-03', startTime: '09:00', endTime: '10:00' });
+  });
+
+  it('takes a cleared date field without complaint', () => {
+    expect(moveToDay(opened, '', false, CHICAGO, now)).toMatchObject({ date: '', startTime: '09:00', endTime: '10:00' });
+  });
+
+  it('is untouched only while it is as it opened', () => {
+    expect(isUntouched(moveToDay(opened, '2026-10-01', false, CHICAGO, now), opened)).toBe(true);
+    expect(isUntouched(moveToDay(opened, '2026-10-02', false, CHICAGO, now), opened)).toBe(false);
+  });
+});
+
+describe('a time the clocks skip', () => {
+  const HAVANA = 'America/Havana';
+  const LONDON = 'Europe/London';
+  const refused = (date: string, startTime: string, endTime: string, timezone: string) =>
+    eventFormToInput({ ...blankEventForm(date), title: 'Early', startTime, endTime }, timezone);
+  const skipped = (time: string) => ({ problem: `The clocks go forward on this day, so there is no ${time}. Pick another time.` });
+
+  it('is named when it is why an end is not after its start', () => {
+    // Chicago, 2027-03-14: 2:00 AM becomes 3:00 AM, so 2:00 AM does not exist and moves on to 3:00 AM.
+    expect(refused('2027-03-14', '02:00', '03:00', CHICAGO)).toEqual(skipped('2:00 AM'));
+    expect(refused('2027-03-14', '02:30', '03:15', CHICAGO)).toEqual(skipped('2:30 AM'));
+    // London, 2027-03-28: 1:00 AM becomes 2:00 AM.
+    expect(refused('2027-03-28', '01:00', '02:00', LONDON)).toEqual(skipped('1:00 AM'));
+    expect(refused('2027-03-28', '01:45', '02:30', LONDON)).toEqual(skipped('1:45 AM'));
+    // Havana, 2027-03-14: midnight becomes 1:00 AM.
+    expect(refused('2027-03-14', '00:00', '01:00', HAVANA)).toEqual(skipped('12:00 AM'));
+    expect(refused('2027-03-14', '00:30', '01:15', HAVANA)).toEqual(skipped('12:30 AM'));
+  });
+
+  it('is named for every form the steppers can make that the clocks refuse', () => {
+    const quarter = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+    const days: [string, string, RegExp][] = [
+      [CHICAGO, '2027-03-14', /^The clocks go forward on this day, so there is no 2:\d\d AM\. Pick another time\.$/],
+      [LONDON, '2027-03-28', /^The clocks go forward on this day, so there is no 1:\d\d AM\. Pick another time\.$/],
+      [HAVANA, '2027-03-14', /^The clocks go forward on this day, so there is no 12:\d\d AM\. Pick another time\.$/],
+    ];
+    for (const [zone, date, message] of days) {
+      let count = 0;
+      for (let start = 0; start <= 5 * 60; start += 15) {
+        for (let end = start + 15; end <= 6 * 60; end += 15) {
+          const result = refused(date, quarter(start), quarter(end), zone);
+          if (!('problem' in result)) continue;
+          count += 1;
+          // The steppers never put an end before its start on the clock, so what is refused is the skipped hour's doing.
+          expect(result.problem).toMatch(message);
+        }
+      }
+      expect(count).toBeGreaterThan(0);
+    }
+  });
+
+  it('still saves a time the clocks move on, when the order holds', () => {
+    // 2:30 AM becomes 3:30 AM, which is before 3:45 AM.
+    expect(refused('2027-03-14', '02:30', '03:45', CHICAGO)).toMatchObject({ starts_at: '2027-03-14T08:30:00.000Z', ends_at: '2027-03-14T08:45:00.000Z' });
+  });
+
+  it('leaves the other message for an end that is not after its start', () => {
+    const order = { problem: 'The event must end after it starts.' };
+    expect(refused('2026-10-08', '14:00', '13:00', CHICAGO)).toEqual(order);
+    expect(refused('2026-10-08', '14:00', '14:00', CHICAGO)).toEqual(order);
+    // On a day the clocks go forward, with both times real.
+    expect(refused('2027-03-14', '04:00', '03:30', CHICAGO)).toEqual(order);
+    // An end before its start on the clock is that problem, even where one of the times is skipped.
+    expect(refused('2027-03-14', '03:30', '02:15', CHICAGO)).toEqual(order);
   });
 });
 
