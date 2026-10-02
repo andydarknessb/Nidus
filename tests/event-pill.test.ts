@@ -119,18 +119,24 @@ describe('who an event is for, at the right of its pill', () => {
     expect(html).not.toContain('+');
   });
 
-  it('is two overlapping discs for two Profiles', () => {
+  it('is two discs, overlapping by 4 px, for two Profiles', () => {
     const html = discs(['p-cory', 'p-sam']);
     expect(count(html, 'bg-person-strong')).toBe(2);
-    expect(html).toContain('-ml-1.5');
+    expect(html).toMatch(/["\s]-ml-1["\s]/);
+    expect(html).not.toContain('-ml-1.5');
+    expect(html).not.toContain('-ml-2');
   });
 
-  it('is two discs and then a "+N" disc that counts the rest, never more than two discs', () => {
-    expect(count(discs(['p-cory', 'p-sam', 'p-ava']), 'bg-person-strong')).toBe(2);
-    expect(discs(['p-cory', 'p-sam', 'p-ava'])).toContain('+1');
+  it('is a disc for the first Profile and a "+N" disc that counts the rest for three or more, never more than two discs wide', () => {
+    const three = discs(['p-cory', 'p-sam', 'p-ava']);
+    expect(count(three, 'bg-person-strong')).toBe(1);
+    expect(three).toContain('>C<');
+    expect(three).not.toContain('>S<');
+    expect(three).toContain('+2');
+    expect(three).toMatch(/["\s]-ml-1["\s]/);
     const four = discs(['p-cory', 'p-sam', 'p-ava', 'p-ben']);
-    expect(count(four, 'bg-person-strong')).toBe(2);
-    expect(four).toContain('+2');
+    expect(count(four, 'bg-person-strong')).toBe(1);
+    expect(four).toContain('+3');
   });
 
   it('is hidden from a screen reader, the pill\'s own name says who', () => {
@@ -181,5 +187,36 @@ describe('an event pill', () => {
     const html = pill(event('Soccer practice', ['p-ava', 'p-ben']));
     expect(count(html, 'bg-person-fill')).toBe(2);
     expect(count(html, 'bg-person-strong')).toBe(2);
+  });
+
+  // The title has the whole width of the pill; under it is one row, the time at the left and who it is for at the right.
+  describe('its layout', () => {
+    const rowOf = (html: string) => html.slice(html.indexOf('flex-wrap'));
+    const aboveTheRow = (html: string) => html.slice(0, html.indexOf('flex-wrap'));
+
+    it('puts the title alone above the time and the discs, so no disc takes a share of its width', () => {
+      for (const ids of [[], ['p-ava'], ['p-ava', 'p-ben'], ['p-cory', 'p-sam', 'p-ava', 'p-ben']]) {
+        const html = pill(event('Thanksgiving', ids));
+        expect(html.indexOf('flex-wrap'), `${ids.length} people`).toBeGreaterThan(-1);
+        expect(aboveTheRow(html)).toContain('Thanksgiving');
+        expect(aboveTheRow(html)).toContain('line-clamp-2');
+        expect(aboveTheRow(html)).not.toContain('bg-primary');
+        expect(aboveTheRow(html)).not.toContain('bg-person-strong');
+        expect(rowOf(html)).toContain('6:30');
+        expect(rowOf(html)).toMatch(ids.length === 0 ? /bg-primary/ : /bg-person-strong/);
+        expect(rowOf(html)).not.toContain('Thanksgiving');
+      }
+    });
+
+    it('stacks its parts, and keeps the discs to the right when the row wraps', () => {
+      const html = pill(event('Thanksgiving', ['p-ava', 'p-ben']));
+      expect(html).toContain('flex-col');
+      expect(rowOf(html)).toContain('ml-auto');
+      expect(rowOf(html)).toContain('items-center');
+    });
+
+    it('is still at least 52 px tall', () => {
+      expect(pill(event('Thanksgiving', ['p-ava']))).toContain('min-h-13');
+    });
   });
 });

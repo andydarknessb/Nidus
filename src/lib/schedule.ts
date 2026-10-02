@@ -68,13 +68,14 @@ export function pillsThatFit({ heightPx, pillPx, gapPx, morePx }: { heightPx: nu
 
 // ---- Who a pill is for -----------------------------------------------------------------------------
 
-// A pill shows at most this many bands, and at most this many discs before a "+N" disc counts the rest.
+// A pill shows at most this many bands. Its discs are never more than two wide: past this many Profiles it draws the first
+// one's disc and a "+N" disc that counts the rest.
 const MAX_BANDS = 3;
 const MAX_DISCS = 2;
 
 // The whole Household's look (--everyone and the house disc), or the Profiles the pill is for: one equal band for each of
-// the first three, the first two of them as discs, and `more` the people the "+N" disc counts. `names` is everyone, for a
-// screen reader.
+// the first three; a disc for each of one or two Profiles, or for three or more the first one's disc and `more`, the people
+// a "+N" disc counts (three people are a disc and "+2"). `names` is everyone, for a screen reader.
 export type PillPeople = { kind: 'everyone' } | { kind: 'people'; bands: Profile[]; discs: Profile[]; more: number; names: string[] };
 
 // Who `occurrence` is for, from its `profile_ids` and the Household's Profiles, in the Profiles' own order. The view's
@@ -84,11 +85,12 @@ export type PillPeople = { kind: 'everyone' } | { kind: 'people'; bands: Profile
 export function pillPeople(occurrence: Occurrence, profiles: readonly Profile[]): PillPeople {
   const people = profiles.filter((profile) => occurrence.profile_ids.includes(profile.id));
   if (people.length === 0 || people.length === profiles.length) return { kind: 'everyone' };
+  const crowded = people.length > MAX_DISCS;
   return {
     kind: 'people',
     bands: people.slice(0, MAX_BANDS),
-    discs: people.slice(0, MAX_DISCS),
-    more: Math.max(people.length - MAX_DISCS, 0),
+    discs: crowded ? people.slice(0, 1) : people,
+    more: crowded ? people.length - 1 : 0,
     names: people.map((profile) => profile.name),
   };
 }

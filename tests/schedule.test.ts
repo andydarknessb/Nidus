@@ -266,15 +266,37 @@ describe('who a pill is for', () => {
     expect(pillPeople(meeting(['p-ava', 'p-sam', 'p-cory']), FAMILY)).toMatchObject({ kind: 'people', bands: [CORY, SAM, AVA], names: ['Cory', 'Sam', 'Ava'] });
   });
 
-  it('shows two discs and then a "+N" disc for the rest, three bands at most', () => {
-    expect(pillPeople(meeting(['p-cory', 'p-sam', 'p-ava']), FAMILY)).toMatchObject({ bands: [CORY, SAM, AVA], discs: [CORY, SAM], more: 1 });
-    expect(pillPeople(meeting(['p-cory', 'p-sam', 'p-ava', 'p-ben']), FAMILY)).toEqual({
+  // The row of discs is never more than two discs wide, so the time and the discs always fit under a title: one Profile is
+  // a disc, two are two discs, and three or more are the first one's disc and a "+N" disc that counts the rest.
+  it('shows one disc for one Profile and both discs for two', () => {
+    expect(pillPeople(meeting(['p-ava']), FAMILY)).toMatchObject({ discs: [AVA], more: 0 });
+    expect(pillPeople(meeting(['p-ben', 'p-cory']), FAMILY)).toMatchObject({ discs: [CORY, BEN], more: 0 });
+  });
+
+  it('shows a disc for the first Profile and a "+N" disc that counts the rest for three or more: three people are a disc and "+2"', () => {
+    expect(pillPeople(meeting(['p-cory', 'p-sam', 'p-ava']), FAMILY)).toMatchObject({ bands: [CORY, SAM, AVA], discs: [CORY], more: 2 });
+    expect(pillPeople(meeting(['p-ava', 'p-cory', 'p-sam', 'p-ben']), FAMILY)).toEqual({
       kind: 'people',
       bands: [CORY, SAM, AVA],
-      discs: [CORY, SAM],
-      more: 2,
+      discs: [CORY],
+      more: 3,
       names: ['Cory', 'Sam', 'Ava', 'Ben'],
     });
+  });
+
+  it('is never more than two discs wide, whoever it is for, and never more than three bands', () => {
+    const wide = (ids: string[]) => {
+      const people = pillPeople(meeting(ids), FAMILY);
+      return people.kind === 'people' ? { discs: people.discs.length + (people.more > 0 ? 1 : 0), bands: people.bands.length } : null;
+    };
+    expect(wide(['p-ava'])).toEqual({ discs: 1, bands: 1 });
+    expect(wide(['p-ava', 'p-ben'])).toEqual({ discs: 2, bands: 2 });
+    expect(wide(['p-ava', 'p-ben', 'p-sam'])).toEqual({ discs: 2, bands: 3 });
+    expect(wide(['p-ava', 'p-ben', 'p-sam', 'p-cory'])).toEqual({ discs: 2, bands: 3 });
+  });
+
+  it('names everyone it is for, however many discs it draws', () => {
+    expect(pillPeople(meeting(['p-cory', 'p-sam', 'p-ava', 'p-ben']), FAMILY)).toMatchObject({ names: ['Cory', 'Sam', 'Ava', 'Ben'] });
   });
 
   it('is the whole Household\'s look for an event for every Profile of it', () => {
