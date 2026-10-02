@@ -21,7 +21,7 @@ function Owners({ owners }: { owners: readonly Pick<Profile, 'name'>[] }) {
   return (
     <span aria-hidden="true" className="flex max-w-full items-baseline justify-center gap-px overflow-hidden px-1">
       <bdi>{initialOf(owners[0]?.name ?? '')}</bdi>
-      {others > 0 && <bdi className="text-[13px]">+{others}</bdi>}
+      {others > 0 && <bdi className="text-[14px]">+{others}</bdi>}
     </span>
   );
 }

@@ -254,7 +254,9 @@ describe('the colours a person can be given', () => {
     const alex = { id: 'p3', name: 'Alex', color: hex(7), avatar_url: null, sort_order: 2 };
     const sara = { id: 'p4', name: 'سارة', color: hex(7), avatar_url: null, sort_order: 3 };
     const markup = render({ profiles: [sara, cory, alex] });
-    expect(markup).toContain('<bdi>س</bdi><bdi class="text-[13px]">+2</bdi>');
+    expect(markup).toContain('<bdi>س</bdi><bdi class="text-[14px]">+2</bdi>');
+    // The count is words on a swatch, not a disc's initial: it keeps the 14 px floor (docs/look.md, Type).
+    expect(markup).not.toMatch(/<bdi class="text-\[(?:\d|1[0-3])px\]">/);
     // And it is held in the swatch: it can neither grow it nor spill out of it.
     expect(markup).toMatch(/<span aria-hidden="true" class="[^"]*\bmax-w-full\b[^"]*\boverflow-hidden\b/);
   });
