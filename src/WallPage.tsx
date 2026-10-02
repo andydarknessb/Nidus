@@ -316,7 +316,7 @@ function HomeShell({ owner }: { owner: boolean }) {
             <section aria-label="Routines" className="rounded-3xl bg-card p-4">
               {view.failed && (
                 <p role="alert" className="text-base">
-                  Could not load Routines. Check your connection.
+                  Could not load routines. Check your connection.
                 </p>
               )}
             </section>

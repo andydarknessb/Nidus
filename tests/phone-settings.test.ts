@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccountSummary as AccountSummaryType, CalendarRow as CalendarRowType } from '../src/CalendarAccountsSection';
 import type { CalendarsPage as CalendarsPageType } from '../src/CalendarsPage';
 import type { EventRow as EventRowType } from '../src/EventsSection';
+import type { RoutinesPage as RoutinesPageType } from '../src/RoutinesPage';
 import type { SettingsPage as SettingsPageType } from '../src/SettingsPage';
 import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '../src/components/PersonEditor';
 import { Confirm } from '../src/components/phone';
@@ -311,7 +312,7 @@ describe('deleting a person', () => {
   const render = () => renderToStaticMarkup(createElement(DeletePerson, { name: 'Ava', onCancel: () => undefined, onDelete: () => undefined }));
 
   it('says what goes with them', () => {
-    expect(DELETE_PERSON_WORDS).toBe("Their Routines and every tick go. Events only for them, and calendars set to them, become everyone's.");
+    expect(DELETE_PERSON_WORDS).toBe("Their routines and every tick go. Events only for them, and calendars set to them, become everyone's.");
   });
 
   it('says so before the button that deletes, and names who is to go', () => {
@@ -343,11 +344,13 @@ describe('the phone\'s manifest', () => {
 describe("the phone's pages, as they are first drawn", () => {
   let SettingsPage: typeof SettingsPageType;
   let CalendarsPage: typeof CalendarsPageType;
+  let RoutinesPage: typeof RoutinesPageType;
   beforeAll(async () => {
     vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
     vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
     ({ SettingsPage } = await import('../src/SettingsPage'));
     ({ CalendarsPage } = await import('../src/CalendarsPage'));
+    ({ RoutinesPage } = await import('../src/RoutinesPage'));
   });
 
   const household: Household = {
@@ -362,6 +365,7 @@ describe("the phone's pages, as they are first drawn", () => {
   };
   const householdPage = () => renderToStaticMarkup(createElement(SettingsPage, { household, onSaved: () => undefined, onSignOut: () => undefined }));
   const calendarsPage = () => renderToStaticMarkup(createElement(CalendarsPage, { household }));
+  const routinesPage = () => renderToStaticMarkup(createElement(RoutinesPage, { household }));
 
   const headings = (markup: string) => [...markup.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map(([, inner]) => words(inner ?? ''));
   const buttons = (markup: string) => [...markup.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)].map(([, attributes, inner]) => ({ attributes: attributes ?? '', name: words(inner ?? '') }));
@@ -421,6 +425,21 @@ describe("the phone's pages, as they are first drawn", () => {
     expect(headings(markup)).toEqual(['Google calendars', 'Events added in Nidus']);
     expect(words(markup)).toContain('Connect a Google calendar');
     expect(words(markup)).toContain('Add event');
+  });
+
+  it('start the Routines page where the Lists page starts: its status line is on the page from the first draw, and takes no room while it is empty', () => {
+    // The Lists page has its one h1, off screen, and then its first card. The Routines page had a status line that held a line of
+    // its own (a minimum height, 12 px from the next part) whether or not it had anything to say: a blank band over its first card.
+    const markup = routinesPage();
+    expect(markup.match(/<h1\b/g)).toHaveLength(1);
+    expect(markup).toContain('<h1 class="sr-only">Routines</h1>');
+    // It is there from the first draw, so a screen reader hears a sentence when it arrives; it is out of the layout while it is empty.
+    const status = /<p role="status" class="([^"]*)"><\/p>/.exec(markup)?.[1]?.split(' ');
+    expect(status).toContain('empty:sr-only');
+    expect(status).not.toContain('min-h-6');
+    // Nothing else comes before the first card: the page's own top padding is the Lists page's.
+    expect(markup).toMatch(/^<main class="[^"]*\bgap-3 px-4 pt-2 pb-6">/);
+    expect(markup).toMatch(/<\/h1><p role="status" class="[^"]*"><\/p><\/main>$/);
   });
 });
 
@@ -572,7 +591,7 @@ describe("a calendar's choices, one field at a time", () => {
 // The question before something is taken away: the three the phone asks (delete a person, unpair a tablet, remove an account).
 describe('the question before something is taken away', () => {
   const render = (props: Partial<Parameters<typeof Confirm>[0]> = {}) =>
-    renderToStaticMarkup(createElement(Confirm, { title: 'Delete Ava?', words: 'Their Routines go.', cancel: 'Cancel', confirm: 'Delete Ava', onCancel: () => undefined, onConfirm: () => undefined, ...props }));
+    renderToStaticMarkup(createElement(Confirm, { title: 'Delete Ava?', words: 'Their routines go.', cancel: 'Cancel', confirm: 'Delete Ava', onCancel: () => undefined, onConfirm: () => undefined, ...props }));
   const tag = (markup: string, name: string) => new RegExp(`<button[^>]*>\\s*${name}\\s*</button>`).exec(markup)?.[0] ?? '';
   const idOf = (markup: string, element: string) => new RegExp(`<${element}[^>]*\\bid="([^"]*)"`).exec(markup)?.[1];
 

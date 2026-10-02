@@ -358,9 +358,21 @@ describe('the words', () => {
     });
   });
 
+  it('say what moves, for a row that is marked with its own word already: "More" alone, and the name says which', () => {
+    // The Day view's two rows are marked "Earlier" and "Later" at their left end, so the button beside each reads just "More".
+    expect(overflowWords('x', 'earlier events', true)).toEqual({
+      more: { text: 'More', name: 'More earlier events' },
+      back: { text: 'Back', name: 'Back to the first earlier events' },
+    });
+    expect(overflowWords('x', 'later events', true)).toEqual({
+      more: { text: 'More', name: 'More later events' },
+      back: { text: 'Back', name: 'Back to the first later events' },
+    });
+  });
+
   it('have every visible word in the accessible name, so a name spoken from the screen finds the button', () => {
-    for (const [axis, of] of [['x', 'people'], ['x', 'lists'], ['y', "Ava's routines"], ['y', 'Groceries']] as const) {
-      const { more, back } = overflowWords(axis, of);
+    for (const [axis, of, short] of [['x', 'people', false], ['x', 'lists', false], ['y', "Ava's routines", false], ['y', 'Groceries', false], ['x', 'earlier events', true], ['x', 'later events', true]] as const) {
+      const { more, back } = overflowWords(axis, of, short);
       expect(more.name, `${axis} ${of}`).toContain(more.text);
       expect(back.name, `${axis} ${of}`).toContain(back.text);
     }
@@ -410,6 +422,26 @@ describe('the button', () => {
     expect(back).toContain('aria-label="Back to the top of Ava&#x27;s routines"');
     expect(visible(back)).toContain('Back');
     expect(visible(back)).toContain('lucide-chevron-up');
+  });
+
+  it('reads "More" alone beside a row that is marked with its own word, named for what moves, and "Back" at the end', () => {
+    // The Day view's "Earlier" and "Later" rows: the word is at the row's left end, so the button does not say it again, and the two
+    // buttons are the same size, whichever row they are beside.
+    const short = (atEnd: boolean, of: string) => renderToStaticMarkup(createElement(OverflowButton, { control: control('x', atEnd), of, short: true }));
+    for (const of of ['earlier events', 'later events']) {
+      const more = short(false, of);
+      expect(more).toContain(`aria-label="More ${of}"`);
+      expect(visible(more)).toContain('More');
+      expect(visible(more)).not.toContain(of);
+      expect(visible(more)).toContain('lucide-chevron-right');
+      const back = short(true, of);
+      expect(back).toContain(`aria-label="Back to the first ${of}"`);
+      expect(visible(back)).toContain('Back');
+      expect(visible(back)).toContain('lucide-chevron-left');
+      // The label that is not showing is "More" too, not "More earlier events": the button is as wide as "More" or "Back" needs.
+      expect(hidden(back)).toContain('More');
+      expect(hidden(back)).not.toContain(of);
+    }
   });
 
   it('draws both labels in one place, the other invisible and out of the accessibility tree, so its width is the wider of the two', () => {

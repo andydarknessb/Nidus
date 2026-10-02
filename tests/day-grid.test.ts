@@ -7,11 +7,12 @@ import { HourGrid, PillRow } from '../src/components/DayGrid';
 import { addDays, dayStartMs, pageDays, type Occurrence } from '../src/lib/calendar-occurrences';
 import { planDay, type DayPlan } from '../src/lib/day-view';
 import type { Profile } from '../src/lib/profiles';
+import type { OverflowControl } from '../src/lib/use-overflow';
 
 // What the Day view draws, rendered to markup (as tests/event-pill.test.ts does for the pill), so what is asserted is what the
 // browser is given: an hour is 3 rem, a block is never under one, the now line is drawn under the blocks, only the event that is on
 // now has the ring, a block is filled from its people and never from the Mirrored Calendar's colour, two lanes with a "+N" for the
-// rest, and both rows keep their height whether they hold pills or not.
+// rest, and both rows keep their height whether they hold pills or not, and say when they scroll.
 
 const CHICAGO = 'America/Chicago';
 const OCT1 = '2026-10-01';
@@ -61,6 +62,9 @@ function plan(occurrences: Occurrence[], date = OCT1): DayPlan {
   return planDay({ occurrences, day: dayOf(date), now: NOW, fit: 8 });
 }
 const grid = (p: DayPlan, date = OCT1) => renderToStaticMarkup(createElement(HourGrid, { plan: p, day: dayOf(date), people: FAMILY, onOpen: () => undefined, onFold: () => undefined }));
+// What a row's scrolling box says, as the hook would hand it over (markup is made without the browser's measuring): by default that
+// it holds all it has.
+const says = (overflowing = false, atEnd = false): OverflowControl => ({ axis: 'x', overflowing, atEnd, scroller: () => undefined, piece: () => undefined, step: () => undefined });
 const count = (html: string, text: string) => html.split(text).length - 1;
 // The opening tag of the button named `name` (a name that starts so), and all of that button.
 const literally = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -157,7 +161,7 @@ describe('the grid', () => {
     expect(html.indexOf(ring)).toBeLessThan(html.indexOf('Book club'));
     // An all-day event never has it: it is in the row above, and says "All day".
     const allDay = event('Photo day', OCT1, '00:00', '00:00', [], { is_all_day: true, ends_at: new Date(dayStartMs(addDays(OCT1, 1), CHICAGO)).toISOString(), starts_at: new Date(dayStartMs(OCT1, CHICAGO)).toISOString() });
-    const row = renderToStaticMarkup(createElement(PillRow, { label: 'Earlier', name: 'All day and earlier', pills: plan([allDay]).above, day: dayOf(OCT1), people: FAMILY, empty: '', onOpen: () => undefined }));
+    const row = renderToStaticMarkup(createElement(PillRow, { label: 'Earlier', name: 'All day and earlier', of: 'earlier events', control: says(), pills: plan([allDay]).above, day: dayOf(OCT1), people: FAMILY, empty: '', onOpen: () => undefined }));
     expect(count(row, ring)).toBe(0);
   });
 });
@@ -240,15 +244,74 @@ describe('the lanes', () => {
 
 describe('the rows above and below the grid', () => {
   const row = (props: Partial<Parameters<typeof PillRow>[0]> = {}) =>
-    renderToStaticMarkup(createElement(PillRow, { label: 'Later', name: 'Later', pills: [], day: dayOf(OCT1), people: FAMILY, empty: 'Nothing later today', onOpen: () => undefined, ...props }));
+    renderToStaticMarkup(
+      createElement(PillRow, { label: 'Later', name: 'Later', of: 'later events', control: says(), pills: [], day: dayOf(OCT1), people: FAMILY, empty: 'Nothing later today', onOpen: () => undefined, ...props }),
+    );
 
-  it('are one pill tall (52 px) when empty, and the same when full', () => {
+  it('are one pill tall (52 px) when empty, when full and when they scroll, at the start and at the end', () => {
     const full = plan([event('Standup', OCT1, '09:00', '09:30', ['p-cory']), event('Review', OCT1, '13:00', '14:00', ['p-cory'])]).above;
     expect(full).toHaveLength(2);
-    for (const html of [row(), row({ pills: full })]) {
+    for (const html of [row(), row({ pills: full }), row({ pills: full, control: says(true) }), row({ pills: full, control: says(true, true) })]) {
       expect(html).toContain('role="group"');
       expect(html).toMatch(/class="flex h-13 flex-none gap-2"/);
     }
+  });
+
+  describe('when they hold more than fits', () => {
+    const above = plan([event('Standup', OCT1, '09:00', '09:30', ['p-cory']), event('Design review', OCT1, '13:00', '14:00', ['p-cory'])]).above;
+    const earlier = (control: OverflowControl, day = OCT1) =>
+      row({ label: 'Earlier', name: 'All day and earlier', of: 'earlier events', pills: above, control, day: dayOf(day), empty: day === OCT1 ? 'Nothing earlier today' : 'Nothing earlier' });
+    const later = (control: OverflowControl, day = OCT1) => row({ of: 'later events', pills: above, control, day: dayOf(day) });
+    // The button the row's scrolling box is given: not a pill, whose names begin with their titles.
+    const button = (html: string) => /<button[^>]*aria-label="(?:More|Back)[^"]*"[^>]*>/.exec(html)?.[0] ?? '';
+
+    it('say so with "More" beside the row, after its pills, named for the row', () => {
+      for (const [html, name] of [
+        [earlier(says(true)), 'More earlier events'],
+        [later(says(true)), 'More later events'],
+      ] as const) {
+        expect(html, name).toContain(`aria-label="${name}"`);
+        // After the box that scrolls, and inside the group: it is beside the row, in the row's own gap.
+        expect(html.indexOf('overflow-x-auto'), name).toBeLessThan(html.indexOf(`aria-label="${name}"`));
+        expect(html.startsWith('<div role="group"'), name).toBe(true);
+        expect(html.endsWith('</button></div>'), name).toBe(true);
+      }
+    });
+
+    it('say how to get back at the end of the row, in the same words for what moves', () => {
+      expect(earlier(says(true, true))).toContain('aria-label="Back to the first earlier events"');
+      expect(later(says(true, true))).toContain('aria-label="Back to the first later events"');
+      expect(earlier(says(true, true))).not.toContain('aria-label="More earlier events"');
+    });
+
+    it('name the same on a day that is not today: the rows\' own words drop "today", the buttons never had it', () => {
+      for (const day of [OCT1, OCT2]) {
+        expect(earlier(says(true), day)).toContain('aria-label="More earlier events"');
+        expect(later(says(true), day)).toContain('aria-label="More later events"');
+        expect(earlier(says(true, true), day)).toContain('aria-label="Back to the first earlier events"');
+        expect(button(later(says(true), day))).not.toMatch(/today/);
+      }
+    });
+
+    it('draw no button for a row that holds all it has, empty or full', () => {
+      for (const html of [row(), earlier(says()), later(says())]) {
+        expect(html).not.toMatch(/aria-label="(More|Back)/);
+        expect(html).not.toContain('lucide-chevron');
+      }
+    });
+
+    it('draw a button as tall as the row, 52 px, so the row does not grow, and the same one beside each row', () => {
+      const one = button(earlier(says(true)));
+      const other = button(later(says(true)));
+      for (const tag of [one, other]) {
+        expect(tag).toMatch(/\bh-13\b/);
+        expect(tag).not.toMatch(/\bh-14\b/);
+        // On the row's own card it is told apart by its fill, as every secondary button on a card is.
+        expect(tag).toMatch(/\bbg-secondary\b/);
+        expect(tag).not.toMatch(/\bbg-card\b/);
+      }
+      expect(one.replace(/aria-label="[^"]*"/, '')).toBe(other.replace(/aria-label="[^"]*"/, ''));
+    });
   });
 
   it('say so when empty, and say nothing before the day has been read', () => {

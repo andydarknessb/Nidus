@@ -88,7 +88,7 @@ export function UpNext({ routines, failed, onOpenRoutines }: { routines: Routine
       {!loaded && !failed && !routines.failed && <p className="px-1 text-base">Loading</p>}
       {(failed || routines.failed) && !loaded && (
         <p role="alert" className="px-1 text-base">
-          Could not load Routines. Check your connection.
+          Could not load routines. Check your connection.
         </p>
       )}
       {loaded && groups.length === 0 && <p className="px-1 text-base">Nothing scheduled today.</p>}

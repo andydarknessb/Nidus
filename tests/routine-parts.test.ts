@@ -741,7 +741,7 @@ describe('Routine pictures', () => {
   // The picker as the phone's form draws it: its radios, each with the key it holds, the words a screen reader says for it, and
   // whether it is the one chosen.
   const pick = (picture: string | null) => {
-    const markup = renderToStaticMarkup(createElement(PictureField, { about: "Ava's new Routine", picture, onChange: () => undefined }));
+    const markup = renderToStaticMarkup(createElement(PictureField, { about: "Ava's new routine", picture, onChange: () => undefined }));
     const radios = (markup.match(/<input[^>]*type="radio"[^>]*>/g) ?? []).map((tag) => ({
       key: /value="([^"]*)"/.exec(tag)?.[1],
       name: /aria-label="([^"]*)"/.exec(tag)?.[1],

@@ -353,7 +353,7 @@ function NextMealButton({ timezone, onOpen }: { timezone: string; onOpen: () => 
   const words = nextMealWords(next.slot);
   return (
     <Button
-      aria-label={`${words}: ${next.title}. Open Meals`}
+      aria-label={`${words}: ${next.title}. Open meals`}
       onClick={onOpen}
       className="ml-6 hidden h-16 max-w-full min-w-0 gap-3 rounded-[20px] bg-card p-0 pr-3 pl-2 font-normal @min-[12.5rem]:flex"
     >

@@ -263,7 +263,7 @@ function Column({
           </div>
         </div>
       </div>
-      <Pips done={count} total={total} label={`${profile.name}: ${count} of ${total} ${total === 1 ? 'Routine' : 'Routines'} done`} color={profile.color} height={10} />
+      <Pips done={count} total={total} label={`${profile.name}: ${count} of ${total} ${total === 1 ? 'routine' : 'routines'} done`} color={profile.color} height={10} />
       {total > 0 && (
         // The scrolling box has no padding, so the "More" button at its foot sticks flush with its end; the padding inside it is room for
         // a tile's focus ring, which the box would otherwise clip. At rest a tile may sit partly under the button; one that takes the
@@ -408,10 +408,10 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
       {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
       {failed && !loaded && (
         <p role="alert" className="text-base">
-          Could not load Routines. Check your connection.
+          Could not load routines. Check your connection.
         </p>
       )}
-      {loaded && columns.length === 0 && <p className="text-base">No Routines yet.</p>}
+      {loaded && columns.length === 0 && <p className="text-base">No routines yet.</p>}
       <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
         {columns.map(({ profile, routines: today }) => (
           <Column
@@ -494,7 +494,7 @@ function RoutineForm({
   // again with the rest of the form.
   const [added, setAdded] = useState(0);
   // What the labels name, so no two forms on the page share a label.
-  const about = routine ? routine.title : `${profile.name}'s new Routine`;
+  const about = routine ? routine.title : `${profile.name}'s new routine`;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -516,7 +516,7 @@ function RoutineForm({
   return (
     <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
       <label className="flex flex-col gap-2 text-[15px] text-muted-foreground">
-        {routine ? `Title for ${routine.title}` : `New Routine for ${profile.name}`}
+        {routine ? `Title for ${routine.title}` : `New routine for ${profile.name}`}
         <input
           className="w-full text-[17px] text-foreground"
           value={title}
@@ -565,7 +565,7 @@ function RoutineForm({
       <div className="flex gap-3">
         {/* A page of forms has one primary: the Save of the Routine being edited. Adding is secondary. */}
         <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" disabled={mask === 0 || saving}>
-          {routine ? 'Save' : 'Add Routine'}
+          {routine ? 'Save' : 'Add routine'}
         </Button>
         {onCancel && (
           <Button size="phone" variant="quiet" onClick={onCancel}>
@@ -575,7 +575,7 @@ function RoutineForm({
       </div>
       {failed && (
         <p role="alert" className="text-base">
-          Could not {routine ? 'save' : 'add'} that Routine. Check the name and days, then try again.
+          Could not {routine ? 'save' : 'add'} that routine. Check the name and days, then try again.
         </p>
       )}
       {mask === 0 && <p className="text-base">Pick at least one day.</p>}
@@ -606,7 +606,7 @@ export function RoutinesPage({ household }: { household: Household }) {
       setProfiles(foundProfiles);
       setRoutines(foundRoutines);
     } catch {
-      setProblem('Could not load Routines. Check your connection.');
+      setProblem('Could not load routines. Check your connection.');
     }
   }, []);
 
@@ -657,7 +657,8 @@ export function RoutinesPage({ household }: { household: Household }) {
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pt-2 pb-6">
       <h1 className="sr-only">Routines</h1>
-      <p role="status" className="min-h-6 text-base">
+      {/* On the page from the first draw, so a screen reader hears a sentence when it comes, and out of the layout while it has none: the first card starts where the Lists page's does. */}
+      <p role="status" className="text-base empty:sr-only">
         {problem}
       </p>
       {profiles?.length === 0 && (
@@ -682,7 +683,7 @@ export function RoutinesPage({ household }: { household: Household }) {
               <PersonDisc name={profile.name} color={profile.color} size={44} />
               {profile.name}
             </h2>
-            {own.length === 0 && <p className="text-base">No Routines yet.</p>}
+            {own.length === 0 && <p className="text-base">No routines yet.</p>}
             {times.map((time) => (
               <Fragment key={time.label}>
                 {headed && <h3 className="text-sm font-medium text-muted-foreground">{time.label}</h3>}
@@ -712,7 +713,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 onClick={() => {
                                   setConfirming(null);
                                   setFocusNext(`profile-${profile.id}`);
-                                  void change(() => archiveRoutine(supabase, routine.id), 'Could not archive that Routine. Try again.');
+                                  void change(() => archiveRoutine(supabase, routine.id), 'Could not archive that routine. Try again.');
                                 }}
                               >
                                 Archive {routine.title}
@@ -754,7 +755,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 aria-label={`Move ${routineName(routine)} up`}
                                 disabled={index === 0}
                                 onClick={() =>
-                                  void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder Routines. Try again.')
+                                  void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder routines. Try again.')
                                 }
                               >
                                 <ArrowUp aria-hidden className="size-5" />
@@ -765,7 +766,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 aria-label={`Move ${routineName(routine)} down`}
                                 disabled={index === time.routines.length - 1}
                                 onClick={() =>
-                                  void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder Routines. Try again.')
+                                  void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder routines. Try again.')
                                 }
                               >
                                 <ArrowDown aria-hidden className="size-5" />

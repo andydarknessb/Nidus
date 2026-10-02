@@ -5,7 +5,9 @@ import type { Occurrence, WallDay } from '../lib/calendar-occurrences';
 import { HOUR_REM, hourWords, type DayBlock, type DayPlan, type FoldTile } from '../lib/day-view';
 import type { Profile } from '../lib/profiles';
 import { pillName, pillPeople, type Pill, type PillPeople } from '../lib/schedule';
+import type { OverflowControl } from '../lib/use-overflow';
 import { EventDiscs, EventFill, EventPill } from './EventPill';
+import { OverflowButton } from './OverflowButton';
 import { Button } from './ui/button';
 
 // What the Day view draws (docs/look.md; spec 0003, Day view): the two rows above and below the hour grid, and the grid. All of it
@@ -17,11 +19,17 @@ const LANE_GAP_PX = 8;
 
 // One of the Day view's two rows, exactly one pill tall whatever it holds: its word in the hour gutter's width, then the pills,
 // 220 px wide each (a title takes one line), side by side and scrolling sideways when they do not fit. With none it says so in
-// `empty` (nothing while the day is still being read, so an empty row is never claimed before it is known to be).
+// `empty` (nothing while the day is still being read, so an empty row is never claimed before it is known to be). A tablet in a
+// kiosk browser draws no scrollbars, so a row that holds more than it shows says so with the shared button (OverflowButton) beside
+// it: "More", and "Back" at its end, named for what moves (`of`: "earlier events"). `control` is what the screen has measured of
+// the row's box (useOverflow); the button is as tall as the row, 52 px, so the row never grows, on the row's own card in the fill a
+// secondary button has on one, and 8 px from the pills, in the row's own gap.
 export function PillRow({
   ref,
   label,
   name,
+  of,
+  control,
   pills,
   day,
   people,
@@ -31,6 +39,8 @@ export function PillRow({
   ref?: Ref<HTMLDivElement>;
   label: string;
   name: string;
+  of: string;
+  control: OverflowControl;
   pills: Pill[];
   day: WallDay;
   people: readonly Profile[];
@@ -42,7 +52,7 @@ export function PillRow({
       <span aria-hidden className="flex w-15 flex-none items-center justify-end text-sm text-muted-foreground">
         {label}
       </span>
-      <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto overflow-y-hidden px-1.5 [scrollbar-width:none]">
+      <div ref={control.scroller} className="flex min-w-0 flex-1 gap-2 overflow-x-auto overflow-y-hidden px-1.5 [scrollbar-width:none]">
         {pills.length === 0 ? (
           <p className="flex items-center text-sm text-muted-foreground">{empty}</p>
         ) : (
@@ -53,6 +63,7 @@ export function PillRow({
           ))
         )}
       </div>
+      <OverflowButton control={control} of={of} short className="h-13 bg-secondary" />
     </div>
   );
 }
