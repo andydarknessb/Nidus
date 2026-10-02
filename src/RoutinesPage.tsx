@@ -98,12 +98,16 @@ const WORDS = 'min-w-0 text-start break-words hyphens-auto';
 // the words on up to two lines and a 44 px ring. To do, the ring is the person's strong colour; done, the tile is filled
 // with their base colour and shows a tick, and its words stay as they are, not struck through. On the chart it is a card
 // on the person's column and says whether it is ticked. In Up next, which names the person under the words (`who`), it is
-// a tile on a card; a Routine ticked there stays in the done look for a moment (HOME_HOLD_MS), and tapped then it is unticked.
+// a tile on a card; a Routine ticked there stays in the done look for a moment (HOME_HOLD_MS), and tapped then it is unticked. The
+// name line carries the person's initial, so a child tells their tile from a sibling's by more than its colour and picture. When their
+// tick did not save (`problem`, Up next only) the sentence takes the place of the name line, inside the tile: a line of its own under
+// it would push the tiles below down from under the finger.
 export function RoutineTile({
   routine,
   color,
   done = false,
   who,
+  problem,
   ref,
   onTap,
 }: {
@@ -111,6 +115,7 @@ export function RoutineTile({
   color: string;
   done?: boolean;
   who?: string;
+  problem?: string | undefined;
   // Called with the button as it appears and with null as it goes (Up next watches that, to keep the keyboard's place).
   ref?: Ref<HTMLButtonElement>;
   onTap: (button: HTMLElement) => void;
@@ -140,12 +145,20 @@ export function RoutineTile({
         </span>
       ) : (
         <span className="flex min-w-0 flex-1 flex-col">
-          <span dir="auto" className={cn(WORDS, 'line-clamp-2 text-[19px] leading-6', done ? 'font-semibold' : 'font-medium')}>
+          {/* With a sentence beside it the Routine's words keep one line, so the tile (80 px) holds the sentence on up to three. */}
+          <span dir="auto" className={cn(WORDS, problem ? 'line-clamp-1' : 'line-clamp-2', 'text-[19px] leading-6', done ? 'font-semibold' : 'font-medium')}>
             {routine.title}
           </span>
-          <span dir="auto" className={cn('truncate text-start text-sm leading-[18px]', !done && 'text-muted-foreground')}>
-            {who}
-          </span>
+          {problem ? (
+            <span className="text-start text-[15px] leading-[18px]">{problem}</span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <PersonDisc name={who} color={color} size={24} />
+              <span dir="auto" className={cn('min-w-0 truncate text-start text-sm leading-[18px]', !done && 'text-muted-foreground')}>
+                {who}
+              </span>
+            </span>
+          )}
         </span>
       )}
       {done ? <Tick color={color} /> : <EmptyRing color={color} />}

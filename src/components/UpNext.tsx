@@ -97,10 +97,12 @@ export function UpNext({ routines, failed, onOpenRoutines }: { routines: Routine
         <ul className="flex flex-col gap-2">
           {tiles.map(({ profile, routine, done: held }) => (
             // Keyed by person, so the tile that was tapped stays under the finger and shows what is next once its hold ends.
-            <li key={profile.id} className="flex flex-col gap-1.5">
-              <RoutineTile ref={watchTile} routine={routine} color={profile.color} who={profile.name} done={held} onTap={(button) => tap(profile, routine, button)} />
+            <li key={profile.id}>
+              <RoutineTile ref={watchTile} routine={routine} color={profile.color} who={profile.name} done={held} problem={problems[profile.id]} onTap={(button) => tap(profile, routine, button)} />
+              {/* The sentence is drawn inside the tile, where nothing moves for it; a button's insides are not announced, so a live
+                  region off screen says it to a screen reader, beside the tile of the person it is about. */}
               {problems[profile.id] && (
-                <p role="alert" className="px-1 text-[15px] leading-5">
+                <p role="alert" className="sr-only">
                   {problems[profile.id]}
                 </p>
               )}

@@ -319,12 +319,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
           return (await adding) !== null;
         }}
       />
-      {problem && (
-        <p role="alert" className="shrink-0 text-[15px] leading-5">
-          {problem}
-        </p>
-      )}
-      {loaded && items.length === 0 && !problem && <p className="shrink-0 text-base">Nothing on this list.</p>}
+      {loaded && items.length === 0 && <p className="shrink-0 text-base">Nothing on this list.</p>}
       {items.length > 0 && (
         // At rest an item may sit partly under the "More" button at their foot; one that takes the focus, or is added, is scrolled clear of it.
         <div ref={more.scroller} className={`min-h-0 overflow-y-auto ${FOOT_CLEARANCE}`}>
@@ -337,6 +332,13 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
           </ul>
           <OverflowButton control={more} of={list.name} />
         </div>
+      )}
+      {/* What did not save is said at the card's foot, where "Clear crossed off" sits, and never above the rows: a line over them would
+          push the row that was just tapped down from under the finger. */}
+      {problem && (
+        <p role="alert" className="shrink-0 text-[15px] leading-5">
+          {problem}
+        </p>
       )}
       {crossed > 0 && (
         <Button
@@ -427,10 +429,10 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
   const left = withoutCrossed(items).length;
   const region = useRef<HTMLDivElement>(null);
   const room = useHeight(region);
-  // A line of words, when there is one, takes the room of a row. "Nothing left to get" waits until the last row has gone, so it
-  // never pushes a row that was just crossed off down from under the finger.
-  const words = problem || (loaded && rows.length === 0 ? 'Nothing left to get.' : '');
-  const shown = room === null ? 0 : rowsThatFit({ count: rows.length, room: room - (words ? HOME_ROW_PX + HOME_GAP_PX : 0), row: HOME_ROW_PX, gap: HOME_GAP_PX });
+  // "Nothing left to get" waits until the last row has gone (`rows` holds a row crossed off here for its four seconds), so it never
+  // pushes a row that was just crossed off down from under the finger.
+  const nothing = loaded && rows.length === 0;
+  const shown = room === null ? 0 : rowsThatFit({ count: rows.length, room, row: HOME_ROW_PX, gap: HOME_GAP_PX });
   // The items still to get that the card has no room for.
   const hidden = withoutCrossed(rows.slice(shown)).length;
 
@@ -478,17 +480,20 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
       <div ref={region} className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
         {room !== null && (
           <>
-            {words && (
-              <p role={problem ? 'alert' : undefined} className="flex h-12 shrink-0 items-center px-1 text-[15px] leading-5">
-                {words}
-              </p>
-            )}
+            {nothing && <p className="shrink-0 px-1 text-base text-muted-foreground">Nothing left to get.</p>}
             {rows.slice(0, shown).map((item) => (
               <ItemRow key={item.id} item={item} size="home" onToggle={() => tap(item)} />
             ))}
           </>
         )}
       </div>
+      {/* What did not save is said at the card's foot, under the rows that fit (they take what room is left): a line over them would
+          push the row that was just tapped down from under the finger. */}
+      {problem && (
+        <p role="alert" className="shrink-0 px-1 text-[15px] leading-5">
+          {problem}
+        </p>
+      )}
     </section>
   );
 }
