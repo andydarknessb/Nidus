@@ -49,12 +49,10 @@ export function pinnedFirst(lists: SharedList[], pinnedId: string | null): Share
   return pinned ? [pinned, ...lists.filter((list) => list !== pinned)] : lists;
 }
 
-// How many of `count` rows a card holds in `room` px, the rows being `row` px tall and `gap` px apart. All of them
-// when they fit; otherwise as many as fit above the "and N more" button, which is `more` px tall and `gap` below the
-// last row (or none, which leaves the button alone). Whether the button itself fits is for the card to say.
-export function rowsThatFit({ count, room, row, gap, more }: { count: number; room: number; row: number; gap: number; more: number }): number {
-  if (count * row + (count - 1) * gap <= room) return count;
-  return Math.max(0, Math.floor((room - more) / (row + gap)));
+// How many of `count` rows fit in `room` px, the rows being `row` px tall and `gap` px apart: all of them, or as many as
+// fit (none, when not even one does). The rows left out are the card's to count and say so.
+export function rowsThatFit({ count, room, row, gap }: { count: number; room: number; row: number; gap: number }): number {
+  return Math.min(count, Math.max(0, Math.floor((room + gap) / (row + gap))));
 }
 
 // ---- Lists (Household Account writes) ------------------------------------------

@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { pinnedFirst, rowsThatFit, type SharedList } from '../src/lib/shared-lists';
 
-// Pure rules for a Shared List's card on the Wall: how many of its rows Home's card holds, and which list comes first on
-// the Lists screen. They run without the local stack.
+// Pure rules for a Shared List's card on the Wall: how many rows Home's card holds, and which list comes first on the
+// Lists screen. They run without the local stack.
 
-// Home's card, from the drawing (v2/home.js): a row is 48 px, the gap between rows 8, and "and N more" is a button, so 48.
+// Home's card, from the drawing (v2/home.js): a row is 48 px and the gap between rows 8.
 const ROW = 48;
 const GAP = 8;
-const MORE = 48;
-const fit = (count: number, room: number, more = MORE) => rowsThatFit({ count, room, row: ROW, gap: GAP, more });
+const fit = (count: number, room: number) => rowsThatFit({ count, room, row: ROW, gap: GAP });
 
 describe('rowsThatFit', () => {
   it('shows nothing for a list with no rows, whatever the room', () => {
@@ -16,37 +15,36 @@ describe('rowsThatFit', () => {
     expect(fit(0, 500)).toBe(0);
   });
 
-  it('shows every row, and no button, when they all fit', () => {
+  it('shows every row when they all fit', () => {
     // Three rows are 3 x 48 + 2 x 8 = 160 tall.
     expect(fit(3, 160)).toBe(3);
     expect(fit(3, 400)).toBe(3);
     expect(fit(1, 48)).toBe(1);
   });
 
-  it('holds rows back for the "and N more" button when they do not all fit', () => {
-    // One pixel short of all three: two rows and the button need 2 x (48 + 8) + 48 = 160, so one row and the button.
-    expect(fit(3, 159)).toBe(1);
-    // Room for three rows and the button is 3 x 56 + 48 = 216, for two 160, for one 104.
-    expect(fit(10, 216)).toBe(3);
-    expect(fit(10, 215)).toBe(2);
-    expect(fit(10, 160)).toBe(2);
-    expect(fit(10, 104)).toBe(1);
+  it('shows as many as fit when they do not all fit', () => {
+    // Two rows are 104 tall, three 160, four 216.
+    expect(fit(10, 104)).toBe(2);
+    expect(fit(10, 159)).toBe(2);
+    expect(fit(10, 160)).toBe(3);
+    expect(fit(10, 215)).toBe(3);
+    expect(fit(10, 216)).toBe(4);
+    expect(fit(3, 159)).toBe(2);
   });
 
-  it('shows no row when none fits above the button, down to no room at all', () => {
-    // One row and the button need 104; whether the button itself fits (48) is for the card to say.
-    expect(fit(5, 103)).toBe(0);
-    expect(fit(5, 48)).toBe(0);
+  it('shows no row when not even one fits, down to no room at all', () => {
     expect(fit(5, 47)).toBe(0);
     expect(fit(5, 0)).toBe(0);
     expect(fit(5, -20)).toBe(0);
   });
 
-  it('is the drawing\'s card at 256 px: two rows under a 20 px line, but one under a 48 px button', () => {
-    // 256 less 24 of padding, a 32 head, a 52 add row and two 8 gaps leaves 132.
-    const room = 256 - 24 - 32 - 52 - 16;
-    expect(fit(4, room, 20)).toBe(2);
-    expect(fit(4, room)).toBe(1);
+  it('is the card at three heights: two rows at 250 px, one at 200, and exactly two at 244 under a 336 px Up next', () => {
+    // The card's own parts: 24 of padding, a 48 heading, a 52 add row and two 8 gaps. 250 px leaves 110, 200 leaves 60, and 244
+    // (the 596 px of the right column at 1280 x 800, less Up next and a 16 gap) leaves 104.
+    const room = (card: number) => card - 24 - 48 - 52 - 16;
+    expect(fit(4, room(250))).toBe(2);
+    expect(fit(4, room(200))).toBe(1);
+    expect(fit(4, room(244))).toBe(2);
   });
 
   it('is never more than the rows there are, and never negative', () => {
@@ -63,14 +61,9 @@ describe('rowsThatFit', () => {
     for (let count = 1; count <= 12; count += 1) {
       for (let room = 0; room <= 700; room += 1) {
         const shown = fit(count, room);
-        const all = count * ROW + (count - 1) * GAP;
-        if (shown === count) {
-          expect(all, `${count} rows in ${room}`).toBeLessThanOrEqual(room);
-        } else {
-          if (shown > 0) expect(shown * (ROW + GAP) + MORE, `${shown} of ${count} rows in ${room}`).toBeLessThanOrEqual(room);
-          const oneMoreFits = shown + 1 === count ? all <= room : (shown + 1) * (ROW + GAP) + MORE <= room;
-          expect(oneMoreFits, `one more of ${count} rows in ${room}`).toBe(false);
-        }
+        const height = (rows: number) => rows * ROW + Math.max(rows - 1, 0) * GAP;
+        if (shown > 0) expect(height(shown), `${shown} of ${count} rows in ${room}`).toBeLessThanOrEqual(room);
+        if (shown < count) expect(height(shown + 1), `one more of ${count} rows in ${room}`).toBeGreaterThan(room);
       }
     }
   });

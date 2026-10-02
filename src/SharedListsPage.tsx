@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
-import { ArrowDown, ArrowUp, List, Pin, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronRight, List, Pin, Plus } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import {
   addItem,
@@ -315,20 +315,19 @@ export function ListsScreen() {
 
 // ---- Home's card: the Pinned List -----------------------------------------------------
 
-// From the drawing (v2/home.js): a row is 48 px (h-12) and rows are 8 px apart (gap-2). "And N more" is a button, so it is 48 px
-// as well, where the drawing's line of words is 20: nothing a finger taps is smaller.
+// From the drawing (v2/home.js): a row is 48 px (h-12) and rows are 8 px apart (gap-2).
 // ponytail: these sit beside the classes they stand for and are not measured; if a larger text size (#69) ever grows a row,
 // measure the first row instead.
 const HOME_ROW_PX = 48;
 const HOME_GAP_PX = 8;
-const HOME_MORE_PX = 48;
 // min-w-0: the card is a grid item, whose width is otherwise at least that of its widest unwrapped words, so one long item or list
 // name would make the whole right rail, and the page, wider than the screen.
 const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3';
 
-// The Pinned List's card: it is as tall as the right rail leaves it, and shows the items still to get that fit under its field
-// (rowsThatFit), then "and N more", which opens the Lists screen. Crossed-off items are for the Lists screen, until someone clears
-// them. An item added here is said on the status line, since it may land under "and N more".
+// The Pinned List's card, under Up next in Home's right column: it is as tall as that column leaves it. A heading row holds the list's
+// name and a link to the Lists screen that says how many items still to get the card has no room for ("3 more"), or "All lists" when it
+// shows them all. Then the field that adds an item, and the items that fit under it (rowsThatFit). An item added here is said on the
+// status line, since it may not be one of the rows that fit.
 function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => void }) {
   const say = useStatusLine();
   const { items, loaded, problem, add, toggle } = useItems(list.id);
@@ -337,14 +336,26 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
   const room = useHeight(region);
   // A line of words, when there is one, takes the room of a row.
   const words = problem || (loaded && toGet.length === 0 ? 'Nothing left to get.' : '');
-  const shown = room === null ? 0 : rowsThatFit({ count: toGet.length, room: room - (words ? HOME_ROW_PX + HOME_GAP_PX : 0), row: HOME_ROW_PX, gap: HOME_GAP_PX, more: HOME_MORE_PX });
+  const shown = room === null ? 0 : rowsThatFit({ count: toGet.length, room: room - (words ? HOME_ROW_PX + HOME_GAP_PX : 0), row: HOME_ROW_PX, gap: HOME_GAP_PX });
   const hidden = toGet.length - shown;
 
   return (
     <section aria-label={list.name} className={HOME_CARD}>
-      <div className="flex h-8 shrink-0 items-center justify-between gap-3 px-1">
-        <h2 className="min-w-0 truncate font-display text-[22px] leading-7">{list.name}</h2>
-        {loaded && <span className="shrink-0 text-sm text-muted-foreground">{toGet.length} to get</span>}
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2">
+        <h2 className="min-w-0 flex-1 truncate px-1 font-display text-[22px] leading-7">{list.name}</h2>
+        <Button asChild variant="quiet" className="h-12 shrink-0 gap-0.5 rounded-[14px] pr-1 pl-3 text-[15px] font-medium">
+          <a
+            href="/lists"
+            aria-label={hidden > 0 ? `${hidden} more in ${list.name}. All lists` : 'All lists'}
+            onClick={(event) => {
+              event.preventDefault();
+              onOpenLists();
+            }}
+          >
+            {hidden > 0 ? `${hidden} more` : 'All lists'}
+            <ChevronRight aria-hidden className="size-5" strokeWidth={2.2} />
+          </a>
+        </Button>
       </div>
       <AddRow
         listName={list.name}
@@ -366,16 +377,6 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
             {toGet.slice(0, shown).map((item) => (
               <ItemRow key={item.id} item={item} size="home" onToggle={() => void toggle(item)} />
             ))}
-            {hidden > 0 && room >= HOME_MORE_PX && (
-              <Button
-                variant="quiet"
-                aria-label={`and ${hidden} more on ${list.name}. Open lists`}
-                className="h-12 w-full shrink-0 justify-start rounded-[14px] px-1 text-sm font-medium focus-visible:-outline-offset-2"
-                onClick={onOpenLists}
-              >
-                and {hidden} more
-              </Button>
-            )}
           </>
         )}
       </div>
@@ -398,7 +399,7 @@ export function PinnedListCard({ onOpenLists }: { onOpenLists: () => void }) {
           Could not load lists. Check your connection.
         </p>
       )}
-      {pinned === null && <p className="text-base">No list is pinned. Pin one in settings on your phone.</p>}
+      {pinned === null && <p className="text-base">No list here yet. On your phone, open a list and choose Show on home screen.</p>}
     </aside>
   );
 }
