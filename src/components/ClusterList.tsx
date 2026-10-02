@@ -24,7 +24,7 @@ export function ClusterList({
   return (
     <Sheet labelledBy="cluster-list-title" onClose={onClose} className="max-w-[560px]">
       <header className="flex items-center justify-between gap-4">
-        <h2 id="cluster-list-title" className="font-display text-[26px] leading-8">
+        <h2 id="cluster-list-title" className="font-display text-[30px] leading-9">
           {pills.length} events around this time
         </h2>
         <Button variant="quiet" aria-label="Close" onClick={onClose} className="size-12 rounded-full p-0">

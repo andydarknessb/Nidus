@@ -135,6 +135,6 @@ describe('the sheet', () => {
     const html = render(event({ location: 'Maple Street', description: 'Chairs.' }));
     expect(html).toMatch(/<h2[^>]*class="[^"]*\bfont-display\b[^"]*"/);
     expect(html).not.toMatch(/<h2[^>]*class="[^"]*\bfont-(semibold|bold)\b/);
-    expect(html).not.toMatch(/[–—]/);
+    expect(html).not.toMatch(/[\u2013\u2014]/);
   });
 });
