@@ -246,12 +246,14 @@ function HomeShell({ owner }: { owner: boolean }) {
     };
   }, [householdChanges]);
   const timezone = view.household?.timezone ?? null;
-  // The mode of the screen: what it last had until the Household is read, then light from 7:00 to 19:00 in the Household Timezone.
-  const toggleMode = useWallMode({ timezone });
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
-  const forecast = useForecast(view.household);
+  // `sun` is what the mode goes on besides the Household: the forecast's sunrise and sunset.
+  const { forecast, sun } = useForecast(view.household);
   const weatherOn = view.household !== null && view.household.weather_place !== null;
+  // The mode of the screen: what it last had until the Household and its forecast are read, then the Household's Appearance
+  // (Auto is light from sunrise to sunset; 7:00 and 19:00 in the Household Timezone with no forecast).
+  const toggleMode = useWallMode({ timezone, appearance: view.household?.appearance, sun });
   // Today's Routines, read once for as long as the shell lives and handed to the Routines rail on Home and to
   // the Routines chart, so going from one to the other reads nothing again and a tick in flight is not dropped.
   const routines = useRoutinesToday(timezone);
