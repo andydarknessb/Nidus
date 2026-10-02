@@ -242,7 +242,7 @@ function HomeShell({ owner }: { owner: boolean }) {
     };
   }, [householdChanges]);
   const timezone = view.household?.timezone ?? null;
-  // The mode of the screen: what it last had until the Household is read, then light from 7:00 to 19:00 in its time zone.
+  // The mode of the screen: what it last had until the Household is read, then light from 7:00 to 19:00 in the Household Timezone.
   const toggleMode = useWallMode({ timezone });
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
