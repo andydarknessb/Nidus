@@ -126,7 +126,7 @@ function Stepper({ id, words, noun, time, earlierStuck, laterStuck, onStep }: { 
 // columns, with its title row and its footer always in view; below 960 px it is one column that scrolls between them.
 // Focus moves in on open and back to what opened it on close. A tap on the scrim closes it only while nothing has been
 // typed or changed; Close, Cancel and Escape always do. After a save, an edit or a delete the status line says what
-// happened, from whichever screen opened the sheet (the phone has no status line, so says nothing). On the Wall, a
+// happened, from whichever screen opened the sheet (the Wall's, and the phone's pages have one too). On the Wall, a
 // save or a delete clears the Profile filter, which would otherwise hide the event just written (or the gap where
 // it was).
 export function NativeEventSheet({

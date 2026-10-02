@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { StatusLineContext, createStatusLine } from '../lib/status-line';
 
-// Gives the Wall its status line: any component under it can say a line (useStatusLine), and it is drawn here,
+// Gives a screen its status line, the Wall's and the phone's pages' alike: any component under it can say a line (useStatusLine), and it is drawn here,
 // over the foot of the screen. It overlays, so it takes no room from the screen behind it and lets a tap through.
 // The region is always on the page and only its line changes, so a screen reader announces each new line, politely. The
 // line is keyed on how many times anything has been said, so the same words said twice are two lines, and are announced
