@@ -3,7 +3,7 @@ import { Pin } from 'lucide-react';
 import { cellLines, describeCell, formatCompactClock, type Occurrence, type WallDay } from '../lib/calendar-occurrences';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, type PillPeople } from '../lib/schedule';
-import { EventFill } from './EventPill';
+import { EventDiscs, EventFill } from './EventPill';
 import { Button } from './ui/button';
 
 // One day of the month's grid. Inside the calendar's range it is a single button that opens the day and fills its cell: the date,
@@ -96,18 +96,23 @@ export function DayCell({
 }
 
 // One occurrence on a day: its people's fill (EventFill, as on the pill: never a Mirrored Calendar's colour), the pin of a Native
-// Event, the start time of a timed one (with no ":00" on the hour, to leave room for the title) and the title, cut short with an
-// ellipsis. A timed event that began on an earlier day only continues, so it shows no time, as in the week view. The words are
-// --foreground, on a fill that holds 7:1 for them. It is one line and never wider than its cell: each part that can shrink says so.
+// Event, the start time of a timed one (with no ":00" on the hour, to leave room for the title), the title, cut short with an
+// ellipsis, and at the end who it is for, in discs (EventDiscs, by the pill's rule, at 16 px): colour alone does not say whose an
+// event is, as two people can share a colour to the eye and four of five draw the same three bands as three. A timed event that
+// began on an earlier day only continues, so it shows no time, as in the week view. The words are --foreground, on a fill that
+// holds 7:1 for them. It is one line and never wider than its cell: the title gives way, and the discs never shrink.
 function EventLine({ occurrence, day, timezone, people }: { occurrence: Occurrence; day: WallDay; timezone: string; people: PillPeople }) {
   const start = Date.parse(occurrence.starts_at);
   const time = !occurrence.is_all_day && start >= day.startMs ? formatCompactClock(start, timezone) : null;
   return (
-    <span data-testid="event-line" className="relative mb-0.5 flex h-5.5 min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-lg px-1.5 text-foreground">
+    <span data-testid="event-line" className="relative mb-0.5 flex h-5.5 min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-lg pr-1 pl-1.5 text-foreground">
       <EventFill people={people} />
       {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="relative size-3.5 shrink-0" />}
       {time && <span className="relative shrink-0 text-sm font-medium tabular-nums">{time}</span>}
       <span className="relative min-w-0 truncate text-[0.9375rem] leading-5 font-semibold">{occurrence.title}</span>
+      <span className="relative ml-auto flex shrink-0">
+        <EventDiscs people={people} size={16} />
+      </span>
     </span>
   );
 }

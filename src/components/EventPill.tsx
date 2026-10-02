@@ -22,22 +22,33 @@ export function EventFill({ people }: { people: PillPeople }) {
   );
 }
 
-// Who it is for, at the right of the row under a title: the house for the whole Household, else a disc for each of one or
-// two Profiles, or for three or more the first one's disc and a "+N" disc that counts the rest, so it is never more than two
-// discs wide. Discs overlap by 4 px, and are told apart by a ring in the card's colour: any more of the first disc covered
-// and the right side of an O, an M or a W is lost. The names are in the pill's own name, so this is for the eye only.
-export function EventDiscs({ people }: { people: PillPeople }) {
-  if (people.kind === 'everyone') return <HouseDisc size={24} />;
+// The sizes an event's people are drawn at, and what goes with each: how far two discs overlap, how thick the ring in the card's
+// colour between them is, and the "+N" disc. The pill's discs are 24 px; the end of a Month line has 16, where the initial is the
+// same 11 px, the floor (docs/look.md, A person). The overlap and the ring are the most of the first disc that can be covered.
+const DISCS = {
+  24: { overlap: '-ml-1', ring: 'ring-2', more: 'size-6 text-sm' },
+  16: { overlap: '-ml-[3px]', ring: 'ring-1', more: 'size-4 text-[11px]' },
+} as const;
+
+export type DiscSize = keyof typeof DISCS;
+
+// Who it is for, at the right of the row under a title (or at the end of a Month line): the house for the whole Household, else a
+// disc for each of one or two Profiles, or for three or more the first one's disc and a "+N" disc that counts the rest, so it is
+// never more than two discs wide. Discs overlap a little, and are told apart by a ring in the card's colour: any more of the first
+// disc covered and the right side of an O, an M or a W is lost. The names are in the pill's own name, so this is for the eye only.
+export function EventDiscs({ people, size = 24 }: { people: PillPeople; size?: DiscSize }) {
+  if (people.kind === 'everyone') return <HouseDisc size={size} />;
+  const { overlap, ring: thickness, more } = DISCS[size];
   const overlapping = people.discs.length + (people.more > 0 ? 1 : 0) > 1;
-  const ring = overlapping ? 'rounded-full ring-2 ring-card' : '';
+  const ring = overlapping ? `rounded-full ${thickness} ring-card` : '';
   return (
     <span aria-hidden className="flex shrink-0 items-center">
       {people.discs.map((profile, index) => (
-        <span key={profile.id} className={cn(ring, index > 0 && '-ml-1')}>
-          <PersonDisc name={profile.name} color={profile.color} size={24} />
+        <span key={profile.id} className={cn(ring, index > 0 && overlap)}>
+          <PersonDisc name={profile.name} color={profile.color} size={size} />
         </span>
       ))}
-      {people.more > 0 && <span className="-ml-1 grid size-6 place-items-center rounded-full bg-card text-sm leading-none font-semibold ring-2 ring-card">+{people.more}</span>}
+      {people.more > 0 && <span className={cn(overlap, 'grid place-items-center rounded-full bg-card leading-none font-semibold', thickness, 'ring-card', more)}>+{people.more}</span>}
     </span>
   );
 }

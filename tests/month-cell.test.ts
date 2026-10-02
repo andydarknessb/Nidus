@@ -8,8 +8,9 @@ import { contrastRatio, type Profile } from '../src/lib/profiles';
 
 // A month's day cell rendered to markup (as tests/event-pill.test.ts does for the pill), so what is asserted is what the browser is
 // given: the date, with today's in a filled disc and no underline; the event lines, each filled from the Profiles it is for and
-// never from a Mirrored Calendar, with the words in --foreground, the pin before a Native Event's title, and one line each; the
-// hatch of a day beyond the calendar's range, drawn in --input; and a name that starts with what is drawn.
+// never from a Mirrored Calendar, with the words in --foreground, the pin before a Native Event's title, one line each, and who it
+// is for in discs at its end; the hatch of a day beyond the calendar's range, drawn in --input; and a name that starts with what
+// is drawn.
 
 const CHICAGO = 'America/Chicago';
 const TODAY = '2026-10-01';
@@ -212,6 +213,87 @@ describe('an event line', () => {
   it('is not drawn until its week has been read, and each is when it has', () => {
     expect(count(cell('2026-10-01', { occurrences: null }), 'data-testid="event-line"')).toBe(0);
     expect(count(cell('2026-10-01', { occurrences: [event('A', []), event('B', []), event('C', [])] }), 'data-testid="event-line"')).toBe(3);
+  });
+});
+
+// Who an event is for is told by more than colour (two people can share a colour to the eye, and four of five draw the same three bands
+// as three): the people's discs at the end of the line, by the schedule's rule (EventDiscs), at 16 px with an 11 px initial.
+describe('who an event line is for, at its end', () => {
+  const EMMA = profile('p-emma', 'Emma', 4, '#c4b5fd');
+  const FIVE = [...FAMILY, EMMA];
+  // The markup of an event's line, from the line on, so the date's disc is not in it.
+  const lineOf = (ids: string[], profiles: Profile[] = FAMILY) => {
+    const html = cell('2026-10-01', { occurrences: [event('Standup', ids)], profiles });
+    return html.slice(html.indexOf('data-testid="event-line"'));
+  };
+  const SIZE = 'width:16px;height:16px';
+
+  it('is a disc with the initial of the one Profile it is for, 16 px with an 11 px initial', () => {
+    const html = lineOf(['p-ava']);
+    expect(count(html, 'bg-person-strong')).toBe(1);
+    expect(html).toContain('>A<');
+    expect(html).toContain(`${SIZE};font-size:11px`);
+    expect(html).not.toContain('+');
+    expect(html).not.toContain('-ml-[3px]');
+  });
+
+  it('is both discs for two Profiles, in Profile order, overlapping by 3 px with the ring between them', () => {
+    const html = lineOf(['p-ava', 'p-cory']);
+    expect(count(html, 'bg-person-strong')).toBe(2);
+    expect(html.indexOf('>C<')).toBeGreaterThan(-1);
+    expect(html.indexOf('>C<')).toBeLessThan(html.indexOf('>A<'));
+    expect(count(html, '-ml-[3px]')).toBe(1);
+    expect(count(html, 'ring-card')).toBe(2);
+  });
+
+  it('is the first one\'s disc and a "+N" disc that counts the rest for three or more, so four of five is told from three', () => {
+    const three = lineOf(['p-cory', 'p-sam', 'p-ava']);
+    expect(count(three, 'bg-person-strong')).toBe(1);
+    expect(three).toContain('>C<');
+    expect(three).not.toContain('>S<');
+    expect(three).toContain('+2');
+    expect(three).toContain('-ml-[3px]');
+    const fourOfFive = lineOf(['p-cory', 'p-sam', 'p-ava', 'p-ben'], FIVE);
+    expect(count(fourOfFive, 'bg-person-strong')).toBe(1);
+    expect(fourOfFive).toContain('+3');
+    expect(fourOfFive).not.toContain('+2');
+  });
+
+  it('is the house, 16 px, for the whole Household: no Profile, or every Profile of two or more', () => {
+    for (const ids of [[], ['p-cory', 'p-sam', 'p-ava', 'p-ben']]) {
+      const html = lineOf(ids);
+      expect(html, ids.join()).toContain(SIZE);
+      expect(html, ids.join()).toContain('bg-primary');
+      expect(html, ids.join()).not.toContain('bg-person-strong');
+    }
+  });
+
+  it("is never the pill's 24 px, and the \"+N\" disc is 16 px with its count at the initial's 11 px", () => {
+    for (const ids of [[], ['p-ava'], ['p-ava', 'p-cory'], ['p-cory', 'p-sam', 'p-ava']]) {
+      const html = lineOf(ids);
+      expect(html, ids.join()).not.toContain('width:24px');
+      expect(html, ids.join()).not.toContain('size-6');
+    }
+    const plus = /<span class="([^"]*)">\+2<\/span>/.exec(lineOf(['p-cory', 'p-sam', 'p-ava']))?.[1]?.split(' ') ?? [];
+    expect(plus).toEqual(expect.arrayContaining(['size-4', 'text-[11px]', 'rounded-full']));
+  });
+
+  it('comes after the title, at the end of the line, and never shrinks, where the title gives way', () => {
+    for (const ids of [[], ['p-ava'], ['p-ava', 'p-cory'], ['p-cory', 'p-sam', 'p-ava']]) {
+      const html = lineOf(ids);
+      expect(html.indexOf('Standup'), ids.join()).toBeLessThan(html.indexOf(SIZE));
+      const end = /<span class="([^"]*\bml-auto\b[^"]*)">/.exec(html)?.[1]?.split(' ') ?? [];
+      expect(end, ids.join()).toEqual(expect.arrayContaining(['ml-auto', 'shrink-0']));
+    }
+    expect(spanWith(lineOf(['p-ava']), 'Standup')).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
+  });
+
+  it('keeps the line 22 px tall, with the pin and the time before the title', () => {
+    const html = cell('2026-10-01', { occurrences: [native('Plumber coming', ['p-ava', 'p-cory'])] });
+    expect(classesOf(lineTag(html))).toContain('h-5.5');
+    expect(html.indexOf('native-mark')).toBeLessThan(html.indexOf('9 AM'));
+    expect(html.indexOf('9 AM')).toBeLessThan(html.indexOf('Plumber coming'));
+    expect(html.indexOf('Plumber coming')).toBeLessThan(html.indexOf('bg-person-strong'));
   });
 });
 
