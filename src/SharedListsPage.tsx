@@ -268,7 +268,8 @@ function PinnedMark() {
 // its items, up to the height of the screen. Items are crossed off here and cleared; reordering is for the phone.
 function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
   const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
-  const crossed = items.length - withoutCrossed(items).length;
+  const left = withoutCrossed(items).length;
+  const crossed = items.length - left;
   const rows = useRef<HTMLUListElement>(null);
   const field = useRef<HTMLInputElement>(null);
   // How many items have been added here. The one just added is last: bring it into view when the list is longer than the card.
@@ -279,14 +280,14 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
   }, [added]);
 
   return (
-    <section aria-label={list.name} className="flex max-h-full w-(--card-w) shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3.5">
+    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className="flex max-h-full w-(--card-w) shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3.5">
       <div className="flex h-13 shrink-0 items-center gap-3">
         {/* One picture for every list: there is no picture on a Shared List to choose. */}
         <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
           <List className="size-[22px]" />
         </span>
         <h3 className="min-w-0 flex-1 truncate font-display text-2xl leading-[30px]">{list.name}</h3>
-        {loaded && <span className="shrink-0 text-[15px] text-muted-foreground">{items.length - crossed} to get</span>}
+        {loaded && <span className="shrink-0 text-[15px] text-muted-foreground">{left} to get</span>}
       </div>
       {pinned && <PinnedMark />}
       <AddRow
@@ -316,6 +317,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
       {crossed > 0 && (
         <Button
           variant="secondary"
+          aria-label={`Clear ${crossed} crossed off from ${list.name}`}
           className="h-12 w-full shrink-0 rounded-[14px]"
           // The button goes when nothing is crossed off any more, and focus would fall to the page with it: put it in the field, which stays.
           onClick={() => {
@@ -391,6 +393,7 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
     return () => clearTimeout(timer);
   }, [crossedHere, now]);
   const rows = homeRows(items, crossedHere, now);
+  const left = withoutCrossed(items).length;
   const region = useRef<HTMLDivElement>(null);
   const room = useHeight(region);
   // A line of words, when there is one, takes the room of a row. "Nothing left to get" waits until the last row has gone, so it
@@ -415,7 +418,7 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
   }
 
   return (
-    <section aria-label={list.name} className={HOME_CARD}>
+    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className={HOME_CARD}>
       <div className="flex h-12 shrink-0 items-center justify-between gap-2">
         <h2 className="min-w-0 flex-1 truncate px-1 font-display text-[22px] leading-7">{list.name}</h2>
         <Button asChild variant="quiet" className="h-12 shrink-0 gap-0.5 rounded-[14px] pr-1 pl-3 text-[15px] font-medium">
@@ -459,7 +462,7 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
   );
 }
 
-// The pinned Shared List, on the home screen's right rail.
+// The pinned Shared List, under Up next in Home's right column.
 export function PinnedListCard({ onOpenLists }: { onOpenLists: () => void }) {
   const { read, failed } = useLists();
   // undefined until the first read; null when no list is pinned (or the pinned one is gone).
@@ -524,6 +527,7 @@ function ItemsEditor({ listId, listName }: { listId: string; listName: string })
         <Button
           variant="secondary"
           size="phone"
+          aria-label={`Clear ${crossed} crossed off from ${listName}`}
           className="w-full"
           // As on the Wall: the button goes when nothing is crossed off any more, so focus moves to the field, which stays.
           onClick={() => {
