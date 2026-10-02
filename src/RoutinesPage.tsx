@@ -266,8 +266,8 @@ function Column({
       <Pips done={count} total={total} label={`${profile.name}: ${count} of ${total} ${total === 1 ? 'Routine' : 'Routines'} done`} color={profile.color} height={10} />
       {total > 0 && (
         // The scrolling box has no padding, so the "More" button at its foot sticks flush with its end; the padding inside it is room for
-        // a tile's focus ring, which the box would otherwise clip. The tiles scroll to clear of the button, so one that takes the
-        // keyboard's focus is never left under it.
+        // a tile's focus ring, which the box would otherwise clip. At rest a tile may sit partly under the button; one that takes the
+        // keyboard's focus is scrolled clear of it.
         <div ref={more.scroller} className={cn('-m-1 min-h-0 overflow-y-auto', FOOT_CLEARANCE)}>
           <div className="flex flex-col gap-2.5 p-1">
             {view === null
