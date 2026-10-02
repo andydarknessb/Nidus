@@ -68,7 +68,7 @@ What each role is, by mode. The dark mixes are `color-mix(in srgb, …)`.
 
 Words on a soft or a fill are always `--foreground` (soft also takes `--muted-foreground`). Words are never drawn in a person's colour.
 
-An event for one person is that person's fill. A shared event is striped, one equal band for each person (three at most), left to right in Profile order. An event for the whole Household, or for every Profile in it, is `--everyone` with the house disc. A Mirrored Calendar has no colour of its own.
+An event for one person is that person's fill. A shared event is striped, one equal band for each person (three at most), left to right in Profile order. An event for the whole Household, or for every Profile in a Household of two or more, is `--everyone` with the house disc; in a Household of one Profile, an event for that Profile is theirs. A Mirrored Calendar has no colour of its own.
 
 ## Type
 
@@ -98,12 +98,12 @@ Cards 24, tiles and fields 16 to 18, rows and event pills 14, pills and discs ro
 - **Focus.** A 2 px ring in `--ring`, offset 2 px, on every control. A field instead thickens its own ring to 2.5 px of `--foreground`.
 - **A field.** `--muted` fill with a 1.5 px inset `--input` ring, its label above it, 52 to 60 tall. A placeholder is `--muted-foreground`.
 - **A person.** A disc in their strong colour with their initial, at 24, 34, 40, 44 or 56 px. Everyone is the same disc in `--primary` with a house.
-- **An event pill.** At least 52 tall, radius 14, the title on up to two lines (it wraps between words and never inside one, then ends in an ellipsis), the time under it, the disc at the right. A Native Event has a pin before its title. Discs overlap; there are at most two, then a "+N" disc. A timed event that is on now has a 2.5 px inset ring in `--foreground`.
+- **An event pill.** At least 52 tall, radius 14. The title has the whole width of the pill, on up to two lines (it wraps between words and never inside one, then ends in an ellipsis). Under it is one row: the time at the left and who it is for at the right, centred on each other; when the time's words and the discs do not fit together the row wraps and the discs keep to the right, so nothing is clipped or overlapped. A Native Event has a pin before its title. One Profile is a disc, two are two discs, and three or more are the first one's disc and a "+N" disc that counts the rest (three people are a disc and "+2"), so the discs are never more than two wide. Discs overlap by 4 px with a ring in `--card` between them, so each initial stays readable. A timed event that is on now has a 2.5 px inset ring in `--foreground`, drawn over the fill; a pill that says "All day" never has it, a timed event that covers all of today included.
 - **Today.** The date in a `--primary` disc, on every view.
 - **The now line.** `--foreground`, behind the Day view's blocks.
 - **A Routine tile.** The whole tile is the button, 80 tall, radius 18: the picture in a 52 px disc, the words, then a 44 px ring. To do, the tile is `--card` and the ring is the person's strong colour. Done, the tile is the person's base colour with a tick; the words stay as they are, not struck through.
 - **Progress.** One pip for each Routine: filled in the person's strong colour, or a 1.5 px `--input` ring. Past eight, the count alone.
-- **The people strip.** Everyone, then a pill for each Profile on its soft colour: the disc, the name, "3 of 5" and the pips. Pressed, a pill filters the calendar.
+- **The people strip.** Everyone, then a pill for each Profile on its soft colour: the disc, the name, "3 of 5" and the pips. Pressed, a pill filters the calendar: Everyone takes the Selected look, and a person's pill keeps its soft colour, takes the ring and shows a tick in place of the initial. A pill too narrow for the count and the pips (under about 166 px) shrinks to its disc and name, and past that the row scrolls sideways beside a "More people" button.
 - **The status line.** One line at the foot of the screen that says what just happened, for six seconds.
 - **Beyond the calendar's range.** A hatch in `--input`.
 

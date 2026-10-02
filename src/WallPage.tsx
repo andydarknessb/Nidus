@@ -7,6 +7,7 @@ import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { HomeRail } from './components/HomeRail';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { NavigationRail } from './components/NavigationRail';
+import { PeopleStrip } from './components/PeopleStrip';
 import { StatusLineProvider } from './components/StatusLine';
 import { WallHeader } from './components/WallHeader';
 import { useChangeTick } from './lib/change-feed';
@@ -15,10 +16,12 @@ import { householdDay } from './lib/routines';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
+import { useStatusLine } from './lib/status-line';
 import { localStore, writeLastMode } from './lib/mode';
 import { useForecast } from './lib/use-forecast';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useLightMode, useWallMode } from './lib/use-mode';
+import { useProfiles } from './lib/use-profiles';
 import { useRoutinesToday } from './lib/use-routines-today';
 import { MealsScreen } from './MealsPage';
 import { RoutinesChart } from './RoutinesPage';
@@ -212,11 +215,15 @@ function HomeShell({ owner }: { owner: boolean }) {
   // Each view names itself in the document's title; the Lists screen, which opens over them, does too.
   useDocumentTitle(listsOpen ? 'Lists' : VIEW_TITLES[route.view]);
   // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
-  // The context hands the pressed ids to every calendar view, and a way to clear it to the Native Event
-  // sheet; the chips prune it when the Profiles change.
-  const [filter] = useState(createProfileFilter);
+  // The context hands the pressed ids to every calendar view, a way to clear it to the Native Event
+  // sheet and a way to keep it open to the calendar; reading the Profiles prunes it when they change. It says
+  // its own clearing on the status line.
+  const say = useStatusLine();
+  const [filter] = useState(() => createProfileFilter(say));
   const pressed = useSyncExternalStore(filter.subscribe, filter.pressed);
-  const filterView = useMemo(() => ({ pressed, clear: filter.clear }), [pressed, filter]);
+  const filterView = useMemo(() => ({ pressed, clear: filter.clear, touch: filter.touch }), [pressed, filter]);
+  // The Household's Profiles, read once for the people strip and for the colour of every event.
+  const profiles = useProfiles(filter);
   useEffect(() => () => filter.dispose(), [filter]);
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
   const [adding, setAdding] = useState(false);
@@ -260,9 +267,8 @@ function HomeShell({ owner }: { owner: boolean }) {
   const routines = useRoutinesToday(timezone);
 
   const today = timezone ? householdDay(timezone).date : null;
-  // The Profile chips are for the calendar screens; a screen that is not one (Routines, Meals) turns them off here.
-  // They are hidden, not unmounted, so they keep their Profiles.
-  const onCalendar = route.view !== 'meals' && route.view !== 'routines';
+  // The people strip is for the calendar screens (Home, Day, Week and Month), and for no other.
+  const onCalendar = route.view === 'home' || route.view === 'day' || route.view === 'week' || route.view === 'month';
 
   return (
     <main className="grid h-svh grid-cols-[6rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
@@ -278,7 +284,10 @@ function HomeShell({ owner }: { owner: boolean }) {
         onAdd={() => setAdding(true)}
         onToggleMode={toggleMode}
       />
-      <WallHeader household={view.household} today={today} forecast={forecast} filter={filter} pressed={pressed} chipsHidden={!onCalendar} onMeals={route.view === 'meals' ? null : () => openMeals(null)} />
+      <div className="flex min-w-0 flex-col gap-3">
+        <WallHeader household={view.household} today={today} forecast={forecast} onMeals={route.view === 'meals' ? null : () => openMeals(null)} />
+        {onCalendar && <PeopleStrip profiles={profiles} routines={routines} filter={filter} pressed={pressed} />}
+      </div>
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
           timezone ? (
@@ -301,7 +310,7 @@ function HomeShell({ owner }: { owner: boolean }) {
             <BeforeHousehold label="Meals" failed={view.failed} words="Could not load meals. Check your connection." />
           )
         ) : route.view !== 'home' && timezone ? (
-          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} />
+          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day, Week or Month.
@@ -309,7 +318,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : (
         <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
           {timezone ? (
-            <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} />
+            <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
           ) : (
             <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
           )}

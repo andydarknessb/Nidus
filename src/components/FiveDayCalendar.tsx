@@ -1,5 +1,5 @@
-import { Pin } from 'lucide-react';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { ChevronLeft, ChevronRight, Pin } from 'lucide-react';
+import { useContext, useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   canOpenDay,
   describeMonth,
@@ -21,19 +21,24 @@ import {
   type TimedBlock,
   type WallDay,
 } from '../lib/calendar-occurrences';
-import { tint } from '../lib/event-tint';
+import { ProfileFilterContext } from '../lib/profile-filter';
+import type { Profile } from '../lib/profiles';
 import { householdDay, WEEKDAYS } from '../lib/routines';
+import { pillPeople } from '../lib/schedule';
 import { useNow, useOccurrences } from '../lib/wall-hooks';
 import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
-import { EventDetails } from './EventDetails';
+import { EventFill } from './EventPill';
+import { EventSheets, type OpenEvent } from './EventSheets';
 import { MonthGrid } from './MonthGrid';
-import { NativeEventSheet } from './NativeEventSheet';
+import { Schedule } from './Schedule';
+import { Button } from './ui/button';
 import { DayWeather } from './Weather';
 
-// The home screen's calendar: today and the next four days as columns in the Household
-// Timezone. An all-day band on top (multi-day events span their columns), timed events
-// positioned by time below, a line at the current time and today's column lifted. Tapping an
-// event opens its details, and tapping a day's heading opens that day.
+// The wall's calendar views. Home (today and the next four days) and Week (Sunday to Saturday) draw the schedule: a
+// column for each day with its events stacked as pills (Schedule.tsx). The Day view keeps the hour grid below: an
+// all-day band on top, timed events positioned by time, a line at the current time. In both, tapping an event opens its
+// details and tapping a day's heading opens that day. An event is filled from its Profiles' own colours, never from the
+// Mirrored Calendar it came from.
 
 // The smallest a tappable event may be drawn (48 px, CLAUDE.md), and the grid padding above and below the columns.
 const MIN_TARGET_PX = 48;
@@ -63,38 +68,48 @@ function NativeMark({ occurrence }: { occurrence: Occurrence }) {
 // calendar has written an event, so the calendar reads again at once. `forecast` is the Household's
 // weather, read once by the screen around the calendar; `weatherOn` says the Household has a place,
 // so each day heading keeps a line for it (empty while there is no forecast, or none for that day).
+// `profiles` are the Household's, read once by that screen: they colour the events, and are null until read.
+// A touch anywhere in the calendar keeps the Profile filter open.
 export function FiveDayCalendar({
   timezone,
   version = 0,
   onNavigate,
   forecast = null,
   weatherOn = false,
+  profiles,
 }: {
   timezone: string;
   version?: number;
   onNavigate: (view: CalendarView, date: string) => void;
   forecast?: Forecast | null;
   weatherOn?: boolean;
+  profiles: Profile[] | null;
 }) {
   const now = useNow(timezone);
+  const { touch } = useContext(ProfileFilterContext);
   return (
-    <CalendarGrid
-      timezone={timezone}
-      now={now}
-      days={fiveDays(timezone, now)}
-      version={version}
-      onOpenDay={(date) => onNavigate('day', date)}
-      forecast={forecast}
-      weatherOn={weatherOn}
-    />
+    <div className="contents" onPointerDownCapture={touch}>
+      <Schedule
+        timezone={timezone}
+        now={now}
+        days={fiveDays(timezone, now)}
+        version={version}
+        onOpenDay={(date) => onNavigate('day', date)}
+        forecast={forecast}
+        weatherOn={weatherOn}
+        profiles={profiles}
+      />
+    </div>
   );
 }
 
-const PAGE_BUTTON = 'min-h-12 rounded-lg border border-border px-6 text-lg font-medium disabled:opacity-50';
+// The paging row's round buttons: the card's colour on the page, an arrow in each, named "Previous week" and so on.
+const PAGE_ARROW = 'size-12 rounded-full bg-card p-0';
 
-// The week, day and month views: the same grid as the home screen (a month's is a grid of its own)
-// with a header to page back and forward within the synced window and jump to today. `date` is the
-// page's anchor (null for today); a date outside the window is pulled to its nearest end.
+// The week, day and month views: the week is the schedule with seven columns, the day the hour grid and a month a grid
+// of its own, each under a header to page back and forward within the synced window and jump to today. `date` is the
+// page's anchor (null for today); a date outside the window is pulled to its nearest end. A touch anywhere on the page
+// keeps the Profile filter open.
 export function PagedCalendar({
   timezone,
   view,
@@ -103,6 +118,7 @@ export function PagedCalendar({
   onNavigate,
   forecast = null,
   weatherOn = false,
+  profiles,
 }: {
   timezone: string;
   view: CalendarView;
@@ -111,8 +127,10 @@ export function PagedCalendar({
   onNavigate: (view: CalendarView, date: string) => void;
   forecast?: Forecast | null;
   weatherOn?: boolean;
+  profiles: Profile[] | null;
 }) {
   const now = useNow(timezone);
+  const { touch } = useContext(ProfileFilterContext);
   const window = pagingWindow(timezone, now);
   const today = householdDay(timezone, now).date;
   const anchor = pageStart(view, shownDate(date, today));
@@ -124,18 +142,20 @@ export function PagedCalendar({
   useEffect(() => heading.current?.focus(), [view, anchor]);
 
   return (
-    <div className="flex min-h-0 flex-col gap-4">
-      <nav aria-label="Calendar paging" className="flex flex-wrap items-center gap-4">
-        <button type="button" className={PAGE_BUTTON} disabled={previous === null} onClick={() => previous && onNavigate(view, previous)}>
-          Previous {view}
-        </button>
-        <button type="button" className={PAGE_BUTTON} onClick={() => onNavigate(view, pageStart(view, today))}>
+    <div className="flex min-h-0 flex-col gap-3" onPointerDownCapture={touch}>
+      <nav aria-label="Calendar paging" className="flex flex-none flex-wrap items-center gap-2">
+        <Button aria-label={`Previous ${view}`} className={PAGE_ARROW} disabled={previous === null} onClick={() => previous && onNavigate(view, previous)}>
+          <ChevronLeft aria-hidden className="size-6" strokeWidth={2.2} />
+        </Button>
+        <Button className="h-12 rounded-full bg-card px-5 text-[15px]" onClick={() => onNavigate(view, pageStart(view, today))}>
           Today
-        </button>
-        <button type="button" className={PAGE_BUTTON} disabled={next === null} onClick={() => next && onNavigate(view, next)}>
-          Next {view}
-        </button>
-        <h2 ref={heading} tabIndex={-1} className="ml-2 text-2xl font-semibold outline-none">{days ? describePage(days) : describeMonth(anchor)}</h2>
+        </Button>
+        <Button aria-label={`Next ${view}`} className={PAGE_ARROW} disabled={next === null} onClick={() => next && onNavigate(view, next)}>
+          <ChevronRight aria-hidden className="size-6" strokeWidth={2.2} />
+        </Button>
+        <h2 ref={heading} tabIndex={-1} className="ml-3 font-display text-[28px] leading-[34px] outline-none">
+          {days ? describePage(days) : describeMonth(anchor)}
+        </h2>
       </nav>
       {/* Always mounted, so a screen reader announces the text when it appears. */}
       <p role="status" className="text-lg empty:hidden">
@@ -146,17 +166,31 @@ export function PagedCalendar({
             : ''}
       </p>
       {/* Keyed on the view and the page, so a turned page, or the other view starting on the same day, never shows the last page's events, and a failed read says so. */}
-      {days ? (
+      {days && view === 'week' ? (
+        // A week's day headings open that day.
+        <Schedule
+          key={`${view}:${days[0]!.date}`}
+          timezone={timezone}
+          now={now}
+          days={days}
+          version={version}
+          onOpenDay={(day) => onNavigate('day', day)}
+          forecast={forecast}
+          weatherOn={weatherOn}
+          profiles={profiles}
+        />
+      ) : days ? (
         <CalendarGrid
           key={`${view}:${days[0]!.date}`}
           timezone={timezone}
           now={now}
           days={days}
           version={version}
-          // A week's day headings open that day; on a day page the heading is only a heading.
-          onOpenDay={view === 'week' ? (day) => onNavigate('day', day) : null}
+          // On a day page the heading is only a heading.
+          onOpenDay={null}
           forecast={forecast}
           weatherOn={weatherOn}
+          profiles={profiles}
         />
       ) : (
         // The month's cells carry no weather: the spec puts it on the day headings of Home, Day and Week.
@@ -166,6 +200,8 @@ export function PagedCalendar({
   );
 }
 
+// The hour grid, which the Day view keeps. Its blocks wait for the Profiles, as the schedule's pills do, and are filled
+// from them.
 function CalendarGrid({
   timezone,
   now,
@@ -174,6 +210,7 @@ function CalendarGrid({
   onOpenDay,
   forecast,
   weatherOn,
+  profiles,
 }: {
   timezone: string;
   now: Date;
@@ -182,14 +219,15 @@ function CalendarGrid({
   onOpenDay: ((date: string) => void) | null;
   forecast: Forecast | null;
   weatherOn: boolean;
+  profiles: Profile[] | null;
 }) {
   const columnsStyle = gridColumns(days.length);
   // A day outside the paging window would open its nearest end instead, so it is only a heading.
   const pageWindow = pagingWindow(timezone, now);
-  const [open, setOpen] = useState<Occurrence | null>(null);
-  // A Native Event being edited, and a count of the edits made here, so the read runs again after one.
-  const [editing, setEditing] = useState<Occurrence | null>(null);
+  // The event tapped and the sheet it opened, and a count of the edits made here, so the read runs again after one.
+  const [open, setOpen] = useState<OpenEvent>(null);
   const [edits, setEdits] = useState(0);
+  const openDetails = (occurrence: Occurrence) => setOpen({ sheet: 'details', occurrence });
   // The height of the time grid, so events can be given room for a 48 px target.
   const grid = useRef<HTMLDivElement>(null);
   const [gridPx, setGridPx] = useState(640);
@@ -207,11 +245,12 @@ function CalendarGrid({
   // An edit made here counts into `version`, so it reads again like an event added around the calendar.
   const { occurrences, failed } = useOccurrences(days, version + edits);
 
+  const events = profiles === null ? [] : (occurrences ?? []);
   const todayColumn = days.find((day) => day.isToday);
   const todayHour = todayColumn ? nowHour(todayColumn, now) : null;
-  const { startHour, endHour } = visibleHours(place(occurrences ?? [], days).columns, todayHour);
+  const { startHour, endHour } = visibleHours(place(events, days).columns, todayHour);
   const minMinutes = (MIN_TARGET_PX / (gridPx / (endHour - startHour))) * 60;
-  const { allDay, columns } = place(occurrences ?? [], days, minMinutes);
+  const { allDay, columns } = place(events, days, minMinutes);
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, index) => startHour + index);
 
   return (
@@ -235,7 +274,7 @@ function CalendarGrid({
           Could not load the calendar. Check your connection.
         </p>
       )}
-      {allDay.length > 0 && <AllDayBand bars={allDay} columnsStyle={columnsStyle} onOpen={setOpen} />}
+      {allDay.length > 0 && <AllDayBand bars={allDay} columnsStyle={columnsStyle} profiles={profiles ?? []} onOpen={openDetails} />}
       <div ref={grid} style={columnsStyle} className="grid min-h-0 flex-1">
         <div className="relative my-3" aria-hidden>
           {hours.slice(1, -1).map((hour) => (
@@ -250,7 +289,7 @@ function CalendarGrid({
               <div key={hour} aria-hidden className="absolute inset-x-0 border-t border-border" style={{ top: `${((hour - startHour) / (endHour - startHour)) * 100}%` }} />
             ))}
             {(columns[index] ?? []).map((block) => (
-              <EventBlock key={`${block.occurrence.id}-${day.date}`} block={block} startHour={startHour} endHour={endHour} timezone={timezone} onOpen={setOpen} />
+              <EventBlock key={`${block.occurrence.id}-${day.date}`} block={block} startHour={startHour} endHour={endHour} timezone={timezone} profiles={profiles ?? []} onOpen={openDetails} />
             ))}
             {day.isToday && todayHour !== null && (
               <div
@@ -265,29 +304,7 @@ function CalendarGrid({
           </div>
         ))}
       </div>
-      {open && (
-        <EventDetails
-          occurrence={open}
-          timezone={timezone}
-          onClose={() => setOpen(null)}
-          onEdit={() => {
-            setEditing(open);
-            setOpen(null);
-          }}
-        />
-      )}
-      {editing && (
-        <NativeEventSheet
-          timezone={timezone}
-          date={days[0]!.date}
-          occurrence={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            setEdits((count) => count + 1);
-          }}
-        />
-      )}
+      <EventSheets open={open} onChange={setOpen} timezone={timezone} date={days[0]!.date} onEdited={() => setEdits((count) => count + 1)} />
     </section>
   );
 }
@@ -355,7 +372,17 @@ function DayHeading({
   );
 }
 
-function AllDayBand({ bars, columnsStyle, onOpen }: { bars: AllDayBar[]; columnsStyle: CSSProperties; onOpen: (occurrence: Occurrence) => void }) {
+function AllDayBand({
+  bars,
+  columnsStyle,
+  profiles,
+  onOpen,
+}: {
+  bars: AllDayBar[];
+  columnsStyle: CSSProperties;
+  profiles: Profile[];
+  onOpen: (occurrence: Occurrence) => void;
+}) {
   return (
     <div style={columnsStyle} className="grid max-h-[30%] auto-rows-min gap-y-1 overflow-y-auto border-b border-border py-1">
       {bars.map((bar) => (
@@ -364,10 +391,11 @@ function AllDayBand({ bars, columnsStyle, onOpen }: { bars: AllDayBar[]; columns
           type="button"
           onClick={() => onOpen(bar.occurrence)}
           aria-label={`${bar.occurrence.title}, ${source(bar.occurrence)}, all day`}
-          className={`mx-1 flex min-h-12 items-center truncate border-l-8 px-3 text-left text-lg font-medium ${bar.continuesBefore ? 'rounded-l-none' : 'rounded-l-md'} ${bar.continuesAfter ? 'rounded-r-none' : 'rounded-r-md'}`}
-          style={{ ...tint(bar.occurrence), gridColumn: `${bar.startColumn + 2} / span ${bar.span}`, gridRow: bar.row + 1 }}
+          className={`relative mx-1 flex min-h-12 items-center truncate px-3 text-left text-lg font-medium ${bar.continuesBefore ? 'rounded-l-none' : 'rounded-l-md'} ${bar.continuesAfter ? 'rounded-r-none' : 'rounded-r-md'}`}
+          style={{ gridColumn: `${bar.startColumn + 2} / span ${bar.span}`, gridRow: bar.row + 1 }}
         >
-          <span className="truncate">
+          <EventFill people={pillPeople(bar.occurrence, profiles)} />
+          <span className="relative truncate">
             <NativeMark occurrence={bar.occurrence} />
             {bar.occurrence.title}
           </span>
@@ -382,12 +410,14 @@ function EventBlock({
   startHour,
   endHour,
   timezone,
+  profiles,
   onOpen,
 }: {
   block: TimedBlock;
   startHour: number;
   endHour: number;
   timezone: string;
+  profiles: Profile[];
   onOpen: (occurrence: Occurrence) => void;
 }) {
   const { occurrence } = block;
@@ -400,20 +430,20 @@ function EventBlock({
       onClick={() => onOpen(occurrence)}
       aria-label={`${occurrence.title}, ${source(occurrence)}, ${describeWhen(occurrence, timezone)}`}
       // A short event is still a 48 px target, so it may run past its end on the grid.
-      className="absolute z-[1] min-h-12 overflow-hidden rounded-md border-l-8 px-2 py-1 text-left text-lg leading-tight"
+      className="absolute z-[1] min-h-12 overflow-hidden rounded-md px-2 py-1 text-left text-lg leading-tight"
       style={{
-        ...tint(occurrence),
         top: `${top}%`,
         height: `${bottom - top}%`,
         left: `calc(${(block.lane / block.lanes) * 100}% + 2px)`,
         width: `calc(${100 / block.lanes}% - 4px)`,
       }}
     >
-      <span className="block font-semibold break-words">
+      <EventFill people={pillPeople(occurrence, profiles)} />
+      <span className="relative block font-semibold break-words">
         <NativeMark occurrence={occurrence} />
         {occurrence.title}
       </span>
-      {!block.continuesBefore && <span className="block text-base">{formatClock(Date.parse(occurrence.starts_at), timezone)}</span>}
+      {!block.continuesBefore && <span className="relative block text-base">{formatClock(Date.parse(occurrence.starts_at), timezone)}</span>}
     </button>
   );
 }

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
-import { createProfileFilter, filterOccurrences, prunePressed } from '../src/lib/profile-filter';
+import { createProfileFilter, filterOccurrences, FILTER_CLEARED_WORDS, prunePressed } from '../src/lib/profile-filter';
 
 // The Profile filter: which occurrences the pressed Profiles keep, which pressed ids survive a
-// Profile being deleted, and the state holder that clears itself two minutes after the last tap.
-// The clock is faked: nothing here waits for a real one.
+// Profile being deleted, and the state holder that clears itself two minutes after the last touch
+// and says so. The clock is faked: nothing here waits for a real one.
 
 // An occurrence attributed to `profileIds`; none means the whole Household.
 function occurrence(id: string, profileIds: string[]): Occurrence {
@@ -225,5 +225,126 @@ describe('createProfileFilter', () => {
     filter.prune([]);
     expect(filter.pressed()).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  // Any touch inside the calendar keeps the filter open, as a tap on a pill does: whoever is reading the calendar is
+  // still there.
+  it('starts the two minutes again at a touch inside the calendar', () => {
+    const filter = createProfileFilter();
+    filter.toggle('ada');
+    vi.advanceTimersByTime(119_000);
+    filter.touch();
+    vi.advanceTimersByTime(119_000);
+    expect(filter.pressed()).toEqual(['ada']);
+    vi.advanceTimersByTime(1_000);
+    expect(filter.pressed()).toEqual([]);
+  });
+
+  it('keeps the filter open for as long as the calendar is touched, and lets go two minutes after the last touch', () => {
+    const filter = createProfileFilter();
+    filter.toggle('ada');
+    for (let minute = 0; minute < 10; minute++) {
+      vi.advanceTimersByTime(60_000);
+      filter.touch();
+    }
+    expect(filter.pressed()).toEqual(['ada']);
+    vi.advanceTimersByTime(2 * 60_000 - 1);
+    expect(filter.pressed()).toEqual(['ada']);
+    vi.advanceTimersByTime(1);
+    expect(filter.pressed()).toEqual([]);
+  });
+
+  it('starts nothing for a touch while nothing is pressed', () => {
+    const filter = createProfileFilter();
+    filter.touch();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(filter.pressed()).toEqual([]);
+  });
+
+  it('does not count a touch as a change, so nobody hears it', () => {
+    const filter = createProfileFilter();
+    filter.toggle('ada');
+    let heard = 0;
+    filter.subscribe(() => heard++);
+    filter.touch();
+    filter.touch();
+    expect(heard).toBe(0);
+    filter.dispose();
+  });
+
+  it('starts the full two minutes at a touch after the clock has jumped', () => {
+    const filter = createProfileFilter();
+    filter.toggle('ada');
+    vi.advanceTimersByTime(30_000);
+    vi.setSystemTime(Date.now() + 90_000);
+    filter.touch();
+    vi.advanceTimersByTime(2 * 60_000 - 1);
+    expect(filter.pressed()).toEqual(['ada']);
+    vi.advanceTimersByTime(1);
+    expect(filter.pressed()).toEqual([]);
+  });
+
+  describe('saying so', () => {
+    it('says its clearing on the status line, once, when the two minutes are up', () => {
+      const said: string[] = [];
+      const filter = createProfileFilter((words) => said.push(words));
+      filter.toggle('ada');
+      vi.advanceTimersByTime(2 * 60_000 - 1);
+      expect(said).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(said).toEqual([FILTER_CLEARED_WORDS]);
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(said).toEqual([FILTER_CLEARED_WORDS]);
+    });
+
+    it('says it in plain words, with no dash', () => {
+      expect(FILTER_CLEARED_WORDS).toBe("Showing everyone's events again");
+      expect(FILTER_CLEARED_WORDS).not.toMatch(/[\u2013\u2014]/);
+    });
+
+    it('says it after a touch moved the deadline, at the new one', () => {
+      const said: string[] = [];
+      const filter = createProfileFilter((words) => said.push(words));
+      filter.toggle('ada');
+      vi.advanceTimersByTime(100_000);
+      filter.touch();
+      vi.advanceTimersByTime(119_000);
+      expect(said).toEqual([]);
+      vi.advanceTimersByTime(1_000);
+      expect(said).toEqual([FILTER_CLEARED_WORDS]);
+    });
+
+    it('says it when the tablet wakes up past the deadline', () => {
+      const said: string[] = [];
+      const filter = createProfileFilter((words) => said.push(words));
+      filter.toggle('ada');
+      vi.setSystemTime(Date.now() + 10 * 60_000);
+      vi.advanceTimersByTime(60_000);
+      expect(filter.pressed()).toEqual([]);
+      expect(said).toEqual([FILTER_CLEARED_WORDS]);
+    });
+
+    it('says nothing when someone clears it, lets the last Profile go, or a Profile is deleted: they know', () => {
+      const said: string[] = [];
+      const filter = createProfileFilter((words) => said.push(words));
+      filter.toggle('ada');
+      filter.clear();
+      filter.toggle('ben');
+      filter.toggle('ben');
+      filter.toggle('cy');
+      filter.prune([]);
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(said).toEqual([]);
+    });
+
+    it('says it again for each time it clears itself', () => {
+      const said: string[] = [];
+      const filter = createProfileFilter((words) => said.push(words));
+      filter.toggle('ada');
+      vi.advanceTimersByTime(2 * 60_000);
+      filter.toggle('ben');
+      vi.advanceTimersByTime(2 * 60_000);
+      expect(said).toEqual([FILTER_CLEARED_WORDS, FILTER_CLEARED_WORDS]);
+    });
   });
 });

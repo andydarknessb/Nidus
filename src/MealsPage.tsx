@@ -332,13 +332,16 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
 // ---- The header's next meal -------------------------------------------------------------
 
 // The header's room for the next meal, after the weather: it takes what the clock, the date, the weather and the
-// marks leave, none of which shrinks, and holds the button against the marks. It is on the page whether or not there
-// is a button, so the marks stay at the far end. It is also a size container, which is how the button tells how much
-// room it has: its words are cut short with an ellipsis, and when there is not even room for the picture and a few
-// letters (11 rem) the button goes, before anything else in the header gives way. `onOpen` is null on the Meals
-// screen, where the button is not drawn.
-export function HeaderNextMeal({ timezone, onOpen }: { timezone: string; onOpen: (() => void) | null }) {
-  return <div className="@container flex min-w-0 flex-1 justify-end">{onOpen && <NextMealButton timezone={timezone} onOpen={onOpen} />}</div>;
+// marks leave, and holds the button against the marks. It is on the page whether or not there is a button, and before
+// the Household is read (`timezone` null), so the marks stay at the far end. It is also a size container, which is how
+// the button tells how much room it has: its words are cut short with an ellipsis, and when there is not even room for
+// the picture and a few letters (11 rem, so a box of 12.5 with the gap) the button goes, before anything else in the header gives way. `onOpen` is null
+// on the Meals screen, where the button is not drawn.
+//
+// The box takes back the header's gap on its left (-ml-6) and the button carries that gap itself (ml-6): an empty box
+// then costs the header no second gap, which with both marks showing is the room the marks need.
+export function HeaderNextMeal({ timezone, onOpen }: { timezone: string | null; onOpen: (() => void) | null }) {
+  return <div className="@container -ml-6 flex min-w-0 flex-1 justify-end">{timezone && onOpen && <NextMealButton timezone={timezone} onOpen={onOpen} />}</div>;
 }
 
 // The first planned slot of today that is still ahead (nextMeal), as a 64 px button: the slot's picture on --everyone,
@@ -358,7 +361,7 @@ function NextMealButton({ timezone, onOpen }: { timezone: string; onOpen: () => 
     <Button
       aria-label={`${words}: ${next.title}. Open Meals`}
       onClick={onOpen}
-      className="hidden h-16 max-w-full min-w-0 gap-3 rounded-[20px] bg-card p-0 pr-3 pl-2 font-normal @min-[11rem]:flex"
+      className="ml-6 hidden h-16 max-w-full min-w-0 gap-3 rounded-[20px] bg-card p-0 pr-3 pl-2 font-normal @min-[12.5rem]:flex"
     >
       <span aria-hidden className="flex size-12 shrink-0 items-center justify-center rounded-[14px] bg-everyone">
         <Picture className="size-6" />

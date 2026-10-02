@@ -2,6 +2,7 @@ import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { EmptyRing, HouseDisc, MAX_PIPS, PersonDisc, Pips, Tick } from '../src/components/people';
+import { Button } from '../src/components/ui/button';
 import { personStyle } from '../src/lib/look';
 
 // The atoms a person is drawn from (src/components/people.tsx), rendered to markup, so what is asserted is what the browser is
@@ -89,5 +90,26 @@ describe('the pips', () => {
     expect(pips(0, 0)).toBe('');
     expect(pips(3, MAX_PIPS + 1)).toBe('');
     expect(pips(3, MAX_PIPS)).not.toBe('');
+  });
+});
+
+// A Button gives every icon that has no size- class in it 20 px (`[&_svg:not([class*=size-])]:size-5`), and a stylesheet rule beats
+// the width and height attributes lucide sets: so a house drawn by HouseDisc in a Button was 20 px in a 24 px disc, and the strip's
+// Everyone, the event pills and every tile that is a button were wrong. The size is in the icon's own style, which no rule beats.
+describe('the icon in a disc', () => {
+  const svgOf = (element: ReactElement) => /<svg[^>]*>/.exec(renderToStaticMarkup(element))?.[0] ?? '';
+
+  it('is the size the disc asks for, in its own style: 54% of a house disc, 55% of a tick', () => {
+    expect(svgOf(createElement(HouseDisc, { size: 24 }))).toContain('style="width:13px;height:13px"');
+    expect(svgOf(createElement(HouseDisc, { size: 40 }))).toContain('style="width:22px;height:22px"');
+    expect(svgOf(createElement(HouseDisc, {}))).toContain('style="width:22px;height:22px"');
+    expect(svgOf(createElement(Tick, { size: 44 }))).toContain('style="width:24px;height:24px"');
+    expect(svgOf(createElement(Tick, { size: 40, color: AVA, strong: true }))).toContain('style="width:22px;height:22px"');
+  });
+
+  it('is that size inside a Button too, whatever the Button\'s rule says about icons', () => {
+    const inAButton = (disc: ReactElement) => svgOf(createElement(Button, null, disc));
+    expect(inAButton(createElement(HouseDisc, { size: 24 }))).toContain('style="width:13px;height:13px"');
+    expect(inAButton(createElement(Tick, { size: 40, color: AVA, strong: true }))).toContain('style="width:22px;height:22px"');
   });
 });
