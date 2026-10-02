@@ -68,7 +68,7 @@ What each role is, by mode. The dark mixes are `color-mix(in srgb, …)`.
 
 Words on a soft or a fill are always `--foreground` (soft also takes `--muted-foreground`). Words are never drawn in a person's colour.
 
-An event for one person is that person's fill. A shared event is striped, one equal band for each person (three at most), left to right in Profile order. An event for the whole Household, or for every Profile in it, is `--everyone` with the house disc. A Mirrored Calendar has no colour of its own.
+An event for one person is that person's fill. A shared event is striped, one equal band for each person (three at most), left to right in Profile order. An event for the whole Household, or for every Profile in a Household of two or more, is `--everyone` with the house disc; in a Household of one Profile, an event for that Profile is theirs. A Mirrored Calendar has no colour of its own.
 
 ## Type
 

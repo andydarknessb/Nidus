@@ -80,11 +80,12 @@ export type PillPeople = { kind: 'everyone' } | { kind: 'people'; bands: Profile
 
 // Who `occurrence` is for, from its `profile_ids` and the Household's Profiles, in the Profiles' own order. The view's
 // `color` and `colors` are a Mirrored Calendar's and are never read: a Profile's own colour is drawn from the Profile. An
-// event for no Profile, for every Profile of the Household, or for none the Household has any more is the whole
-// Household's.
+// event for no Profile, or for none the Household has any more, is the whole Household's, and so is one for every Profile of
+// a Household of two or more. In a Household of one Profile an event for that Profile is theirs: there is nobody else for it
+// to be shared with, so the whole Household's look is only for an event with no Profile.
 export function pillPeople(occurrence: Occurrence, profiles: readonly Profile[]): PillPeople {
   const people = profiles.filter((profile) => occurrence.profile_ids.includes(profile.id));
-  if (people.length === 0 || people.length === profiles.length) return { kind: 'everyone' };
+  if (people.length === 0 || (people.length === profiles.length && profiles.length > 1)) return { kind: 'everyone' };
   const crowded = people.length > MAX_DISCS;
   return {
     kind: 'people',

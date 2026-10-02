@@ -189,6 +189,23 @@ describe('an event pill', () => {
     expect(count(html, 'bg-person-strong')).toBe(2);
   });
 
+  it('is the Profile\'s own fill and disc in a Household of one Profile, and the whole Household\'s only for an event with none', () => {
+    const inAHouseholdOfOne = (occurrence: Occurrence) => {
+      const [column] = scheduleColumns([occurrence], [TODAY!], NOW);
+      return renderToStaticMarkup(createElement(EventPill, { pill: column!.pills[0]!, day: TODAY!, people: pillPeople(occurrence, [CORY]), onOpen: () => undefined }));
+    };
+    const hers = inAHouseholdOfOne(event('Standup', ['p-cory']));
+    expect(count(hers, 'bg-person-fill')).toBe(1);
+    expect(count(hers, 'bg-person-strong')).toBe(1);
+    expect(hers).toContain('>C<');
+    expect(hers).not.toContain('bg-everyone');
+    expect(hers).toContain('aria-label="Standup, Cory, ');
+    const nobody = inAHouseholdOfOne(event('Family dinner', []));
+    expect(nobody).toContain('bg-everyone');
+    expect(nobody).toContain('bg-primary');
+    expect(nobody).not.toContain('bg-person-fill');
+  });
+
   // The title has the whole width of the pill; under it is one row, the time at the left and who it is for at the right.
   describe('its layout', () => {
     const rowOf = (html: string) => html.slice(html.indexOf('flex-wrap'));

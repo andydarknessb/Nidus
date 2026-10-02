@@ -299,10 +299,32 @@ describe('who a pill is for', () => {
     expect(pillPeople(meeting(['p-cory', 'p-sam', 'p-ava', 'p-ben']), FAMILY)).toMatchObject({ names: ['Cory', 'Sam', 'Ava', 'Ben'] });
   });
 
-  it('is the whole Household\'s look for an event for every Profile of it', () => {
+  it('is the whole Household\'s look for an event for every Profile of a Household of two or more', () => {
     expect(pillPeople(meeting(['p-cory', 'p-sam', 'p-ava', 'p-ben', 'p-emma']), FAMILY)).toEqual({ kind: 'everyone' });
     expect(pillPeople(meeting(['p-cory', 'p-sam']), [CORY, SAM])).toEqual({ kind: 'everyone' });
-    expect(pillPeople(meeting(['p-cory']), [CORY])).toEqual({ kind: 'everyone' });
+  });
+
+  describe('in a Household of one Profile', () => {
+    it('is that Profile\'s own fill and disc for an event for them: nobody else is there to share it with', () => {
+      expect(pillPeople(meeting(['p-cory']), [CORY])).toEqual({ kind: 'people', bands: [CORY], discs: [CORY], more: 0, names: ['Cory'] });
+    });
+
+    it('is the whole Household\'s look only for an event with no Profile, or none this Household has', () => {
+      expect(pillPeople(meeting([]), [CORY])).toEqual({ kind: 'everyone' });
+      expect(pillPeople(meeting(['p-gone']), [CORY])).toEqual({ kind: 'everyone' });
+    });
+
+    it('is named for that Profile, not "everyone"', () => {
+      const [today] = fiveDays(CHICAGO, NOW);
+      const occurrence = meeting(['p-cory']);
+      const [column] = scheduleColumns([occurrence], [today!], new Date('2026-10-01T15:00:00Z'));
+      expect(pillName(column!.pills[0]!, today!, pillPeople(occurrence, [CORY]))).toBe('Meeting, Cory, Thursday, October 1, 9:00 AM');
+    });
+
+    it('is the rule of two or more again as soon as there is a second Profile: every Profile, or none, is the Household\'s', () => {
+      expect(pillPeople(meeting(['p-cory']), [CORY, SAM])).toMatchObject({ kind: 'people', bands: [CORY] });
+      expect(pillPeople(meeting(['p-cory', 'p-sam']), [CORY, SAM])).toEqual({ kind: 'everyone' });
+    });
   });
 
   it('leaves out a Profile that is not in the Household any more, and is the Household\'s when none is left', () => {
