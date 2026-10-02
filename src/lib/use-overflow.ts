@@ -21,10 +21,13 @@ export type OverflowControl = {
   step: () => void;
 };
 
+// What a box says when there is no box, or before it has been measured: nothing to scroll.
+const NOTHING = { overflowing: false, atEnd: false };
+
 export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
   const box = useRef<HTMLElement | null>(null);
   const piece = useRef<HTMLElement | null>(null);
-  const [state, setState] = useState({ overflowing: false, atEnd: false });
+  const [state, setState] = useState(NOTHING);
   const sideways = axis === 'x';
 
   // What the browser says about the box now, and what the button holds back while it is drawn: its size, and beside the box the gap
@@ -86,6 +89,8 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
         element.removeEventListener('focusin', reveal);
         document.fonts.removeEventListener('loadingdone', measure);
         box.current = null;
+        // A box that goes (a list with its last item cleared) has nothing to scroll, so a new one does not start as the old one ended.
+        setState(NOTHING);
       };
     },
     [measure, reveal],
