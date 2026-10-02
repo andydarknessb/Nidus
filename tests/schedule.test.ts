@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fiveDays, pageDays, type Occurrence } from '../src/lib/calendar-occurrences';
 import type { Profile } from '../src/lib/profiles';
 import type { ProfileRoutines, Routine } from '../src/lib/routines';
-import { isOnNow, pillName, pillPeople, pillsToShow, pillTime, scheduleColumns, stripPeople } from '../src/lib/schedule';
+import { dayHeadingName, headingLabel, isOnNow, pillName, pillPeople, pillsToShow, pillTime, scheduleColumns, stripPeople } from '../src/lib/schedule';
 
 // The schedule: the columns of Home and Week built from occurrences, the words under a pill's title, which pill is
 // on now, how many pills a column holds, who a pill is for, and the words on the people strip. All of it is pure, and
@@ -546,6 +546,40 @@ describe('who a pill is for', () => {
       const dinner = event('Family dinner', '2026-10-01T23:30:00Z', '2026-10-02T01:00:00Z', { source: 'native', calendar_id: null, calendar_name: 'Nidus' });
       expect(nameOf(dinner, true)).toBe('Family dinner, everyone, Thursday, October 1, 6:30 PM, on now, added here');
     });
+  });
+});
+
+describe('a day heading', () => {
+  // Sun Sep 27 to Sat Oct 3, with Thursday Oct 1 as today.
+  const week = pageDays('week', '2026-10-01', CHICAGO, NOW);
+  const [sunday, , , , thursday, friday] = week;
+
+  it('says the weekday over the date on its face, and "Today" over the date on today', () => {
+    expect(week.map(headingLabel)).toEqual(['Sun', 'Mon', 'Tue', 'Wed', 'Today', 'Fri', 'Sat']);
+  });
+
+  it('is named by what is drawn on it, then "open day": "Fri 2, open day" and "Today 1, open day"', () => {
+    expect(dayHeadingName(friday!)).toBe('Fri 2, open day');
+    expect(dayHeadingName(thursday!)).toBe('Today 1, open day');
+  });
+
+  it('starts with the words and the date as drawn, so a name spoken from the screen finds it, for every day of a week', () => {
+    for (const day of week) {
+      const drawn = `${headingLabel(day)} ${Number(day.date.slice(8))}`;
+      expect(dayHeadingName(day).startsWith(drawn), dayHeadingName(day)).toBe(true);
+      expect(dayHeadingName(day)).toBe(`${drawn}, open day`);
+    }
+  });
+
+  it('is the date without a leading zero, and the weekday of the calendar date in any zone', () => {
+    expect(dayHeadingName(sunday!)).toBe('Sun 27, open day');
+    const tokyo = pageDays('week', '2026-10-04', TOKYO, NOW);
+    expect(tokyo.map(dayHeadingName).slice(0, 2)).toEqual(['Sun 4, open day', 'Mon 5, open day']);
+  });
+
+  it('is not named by the long date the column label carries, which is not what is drawn', () => {
+    expect(dayHeadingName(friday!)).not.toContain('Friday');
+    expect(dayHeadingName(friday!)).not.toContain('October');
   });
 });
 

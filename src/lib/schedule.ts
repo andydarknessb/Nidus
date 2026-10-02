@@ -1,6 +1,6 @@
 import { dayOccurrences, describeCell, formatClock, type Occurrence, type WallDay } from './calendar-occurrences';
 import type { Profile } from './profiles';
-import { routineProgress, type ProfileRoutines } from './routines';
+import { routineProgress, WEEKDAYS, type ProfileRoutines } from './routines';
 
 // The schedule (docs/look.md, The parts): Home and Week draw each day as a column of event pills, and the people strip
 // above them shows each person's Routines. Everything they decide is here and pure, so it is tested without a screen
@@ -63,6 +63,19 @@ export function scheduleColumns(occurrences: Occurrence[], days: WallDay[], now:
       endedAt: whenEnded(occurrence, day, now),
     })),
   }));
+}
+
+// ---- A day's heading -------------------------------------------------------------------------------
+
+// What a day's heading says on its face, over the date: "Today", or the weekday in three letters, "Fri".
+export function headingLabel(day: WallDay): string {
+  return day.isToday ? 'Today' : WEEKDAYS[day.weekday]!.short;
+}
+
+// What the heading's button is called: what is drawn on it, then "open day", so that a name spoken from the screen ("Fri 2")
+// finds it. "Friday, October 2, open day" does not contain what is drawn.
+export function dayHeadingName(day: WallDay): string {
+  return `${headingLabel(day)} ${Number(day.date.slice(8))}, open day`;
 }
 
 // ---- Which pills show ------------------------------------------------------------------------------

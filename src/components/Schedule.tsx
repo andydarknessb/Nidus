@@ -2,8 +2,7 @@ import { cn } from 'cn';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { canOpenDay, describeCell, pagingWindow, type Occurrence, type WallDay } from '../lib/calendar-occurrences';
 import type { Profile } from '../lib/profiles';
-import { WEEKDAYS } from '../lib/routines';
-import { pillPeople, pillsToShow, scheduleColumns, type ScheduleColumn } from '../lib/schedule';
+import { dayHeadingName, headingLabel, pillPeople, pillsToShow, scheduleColumns, type ScheduleColumn } from '../lib/schedule';
 import { useOccurrences } from '../lib/wall-hooks';
 import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
 import { EventPill } from './EventPill';
@@ -20,13 +19,14 @@ import { DayWeather } from './Weather';
 const MORE_REM = 3;
 
 // A day's heading cell: the weekday over the date, which opens the day. Today says "Today" over the date in a --primary
-// disc. A day that cannot be opened (`onOpen` null: it lies beyond the calendar's range) is only a heading. 64 px tall,
-// and the forecast line, outside the button, makes it the 82 of the drawing.
+// disc. The button is named by what is drawn on it ("Fri 2, open day"). A day that cannot be opened (`onOpen` null: it lies
+// beyond the calendar's range) is only a heading. 64 px tall, and the forecast line, outside the button, makes it the 82 of
+// the drawing.
 function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | null }) {
   const date = Number(day.date.slice(8));
   const words = (
     <>
-      <span className={cn('text-sm leading-[18px]', day.isToday ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground')}>{day.isToday ? 'Today' : WEEKDAYS[day.weekday]!.short}</span>
+      <span className={cn('text-sm leading-[18px]', day.isToday ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground')}>{headingLabel(day)}</span>
       {day.isToday ? (
         <span className="grid size-[38px] place-items-center rounded-full bg-primary font-display text-[21px] leading-none text-primary-foreground">{date}</span>
       ) : (
@@ -40,7 +40,7 @@ function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | n
         <Button
           variant="quiet"
           aria-current={day.isToday ? 'date' : undefined}
-          aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}, open day`}
+          aria-label={dayHeadingName(day)}
           onClick={onOpen}
           className="h-16 w-full flex-col gap-0.5 rounded-[14px] px-0"
         >
