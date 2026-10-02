@@ -57,17 +57,22 @@ export type ModeInputs = {
   // Today's sunrise and sunset, as instants; 7:00 and 19:00 in the Household Timezone when left out.
   sunrise?: number | undefined;
   sunset?: number | undefined;
-  // The mode this screen last resolved (light when it has none): what it keeps until the Household is read.
+  // Whether the sun is known yet: the first read of the Household's forecast has finished or failed, or the Household has no
+  // weather place, where 7:00 and 19:00 are the sun. Known when left out. Only Auto with no override in force waits for it.
+  sunKnown?: boolean | undefined;
+  // The mode this screen last resolved (light when it has none): what it keeps while it cannot resolve another.
   last?: Mode | undefined;
 };
 
 // An override that has not ended wins; otherwise Light or Dark as the Household set; otherwise Auto, which is
-// light from sunrise to sunset. Until the Household is read there is nothing to resolve with, so the screen
-// keeps the mode it last had and does not flip when the Household arrives.
-export function resolveMode({ appearance = 'auto', override, now, timezone, sunrise, sunset, last = 'light' }: ModeInputs): Mode {
+// light from sunrise to sunset. Only that last needs the sun, so only Auto with no override in force waits for it
+// (`sunKnown`), keeping the mode the screen last had until it is. Until the Household is read there is nothing to
+// resolve with at all, so the screen keeps that mode whatever else is given, and does not flip when the Household arrives.
+export function resolveMode({ appearance = 'auto', override, now, timezone, sunrise, sunset, sunKnown = true, last = 'light' }: ModeInputs): Mode {
   if (timezone === null) return last;
   if (override && now < override.until) return override.mode;
   if (appearance !== 'auto') return appearance;
+  if (!sunKnown) return last;
   const sun = sunToday(now, timezone, sunrise, sunset);
   return now >= sun.sunrise && now < sun.sunset ? 'light' : 'dark';
 }

@@ -251,8 +251,9 @@ function HomeShell({ owner }: { owner: boolean }) {
   // `sun` is what the mode goes on besides the Household: the forecast's sunrise and sunset.
   const { forecast, sun } = useForecast(view.household);
   const weatherOn = view.household !== null && view.household.weather_place !== null;
-  // The mode of the screen: what it last had until the Household and its forecast are read, then the Household's Appearance
-  // (Auto is light from sunrise to sunset; 7:00 and 19:00 in the Household Timezone with no forecast).
+  // The mode of the screen: the Household's Appearance (Auto is light from sunrise to sunset, or from 7:00 to 19:00 in the
+  // Household Timezone with no forecast), or what the screen last had while it cannot say: the Household not read yet, or
+  // Auto waiting for the forecast's first read. The switch works as soon as the Household is read.
   const toggleMode = useWallMode({ timezone, appearance: view.household?.appearance, sun });
   // Today's Routines, read once for as long as the shell lives and handed to the Routines rail on Home and to
   // the Routines chart, so going from one to the other reads nothing again and a tick in flight is not dropped.

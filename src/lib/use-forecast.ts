@@ -20,12 +20,13 @@ const NO_DAYS: SunDay[] = [];
 //
 // It also says what the Wall's mode goes on for the sun (`sun`, src/lib/use-mode.ts): the days of the last forecast
 // read, which a change of place or unit does not drop, so the mode does not flip while the new forecast is read.
-// null while the Household has a weather place and no read of it has finished or failed; empty when there is no
-// forecast to go on, whether the weather is off or the first read failed.
+// null while the Household has a weather place and no read of it has finished or failed, when Auto waits for it (Light,
+// Dark and the switch do not); empty when there is no forecast to go on, whether the weather is off or the first read failed.
 export function useForecast(household: Household | null): { forecast: Forecast | null; sun: SunDay[] | null } {
   const [reading, setReading] = useState<Reading | null>(null);
   // ponytail: a first read that never settles (a WebView without AbortSignal.timeout on a dead connection, see
-  // requestInit) keeps the mode as it was for good, as the spec has it; give that wait a deadline if it is ever seen.
+  // requestInit) leaves Auto on the mode the screen had for good, as the spec has it; Light, Dark and the switch still
+  // work. Give that wait a deadline if it is ever seen.
   const [days, setDays] = useState<SunDay[] | null>(null);
   // The clock as of the latest attempt to read, or of the reading in hand turning too old (the timer
   // below): what forecastToShow judges the reading's age against. Failed attempts move it on too.

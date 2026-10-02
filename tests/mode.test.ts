@@ -294,6 +294,83 @@ describe('resolveMode: before the Household is known', () => {
   });
 });
 
+// The first read of the forecast has not finished or failed, so the sun is not known. Only Auto with no override in force
+// needs the sun, so only that waits for it: an override that has not ended and Light or Dark say what the mode is at once.
+describe('resolveMode: before the sun is known', () => {
+  const waiting = { timezone: CHICAGO, sunKnown: false };
+  const noon = at('2026-10-01T18:00:00'); // 13:00 in Chicago, where Auto says light
+  const night = at('2026-10-01T06:00:00'); // 01:00, where Auto says dark
+  const until = at('2026-10-02T00:00:00'); // 19:00
+
+  it('keeps the mode the screen last resolved for Auto, light when it has none', () => {
+    expect(resolveMode({ now: noon, ...waiting, last: 'dark' })).toBe('dark');
+    expect(resolveMode({ now: night, ...waiting, last: 'light' })).toBe('light');
+    expect(resolveMode({ now: noon, ...waiting, appearance: 'auto', last: 'dark' })).toBe('dark');
+    expect(resolveMode({ now: noon, ...waiting })).toBe('light');
+    expect(resolveMode({ now: night, ...waiting })).toBe('light');
+  });
+
+  it('resolves Auto as soon as the sun is known, and a sun left out is known', () => {
+    expect(resolveMode({ now: noon, timezone: CHICAGO, sunKnown: true, last: 'dark' })).toBe('light');
+    expect(resolveMode({ now: night, timezone: CHICAGO, sunKnown: true, last: 'light' })).toBe('dark');
+    expect(resolveMode({ now: noon, timezone: CHICAGO, last: 'dark' })).toBe('light');
+  });
+
+  it('does not make Light or Dark wait', () => {
+    for (const now of [noon, night]) {
+      expect(resolveMode({ now, ...waiting, appearance: 'light', last: 'dark' })).toBe('light');
+      expect(resolveMode({ now, ...waiting, appearance: 'dark', last: 'light' })).toBe('dark');
+    }
+  });
+
+  it('does not make an override that has not ended wait, whatever the Appearance', () => {
+    for (const appearance of ['auto', 'light', 'dark'] as const) {
+      expect(resolveMode({ now: noon, ...waiting, appearance, override: { mode: 'dark', until }, last: 'light' }), appearance).toBe('dark');
+      expect(resolveMode({ now: noon, ...waiting, appearance, override: { mode: 'light', until }, last: 'dark' }), appearance).toBe('light');
+      expect(resolveMode({ now: until - 1, ...waiting, appearance, override: { mode: 'dark', until }, last: 'light' }), appearance).toBe('dark');
+    }
+  });
+
+  it('has Auto wait again once the override has ended, and Light and Dark carry on', () => {
+    expect(resolveMode({ now: until, ...waiting, override: { mode: 'light', until }, last: 'dark' })).toBe('dark');
+    expect(resolveMode({ now: until + 60_000, ...waiting, override: { mode: 'dark', until }, last: 'light' })).toBe('light');
+    expect(resolveMode({ now: until, ...waiting, appearance: 'light', override: { mode: 'dark', until }, last: 'dark' })).toBe('light');
+  });
+
+  // The screen's switch goes on what the screen has at that moment: with no days the forecast says nothing of the sun, so it is
+  // 7:00 and 19:00 in the Household Timezone, and an override set then ends at the next of them.
+  it('has an override set while the sun is unknown end at the next 7:00 or 19:00 Household time', () => {
+    const ends = (iso: string) => nextBoundary({ now: at(iso), timezone: CHICAGO, ...sunAt([], CHICAGO, at(iso)) });
+    expect(ends('2026-10-01T06:00:00')).toBe(at('2026-10-01T12:00:00'));
+    expect(ends('2026-10-01T18:00:00')).toBe(at('2026-10-02T00:00:00'));
+    expect(ends('2026-10-02T01:00:00')).toBe(at('2026-10-02T12:00:00'));
+    // Across a daylight saving change the 7:00 after Saturday evening is 12:00 UTC on the Sunday it goes forward.
+    expect(ends('2026-03-08T02:00:00')).toBe(at('2026-03-08T12:00:00'));
+  });
+
+  it('shows that override at once, until then, and has Auto wait again after it', () => {
+    // Tapped at 13:00 while the screen shows dark: light until 19:00, then Auto waits for the sun and keeps what it has.
+    const ends = nextBoundary({ now: noon, timezone: CHICAGO, ...sunAt([], CHICAGO, noon) });
+    expect(ends).toBe(until);
+    expect(resolveMode({ now: noon, ...waiting, override: { mode: 'light', until: ends }, last: 'dark' })).toBe('light');
+    expect(resolveMode({ now: ends - 1, ...waiting, override: { mode: 'light', until: ends }, last: 'light' })).toBe('light');
+    expect(resolveMode({ now: ends, ...waiting, override: { mode: 'light', until: ends }, last: 'light' })).toBe('light');
+    expect(resolveMode({ now: ends, ...waiting, override: { mode: 'light', until: ends }, last: 'dark' })).toBe('dark');
+  });
+
+  it('is held back by nothing but the Household: with it not read the screen keeps its mode whatever else is given', () => {
+    for (const sunKnown of [true, false]) {
+      for (const appearance of ['auto', 'light', 'dark'] as const) {
+        const label = `${appearance}, sun ${sunKnown ? 'known' : 'unknown'}`;
+        expect(resolveMode({ now: noon, timezone: null, sunKnown, appearance, override: { mode: 'light', until }, last: 'dark' }), label).toBe('dark');
+        expect(resolveMode({ now: noon, timezone: null, sunKnown, appearance, override: { mode: 'dark', until }, last: 'light' }), label).toBe('light');
+        expect(resolveMode({ now: night, timezone: null, sunKnown, appearance, last: 'dark' }), label).toBe('dark');
+        expect(resolveMode({ now: noon, timezone: null, sunKnown, appearance }), label).toBe('light');
+      }
+    }
+  });
+});
+
 describe('nextBoundary: when the switch\'s override ends', () => {
   const boundary = (iso: string, more = {}) => nextBoundary({ now: at(iso), timezone: CHICAGO, ...more });
 
