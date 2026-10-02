@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Plus, Tablet } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Card, Field } from '@/components/phone';
+import { Card, Confirm, Field, fieldClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { useRefetchOn } from '@/lib/change-feed';
 import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice, type Device } from '@/lib/device';
@@ -8,7 +8,6 @@ import { seenWords } from '@/lib/device-format';
 
 const DEVICE_TABLES = ['devices'] as const;
 
-const field = 'h-14 w-full text-[17px]';
 const PAIR_ID = 'tablet-pair';
 
 type PairStatus = 'idle' | 'pairing' | 'paired' | 'invalid' | 'tooMany' | 'failed';
@@ -114,20 +113,25 @@ export function DevicesSection() {
               </Button>
               {expanded &&
                 (open.confirming ? (
-                  <div className="flex flex-col gap-3">
-                    <h3 className="text-[17px] leading-6 font-semibold">Unpair {device.name}?</h3>
-                    <p className="text-base leading-6">The tablet stops showing your household and goes back to showing a code. You can pair it again any time.</p>
-                    <div className="flex gap-2">
-                      <Button variant="secondary" size="phone" className="flex-1" onClick={() => setOpen({ id: device.id, confirming: false })}>
-                        Cancel
-                      </Button>
-                      <Button variant="delete" size="phone" className="h-auto min-h-14 flex-[2] py-2 whitespace-normal" onClick={() => void unpair(device.id)}>
-                        Unpair {device.name}
-                      </Button>
-                    </div>
-                  </div>
+                  <Confirm
+                    title={`Unpair ${device.name}?`}
+                    words="The tablet stops showing your household and goes back to showing a code. You can pair it again any time."
+                    cancel="Cancel"
+                    confirm={`Unpair ${device.name}`}
+                    onCancel={() => {
+                      setOpen({ id: device.id, confirming: false });
+                      setFocusNext(`unpair-${device.id}`);
+                    }}
+                    onConfirm={() => void unpair(device.id)}
+                  />
                 ) : (
-                  <Button variant="secondary" size="phone" className="h-auto min-h-14 py-2 whitespace-normal" onClick={() => setOpen({ id: device.id, confirming: true })}>
+                  <Button
+                    id={`unpair-${device.id}`}
+                    variant="secondary"
+                    size="phone"
+                    className="h-auto min-h-14 py-2 whitespace-normal"
+                    onClick={() => setOpen({ id: device.id, confirming: true })}
+                  >
                     Unpair {device.name}
                   </Button>
                 ))}
@@ -141,7 +145,7 @@ export function DevicesSection() {
           <form onSubmit={(event) => void pair(event)} className="flex flex-col gap-4 border-t border-border pt-4">
             <Field label="Code shown on the tablet">
               <input
-                className={`${field} uppercase tracking-widest`}
+                className={`${fieldClass} uppercase tracking-widest`}
                 autoFocus
                 value={pairing.code}
                 onChange={(e) => setPairing({ ...pairing, code: e.target.value.toUpperCase() })}
@@ -153,7 +157,7 @@ export function DevicesSection() {
               />
             </Field>
             <Field label="Tablet name">
-              <input className={field} value={pairing.name} onChange={(e) => setPairing({ ...pairing, name: e.target.value })} maxLength={100} placeholder="Kitchen" required />
+              <input className={fieldClass} value={pairing.name} onChange={(e) => setPairing({ ...pairing, name: e.target.value })} maxLength={100} placeholder="Kitchen" required />
             </Field>
             <div className="flex gap-2">
               <Button

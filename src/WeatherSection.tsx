@@ -1,6 +1,6 @@
 import { Cloud } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
-import { Card, Field, labelClass } from '@/components/phone';
+import { Card, Field, fieldClass, labelClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHouseholdWeather, type Household } from '@/lib/household';
 import { describePlaces, searchPlaces, type PlaceMatch, type TemperatureUnit, type WeatherPlace } from '@/lib/weather';
@@ -131,7 +131,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
         <div className="flex flex-col gap-4">
           <form onSubmit={(event) => void search(event)} className="flex flex-col gap-4">
             <Field label="Town or city">
-              <input className="h-14 w-full text-[17px]" enterKeyHint="search" autoComplete="off" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} required />
+              <input className={fieldClass} enterKeyHint="search" autoComplete="off" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} maxLength={100} required />
             </Field>
             <Button type="submit" variant="secondary" size="phone" disabled={searchStatus === 'searching' || saving}>
               Search

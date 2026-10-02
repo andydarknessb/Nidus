@@ -4,7 +4,7 @@ import { AppearanceSection } from '@/AppearanceSection';
 import { DevicesSection } from '@/DevicesSection';
 import { ProfilesSection } from '@/ProfilesSection';
 import { WeatherSection } from '@/WeatherSection';
-import { Card, Field, PhonePage, cardClass, helpClass } from '@/components/phone';
+import { Card, Field, PhonePage, cardClass, fieldClass, helpClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import { timezoneOptions } from '@/lib/timezones';
@@ -37,7 +37,7 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
         <form onSubmit={(event) => void save(event)} className="flex flex-col gap-4">
           <Field label="Name">
             <input
-              className="h-14 w-full text-[17px]"
+              className={fieldClass}
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
@@ -50,7 +50,7 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
           <div className="flex flex-col gap-2">
             <Field label="Time zone">
               <select
-                className="h-14 w-full text-[17px]"
+                className={fieldClass}
                 value={timezone}
                 onChange={(e) => {
                   setTimezone(e.target.value);

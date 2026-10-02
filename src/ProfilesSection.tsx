@@ -2,7 +2,7 @@ import { ArrowDown, ArrowUp, Pencil, Plus } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { ColorPicker, DeletePerson } from '@/components/PersonEditor';
 import { PersonDisc } from '@/components/people';
-import { Card, Field } from '@/components/phone';
+import { Card, Field, fieldClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { useRefetchOn } from '@/lib/change-feed';
 import { createProfile, deleteProfile, firstFreeColor, loadProfiles, movedIds, nextSortOrder, reorderProfiles, updateProfile, type Profile } from '@/lib/profiles';
@@ -20,8 +20,6 @@ const ADD_ID = 'person-add';
 // of a person names it.
 type Draft = { name: string; color: string };
 type Editing = { id: string; draft: Draft; deleting: boolean };
-
-const nameField = 'h-14 w-full text-[17px]';
 
 // A form's title: the disc the person will be, which follows the name and the colour as they are chosen, and what the form does.
 function FormTitle({ draft, title }: { draft: Draft; title: string }) {
@@ -152,7 +150,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                       <FormTitle draft={editing.draft} title={`Edit ${profile.name}`} />
                       <Field label="Name">
                         <input
-                          className={nameField}
+                          className={fieldClass}
                           autoFocus
                           value={editing.draft.name}
                           onChange={(e) => setEditing({ ...editing, draft: { ...editing.draft, name: e.target.value } })}
@@ -230,7 +228,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
         <form onSubmit={(event) => void add(event)} className="flex flex-col gap-4 border-t border-border pt-4">
           <FormTitle draft={adding} title="New person" />
           <Field label="Name">
-            <input className={nameField} autoFocus value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} maxLength={100} required />
+            <input className={fieldClass} autoFocus value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} maxLength={100} required />
           </Field>
           <ColorPicker value={adding.color} profiles={profiles ?? []} onChange={(color) => setAdding({ ...adding, color })} />
           <div className="flex gap-2">

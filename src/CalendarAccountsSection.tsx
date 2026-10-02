@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Card, Field, helpClass, labelClass } from '@/components/phone';
+import { Card, Confirm, Field, fieldClass, helpClass, labelClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { useRefetchOn } from '@/lib/change-feed';
 import {
@@ -41,7 +41,7 @@ function CalendarRow({
       {calendar.selected && (
         <Field label={`Whose calendar is ${calendar.name}?`}>
           <select
-            className="h-14 w-full text-[17px]"
+            className={fieldClass}
             value={calendar.profile_id ?? ''}
             onChange={(event) => onChange({ ...choice, profile_id: event.target.value === '' ? null : event.target.value })}
           >
@@ -68,6 +68,7 @@ export function CalendarAccountsSection() {
   const [notice, setNotice] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [focusNext, setFocusNext] = useState<string | null>(null);
   // Ticks each minute so "last synced N minutes ago" keeps up without a reload.
   const [now, setNow] = useState(() => Date.now());
 
@@ -86,6 +87,13 @@ export function CalendarAccountsSection() {
       setProblem('Could not load your calendars. Check your connection.');
     }
   }, []);
+
+  // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
+  useEffect(() => {
+    if (focusNext === null) return;
+    document.getElementById(focusNext)?.focus();
+    setFocusNext(null);
+  }, [focusNext]);
 
   useEffect(() => {
     void refresh();
@@ -170,7 +178,7 @@ export function CalendarAccountsSection() {
         <Button variant="quiet" size="phone" className="w-full" onClick={() => void makeLink()}>
           Copy a link for another adult
         </Button>
-        {link && <input className="h-14 w-full text-[17px]" readOnly value={link} aria-label="Link for another adult" onFocus={(event) => event.target.select()} />}
+        {link && <input className={fieldClass} readOnly value={link} aria-label="Link for another adult" onFocus={(event) => event.target.select()} />}
         <p role="status" className="min-h-6 text-base">
           {notice}
         </p>
@@ -211,19 +219,19 @@ export function CalendarAccountsSection() {
               </div>
             )}
             {confirming === account.id ? (
-              <div role="group" aria-label={`Remove ${account.google_email}`} className="flex flex-col gap-3">
-                <p className="text-base leading-6">Remove {account.google_email}? Its calendars leave the Wall and Nidus forgets its Google sign-in.</p>
-                <div className="flex gap-2">
-                  <Button variant="secondary" size="phone" className="flex-1" onClick={() => setConfirming(null)}>
-                    Keep it
-                  </Button>
-                  <Button variant="delete" size="phone" className="flex-[2]" onClick={() => void remove(account.id)}>
-                    Yes, remove it
-                  </Button>
-                </div>
-              </div>
+              <Confirm
+                title={`Remove ${account.google_email}?`}
+                words="Its calendars leave the Wall and Nidus forgets its Google sign-in."
+                cancel="Keep it"
+                confirm="Yes, remove it"
+                onCancel={() => {
+                  setConfirming(null);
+                  setFocusNext(`remove-${account.id}`);
+                }}
+                onConfirm={() => void remove(account.id)}
+              />
             ) : (
-              <Button variant="secondary" size="phone" className="h-auto min-h-14 py-2 whitespace-normal" onClick={() => setConfirming(account.id)}>
+              <Button id={`remove-${account.id}`} variant="secondary" size="phone" className="h-auto min-h-14 py-2 whitespace-normal" onClick={() => setConfirming(account.id)}>
                 Remove {account.google_email}
               </Button>
             )}

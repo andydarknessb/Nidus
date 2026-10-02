@@ -1,8 +1,7 @@
-import { useEffect, useId, useRef } from 'react';
-import { Button } from '@/components/ui/button';
+import { useId } from 'react';
 import { personStyle } from '@/lib/look';
 import { PROFILE_PALETTE, colorOwners, initialOf, namesInWords, type Profile } from '@/lib/profiles';
-import { helpClass, labelClass } from './phone';
+import { Confirm, helpClass, labelClass } from './phone';
 
 // The parts of the People card that say something to the family (docs/look.md; spec 0003, People): the colours a person can be
 // given and whose each one is, and what deleting a person takes with them. Drawn from what they are told, so a test renders them.
@@ -68,25 +67,7 @@ export function ColorPicker({
   );
 }
 
-// Before a person is deleted: who, what goes with them, and the two ways out. It takes the focus when it opens, so a screen
-// reader reads what is about to happen before it can be done; the safe button comes first.
+// Before a person is deleted: who, and what goes with them.
 export function DeletePerson({ name, busy = false, onCancel, onDelete }: { name: string; busy?: boolean; onCancel: () => void; onDelete: () => void }) {
-  const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => heading.current?.focus(), []);
-  return (
-    <div className="flex flex-col gap-3">
-      <h3 ref={heading} tabIndex={-1} className="text-[17px] leading-6 font-semibold">
-        Delete {name}?
-      </h3>
-      <p className="text-base leading-6">{DELETE_PERSON_WORDS}</p>
-      <div className="flex gap-2">
-        <Button variant="secondary" size="phone" className="flex-1" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button variant="delete" size="phone" className="h-auto min-h-14 flex-[2] py-2 whitespace-normal" disabled={busy} onClick={onDelete}>
-          Delete {name}
-        </Button>
-      </div>
-    </div>
-  );
+  return <Confirm title={`Delete ${name}?`} words={DELETE_PERSON_WORDS} cancel="Cancel" confirm={`Delete ${name}`} busy={busy} onCancel={onCancel} onConfirm={onDelete} />;
 }
