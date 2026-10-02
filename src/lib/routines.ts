@@ -19,16 +19,19 @@ export type Routine = {
   // Bit n set: scheduled on weekday n, Sunday = 0 (the order of Date#getDay).
   days_of_week: number;
   time_of_day: TimeOfDay | null;
+  // A key of docs/look.md's pictures (src/lib/routine-pictures.tsx), at most 32 characters, or null. The database does not
+  // check it against the set, so it may be a key this build does not know: that draws a plain circle.
+  picture: string | null;
   sort_order: number;
   archived_at: string | null;
 };
 
-// What a Household Account chooses when it makes a Routine. Leaving out time_of_day is the same
-// as null: any time.
-export type RoutineInput = { title: string; days_of_week: number; time_of_day?: TimeOfDay | null };
+// What a Household Account chooses when it makes a Routine. Leaving out time_of_day or picture is the same
+// as null: any time, no picture.
+export type RoutineInput = { title: string; days_of_week: number; time_of_day?: TimeOfDay | null; picture?: string | null };
 
-// What an edit writes: all three fields, the time of day included (null is any time). An edit that
-// left it out would clear it, so the type does not allow one.
+// What an edit writes: all four fields, the time of day and the picture included (null is any time, and no picture). An
+// edit that left one out would clear it, so the type does not allow one.
 export type RoutineEdit = Required<RoutineInput>;
 
 // A calendar day in the Household Timezone: 'YYYY-MM-DD' and its weekday (Sunday = 0).
@@ -53,7 +56,7 @@ export const TIME_OF_DAY_GROUPS: readonly { value: TimeOfDay | null; label: stri
   { value: null, label: 'Any time' },
 ];
 
-const columns = 'id, profile_id, title, days_of_week, time_of_day, sort_order, archived_at';
+const columns = 'id, profile_id, title, days_of_week, time_of_day, picture, sort_order, archived_at';
 
 // What every screen that shows Routines listens to: a change to any of these tables reads them again.
 export const ROUTINE_TABLES = ['routines', 'routine_completions', 'profiles'] as const;
@@ -233,6 +236,7 @@ export async function createRoutine(
       title: input.title.trim(),
       days_of_week: input.days_of_week,
       time_of_day: input.time_of_day ?? null,
+      picture: input.picture ?? null,
       sort_order: sortOrder,
     })
     .select(columns)
@@ -241,14 +245,14 @@ export async function createRoutine(
   return data as Routine;
 }
 
-// Writes a Routine's title, days and time of day, always all three; its position, owner and Routine
+// Writes a Routine's title, days, time of day and picture, always all four; its position, owner and Routine
 // Completions stay as they are. An archived Routine is not edited, and row-level security refuses a
 // Device, or another Household's account, by matching no row rather than by raising, so the row is
 // asked for back and none means refused.
 export async function updateRoutine(client: SupabaseClient, id: string, input: RoutineEdit): Promise<void> {
   const { data, error } = await client
     .from('routines')
-    .update({ title: input.title.trim(), days_of_week: input.days_of_week, time_of_day: input.time_of_day })
+    .update({ title: input.title.trim(), days_of_week: input.days_of_week, time_of_day: input.time_of_day, picture: input.picture })
     .eq('id', id)
     .is('archived_at', null)
     .select('id');

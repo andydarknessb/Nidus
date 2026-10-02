@@ -371,7 +371,7 @@ function RoutineForm({
     if (!title.trim() || mask === 0 || saving) return;
     setSaving(true);
     setFailed(false);
-    const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay });
+    const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture: routine?.picture ?? null });
     setSaving(false);
     setFailed(!saved);
     if (saved && !routine) {
