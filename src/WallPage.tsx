@@ -1,27 +1,24 @@
-import { Calendar1, CalendarDays, CalendarRange, ClipboardCheck, House, ListChecks, Plus, Settings, Utensils, type LucideIcon } from 'lucide-react';
-import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentProps } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
 import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
 import { ChangeFeedProvider } from './components/ChangeFeedProvider';
-import { ConnectionBadge } from './components/ConnectionBadge';
+import { HomeRail } from './components/HomeRail';
 import { NativeEventSheet } from './components/NativeEventSheet';
-import { ProfileChips } from './components/ProfileChips';
-import { WeatherNow } from './components/Weather';
+import { NavigationRail } from './components/NavigationRail';
+import { WallHeader } from './components/WallHeader';
 import { useChangeTick } from './lib/change-feed';
-import { formatClock, formatDate, mealsPath, navigationRailDate, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
+import { mealsPath, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
-import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from './lib/calendar-accounts';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useForecast } from './lib/use-forecast';
 import { useRoutinesToday } from './lib/use-routines-today';
-import { useNow } from './lib/wall-hooks';
-import { MealsScreen, TodaysMealsCard } from './MealsPage';
-import { RoutinesChart, RoutinesRail } from './RoutinesPage';
-import { PinnedListRail, WallListsScreen } from './SharedListsPage';
+import { MealsScreen } from './MealsPage';
+import { RoutinesChart } from './RoutinesPage';
+import { WallListsScreen } from './SharedListsPage';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
 const HEARTBEAT_MS = 30_000;
@@ -32,12 +29,9 @@ const RETRY_MS = 5_000;
 const HOUSEHOLD_REFRESH_MS = 30_000;
 // After a failed Household read, retry sooner.
 const HOUSEHOLD_RETRY_MS = 5_000;
-// How often the wall re-reads how fresh the mirror is, and re-words the badge as time passes.
-const SYNC_FRESHNESS_MS = 60_000;
 
-// What each read on the wall listens to: a change to any of these tables reads it again.
+// What the Household read listens to: a change to this table reads it again.
 const HOUSEHOLD_TABLES = ['households'] as const;
-const SYNC_TABLES = ['calendar_accounts', 'mirrored_calendars'] as const;
 
 // owner: a Household Account is looking at the Wall (it may open Settings); a Device never is.
 type WallState = { kind: 'connecting' } | { kind: 'unpaired'; pairing: PairingCode } | { kind: 'paired'; owner: boolean };
@@ -160,41 +154,6 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
   );
 }
 
-// The "last synced N hours ago" badge: nothing while every Calendar Account is within an hour,
-// so a healthy wall stays clean. A failed read keeps what the wall last knew.
-function SyncBadge() {
-  const [accounts, setAccounts] = useState<SyncFreshness[]>([]);
-  const [now, setNow] = useState(() => Date.now());
-  const changes = useChangeTick(SYNC_TABLES);
-  useEffect(() => {
-    let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    async function read() {
-      try {
-        const next = await loadSyncFreshness(supabase);
-        if (live) setAccounts(next);
-      } catch {
-        // Offline: keep the last reading.
-      }
-      if (!live) return;
-      setNow(Date.now());
-      timer = setTimeout(() => void read(), SYNC_FRESHNESS_MS);
-    }
-    void read();
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [changes]);
-  const badge = staleSyncBadge(accounts, now);
-  if (!badge) return null;
-  return (
-    <p role="status" className="shrink-0 rounded-lg border border-border px-4 py-2 text-lg whitespace-nowrap">
-      {badge}
-    </p>
-  );
-}
-
 // Which screen the address names. The wall pages with pushState rather than reloading, so a tap
 // never drops the session or the Routines rail, and Back returns to the previous page.
 function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void, (date: string | null) => void, () => void] {
@@ -211,93 +170,6 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
     setRoute(read());
   };
   return [route, (view, date) => go(wallPath(view, date)), () => go('/'), (date) => go(mealsPath(date)), () => go('/routines')];
-}
-
-// One entry of the navigation rail: an icon over a word, at least 64 px square. The current one is
-// marked by a bar down its edge and a filled ground as well as `aria-current`, so it never rests on
-// colour alone. A word too long for one line wraps; the entry then grows taller, never wider.
-function NavigationRailEntry({ icon: Icon, label, current = false, className = '', ...props }: { icon: LucideIcon; label: string; current?: boolean } & ComponentProps<'button'>) {
-  return (
-    <button
-      type="button"
-      aria-current={current ? 'page' : undefined}
-      className={`relative flex min-h-16 min-w-16 flex-col items-center justify-center gap-1 rounded-lg text-base font-medium disabled:opacity-50 ${current ? 'bg-muted' : ''} ${className}`}
-      {...props}
-    >
-      {current && <span aria-hidden className="absolute inset-y-2 left-0 w-1 rounded-full bg-foreground" />}
-      <Icon aria-hidden className="size-7 shrink-0" />
-      {label}
-    </button>
-  );
-}
-
-// The navigation rail down the left side: Home, Day, Week, Month, Routines, Meals and Lists, and at
-// its foot Add event.
-// Day, Week and Month keep the date the wall is on (navigationRailDate), read at the tap so one just after
-// Household midnight is right, and wait for the Household Timezone. Meals always opens this week, with
-// no date in its address, so it needs no Household Timezone to open. Lists opens the Lists screen over
-// this one rather than going anywhere. Add event is an action, not a section: it is never the current
-// entry, opens the Native Event sheet, and is drawn as the primary action. Above it, for a Household
-// Account only, sits the link to Settings: a Device is never offered a way into administration. Its column is its whole
-// width, border and padding included, and must stay at most 90 px: the five day columns at 1280 px need
-// 140 px each. Its longest label, Add event, wraps onto two lines; Routines and Settings, the longest
-// single words, fit on one.
-function NavigationRail({
-  route,
-  timezone,
-  onOpen,
-  onHome,
-  onRoutines,
-  onMeals,
-  onLists,
-  onAdd,
-  owner,
-}: {
-  route: WallRoute;
-  timezone: string | null;
-  onOpen: (view: CalendarView, date: string) => void;
-  onHome: () => void;
-  onRoutines: () => void;
-  onMeals: () => void;
-  onLists: () => void;
-  onAdd: () => void;
-  owner: boolean;
-}) {
-  const open = (view: CalendarView) => {
-    if (timezone) onOpen(view, navigationRailDate(view, route, householdDay(timezone).date));
-  };
-  return (
-    <nav aria-label="Wall sections" className="row-span-2 flex flex-col gap-2 rounded-xl border border-border p-1.5">
-      <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
-      <NavigationRailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
-      <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
-      <NavigationRailEntry icon={CalendarDays} label="Month" current={route.view === 'month'} disabled={!timezone} onClick={() => open('month')} />
-      <NavigationRailEntry icon={ClipboardCheck} label="Routines" current={route.view === 'routines'} onClick={onRoutines} />
-      <NavigationRailEntry icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={onMeals} />
-      <NavigationRailEntry icon={ListChecks} label="Lists" aria-haspopup="dialog" onClick={onLists} />
-      <div className="mt-auto flex flex-col gap-2">
-        {owner && (
-          <a href="/settings" className="flex min-h-16 min-w-16 flex-col items-center justify-center gap-1 rounded-lg text-base font-medium">
-            <Settings aria-hidden className="size-7 shrink-0" />
-            Settings
-          </a>
-        )}
-        <NavigationRailEntry icon={Plus} label="Add event" aria-haspopup="dialog" disabled={!timezone} onClick={onAdd} className="bg-primary text-primary-foreground" />
-      </div>
-    </nav>
-  );
-}
-
-// The time, large, and the date beside it, in the Household Timezone. useNow redraws it on each minute
-// and the moment Household midnight passes, so the minute turns on the minute and the date with no reload.
-function WallClock({ timezone }: { timezone: string }) {
-  const now = useNow(timezone).getTime();
-  return (
-    <p className="flex shrink-0 items-baseline gap-3">
-      <span className="text-5xl font-semibold tabular-nums">{formatClock(now, timezone)}</span>
-      <span className="text-2xl">{formatDate(now, timezone)}</span>
-    </p>
-  );
 }
 
 // What stands in for a screen until the Household has been read (its Timezone says which day every screen
@@ -358,7 +230,6 @@ function HomeShell({ owner }: { owner: boolean }) {
       clearTimeout(timer);
     };
   }, [householdChanges]);
-  const name = view.household?.name ?? '';
   const timezone = view.household?.timezone ?? null;
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
@@ -386,20 +257,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         onLists={() => setListsOpen(true)}
         onAdd={() => setAdding(true)}
       />
-      {/* At 1280 px the header is 1144 px, and that is all of it. The clock and date, the weather and the
-          badges never shrink and never overlap anything; what is left goes to the Household's name and the
-          Profile chips. The name gives way first (its shrink factor dwarfs the chips'), down to a few
-          letters, and is capped at 15 rem so a long one never claims more than that; only then do the
-          chips scroll inside their own box. The badges sit straight in the header, not in a wrapper, so
-          that with none showing they cost no gap. */}
-      <header className="flex min-h-12 items-center gap-3">
-        <h1 className={`max-w-60 shrink-[1000] truncate text-lg font-semibold ${name ? 'min-w-24' : ''}`}>{name}</h1>
-        {timezone && <WallClock timezone={timezone} />}
-        {view.household && today && <WeatherNow forecast={forecast} unit={view.household.temperature_unit} today={today} />}
-        <ProfileChips filter={filter} pressed={pressed} hidden={!onCalendar} />
-        <ConnectionBadge compact />
-        <SyncBadge />
-      </header>
+      <WallHeader household={view.household} today={today} forecast={forecast} filter={filter} pressed={pressed} chipsHidden={!onCalendar} />
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
           timezone ? (
@@ -434,27 +292,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           ) : (
             <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
           )}
-          <div className="flex min-h-0 flex-col gap-4">
-            {/* Today's meals take the height they need, and nothing at all when none is planned, so the Routines
-                rail and the pinned list then share the right rail exactly as before. The two keep 13 rem each
-                (the pinned list's controls and an item need that): past it the card shrinks and scrolls, so
-                the wall never does. */}
-            {timezone && <TodaysMealsCard timezone={timezone} />}
-            <div className="grid min-h-[27rem] flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
-              {timezone ? (
-                <RoutinesRail routines={routines} />
-              ) : (
-                <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4">
-                  {view.failed && (
-                    <p role="alert" className="text-base">
-                      Could not load Routines. Check your connection.
-                    </p>
-                  )}
-                </aside>
-              )}
-              <PinnedListRail />
-            </div>
-          </div>
+          <HomeRail timezone={timezone} routines={routines} failed={view.failed} />
         </div>
         )}
         {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
