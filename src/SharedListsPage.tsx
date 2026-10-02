@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { ArrowDown, ArrowUp, ChevronRight, List, Pin, Plus } from 'lucide-react';
 import { supabase } from './lib/supabase';
@@ -207,11 +207,12 @@ const ROW = {
 
 // One item. The whole row is the button: a tap crosses the item off, another puts it back. To get, it is an empty ring;
 // crossed off, a tick and struck-through words, so it never rests on colour alone.
-function ItemRow({ item, size, onToggle }: { item: ListItem; size: keyof typeof ROW; onToggle: () => void }) {
+function ItemRow({ item, size, onToggle, ref }: { item: ListItem; size: keyof typeof ROW; onToggle: () => void; ref?: Ref<HTMLButtonElement> }) {
   const crossed = item.crossed_at !== null;
   const ring = size === 'home' ? 26 : 28;
   return (
     <button
+      ref={ref}
       type="button"
       aria-pressed={crossed}
       onClick={onToggle}
@@ -366,11 +367,17 @@ export function ListsScreen() {
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
   // The row of cards, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row.
   const row = useOverflow('x');
+  // Focus goes to the screen's title on arrival, as on the Routines chart and the calendar pages, rather than falling to the page when
+  // the link that opened this (Home's list card) goes with the screen it was on.
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => heading.current?.focus(), []);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <div className="flex h-13 shrink-0 items-center justify-between gap-4">
-        <h2 className="font-display text-[30px] leading-9">Lists</h2>
+        <h2 ref={heading} tabIndex={-1} className="font-display text-[30px] leading-9 outline-none">
+          Lists
+        </h2>
         <div className="flex items-center gap-4">
           <p className="text-[15px] text-muted-foreground">New lists are made on the phone.</p>
           {/* The heading row is 52 px, so is the button. */}
@@ -429,6 +436,20 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
   const left = withoutCrossed(items).length;
   const region = useRef<HTMLDivElement>(null);
   const room = useHeight(region);
+  // A row that goes while it has the keyboard's focus (one crossed off here leaves after its four seconds) would leave the keyboard
+  // nowhere: as Up next does, the focus goes to the link in the card's heading. A row's ref is called with null as it goes, while its
+  // button is still on the page and still has the focus, so what is noted there is read once the page has changed.
+  const card = useRef<HTMLElement>(null);
+  const link = useRef<HTMLAnchorElement>(null);
+  const focusLost = useRef(false);
+  const watchRow = useCallback((row: HTMLButtonElement | null) => {
+    if (row === null && card.current?.contains(document.activeElement)) focusLost.current = true;
+  }, []);
+  useEffect(() => {
+    if (!focusLost.current) return;
+    focusLost.current = false;
+    if (!document.activeElement || document.activeElement === document.body) link.current?.focus();
+  });
   // "Nothing left to get" waits until the last row has gone (`rows` holds a row crossed off here for its four seconds), so it never
   // pushes a row that was just crossed off down from under the finger.
   const nothing = loaded && rows.length === 0;
@@ -451,11 +472,12 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
   }
 
   return (
-    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className={HOME_CARD}>
+    <section ref={card} aria-label={loaded ? `${list.name}, ${left} left` : list.name} className={HOME_CARD}>
       <div className="flex h-12 shrink-0 items-center justify-between gap-2">
         <h2 className="min-w-0 flex-1 truncate px-1 font-display text-[22px] leading-7">{list.name}</h2>
         <Button asChild variant="quiet" className="h-12 shrink-0 gap-0.5 rounded-[14px] pr-1 pl-3 text-[15px] font-medium">
           <a
+            ref={link}
             href="/lists"
             aria-label={hidden > 0 ? `${hidden} more in ${list.name}. All lists` : 'All lists'}
             onClick={(event) => {
@@ -482,7 +504,7 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
           <>
             {nothing && <p className="shrink-0 px-1 text-base text-muted-foreground">Nothing left to get.</p>}
             {rows.slice(0, shown).map((item) => (
-              <ItemRow key={item.id} item={item} size="home" onToggle={() => tap(item)} />
+              <ItemRow key={item.id} ref={watchRow} item={item} size="home" onToggle={() => tap(item)} />
             ))}
           </>
         )}
