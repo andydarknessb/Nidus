@@ -108,12 +108,17 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
         )}
       </div>
       {scroll.overflowing && (
+        // At the end of the row there is nothing more, and the button says so: switched off (40%) but still the keyboard's. It
+        // is `aria-disabled`, not `disabled`, because a button that is disabled while it has focus drops it to the page, and
+        // the press is ignored instead.
         <Button
           ref={more}
           variant="secondary"
-          disabled={scroll.atEnd}
-          onClick={() => scroller.current?.scrollBy({ left: scroller.current.clientWidth * 0.8 })}
-          className="h-14 gap-1 rounded-[18px] bg-card px-3.5 text-sm"
+          aria-disabled={scroll.atEnd}
+          onClick={() => {
+            if (!scroll.atEnd) scroller.current?.scrollBy({ left: scroller.current.clientWidth * 0.8 });
+          }}
+          className="h-14 gap-1 rounded-[18px] bg-card px-3.5 text-sm aria-disabled:pointer-events-none aria-disabled:opacity-40"
         >
           More people
           <ChevronRight aria-hidden className="size-[18px]" />
