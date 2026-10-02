@@ -12,7 +12,7 @@ import { Confirm, Field, fieldClass, helpClass, labelClass } from './phone';
 // What deleting a person takes with them, as the database does it: their Routines go, and every Routine Completion with them
 // (on delete cascade); an event added here that was only for them is left with no one named, and a Mirrored Calendar set to them
 // with no Profile (on delete cascade of the join row, and set null), and both read as the whole Household's.
-export const DELETE_PERSON_WORDS = "Their Routines and every tick go. Events only for them, and calendars set to them, become everyone's.";
+export const DELETE_PERSON_WORDS = "Their routines and every tick go. Events only for them, and calendars set to them, become everyone's.";
 
 // What a swatch says of whose it is: the first one's initial, and the count of the others ("C+2"), never more. Each is isolated from
 // the other and from the swatch (<bdi>), so a name written right to left beside a Latin one cannot reorder or spill what is drawn.

@@ -25,7 +25,7 @@ const render = (element: ReactElement) => root(renderToStaticMarkup(element));
 describe('an atom drawn in a person\'s colour', () => {
   const atoms: Record<string, ReactElement> = {
     'a disc': createElement(PersonDisc, { name: 'Ava', color: AVA }),
-    'progress': createElement(Pips, { done: 1, total: 3, label: 'Ava: 1 of 3 Routines done', color: AVA }),
+    'progress': createElement(Pips, { done: 1, total: 3, label: 'Ava: 1 of 3 routines done', color: AVA }),
     'a ring': createElement(EmptyRing, { color: AVA }),
     'a tick': createElement(Tick, { color: AVA }),
     'a tick beside progress': createElement(Tick, { color: AVA, strong: true }),

@@ -311,7 +311,7 @@ describe('deleting a person', () => {
   const render = () => renderToStaticMarkup(createElement(DeletePerson, { name: 'Ava', onCancel: () => undefined, onDelete: () => undefined }));
 
   it('says what goes with them', () => {
-    expect(DELETE_PERSON_WORDS).toBe("Their Routines and every tick go. Events only for them, and calendars set to them, become everyone's.");
+    expect(DELETE_PERSON_WORDS).toBe("Their routines and every tick go. Events only for them, and calendars set to them, become everyone's.");
   });
 
   it('says so before the button that deletes, and names who is to go', () => {
@@ -572,7 +572,7 @@ describe("a calendar's choices, one field at a time", () => {
 // The question before something is taken away: the three the phone asks (delete a person, unpair a tablet, remove an account).
 describe('the question before something is taken away', () => {
   const render = (props: Partial<Parameters<typeof Confirm>[0]> = {}) =>
-    renderToStaticMarkup(createElement(Confirm, { title: 'Delete Ava?', words: 'Their Routines go.', cancel: 'Cancel', confirm: 'Delete Ava', onCancel: () => undefined, onConfirm: () => undefined, ...props }));
+    renderToStaticMarkup(createElement(Confirm, { title: 'Delete Ava?', words: 'Their routines go.', cancel: 'Cancel', confirm: 'Delete Ava', onCancel: () => undefined, onConfirm: () => undefined, ...props }));
   const tag = (markup: string, name: string) => new RegExp(`<button[^>]*>\\s*${name}\\s*</button>`).exec(markup)?.[0] ?? '';
   const idOf = (markup: string, element: string) => new RegExp(`<${element}[^>]*\\bid="([^"]*)"`).exec(markup)?.[1];
 
