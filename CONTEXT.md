@@ -19,7 +19,7 @@ A person in the Household, used for attribution and colour-coding. Has no creden
 _Avoid_: User, member, account, kiosk
 
 **Device**:
-A tablet paired to a Household so it can show the display without a sign-in. It may read everything, tick Routines and list items, and manage Native Events, but never administer the Household. A Device is not a Profile.
+A tablet paired to a Household so it can show the display without a sign-in. It may read everything, tick Routines and list items, plan Meals, and manage Native Events, but never administer the Household. A Device is not a Profile.
 _Avoid_: Kiosk profile, terminal
 
 **Pairing Code**:
