@@ -1,40 +1,37 @@
 import { Pin, Plus } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
-import { HouseDisc, PersonDisc } from './components/people';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { EventDiscs } from './components/EventPill';
 import { Card } from './components/phone';
 import { Button } from './components/ui/button';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { describeWhen, type Occurrence } from './lib/calendar-occurrences';
 import type { Household } from './lib/household';
 import { loadUpcomingNativeEvents } from './lib/native-events';
-import { eventPeople, loadProfiles, namesInWords, type Profile } from './lib/profiles';
+import { loadProfiles, type Profile } from './lib/profiles';
 import { householdDay } from './lib/routines';
+import { listNames, pillPeople } from './lib/schedule';
 import { supabase } from './lib/supabase';
 import { useRefetchOn } from './lib/change-feed';
 
 const EVENT_TABLES = ['native_events', 'native_event_profiles', 'profiles'] as const;
 
-// Who an event is for, as discs: the whole Household's is the house, one person's is theirs, two are both, and more than two are
-// the first and a count of the rest. The words are for a screen reader, which hears no disc.
-function Who({ profileIds, profiles }: { profileIds: string[]; profiles: Profile[] }) {
-  const { everyone, people } = eventPeople(profileIds, profiles);
-  const shown = people.length > 2 ? people.slice(0, 1) : people;
-  const more = people.length - shown.length;
+// One event of the list: its title with the pin of a Native Event, when it is, and who it is for as the discs of the Wall's own
+// pill (the house for the whole Household, a disc for one or two people, a disc and "+N" for more), which a screen reader hears
+// as words instead. Who an event is for is pillPeople's rule, the one the schedule draws its fill from.
+export function EventRow({ event, profiles, timezone, onOpen }: { event: Occurrence; profiles: readonly Profile[]; timezone: string; onOpen: () => void }) {
+  const people = pillPeople(event, profiles);
   return (
-    <span className="flex shrink-0 items-center">
-      <span className="sr-only">For {everyone ? 'everyone' : namesInWords(people.map((person) => person.name))}</span>
-      {everyone && <HouseDisc size={34} />}
-      {shown.map((person, index) => (
-        <span key={person.id} className={index > 0 ? '-ml-1' : ''}>
-          <PersonDisc name={person.name} color={person.color} size={34} />
+    <Button variant="secondary" className="h-auto min-h-14 w-full justify-start gap-3 rounded-[14px] px-3.5 py-2 text-left font-medium whitespace-normal" onClick={onOpen}>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="flex items-start gap-2 text-[17px] leading-6 font-medium">
+          <Pin aria-hidden className="mt-1 size-4 shrink-0" />
+          <span className="min-w-0 break-words">{event.title}</span>
         </span>
-      ))}
-      {more > 0 && (
-        <span aria-hidden className="-ml-1 flex size-[34px] items-center justify-center rounded-full bg-accent text-sm leading-none font-semibold text-foreground">
-          +{more}
-        </span>
-      )}
-    </span>
+        <span className="text-sm leading-5 font-normal text-muted-foreground">{describeWhen(event, timezone)}</span>
+      </span>
+      <span className="sr-only">For {people.kind === 'everyone' ? 'everyone' : listNames(people.names)}</span>
+      <EventDiscs people={people} />
+    </Button>
   );
 }
 
@@ -46,6 +43,9 @@ export function EventsSection({ household }: { household: Household }) {
   const [failed, setFailed] = useState(false);
   // The sheet: a new event, or the one being edited.
   const [sheet, setSheet] = useState<{ occurrence?: Occurrence } | null>(null);
+  const addButton = useRef<HTMLButtonElement>(null);
+  // How many times the sheet has closed on a write and the list been read again since.
+  const [settled, setSettled] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -63,10 +63,18 @@ export function EventsSection({ household }: { household: Household }) {
   }, [refresh]);
   useRefetchOn(EVENT_TABLES, () => void refresh());
 
+  // The sheet gives the focus back to what opened it, and an event that was deleted took that row with it when the list was read
+  // again: focus never falls to the page, it goes to Add event.
+  useEffect(() => {
+    if (settled === 0) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) addButton.current?.focus();
+  }, [settled]);
+
   return (
     <Card title="Events added in Nidus">
       <p className="text-base leading-6">Events added here and on the Wall live only in Nidus. They are not in Google Calendar.</p>
-      <Button variant="secondary" size="phone" className="w-full" onClick={() => setSheet({})}>
+      <Button ref={addButton} variant="secondary" size="phone" className="w-full" onClick={() => setSheet({})}>
         <Plus aria-hidden />
         Add event
       </Button>
@@ -79,16 +87,7 @@ export function EventsSection({ household }: { household: Household }) {
       <ul className="flex flex-col gap-2">
         {events?.map((event) => (
           <li key={event.id}>
-            <Button variant="secondary" className="h-auto min-h-14 w-full justify-start gap-3 rounded-[14px] px-3.5 py-2 text-left font-medium whitespace-normal" onClick={() => setSheet({ occurrence: event })}>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="flex items-start gap-2 text-[17px] leading-6 font-medium">
-                  <Pin aria-hidden className="mt-1 size-4 shrink-0" />
-                  <span className="min-w-0 break-words">{event.title}</span>
-                </span>
-                <span className="text-sm leading-5 font-normal text-muted-foreground">{describeWhen(event, household.timezone)}</span>
-              </span>
-              <Who profileIds={event.profile_ids} profiles={profiles} />
-            </Button>
+            <EventRow event={event} profiles={profiles} timezone={household.timezone} onOpen={() => setSheet({ occurrence: event })} />
           </li>
         ))}
       </ul>
@@ -100,7 +99,7 @@ export function EventsSection({ household }: { household: Household }) {
           onClose={() => setSheet(null)}
           onSaved={() => {
             setSheet(null);
-            void refresh();
+            void refresh().then(() => setSettled((count) => count + 1));
           }}
         />
       )}
