@@ -125,9 +125,17 @@
   --color-person-on-tick: var(--person-on-tick);
   --color-person-done-disc: var(--person-done-disc);
   --color-person-done-picture: var(--person-done-picture);
-  /* Young Serif has one weight, 400: it is never bold. Lexend carries everything else (400, 500, 600). */
+  /* Lexend carries everything the display face does not (400, 500, 600). */
   --font-sans: 'Lexend Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Young Serif', Georgia, 'Times New Roman', serif;
+}
+
+/* The display face, Young Serif: the clock, dates, names and titles. It has one weight, 400, and is never bold. Its default
+   figures are old-style (a 7 hangs below the line, a 2 and a 1 sit at x-height, so a clock looks small), so wherever it is
+   used the figures are lining and tabular: all one height, and all one width, which keeps a time from shifting. This is
+   the one definition of font-display, so no caller can forget; it is not a theme variable, which would make a second one. */
+@utility font-display {
+  font-family: 'Young Serif', Georgia, 'Times New Roman', serif;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 @layer base {

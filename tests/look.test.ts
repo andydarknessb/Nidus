@@ -233,6 +233,17 @@ describe('src/index.css', () => {
     expect(declarations(":root[data-mode='dark']").get('color-scheme')).toBe('dark');
   });
 
+  // Young Serif's default figures are old-style (a 7 hangs below the line, a 2 and a 1 sit at x-height), so wherever the display
+  // face is used its figures are lining and tabular. It is one utility, so no caller can forget; a plain `--font-display` in
+  // @theme would be a second font-display that leaves them old-style.
+  it('draws the display face with lining, tabular figures wherever it is used', () => {
+    expect(css.match(/@utility font-display \{/g)).toHaveLength(1);
+    const utility = /@utility font-display \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(utility).toMatch(/font-family:\s*'Young Serif'/);
+    expect(utility).toMatch(/font-variant-numeric:\s*lining-nums tabular-nums;/);
+    expect(css).not.toMatch(/--font-display\s*:/);
+  });
+
   // Nine tickets edit this file side by side: a block or a declaration added beside the ones above would be read by the
   // browser and by no test, so these fail on a second block, a second declaration and an override inside @media.
   it('has each block that holds tokens exactly once', () => {
