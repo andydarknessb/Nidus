@@ -1,8 +1,9 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { loadOccurrences, type Occurrence, type WallDay } from './calendar-occurrences';
-import { useChangeTick } from './change-feed';
+import { useRefetchOn } from './change-feed';
 import { watchHouseholdDay, watchMinute } from './household-day';
 import { filterOccurrences, ProfileFilterContext } from './profile-filter';
+import { startReadLoop, type ReadLoop } from './read-loop';
 import { OCCURRENCE_TABLES } from './realtime';
 import { householdDay, type HouseholdDay } from './routines';
 import { supabase } from './supabase';
@@ -60,33 +61,25 @@ export function useOccurrences(days: WallDay[], version: number): { occurrences:
   const fromMs = days[0]!.startMs;
   const toMs = days[days.length - 1]!.endMs;
   // Read again the moment an event, a calendar or a Profile's colour changes anywhere in the Household.
-  const changes = useChangeTick(OCCURRENCE_TABLES);
+  // A change pokes the loop instead of restarting it, so a read in flight lands and one more follows.
+  const loop = useRef<ReadLoop | null>(null);
+  useRefetchOn(OCCURRENCE_TABLES, () => loop.current?.poke());
   useEffect(() => {
-    let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function read() {
-      let delay = REFRESH_MS;
-      try {
-        const rows = await loadOccurrences(supabase, new Date(fromMs), new Date(toMs));
-        if (live) {
-          setOccurrences(rows);
-          setFailed(false);
-        }
-      } catch {
-        // Keep what the wall shows and try again sooner.
-        if (live) setFailed(true);
-        delay = RETRY_MS;
-      }
-      if (live) timer = setTimeout(() => void read(), delay);
-    }
-
-    void read();
+    loop.current = startReadLoop({
+      read: () => loadOccurrences(supabase, new Date(fromMs), new Date(toMs)),
+      onResult: (rows) => {
+        setOccurrences(rows);
+        setFailed(false);
+      },
+      onFail: () => setFailed(true),
+      refreshMs: REFRESH_MS,
+      retryMs: RETRY_MS,
+    });
     return () => {
-      live = false;
-      clearTimeout(timer);
+      loop.current?.stop();
+      loop.current = null;
     };
-  }, [fromMs, toMs, version, changes]);
+  }, [fromMs, toMs, version]);
 
   return { occurrences: shown, failed };
 }
