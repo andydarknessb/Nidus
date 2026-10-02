@@ -43,13 +43,15 @@ describe('forecastUrl', () => {
     });
   });
 
-  // The Wall's mode goes on these two (src/lib/mode.ts). Open-Meteo answers in the Household's wall clock only because the
-  // request names the Household Timezone, so the two must always travel together.
-  it('asks for sunrise and sunset in the Household Timezone, so they are Household wall-clock times', () => {
+  // The Wall's mode goes on these two (src/lib/mode.ts). The request names the Household Timezone, which is what makes the days'
+  // dates Household dates, and leaves timeformat alone: unixtime would send those dates as numbers too, and a day is found by its
+  // date. The times are read with the offset the answer gives.
+  it('asks for sunrise and sunset with the Household Timezone named, and in the default time format', () => {
     const url = new URL(forecastUrl(30.27, -97.74, 'fahrenheit', 'America/Chicago'));
 
     expect(url.searchParams.get('daily')?.split(',')).toEqual(expect.arrayContaining(['sunrise', 'sunset']));
     expect(url.searchParams.get('timezone')).toBe('America/Chicago');
+    expect(url.searchParams.has('timeformat')).toBe(false);
   });
 
   it('writes the Household Timezone URL-encoded, so the daily dates are Household dates', () => {
