@@ -46,7 +46,7 @@ export async function loadOccurrences(client: SupabaseClient, from: Date, to: Da
     .from('calendar_occurrences')
     .select(occurrenceColumns)
     .lt('starts_at', to.toISOString())
-    // Inclusive so an event of no length at `from` is kept; placement is the exact overlap test.
+    // Inclusive so an event of no length at `from` is kept; dayOccurrences is the exact overlap test.
     .gte('ends_at', from.toISOString())
     .order('starts_at')
     .order('id');
@@ -313,10 +313,10 @@ export function nowHour(day: WallDay, now: Date): number | null {
 
 // ---- Month cells --------------------------------------------------------------------
 
-// The occurrences on `day` in the order a month cell lists them: all-day first, then by start, then by
-// title. A multi-day event is on every day it covers, by the overlap test place uses but on what the event
-// really lasts: the padding that gives a short event something to tap in the time grid must not carry one
-// in a day's last quarter hour onto the next day.
+// The occurrences on `day` in the order a month cell, a schedule column and the Day view list them: all-day first,
+// then by start, then by title. A multi-day event is on every day it covers, by what the event really lasts
+// (spanIsOn): nothing is added to a short event to give it something to tap, so none is carried from a day's last
+// minutes onto the next day.
 export function dayOccurrences(occurrences: Occurrence[], day: WallDay): Occurrence[] {
   return occurrences
     .filter((occurrence) => spanIsOn(startOf(occurrence), Date.parse(occurrence.ends_at), day))
