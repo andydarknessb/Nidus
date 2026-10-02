@@ -150,6 +150,36 @@ describe('what is on now', () => {
     expect(ringed([allDay('Grandma visiting', '2026-10-01', '2026-10-02')])).toEqual([[], [], [], [], []]);
   });
 
+  // The ring says "this is what is happening", and a pill that says "All day" is not saying when.
+  describe('is never a pill that says "All day"', () => {
+    // A timed event from Tue Sep 29, 8:00 PM to Sat Oct 3, 3:00 AM, in Chicago.
+    const camping = event('Camping', '2026-09-30T01:00:00Z', '2026-10-03T08:00:00Z');
+
+    it('also when the event is timed and covers all of today', () => {
+      const [today] = scheduleColumns([camping], days, NOW);
+      expect(today?.pills[0]).toMatchObject({ time: 'All day', onNow: false });
+      expect(isOnNow(camping, days[0]!, NOW)).toBe(false);
+      // From one midnight to the next is the same.
+      expect(ringed([event('Lock-in', '2026-10-01T05:00:00Z', '2026-10-02T05:00:00Z')])).toEqual([[], [], [], [], []]);
+    });
+
+    it('but the first day and the last day of such an event say a time, and ring when it is on now', () => {
+      const tuesdayNight = new Date('2026-09-30T02:00:00Z');
+      expect(scheduleColumns([camping], fiveDays(CHICAGO, tuesdayNight), tuesdayNight)[0]?.pills[0]).toMatchObject({ time: '8:00 PM', onNow: true });
+      const saturdayEarly = new Date('2026-10-03T06:00:00Z');
+      expect(scheduleColumns([camping], fiveDays(CHICAGO, saturdayEarly), saturdayEarly)[0]?.pills[0]).toMatchObject({ time: 'Until 3:00 AM', onNow: true });
+    });
+
+    it('whatever a pill says, it rings exactly when it does not say "All day" and is on now', () => {
+      const [today] = scheduleColumns([camping, event('Family dinner', '2026-10-01T23:30:00Z', '2026-10-02T01:00:00Z'), allDay('Grandma visiting', '2026-10-01', '2026-10-02')], days, NOW);
+      expect(today?.pills.map((pill) => [pill.occurrence.title, pill.time, pill.onNow])).toEqual([
+        ['Grandma visiting', 'All day', false],
+        ['Camping', 'All day', false],
+        ['Family dinner', '6:30 PM', true],
+      ]);
+    });
+  });
+
   it('is the event\'s moment of starting, and not its moment of ending', () => {
     expect(ringed([event('Starts now', '2026-10-02T00:21:00Z', '2026-10-02T01:00:00Z'), event('Ends now', '2026-10-01T23:00:00Z', '2026-10-02T00:21:00Z')])[0]).toEqual(['Starts now']);
   });

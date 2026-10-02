@@ -169,6 +169,19 @@ describe('an event pill', () => {
     expect(pill(event('Photo day', [], { is_all_day: true, starts_at: '2026-10-01T05:00:00Z', ends_at: '2026-10-02T05:00:00Z' }))).not.toContain(ring);
   });
 
+  it('never has the ring when it says "All day", also for a timed event that covers all of today and is on now', () => {
+    const ring = 'shadow-[inset_0_0_0_2.5px_var(--foreground)]';
+    const covering = pill(event('Road trip', ['p-sam'], { starts_at: '2026-09-30T01:00:00Z', ends_at: '2026-10-03T08:00:00Z' }));
+    expect(covering).toContain('All day');
+    expect(covering).not.toContain(ring);
+    // The first day of the same event says its start time, and does have the ring while it is on.
+    const [first] = fiveDays(CHICAGO, new Date('2026-09-30T02:00:00Z'));
+    const [column] = scheduleColumns([event('Road trip', ['p-sam'], { starts_at: '2026-09-30T01:00:00Z', ends_at: '2026-10-03T08:00:00Z' })], [first!], new Date('2026-09-30T02:00:00Z'));
+    const firstDay = renderToStaticMarkup(createElement(EventPill, { pill: column!.pills[0]!, day: first!, people: people(event('Road trip', ['p-sam'])), onOpen: () => undefined }));
+    expect(firstDay).toContain('8:00');
+    expect(firstDay).toContain(ring);
+  });
+
   it('puts the title on up to two lines that end in an ellipsis, never breaking inside a word, and is at least 52 px tall', () => {
     const html = pill(event('Orthodontist appointment', ['p-ava']));
     expect(html).toContain('line-clamp-2');

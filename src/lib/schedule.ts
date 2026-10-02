@@ -15,23 +15,27 @@ export type Pill = { occurrence: Occurrence; time: string; onNow: boolean };
 
 export type ScheduleColumn = { day: WallDay; pills: Pill[] };
 
+// Whether a pill on `day` says "All day": an all-day event, or a timed event that covers the day from end to end.
+function saysAllDay(occurrence: Occurrence, day: WallDay): boolean {
+  return occurrence.is_all_day || (Date.parse(occurrence.starts_at) <= day.startMs && Date.parse(occurrence.ends_at) >= day.endMs);
+}
+
 // What a pill says under its title on `day`: "All day" on each day an all-day event covers and on a day a timed event
 // covers from end to end; "Until 2:00 AM" on the last day of a timed event that began on an earlier one; otherwise the
 // start time, "9:00 AM". It reads the event's real span, as the month's cells do, never the padding the hour grid gives
 // a short event.
 export function pillTime(occurrence: Occurrence, day: WallDay): string {
-  if (occurrence.is_all_day) return 'All day';
+  if (saysAllDay(occurrence, day)) return 'All day';
   const start = Date.parse(occurrence.starts_at);
-  const end = Date.parse(occurrence.ends_at);
-  if (start <= day.startMs && end >= day.endMs) return 'All day';
-  if (start < day.startMs) return `Until ${formatClock(end, day.timezone)}`;
+  if (start < day.startMs) return `Until ${formatClock(Date.parse(occurrence.ends_at), day.timezone)}`;
   return formatClock(start, day.timezone);
 }
 
 // Whether the pill of `occurrence` on `day` is the one that is on now: a timed event that has started and not ended, in
-// today's column. A timed event that runs on past midnight is on now in today's column only.
+// today's column. A timed event that runs on past midnight is on now in today's column only. A pill that says "All day"
+// never is, a timed event that covers all of today included: it is not saying when, so there is nothing to ring.
 export function isOnNow(occurrence: Occurrence, day: WallDay, now: Date): boolean {
-  if (occurrence.is_all_day || !day.isToday) return false;
+  if (!day.isToday || saysAllDay(occurrence, day)) return false;
   const at = now.getTime();
   return Date.parse(occurrence.starts_at) <= at && at < Date.parse(occurrence.ends_at);
 }
