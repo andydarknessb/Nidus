@@ -6,7 +6,7 @@ import { WeatherSection } from '@/WeatherSection';
 import { updateHousehold, type Household } from '@/lib/household';
 import { timezoneOptions } from '@/lib/timezones';
 
-const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
+const field = 'w-full text-base';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 
 type Props = { household: Household; onSaved: (household: Household) => void; onSignOut: () => void };

@@ -3,7 +3,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { updateHouseholdWeather, type Household } from '@/lib/household';
 import { describePlaces, searchPlaces, type PlaceMatch, type TemperatureUnit, type WeatherPlace } from '@/lib/weather';
 
-const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
+const field = 'w-full text-base';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 const choice =
   'flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border-2 border-border px-4 text-base font-medium has-[:checked]:border-foreground has-[:checked]:bg-muted has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-foreground';

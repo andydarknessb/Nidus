@@ -18,7 +18,7 @@ import { useRefetchOn } from '@/lib/change-feed';
 
 const PROFILE_TABLES = ['profiles'] as const;
 
-const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
+const field = 'w-full text-base';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 const iconAction = 'flex size-12 items-center justify-center rounded-lg border border-border disabled:opacity-40';
 
@@ -42,7 +42,7 @@ function ColorPicker({ value, onChange, label }: { value: string; onChange: (hex
           <label
             key={color.hex}
             className="relative flex size-12 cursor-pointer items-center justify-center rounded-full has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-foreground"
-            style={{ backgroundColor: color.hex, boxShadow: value === color.hex ? '0 0 0 3px #09090b, 0 0 0 6px #fafafa' : undefined }}
+            style={{ backgroundColor: color.hex, boxShadow: value === color.hex ? '0 0 0 3px var(--background), 0 0 0 6px var(--foreground)' : undefined }}
           >
             <input
               type="radio"
@@ -54,7 +54,7 @@ function ColorPicker({ value, onChange, label }: { value: string; onChange: (hex
               aria-label={color.name}
             />
             {value === color.hex && (
-              <span aria-hidden="true" className="text-xl font-bold text-zinc-950">
+              <span aria-hidden="true" className="text-xl font-bold text-ink">
                 ✓
               </span>
             )}
