@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import { ArrowDown, ArrowUp, Moon, Star, Sun, Sunrise, type LucideIcon } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type Ref } from 'react';
+import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, MAX_PIPS, PersonDisc, Pips, Tick } from './components/people';
 import { Button } from './components/ui/button';
 import type { Household } from './lib/household';
@@ -37,6 +38,7 @@ import { PictureField, RoutinePicture } from './lib/routine-pictures';
 import { useRefetchOn } from './lib/change-feed';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
+import { useOverflow } from './lib/use-overflow';
 import { useCelebration, type RoutinesToday } from './lib/use-routines-today';
 
 // ---- The wall: the Routines chart, and the tile that Up next shares --------------------------------
@@ -169,7 +171,8 @@ function GroupLabel({ icon: Icon, children, status }: { icon?: LucideIcon | unde
 
 // One Profile's column of the chart: its disc, name and how far it is today, then the part of the day that is showing
 // (or every part), then the foot line for what was done earlier. It is as tall as what it holds, and the tiles scroll on
-// their own when they do not fit. A Profile with nothing today has the column and says so.
+// their own when they do not fit, with a "More" button at their foot that says so (OverflowButton). A Profile with nothing
+// today has the column and says so.
 function Column({
   profile,
   routines,
@@ -202,6 +205,9 @@ function Column({
   const pips = total > 0 && total <= MAX_PIPS;
   const view = part === 'whole' ? null : partView(routines, done, part, held);
   const column = useRef<HTMLElement>(null);
+  // Whether the tiles hold more than the column shows. The button is the tiles' last child, stuck to their foot, so a tick, a part
+  // or a person coming and going is a render of this column and reads it again.
+  const more = useOverflow('y', 'over');
 
   function tap(routine: Routine, button: HTMLElement) {
     if (column.current && tapFinishesProfile(routines, done, routine.id, !done.has(routine.id))) {
@@ -259,58 +265,64 @@ function Column({
       </div>
       <Pips done={count} total={total} label={`${profile.name}: ${count} of ${total} ${total === 1 ? 'Routine' : 'Routines'} done`} color={profile.color} height={10} />
       {total > 0 && (
-        // The padding is room for a tile's focus ring, which the scrolling box would otherwise clip.
-        <div className="-m-1 flex min-h-0 flex-col gap-2.5 overflow-y-auto p-1">
-          {view === null
-            ? groupByTimeOfDay(routines).map((group) => (
-                <Fragment key={group.label}>
-                  <GroupLabel icon={group.value === null ? undefined : PART_ICON[group.value]}>{group.label}</GroupLabel>
-                  {tiles(group.routines)}
-                </Fragment>
-              ))
-            : part !== 'whole' && (
-                <>
-                  <GroupLabel
-                    icon={PART_ICON[part]}
-                    // Keyed by the part: a part already done is not announced when it is switched to, only a tick that makes it so is.
-                    // And a finished day is announced once, by the heading ("Ben: All done"): this stays on the page, for the eye, and says
-                    // nothing more to a screen reader then.
-                    status={
-                      <span key={part} role="status" className="flex items-center gap-1.5 text-[14.5px] leading-[18px] font-semibold">
-                        {partDone(view, done) && (
-                          <>
-                            {!finished && (
-                              <span className="sr-only">
-                                {profile.name}: {timeWord(part)}{' '}
+        // The scrolling box has no padding, so the "More" button at its foot sticks flush with its end; the padding inside it is room for
+        // a tile's focus ring, which the box would otherwise clip. The tiles scroll to clear of the button, so one that takes the
+        // keyboard's focus is never left under it.
+        <div ref={more.scroller} className={cn('-m-1 min-h-0 overflow-y-auto', FOOT_CLEARANCE)}>
+          <div className="flex flex-col gap-2.5 p-1">
+            {view === null
+              ? groupByTimeOfDay(routines).map((group) => (
+                  <Fragment key={group.label}>
+                    <GroupLabel icon={group.value === null ? undefined : PART_ICON[group.value]}>{group.label}</GroupLabel>
+                    {tiles(group.routines)}
+                  </Fragment>
+                ))
+              : part !== 'whole' && (
+                  <>
+                    <GroupLabel
+                      icon={PART_ICON[part]}
+                      // Keyed by the part: a part already done is not announced when it is switched to, only a tick that makes it so is.
+                      // And a finished day is announced once, by the heading ("Ben: All done"): this stays on the page, for the eye, and says
+                      // nothing more to a screen reader then.
+                      status={
+                        <span key={part} role="status" className="flex items-center gap-1.5 text-[14.5px] leading-[18px] font-semibold">
+                          {partDone(view, done) && (
+                            <>
+                              {!finished && (
+                                <span className="sr-only">
+                                  {profile.name}: {timeWord(part)}{' '}
+                                </span>
+                              )}
+                              <span aria-hidden={finished || undefined} className="flex items-center gap-1.5">
+                                <Tick size={20} color={profile.color} strong />
+                                Done
                               </span>
-                            )}
-                            <span aria-hidden={finished || undefined} className="flex items-center gap-1.5">
-                              <Tick size={20} color={profile.color} strong />
-                              Done
-                            </span>
-                          </>
-                        )}
-                      </span>
-                    }
-                  >
-                    {timeWord(part)}
-                  </GroupLabel>
-                  {view.own.length > 0 && tiles(view.own)}
-                  {view.earlier.length > 0 && (
-                    <>
-                      <GroupLabel>Left from earlier</GroupLabel>
-                      {tiles(view.earlier)}
-                    </>
-                  )}
-                  {view.anytime.length > 0 && (
-                    <>
-                      <GroupLabel>Any time</GroupLabel>
-                      {tiles(view.anytime)}
-                    </>
-                  )}
-                  {view.own.length + view.earlier.length + view.anytime.length === 0 && <p className="px-1 text-[15px] text-muted-foreground">Nothing this {part}.</p>}
-                </>
-              )}
+                            </>
+                          )}
+                        </span>
+                      }
+                    >
+                      {timeWord(part)}
+                    </GroupLabel>
+                    {view.own.length > 0 && tiles(view.own)}
+                    {view.earlier.length > 0 && (
+                      <>
+                        <GroupLabel>Left from earlier</GroupLabel>
+                        {tiles(view.earlier)}
+                      </>
+                    )}
+                    {view.anytime.length > 0 && (
+                      <>
+                        <GroupLabel>Any time</GroupLabel>
+                        {tiles(view.anytime)}
+                      </>
+                    )}
+                    {view.own.length + view.earlier.length + view.anytime.length === 0 && <p className="px-1 text-[15px] text-muted-foreground">Nothing this {part}.</p>}
+                  </>
+                )}
+          </div>
+          {/* The tiles are 4 px in from the box, so the button is. */}
+          <OverflowButton control={more} of={`${profile.name}'s routines`} surface="person" className="px-1" />
         </div>
       )}
       {view !== null && view.doneEarlier > 0 && (
@@ -344,10 +356,12 @@ const CHART_CHOICES: { part: ChartPart; label: string; icon?: LucideIcon }[] = [
 // The Routines chart, a screen of its own: a control for the part of the day and a column for each Profile that has a
 // Routine on any day, side by side in the Profiles' order. It opens on the part it is now, and moves to a new part when
 // that part begins; a part picked by hand holds until then. Only when there are more Profiles than fit at a readable
-// width does the row scroll sideways.
+// width does the row scroll sideways, and the heading row then holds a "More people" button that says so.
 export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
   const { loaded, settled, failed, part: clock, problems, columns, done, toggle } = routines;
   const celebration = useCelebration(routines);
+  // The row of columns, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row.
+  const row = useOverflow('x');
   // Focus goes to the page's title on arrival, as on the calendar pages, rather than staying on the navigation rail.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
@@ -370,20 +384,24 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
         <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="font-display text-[30px] leading-9 outline-none">
           Routines
         </h2>
-        {/* The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways. */}
-        <div role="group" aria-label="Part of the day" className="flex h-14 flex-none gap-2 rounded-[18px] bg-card p-1">
-          {CHART_CHOICES.map(({ part, label, icon: Icon }) => (
-            <Button
-              key={part}
-              variant="quiet"
-              aria-pressed={shown === part}
-              onClick={() => setChart(pickPart(current, part))}
-              className="h-12 gap-2 rounded-[14px] px-4 text-[15px] font-medium"
-            >
-              {Icon && <Icon aria-hidden className="size-5" />}
-              {label}
-            </Button>
-          ))}
+        <div className="flex flex-none items-center gap-4">
+          {/* The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways. */}
+          <div role="group" aria-label="Part of the day" className="flex h-14 flex-none gap-2 rounded-[18px] bg-card p-1">
+            {CHART_CHOICES.map(({ part, label, icon: Icon }) => (
+              <Button
+                key={part}
+                variant="quiet"
+                aria-pressed={shown === part}
+                onClick={() => setChart(pickPart(current, part))}
+                className="h-12 gap-2 rounded-[14px] px-4 text-[15px] font-medium"
+              >
+                {Icon && <Icon aria-hidden className="size-5" />}
+                {label}
+              </Button>
+            ))}
+          </div>
+          {/* More columns than fit is not a screen with fewer people on it: this says there are more, and moves on to them. */}
+          <OverflowButton control={row} of="people" />
         </div>
       </div>
       {!loaded && !failed && <p className="text-base">Loading</p>}
@@ -394,7 +412,7 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
         </p>
       )}
       {loaded && columns.length === 0 && <p className="text-base">No Routines yet.</p>}
-      <div className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
+      <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
         {columns.map(({ profile, routines: today }) => (
           <Column
             key={profile.id}
