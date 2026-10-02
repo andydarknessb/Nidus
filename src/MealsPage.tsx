@@ -217,13 +217,16 @@ function DayHeading({ day }: { day: WallDay }) {
 
 // Plans one cell, or clears it: a small sheet on the scrim with one text field, in the look of the Add event sheet.
 // Focus moves onto the field on open, so the tablet's keyboard comes up at once, and back to the cell on close;
-// Close, Cancel, Escape and the scrim close it without writing. A blank field is a clear.
+// Close, Cancel and Escape close it without writing, and so does a tap on the scrim while the field still holds what
+// it opened with. A blank field is a clear.
 function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
   const dialog = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing.meal?.title ?? '');
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
+  // A stray tap on the scrim never throws away what was typed.
+  const untouched = title === (editing.meal?.title ?? '');
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -266,8 +269,13 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
   return (
     <div
       className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-4 sm:items-center sm:p-8"
+      // A press on the scrim must not take focus off the field: the browser would hand it to the page behind, and
+      // Escape would then reach nothing.
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) event.preventDefault();
+      }}
       onClick={(event) => {
-        if (event.target === event.currentTarget) close();
+        if (event.target === event.currentTarget && untouched) close();
       }}
     >
       <form
