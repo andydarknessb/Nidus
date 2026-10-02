@@ -82,8 +82,8 @@ export function hourWindow({ occurrences, day, now, fit }: { occurrences: Occurr
 // `narrow` leaves the right of the second lane to the "+N" that stands for the rest.
 export type DayBlock = { pill: Pill; topHour: number; bottomHour: number; lane: 0 | 1; lanes: 1 | 2; narrow: boolean };
 
-// The "+N" of a cluster that needs more than two lanes: `folded` events are not drawn (the third at once, and more), it spans
-// what they take, and `pills` are every event of the cluster, in time order, for the list it opens.
+// The "+N" of a cluster that needs more than two lanes: `folded` events are not drawn (the short ones, when the longest keep the two
+// lanes), it spans what they take, and `pills` are every event of the cluster, in time order, for the list it opens.
 export type FoldTile = { pills: Pill[]; folded: number; topHour: number; bottomHour: number };
 
 export type DayPlan = {
@@ -118,34 +118,61 @@ function slotOf(top: number, bottom: number, window: HourWindow): [number, numbe
 
 type Slot = { top: number; bottom: number };
 
-// A lane for each slot, and how many lanes its cluster needs. A cluster is a run of slots that overlap one another one after
-// the next; its slots share the width equally, each in the first lane that is free when it starts. Slots that only touch are
-// not a cluster. `order` is the slots by start, the longer first.
-function assignLanes(slots: Slot[]): { lane: number; lanes: number; cluster: number }[] {
-  const order = slots.map((_, index) => index).sort((a, b) => slots[a]!.top - slots[b]!.top || slots[b]!.bottom - slots[a]!.bottom || a - b);
-  const placed: { lane: number; lanes: number; cluster: number }[] = slots.map(() => ({ lane: 0, lanes: 1, cluster: 0 }));
-  let cluster = -1;
-  let clusterEnd = -Infinity;
-  let laneEnds: number[] = [];
-  let members: number[] = [];
-  const close = () => members.forEach((index) => (placed[index]!.lanes = laneEnds.length));
-  for (const index of order) {
-    const { top, bottom } = slots[index]!;
-    if (top >= clusterEnd - EPS) {
-      close();
-      cluster += 1;
-      clusterEnd = -Infinity;
-      laneEnds = [];
-      members = [];
-    }
-    let lane = laneEnds.findIndex((end) => end <= top + EPS);
-    if (lane < 0) lane = laneEnds.length;
-    laneEnds[lane] = bottom;
-    placed[index] = { lane, lanes: 0, cluster };
-    members.push(index);
-    clusterEnd = Math.max(clusterEnd, bottom);
+// What the lanes are decided from, for each event in the grid: the room it takes (its slot) and what it really is (how long it
+// lasts, when it starts and its title), which decides what a crowded cluster keeps.
+type Entry = Slot & { length: number; start: number; title: string };
+
+// The events by where their slots start, the longer slot first.
+const byStart = (entries: readonly Entry[]) => (a: number, b: number) => entries[a]!.top - entries[b]!.top || entries[b]!.bottom - entries[a]!.bottom || a - b;
+
+// The lane each of `members` takes, each in the first lane that is free when it starts, and how many lanes that makes.
+function packLanes(entries: readonly Entry[], members: readonly number[]): { lane: Map<number, number>; count: number } {
+  const lane = new Map<number, number>();
+  const ends: number[] = [];
+  for (const index of [...members].sort(byStart(entries))) {
+    const { top, bottom } = entries[index]!;
+    let at = ends.findIndex((end) => end <= top + EPS);
+    if (at < 0) at = ends.length;
+    ends[at] = bottom;
+    lane.set(index, at);
   }
-  close();
+  return { lane, count: ends.length };
+}
+
+// The events of a cluster that are kept when two lanes are all there is. A short event is drawn an hour tall, so a quarter hour can
+// take a whole lane from one that really lasts the hour: the events are taken in order of how long each really lasts, the longest
+// first (the earlier start first among equals, then the title), and each is kept if it fits two lanes with those kept before it.
+function keepForLanes(entries: readonly Entry[], members: readonly number[]): number[] {
+  const kept: number[] = [];
+  const longest = [...members].sort(
+    (a, b) => entries[b]!.length - entries[a]!.length || entries[a]!.start - entries[b]!.start || entries[a]!.title.localeCompare(entries[b]!.title) || a - b,
+  );
+  for (const index of longest) if (packLanes(entries, [...kept, index]).count <= MAX_LANES) kept.push(index);
+  return kept;
+}
+
+// A lane for each event, and how many lanes its cluster uses. A cluster is a run of slots that overlap one another one after the
+// next; slots that only touch are not a cluster. A cluster that fits two lanes shares the width equally, each event in the first
+// lane that is free when it starts. One that does not draws the events keepForLanes keeps, in two lanes; the lane of the rest is
+// null, and they fold into the cluster's "+N".
+function assignLanes(entries: Entry[]): { lane: number | null; lanes: number; cluster: number }[] {
+  const placed = entries.map(() => ({ lane: 0 as number | null, lanes: 1, cluster: 0 }));
+  const clusters: number[][] = [];
+  let clusterEnd = -Infinity;
+  for (const index of entries.map((_, each) => each).sort(byStart(entries))) {
+    if (entries[index]!.top >= clusterEnd - EPS) {
+      clusters.push([]);
+      clusterEnd = -Infinity;
+    }
+    clusters[clusters.length - 1]!.push(index);
+    clusterEnd = Math.max(clusterEnd, entries[index]!.bottom);
+  }
+  clusters.forEach((members, cluster) => {
+    const all = packLanes(entries, members);
+    const fits = all.count <= MAX_LANES;
+    const { lane } = fits ? all : packLanes(entries, keepForLanes(entries, members));
+    for (const index of members) placed[index] = { lane: lane.get(index) ?? null, lanes: fits ? all.count : MAX_LANES, cluster };
+  });
   return placed;
 }
 
@@ -177,16 +204,22 @@ export function planDay({ occurrences, day, now, fit }: { occurrences: Occurrenc
     }
   }
 
-  const placed = assignLanes(drawn.map(({ slot }) => slot));
+  const placed = assignLanes(
+    drawn.map(({ pill, slot }) => ({
+      ...slot,
+      length: Math.max(0, Date.parse(pill.occurrence.ends_at) - Date.parse(pill.occurrence.starts_at)),
+      start: Date.parse(pill.occurrence.starts_at),
+      title: pill.occurrence.title,
+    })),
+  );
   const clusters = new Map<number, number[]>();
   drawn.forEach((_, index) => clusters.set(placed[index]!.cluster, [...(clusters.get(placed[index]!.cluster) ?? []), index]));
   const blocks: DayBlock[] = [];
   const folds: FoldTile[] = [];
   for (const members of clusters.values()) {
-    const needed = placed[members[0]!]!.lanes;
     // Time order, the longer first, which is the order the lanes were given in.
     const ordered = [...members].sort((a, b) => drawn[a]!.slot.top - drawn[b]!.slot.top || drawn[b]!.slot.bottom - drawn[a]!.slot.bottom || a - b);
-    const folded = needed > MAX_LANES ? ordered.filter((index) => placed[index]!.lane >= MAX_LANES) : [];
+    const folded = ordered.filter((index) => placed[index]!.lane === null);
     const tile =
       folded.length === 0
         ? null
@@ -204,7 +237,7 @@ export function planDay({ occurrences, day, now, fit }: { occurrences: Occurrenc
         topHour: slot.top,
         bottomHour: slot.bottom,
         lane: placed[index]!.lane === 0 ? 0 : 1,
-        lanes: needed === 1 ? 1 : 2,
+        lanes: placed[index]!.lanes === 1 ? 1 : 2,
         narrow: tile !== null && placed[index]!.lane === 1 && slot.top < tile.bottomHour - EPS && slot.bottom > tile.topHour + EPS,
       });
     }

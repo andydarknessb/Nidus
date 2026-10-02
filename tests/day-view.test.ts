@@ -646,6 +646,100 @@ describe('overlapping blocks', () => {
   });
 });
 
+describe('a cluster that folds', () => {
+  // A short event is drawn an hour tall, so a quarter hour takes a whole lane for an hour. When the lanes run out the events kept are
+  // the ones that last longest, never the ones that happen to start first, so a long event is not hidden behind short ones.
+  const lanes = (v: DayPlan) => Object.fromEntries(v.blocks.map((block) => [block.pill.occurrence.title, [block.lane, block.lanes]]));
+  const narrow = (v: DayPlan) => Object.fromEntries(v.blocks.map((block) => [block.pill.occurrence.title, block.narrow]));
+
+  it('keeps Walk, which overlaps neither of two short events in real time, and folds one of them: Nap, Snack, Walk', () => {
+    const v = view([at('Nap', TOMORROW, '13:00', '13:15'), at('Snack', TOMORROW, '13:15', '13:30'), at('Walk', TOMORROW, '13:30', '14:30')], { date: TOMORROW });
+    expect(shown(v)).toEqual(['Nap', 'Walk']);
+    expect(lanes(v)).toEqual({ Nap: [0, 2], Walk: [1, 2] });
+    expect(v.folds).toHaveLength(1);
+    // Snack is the one that folds: its slot, an hour from 1:15, is what the tile spans, and the list is the whole cluster in time order.
+    expect(v.folds[0]).toMatchObject({ folded: 1, topHour: 13.25, bottomHour: 14.25 });
+    expect(titles(v.folds[0]!.pills)).toEqual(['Nap', 'Snack', 'Walk']);
+    // Walk shares time with the tile and leaves room for it; Nap is in the other lane.
+    expect(narrow(v)).toEqual({ Nap: false, Walk: true });
+  });
+
+  it('keeps the six hour event when two five minute events come before it: the school day is not hidden', () => {
+    const v = view([at('Bell A', TOMORROW, '08:00', '08:05'), at('Bell B', TOMORROW, '08:05', '08:10'), at('School', TOMORROW, '08:10', '14:10')], { date: TOMORROW });
+    expect(shown(v)).toEqual(['Bell A', 'School']);
+    expect(lanes(v)).toEqual({ 'Bell A': [0, 2], School: [1, 2] });
+    expect(v.folds).toHaveLength(1);
+    expect(v.folds[0]).toMatchObject({ folded: 1 });
+    expect(titles(v.folds[0]!.pills)).toEqual(['Bell A', 'Bell B', 'School']);
+  });
+
+  it('keeps the first two of three events of one length, as before', () => {
+    const v = view([at('A', TOMORROW, '09:00', '10:00'), at('B', TOMORROW, '09:00', '10:00'), at('C', TOMORROW, '09:00', '10:00')], { date: TOMORROW });
+    expect(shown(v)).toEqual(['A', 'B']);
+    expect(v.folds[0]).toMatchObject({ folded: 1, topHour: 9, bottomHour: 10 });
+  });
+
+  it('folds ten of twelve that are all at once, keeping the first two', () => {
+    const titlesOf = 'ABCDEFGHIJKL'.split('');
+    const v = view(titlesOf.map((title) => at(title, TOMORROW, '10:00', '11:00')), { date: TOMORROW });
+    expect(shown(v)).toEqual(['A', 'B']);
+    expect(v.folds).toHaveLength(1);
+    expect(v.folds[0]!.folded).toBe(10);
+    expect(titles(v.folds[0]!.pills)).toEqual(titlesOf);
+  });
+
+  it('orders by how long an event really lasts, not by the hour it is drawn: 60 and 45 minutes beat 30, 15 and none', () => {
+    const v = view(
+      [
+        at('Quarter', TOMORROW, '09:00', '09:15'),
+        at('Half', TOMORROW, '09:00', '09:30'),
+        at('Three quarters', TOMORROW, '09:00', '09:45'),
+        at('Hour', TOMORROW, '09:00', '10:00'),
+        at('Reminder', TOMORROW, '09:00', '09:00'),
+      ],
+      { date: TOMORROW },
+    );
+    expect(shown(v).sort()).toEqual(['Hour', 'Three quarters']);
+    expect(v.folds[0]!.folded).toBe(3);
+    expect(titles(v.folds[0]!.pills)).toHaveLength(5);
+  });
+
+  it('breaks a tie of length by the earlier start, then by the title', () => {
+    // Three hours that overlap one another: the one that starts first and the one after it are kept, whatever the titles are.
+    const byStart = view([at('Zed', TOMORROW, '09:00', '10:00'), at('Amy', TOMORROW, '09:10', '10:10'), at('Bob', TOMORROW, '09:20', '10:20')], { date: TOMORROW });
+    expect(shown(byStart)).toEqual(['Zed', 'Amy']);
+    // The same start and the same length: by title, however the events come in.
+    const byTitle = view([at('C', TOMORROW, '09:00', '10:00'), at('A', TOMORROW, '09:00', '10:00'), at('B', TOMORROW, '09:00', '10:00')], { date: TOMORROW });
+    expect(shown(byTitle)).toEqual(['A', 'B']);
+  });
+
+  it('draws the events it keeps in the lanes they would have had, in time order', () => {
+    // Long fills the day's morning; Nap and Snack are short and overlap each other and Long: Long and Nap are kept.
+    const v = view([at('Long', TOMORROW, '09:00', '12:00'), at('Nap', TOMORROW, '09:00', '09:15'), at('Snack', TOMORROW, '09:10', '09:25')], { date: TOMORROW });
+    expect(shown(v)).toEqual(['Long', 'Nap']);
+    expect(lanes(v)).toEqual({ Long: [0, 2], Nap: [1, 2] });
+  });
+
+  it('lays a cluster that fits two lanes out as before, whatever its lengths', () => {
+    // Nap and Snack and nothing else: two lanes are enough, so nothing folds and the order is the order of the start.
+    const v = view([at('Nap', TOMORROW, '13:00', '13:15'), at('Snack', TOMORROW, '13:15', '13:30')], { date: TOMORROW });
+    expect(shown(v)).toEqual(['Nap', 'Snack']);
+    expect(lanes(v)).toEqual({ Nap: [0, 2], Snack: [1, 2] });
+    expect(v.folds).toEqual([]);
+  });
+
+  it('keeps a long event across the day even when many short ones fall on it, and folds only the short ones', () => {
+    const v = view(
+      [at('All morning', TOMORROW, '09:00', '12:00'), at('Call 1', TOMORROW, '10:00', '10:05'), at('Call 2', TOMORROW, '10:10', '10:15'), at('Call 3', TOMORROW, '10:20', '10:25')],
+      { date: TOMORROW },
+    );
+    // All morning, and the first of the calls that fit with it; the calls overlap each other (each is drawn an hour), so two fold.
+    expect(shown(v)).toContain('All morning');
+    expect(shown(v)).toHaveLength(2);
+    expect(v.folds[0]!.folded).toBe(2);
+  });
+});
+
 describe('the words', () => {
   it('say a block\'s time as a range, with one AM or PM when both ends share it', () => {
     expect(blockTime(at('x', TODAY, '16:00', '16:45'), dayOf(TODAY, CHICAGO, NOW))).toBe('4:00 to 4:45 PM');
