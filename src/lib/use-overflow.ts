@@ -134,8 +134,9 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
     const scroll = read();
     if (!box.current || !scroll || !gate.take(performance.now())) return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const behavior: ScrollBehavior = reduced ? 'auto' : 'smooth';
     const { next } = overflowState(scroll);
-    box.current.scrollTo(sideways ? { left: next, behavior: reduced ? 'auto' : 'smooth' } : { top: next, behavior: reduced ? 'auto' : 'smooth' });
+    box.current.scrollTo(sideways ? { left: next, behavior } : { top: next, behavior });
     // An instant scroll, or one that goes nowhere, has nothing to wait for.
     if (reduced || Math.abs(next - scroll.scrollOffset) < 1) gate.end();
   }, [read, sideways, gate]);
