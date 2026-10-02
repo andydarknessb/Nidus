@@ -42,16 +42,54 @@ describe('whether a box overflows', () => {
     const beside = (content: number, shown: boolean): Scroll => ({ scrollSize: content, clientSize: shown ? ROOM - BUTTON : ROOM, scrollOffset: 0, buttonSize: shown ? BUTTON : 0 });
 
     it('asks for the button only for what does not fit in the room the row has without it', () => {
+      expect(overflowState(beside(990, false)).overflowing).toBe(false);
+      expect(overflowState(beside(1001, false)).overflowing).toBe(false);
+      expect(overflowState(beside(1002, false)).overflowing).toBe(true);
+      expect(overflowState(beside(1500, false)).overflowing).toBe(true);
       expect(overflowState(beside(990, true)).overflowing).toBe(false);
-      expect(overflowState(beside(1001, true)).overflowing).toBe(false);
-      expect(overflowState(beside(1002, true)).overflowing).toBe(true);
       expect(overflowState(beside(1500, true)).overflowing).toBe(true);
     });
 
+    it('keeps the button, once drawn, until the row clearly fits: it may fit by a pixel on one measure and not on the other', () => {
+      // Needed at 1002 without the button; with it, the same row measures a pixel or two less over. Still drawn, then.
+      expect(overflowState(beside(1002, true)).overflowing).toBe(true);
+      expect(overflowState(beside(1001, true)).overflowing).toBe(true);
+      expect(overflowState(beside(1000, true)).overflowing).toBe(true);
+      expect(overflowState(beside(999, true)).overflowing).toBe(false);
+    });
+
     it('never comes and goes: drawing the button never decides whether it is needed', () => {
+      // Whatever the row holds, a button that is asked for without it is kept with it, so there is always an answer that stands.
       for (let content = 0; content <= 2400; content += 1) {
-        expect(overflowState(beside(content, true)).overflowing, `${content} with the button`).toBe(overflowState(beside(content, false)).overflowing);
+        const asked = overflowState(beside(content, false)).overflowing;
+        const kept = overflowState(beside(content, true)).overflowing;
+        expect(asked && !kept, `${content}`).toBe(false);
       }
+    });
+
+    it('never comes and goes for a row whose sizes are not whole pixels, which the browser rounds', () => {
+      // A button 136.7 px wide is reported as 137 and the room it leaves as 662 when it is 661.7: the same row measured with and
+      // without the button can differ by a pixel. At 965 px the strip once asked for the button, lost it and asked again for ever
+      // ("Maximum update depth exceeded").
+      const BUTTON_PX = 136.7;
+      const GAP_PX = 8;
+      let tested = 0;
+      for (let room = 700; room <= 1200; room += 0.37) {
+        for (const content of [808, 1000.4, 1100]) {
+          const left = room - BUTTON_PX - GAP_PX;
+          const without: Scroll = { scrollSize: Math.round(Math.max(content, room)), clientSize: Math.round(room), scrollOffset: 0, buttonSize: 0 };
+          const withIt: Scroll = { scrollSize: Math.round(Math.max(content, left)), clientSize: Math.round(left), scrollOffset: 0, buttonSize: Math.round(BUTTON_PX) + GAP_PX };
+          const asked = overflowState(without).overflowing;
+          const kept = overflowState(withIt).overflowing;
+          expect(asked && !kept, `${content} in ${room}`).toBe(false);
+          // And the answer is right where it is not a pixel's difference: a row that fits is never asked to carry a button, and a row
+          // that is 3 px too small for its content always is.
+          if (content <= room) expect(asked, `${content} fits in ${room}`).toBe(false);
+          if (content >= room + 3) expect(asked, `${content} does not fit in ${room}`).toBe(true);
+          tested += 1;
+        }
+      }
+      expect(tested).toBeGreaterThan(3000);
     });
   });
 
@@ -62,14 +100,18 @@ describe('whether a box overflows', () => {
     const over = (content: number, shown: boolean): Scroll => ({ scrollSize: content + (shown ? FOOT : 0), clientSize: BOX, scrollOffset: 0, buttonSize: shown ? FOOT : 0, over: true });
 
     it('asks for the button only for content that does not fit in the box', () => {
+      expect(overflowState(over(399, false)).overflowing).toBe(false);
+      expect(overflowState(over(401, false)).overflowing).toBe(false);
+      expect(overflowState(over(402, false)).overflowing).toBe(true);
       expect(overflowState(over(399, true)).overflowing).toBe(false);
-      expect(overflowState(over(401, true)).overflowing).toBe(false);
-      expect(overflowState(over(402, true)).overflowing).toBe(true);
+      expect(overflowState(over(500, true)).overflowing).toBe(true);
     });
 
     it('never comes and goes: the foot it adds to the list never decides whether it is needed', () => {
       for (let content = 0; content <= 1200; content += 1) {
-        expect(overflowState(over(content, true)).overflowing, `${content} with the foot`).toBe(overflowState(over(content, false)).overflowing);
+        const asked = overflowState(over(content, false)).overflowing;
+        const kept = overflowState(over(content, true)).overflowing;
+        expect(asked && !kept, `${content}`).toBe(false);
       }
     });
   });

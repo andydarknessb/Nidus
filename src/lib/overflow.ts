@@ -38,11 +38,12 @@ export function overflowState({ scrollSize, clientSize, scrollOffset, buttonSize
   // A press keeps the rest of a page in view (the fifth it does not move by). When no more than that would be left beyond where it
   // lands, one more press would move the box by less than that: this one goes to the end.
   const sliver = farthest - target < Math.max((1 - PAGE_STEP) * page, 0);
-  return {
-    overflowing: scrollSize > clientSize + buttonSize + SLACK_PX,
-    atEnd,
-    next: atEnd ? 0 : sliver ? farthest : target,
-  };
+  // Once drawn (`buttonSize` is more than 0), the button stays until the box clearly fits, by the pixel of slack the other way.
+  // A button 136.7 px wide is reported as 137 and the room it leaves as 662 when it is 661.7, so the same box measured without the
+  // button and with it can differ by a pixel; a box that the one measure asks a button for and the other does not would draw it,
+  // lose it and draw it for ever. Asked for at more than the slack over, kept at more than the slack under: one answer always stands.
+  const overflowing = scrollSize > clientSize + buttonSize + (buttonSize > 0 ? -SLACK_PX : SLACK_PX);
+  return { overflowing, atEnd, next: atEnd ? 0 : sliver ? farthest : target };
 }
 
 // What the button says and is called. A row's "More" names what is in the row ("More people"); a column's names whose it is
