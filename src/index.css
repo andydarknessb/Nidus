@@ -5,6 +5,11 @@
 /* Tailwind's dark: variant follows the document's mode (src/lib/mode.ts), not the operating system's. */
 @custom-variant dark (&:where([data-mode='dark'], [data-mode='dark'] *));
 
+/* The Selected look (docs/look.md) is for a control that says so itself: aria-pressed (a pill, a segmented control's choice),
+   aria-checked (a radio), aria-selected (a tab) or aria-current="page" (the current rail entry). It is one variant, so what
+   draws it says `selected:` and answers all four. */
+@custom-variant selected (&:is([aria-pressed='true'], [aria-checked='true'], [aria-selected='true'], [aria-current='page']));
+
 /* The look (docs/look.md): one set of tokens in two modes. Light is on :root, so a page with no mode set is light
    and fully coloured, never colourless; dark is under [data-mode='dark'], which src/lib/mode.ts keeps on <html>.
    The values are src/lib/look.ts's, and tests/look.test.ts fails if the two disagree. */

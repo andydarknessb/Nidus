@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { Button } from '../src/components/ui/button';
 import {
   ALIASES,
   DARK_MIX,
@@ -305,6 +308,14 @@ describe('src/index.css', () => {
     }
   });
 
+  // The Selected look is one variant, so every part that draws it answers every way a control says it is selected.
+  it('has a selected variant for aria-pressed, aria-checked, aria-selected and aria-current page', () => {
+    const variant = /@custom-variant selected \((.*)\);/.exec(css)?.[1] ?? '';
+    for (const attribute of ["[aria-pressed='true']", "[aria-checked='true']", "[aria-selected='true']", "[aria-current='page']"]) {
+      expect(variant, attribute).toContain(attribute);
+    }
+  });
+
   it('declares the four neutral steps once on .person, each a token, and the 300 once more for dark', () => {
     const tokens = new Set(Object.keys(TOKENS.light).map((name) => `var(--${name})`));
     for (const step of [100, 200, 300, 800]) {
@@ -354,5 +365,23 @@ describe('docs/look.md', () => {
     expect(percent(dark['soft'])).toBe(DARK_MIX.soft);
     expect(percent(dark['fill'])).toBe(DARK_MIX.fill);
     expect(percent(dark['done picture'])).toBe(DARK_MIX.doneDisc);
+  });
+});
+
+// ---- The button: the Selected look is the variant above, on the two voices that can be selected --------------------
+
+describe('the button', () => {
+  const classesOf = (variant: 'primary' | 'secondary' | 'quiet' | 'delete') =>
+    /class="([^"]*)"/.exec(renderToStaticMarkup(createElement(Button, { variant })))?.[1]?.split(' ') ?? [];
+  const SELECTED = ['bg-accent', 'font-semibold', 'text-foreground', 'ring-2', 'ring-foreground', 'ring-inset'].map((name) => `selected:${name}`);
+
+  it('shows the Selected look on a secondary or quiet button that says so itself', () => {
+    for (const variant of ['secondary', 'quiet'] as const) expect(classesOf(variant), variant).toEqual(expect.arrayContaining(SELECTED));
+  });
+
+  it('keeps its fill when primary or delete, so its words keep their contrast', () => {
+    for (const variant of ['primary', 'delete'] as const) {
+      expect(classesOf(variant).filter((name) => name.startsWith('selected:')), variant).toEqual([]);
+    }
   });
 });
