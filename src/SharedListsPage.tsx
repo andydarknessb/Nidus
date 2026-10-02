@@ -34,9 +34,11 @@ import { useStatusLine } from './lib/status-line';
 import { createSyncedReader, type SyncedReader } from './lib/synced-reader';
 import { useFailureWords } from './lib/use-failure-words';
 import { useOverflow } from './lib/use-overflow';
+import { unnamed } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
 import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, Tick } from './components/people';
+import { Problem } from './components/phone';
 import { Button } from './components/ui/button';
 
 // What each read here listens to. The pinned list is a column of the Household.
@@ -571,6 +573,9 @@ export function PinnedListCard({ onOpenLists }: { onOpenLists: () => void }) {
 const CARD = 'flex flex-col gap-4 rounded-3xl bg-card p-4';
 const CARD_TITLE = 'font-display text-[22px] leading-7';
 const ACTION = 'h-12 px-4';
+// Where a form says it was asked to save with no name: each is tied to the field it is about.
+const NEW_LIST_PROBLEM = 'new-list-problem';
+const RENAME_PROBLEM = 'rename-list-problem';
 const ICON_ACTION = 'size-12 rounded-full px-0';
 
 // One list's items on the phone: the rows of the Wall's cards, with the arrows that reorder them, which only the phone has.
@@ -628,7 +633,12 @@ export function SharedListsPage({ household }: { household: Household }) {
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [problem, setProblem] = useState('');
   const [newName, setNewName] = useState('');
-  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  // How many times each form was asked to save with no name, which it says in its own line (a rename counts with the rename, so it
+  // starts again with each).
+  const [askedNew, setAskedNew] = useState(0);
+  const [renaming, setRenaming] = useState<{ id: string; name: string; asked: number } | null>(null);
+  const newProblem = unnamed('list', askedNew, newName);
+  const renameProblem = renaming ? unnamed('list', renaming.asked, renaming.name) : null;
   const [confirming, setConfirming] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -660,16 +670,24 @@ export function SharedListsPage({ household }: { household: Household }) {
 
   async function create(event: FormEvent) {
     event.preventDefault();
-    if (!newName.trim()) return;
+    if (!newName.trim()) {
+      setAskedNew((count) => count + 1);
+      return;
+    }
     await change(async () => {
       await createList(supabase, household.id, newName, nextSortOrder(lists ?? []));
       setNewName('');
+      setAskedNew(0);
     }, 'Could not create that list. Try again.');
   }
 
   async function rename(event: FormEvent) {
     event.preventDefault();
-    if (!renaming || !renaming.name.trim()) return;
+    if (!renaming) return;
+    if (!renaming.name.trim()) {
+      setRenaming({ ...renaming, asked: renaming.asked + 1 });
+      return;
+    }
     const { id, name } = renaming;
     await change(async () => {
       await renameList(supabase, id, name);
@@ -697,14 +715,22 @@ export function SharedListsPage({ household }: { household: Household }) {
         <h2 id="new-list-title" className={CARD_TITLE}>
           New list
         </h2>
-        <form onSubmit={(event) => void create(event)} className="flex flex-col gap-4">
+        <form onSubmit={(event) => void create(event)} noValidate className="flex flex-col gap-4">
           <label className="flex flex-col gap-2 text-[15px] text-muted-foreground">
             Name
-            <input className="h-14 text-[17px]" value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={100} />
+            <input
+              className="h-14 text-[17px]"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              maxLength={100}
+              aria-invalid={newProblem ? true : undefined}
+              aria-describedby={newProblem ? NEW_LIST_PROBLEM : undefined}
+            />
           </label>
           <Button type="submit" variant="primary" size="phone" className="w-full text-[17px]">
             Add list
           </Button>
+          <Problem id={NEW_LIST_PROBLEM} problem={newProblem} />
         </form>
       </section>
 
@@ -720,14 +746,16 @@ export function SharedListsPage({ household }: { household: Household }) {
           <li key={list.id}>
             <section aria-label={list.name} className={CARD}>
               {renaming?.id === list.id ? (
-                <form onSubmit={(event) => void rename(event)} className="flex flex-col gap-3">
+                <form onSubmit={(event) => void rename(event)} noValidate className="flex flex-col gap-3">
                   <input
                     id={titleId(list.id)}
                     className="h-14 text-[17px]"
                     value={renaming.name}
-                    onChange={(e) => setRenaming({ id: list.id, name: e.target.value })}
+                    onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
                     maxLength={100}
                     aria-label={`Name for ${list.name}`}
+                    aria-invalid={renameProblem ? true : undefined}
+                    aria-describedby={renameProblem ? RENAME_PROBLEM : undefined}
                     autoFocus
                   />
                   <div className="flex gap-2">
@@ -745,6 +773,7 @@ export function SharedListsPage({ household }: { household: Household }) {
                       Cancel
                     </Button>
                   </div>
+                  <Problem id={RENAME_PROBLEM} problem={renameProblem} />
                 </form>
               ) : (
                 // The arrows move the whole card, so they sit with its name.
@@ -766,7 +795,7 @@ export function SharedListsPage({ household }: { household: Household }) {
                 <Button variant="secondary" className={ACTION} aria-expanded={open === list.id} onClick={() => setOpen(open === list.id ? null : list.id)}>
                   {open === list.id ? 'Hide items' : 'Items'}
                 </Button>
-                <Button id={`rename-${list.id}`} variant="secondary" className={ACTION} onClick={() => setRenaming({ id: list.id, name: list.name })}>
+                <Button id={`rename-${list.id}`} variant="secondary" className={ACTION} onClick={() => setRenaming({ id: list.id, name: list.name, asked: 0 })}>
                   Rename
                 </Button>
                 {list.id !== pinnedId && (

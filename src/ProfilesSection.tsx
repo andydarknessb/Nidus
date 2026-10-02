@@ -8,6 +8,7 @@ import { useRefetchOn } from '@/lib/change-feed';
 import { createProfile, deleteProfile, firstFreeColor, loadProfiles, movedIds, nextSortOrder, reorderProfiles, updateProfile, type Profile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 import { useWriteProblem } from '@/lib/use-write-problem';
+import { giveName } from '@/lib/write-failure';
 
 const PROFILE_TABLES = ['profiles'] as const;
 
@@ -101,6 +102,10 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   async function add(event: FormEvent) {
     event.preventDefault();
     if (!adding) return;
+    if (!adding.name.trim()) {
+      problems.say(ADD, giveName('person'), true);
+      return;
+    }
     const ok = await change(
       ADD,
       () => createProfile(supabase, householdId, adding, nextSortOrder(profiles ?? [])).then(() => undefined),
@@ -116,6 +121,10 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
     event.preventDefault();
     if (!editing) return;
     const { id, draft } = editing;
+    if (!draft.name.trim()) {
+      problems.say(editPlace(id), giveName('person'), true);
+      return;
+    }
     const ok = await change(editPlace(id), () => updateProfile(supabase, id, draft), 'Could not save the person. Check the name and try again.');
     if (ok) {
       setEditing(null);
@@ -142,7 +151,12 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   const closeForms = () => problems.clear();
   // While a write is on its way nothing that changes what is open does anything either: its answer would land on the wrong form.
   const off = busy || undefined;
-  const addProblem = problems.at(ADD);
+  // What a form's place says, except "Give the person a name." once the name is given: a refusal for want of a name is not said over one.
+  const saidAt = (place: string, name: string) => {
+    const problem = problems.at(place);
+    return problem?.words === giveName('person') && name.trim() !== '' ? null : problem;
+  };
+  const addProblem = saidAt(ADD, adding?.name ?? '');
 
   return (
     <Card title="People">
@@ -154,7 +168,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
       {profiles?.length === 0 && <p className="text-base">No one yet. Add the people who live here.</p>}
       <ul className="flex flex-col gap-2">
         {profiles?.map((profile, index) => {
-          const editProblem = problems.at(editPlace(profile.id));
+          const editProblem = saidAt(editPlace(profile.id), editing?.id === profile.id ? editing.draft.name : '');
           return (
             <li key={profile.id}>
               {editing?.id === profile.id ? (
@@ -173,7 +187,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                     />
                   ) : (
                     <>
-                      <form onSubmit={(event) => void save(event)} className="flex flex-col gap-4">
+                      <form onSubmit={(event) => void save(event)} noValidate className="flex flex-col gap-4">
                         <FormTitle draft={editing.draft} title={`Edit ${profile.name}`} />
                         <PersonFields
                           draft={editing.draft}
@@ -276,7 +290,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
       </ul>
 
       {adding ? (
-        <form onSubmit={(event) => void add(event)} className="flex flex-col gap-4 border-t border-border pt-4">
+        <form onSubmit={(event) => void add(event)} noValidate className="flex flex-col gap-4 border-t border-border pt-4">
           <FormTitle draft={adding} title="New person" />
           <PersonFields
             draft={adding}

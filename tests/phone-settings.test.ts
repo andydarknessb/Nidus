@@ -5,8 +5,9 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccountSummary as AccountSummaryType, CalendarRow as CalendarRowType } from '../src/CalendarAccountsSection';
 import type { CalendarsPage as CalendarsPageType } from '../src/CalendarsPage';
 import type { EventRow as EventRowType } from '../src/EventsSection';
-import type { RoutinesPage as RoutinesPageType } from '../src/RoutinesPage';
+import type { RoutineForm as RoutineFormType, RoutinesPage as RoutinesPageType } from '../src/RoutinesPage';
 import type { SettingsPage as SettingsPageType } from '../src/SettingsPage';
+import type { SharedListsPage as SharedListsPageType } from '../src/SharedListsPage';
 import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '../src/components/PersonEditor';
 import { Confirm } from '../src/components/phone';
 import { Button } from '../src/components/ui/button';
@@ -18,7 +19,7 @@ import { TOKENS } from '../src/lib/look';
 import { PROFILE_PALETTE, colorOwners, firstFreeColor } from '../src/lib/profiles';
 import { SETTINGS_TABS, settingsLabelOf, settingsPathNow, settingsTabOf } from '../src/lib/settings-tabs';
 import { timezoneName, timezoneOptions } from '../src/lib/timezones';
-import { NOT_SAVED, NOT_SAVED_OFFLINE, isNetworkFailure, isRefusal, writeFailureWords } from '../src/lib/write-failure';
+import { NOT_SAVED, NOT_SAVED_OFFLINE, giveName, isNetworkFailure, isRefusal, unnamed, writeFailureWords } from '../src/lib/write-failure';
 
 // The phone's settings (spec 0003, Phone settings and People): what is pure about them. The first free colour, the time zone
 // names, the tabs and where each page lives, the words for an account that failed and for a tablet last seen, and the parts the
@@ -560,6 +561,69 @@ describe('a write that did not go through', () => {
       expect(sentence).not.toMatch(/[–—]/);
       expect(sentence).not.toMatch(/Profile|Device|Revoke/);
     }
+  });
+});
+
+// A form that is asked to save with no name says so in its own problem line, before anything is sent.
+describe('a form asked to save with no name', () => {
+  it('says what to do, in plain words, for the routine, the person and the list', () => {
+    expect(giveName('routine')).toBe('Give the routine a name.');
+    expect(giveName('person')).toBe('Give the person a name.');
+    expect(giveName('list')).toBe('Give the list a name.');
+    for (const what of ['routine', 'person', 'list'] as const) {
+      expect(giveName(what)).not.toMatch(/[–—]/);
+      expect(giveName(what)).not.toMatch(/Profile|Shared List|Routine/);
+    }
+  });
+
+  it('says nothing until it has been asked, and nothing once the name is there', () => {
+    expect(unnamed('list', 0, '')).toBeNull();
+    expect(unnamed('list', 1, 'Costco')).toBeNull();
+    expect(unnamed('list', 2, '  Costco ')).toBeNull();
+  });
+
+  it('says it for a name that is empty or only spaces, and says it again for each time it is asked', () => {
+    expect(unnamed('routine', 1, '')).toEqual({ words: 'Give the routine a name.', n: 1 });
+    expect(unnamed('routine', 2, '   ')).toEqual({ words: 'Give the routine a name.', n: 2 });
+  });
+});
+
+// The forms that ask for a name, as they are first drawn: the browser's own bubble for an empty field is off, so what an empty name
+// says is the form's own line, which is not there until the form has been asked to save.
+describe('the phone forms that ask for a name', () => {
+  let RoutineForm: typeof RoutineFormType;
+  let SharedListsPage: typeof SharedListsPageType;
+  beforeAll(async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+    ({ RoutineForm } = await import('../src/RoutinesPage'));
+    ({ SharedListsPage } = await import('../src/SharedListsPage'));
+  });
+
+  const ava = { id: 'p-ava', name: 'Ava', color: hex(2), avatar_url: null, sort_order: 0 };
+  const routineForm = () => renderToStaticMarkup(createElement(RoutineForm, { profile: ava, onSave: async () => true }));
+  const household: Household = { id: 'h1', name: 'The Andersons', timezone: 'America/Chicago', weather_place: null, latitude: null, longitude: null, temperature_unit: 'fahrenheit', appearance: 'auto' };
+  const listsPage = () => renderToStaticMarkup(createElement(SharedListsPage, { household }));
+
+  it('has no example in the field for a new routine: an example reads as a name that was already given', () => {
+    const markup = routineForm();
+    expect(markup).not.toContain('Feed the dog');
+    expect(markup).not.toContain('placeholder=');
+  });
+
+  it('leaves an empty name to its own line, and still tells a screen reader the field is needed', () => {
+    const markup = routineForm();
+    expect(markup).toMatch(/^<form[^>]*\bnoValidate=""/);
+    expect(markup).toMatch(/<input[^>]*\brequired=""/);
+    expect(markup).not.toContain('role="alert"');
+    expect(words(markup)).not.toContain(giveName('routine'));
+  });
+
+  it('has a New list form that leaves an empty name to its own line, as the other two do', () => {
+    const markup = listsPage();
+    expect(markup).toMatch(/<form[^>]*\bnoValidate=""[^>]*>[\s\S]*?Add list/);
+    expect(markup).not.toContain('role="alert"');
+    expect(words(markup)).not.toContain(giveName('list'));
   });
 });
 

@@ -1,9 +1,10 @@
 import { cn } from 'cn';
 import { ArrowDown, ArrowUp, Moon, Star, Sun, Sunrise, type LucideIcon } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type Ref } from 'react';
+import { Fragment, useCallback, useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type Ref } from 'react';
 import { EmptyWords } from './components/EmptyWords';
 import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, MAX_PIPS, PersonDisc, Pips, Tick } from './components/people';
+import { Problem } from './components/phone';
 import { Button } from './components/ui/button';
 import type { Household } from './lib/household';
 import { PROFILE_PALETTE, loadProfiles, nextSortOrder, type Profile } from './lib/profiles';
@@ -41,6 +42,7 @@ import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
 import { useOverflow } from './lib/use-overflow';
 import { useCelebration, type RoutinesToday } from './lib/use-routines-today';
+import { unnamed } from './lib/write-failure';
 
 // ---- The wall: the Routines chart, and the tile that Up next shares --------------------------------
 
@@ -486,8 +488,9 @@ const timeOfDayChoices = [...TIME_OF_DAY_GROUPS.slice(-1), ...TIME_OF_DAY_GROUPS
 
 // One form for adding a Routine and for editing one: a title, the days, a time of day and a picture.
 // Given a Routine it starts from that Routine and offers Cancel; without one it starts blank
-// and, once the Routine is added, blank again.
-function RoutineForm({
+// and, once the Routine is added, blank again. A save asked for with no title says so in the form's own line
+// ("Give the routine a name."), and the browser's own bubble for the empty field is off (noValidate).
+export function RoutineForm({
   profile,
   routine,
   onSave,
@@ -506,6 +509,10 @@ function RoutineForm({
   // last one did not go through: the form stays open with what was typed, and says so beside Save.
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
+  // How many times a save was asked for with no title, and what that says while there is still none.
+  const [asked, setAsked] = useState(0);
+  const unnamedWords = unnamed('routine', asked, title);
+  const nameProblem = useId();
   // How many Routines this form has added. The picture grid keeps its own open state, so it is keyed by this and starts closed
   // again with the rest of the form.
   const [added, setAdded] = useState(0);
@@ -514,7 +521,11 @@ function RoutineForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!title.trim() || mask === 0 || saving) return;
+    if (mask === 0 || saving) return;
+    if (!title.trim()) {
+      setAsked((count) => count + 1);
+      return;
+    }
     setSaving(true);
     setFailed(false);
     const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture });
@@ -522,6 +533,7 @@ function RoutineForm({
     setFailed(!saved);
     if (saved && !routine) {
       setTitle('');
+      setAsked(0);
       setMask(allDays);
       setTimeOfDay(null);
       setPicture(null);
@@ -530,7 +542,7 @@ function RoutineForm({
   }
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
+    <form onSubmit={(event) => void submit(event)} noValidate className="flex flex-col gap-4">
       <label className="flex flex-col gap-2 text-[15px] text-muted-foreground">
         {routine ? `Title for ${routine.title}` : `New routine for ${profile.name}`}
         <input
@@ -538,8 +550,9 @@ function RoutineForm({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           maxLength={100}
-          placeholder="Feed the dog"
           required
+          aria-invalid={unnamedWords ? true : undefined}
+          aria-describedby={unnamedWords ? nameProblem : undefined}
           autoFocus={routine !== undefined}
         />
       </label>
@@ -589,6 +602,7 @@ function RoutineForm({
           </Button>
         )}
       </div>
+      <Problem id={nameProblem} problem={unnamedWords} />
       {failed && (
         <p role="alert" className="text-base">
           Could not {routine ? 'save' : 'add'} that routine. Check the name and days, then try again.

@@ -38,6 +38,17 @@ export function isNetworkFailure(error: unknown): boolean {
 // fails again is a new alert, heard again, though its words are the same.
 export type Said = { words: string; n?: number | undefined };
 
+// What a phone form says when it is asked to save with no name: in its own problem line, before anything is sent, in plain words.
+// The browser's own bubble for an empty field is off in these forms (noValidate), so the family reads one voice.
+export type Named = 'routine' | 'person' | 'list';
+export const giveName = (what: Named): string => `Give the ${what} a name.`;
+
+// What a form says of its name once it has counted `asked` times it was asked to save with none: nothing before it has been asked,
+// and nothing once the name is there. `n` is the count, so each ask is said again, as a retry that fails again is.
+export function unnamed(what: Named, asked: number, name: string): Said | null {
+  return asked > 0 && name.trim() === '' ? { words: giveName(what), n: asked } : null;
+}
+
 // The words for a write that failed. `offline` is what the screen knows of its connection when it failed (the change feed's
 // word); an error that says it never got an answer is offline whatever the screen thought. `refusal` is a form's words for a
 // value the database would not take; `said` names an action that is not a save.
