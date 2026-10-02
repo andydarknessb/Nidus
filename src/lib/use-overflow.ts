@@ -58,6 +58,13 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
     setState((last) => (last.overflowing === overflowing && last.atEnd === atEnd ? last : { overflowing, atEnd }));
   }, [read]);
 
+  // Chrome gives the keyboard's focus to an element that is only partly in view without scrolling to it, so Tab could land on a pill
+  // with 16 px of it showing. What takes the keyboard's focus in the box is brought fully into view (a touch or a click is left
+  // alone: it would move what a finger is on).
+  const reveal = useCallback((event: FocusEvent) => {
+    if (event.target instanceof HTMLElement && event.target.matches(':focus-visible')) event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, []);
+
   // The box is watched for its size, for being scrolled and for the fonts: a font that arrives changes how words wrap, and so
   // how much the box holds. A callback ref, so that a box that arrives after the first render (a column with nothing to show
   // has none) is watched from the moment it does.
@@ -68,6 +75,7 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
       const observer = new ResizeObserver(measure);
       observer.observe(element);
       element.addEventListener('scroll', measure, { passive: true });
+      element.addEventListener('focusin', reveal);
       let live = true;
       void document.fonts.ready.then(() => live && measure());
       document.fonts.addEventListener('loadingdone', measure);
@@ -75,11 +83,12 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
         live = false;
         observer.disconnect();
         element.removeEventListener('scroll', measure);
+        element.removeEventListener('focusin', reveal);
         document.fonts.removeEventListener('loadingdone', measure);
         box.current = null;
       };
     },
-    [measure],
+    [measure, reveal],
   );
   const holder = useCallback((element: HTMLElement | null) => {
     piece.current = element;
