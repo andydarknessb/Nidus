@@ -19,7 +19,7 @@ const RETRY_MS = 5_000;
 const MEAL_TABLES = ['meals'] as const;
 
 const PAGE_BUTTON = 'min-h-12 rounded-lg border border-border px-6 text-lg font-medium disabled:opacity-50';
-const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-lg text-foreground';
+const field = 'w-full text-lg';
 const action = 'min-h-12 rounded-lg px-6 text-lg font-medium';
 const quiet = `${action} border border-border disabled:opacity-40`;
 
@@ -128,7 +128,7 @@ function MealsGrid({ days }: { days: WallDay[] }) {
   };
 
   return (
-    <section aria-label="Meals" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border">
+    <section aria-label="Meals" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
       {failed && !known && (
         <p role="alert" className="p-4 text-xl">
           Could not load meals. Check your connection.
@@ -251,7 +251,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
 
   return (
     <div
-      className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-background/90 p-4 sm:items-center sm:p-8"
+      className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-4 sm:items-center sm:p-8"
       onClick={(event) => {
         if (event.target === event.currentTarget) close();
       }}
@@ -265,7 +265,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
         noValidate
         onSubmit={submit}
         onKeyDown={(event) => dialogKeys(event, close)}
-        className="flex w-full max-w-lg flex-col gap-5 rounded-xl border-2 border-border bg-card p-6 outline-none"
+        className="flex w-full max-w-lg flex-col gap-5 rounded-3xl bg-card p-6 outline-none"
       >
         <h2 id="meal-sheet-title" className="text-3xl font-semibold">
           {editing.heading}
@@ -316,7 +316,7 @@ function TodaysMeals({ date }: { date: string }) {
     // Small, since it takes its height from the Routines rail and the pinned list: a title is cut at
     // the end of its line (the whole of it stays in the text, and on the Meals screen). It is also
     // free to shrink and scroll, because the right rail gives those two their room first.
-    <aside aria-label="Today's meals" className="flex min-h-0 flex-col gap-1 overflow-y-auto rounded-xl border border-border px-4 py-3">
+    <aside aria-label="Today's meals" className="flex min-h-0 flex-col gap-1 overflow-y-auto rounded-3xl bg-card px-4 py-3">
       <h2 className="text-lg font-semibold">Today&apos;s meals</h2>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 text-lg leading-6">
         {planned.map(({ slot, label, title }) => (

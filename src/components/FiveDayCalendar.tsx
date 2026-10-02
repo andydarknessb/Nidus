@@ -215,7 +215,7 @@ function CalendarGrid({
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, index) => startHour + index);
 
   return (
-    <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border">
+    <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
       <div style={columnsStyle} className="grid border-b border-border">
         <div />
         {days.map((day) => (
@@ -256,10 +256,10 @@ function CalendarGrid({
               <div
                 aria-hidden
                 data-testid="now-line"
-                className="pointer-events-none absolute inset-x-0 z-[5] h-0.5 bg-red-300"
+                className="pointer-events-none absolute inset-x-0 z-[5] h-0.5 bg-foreground"
                 style={{ top: `${((todayHour - startHour) / (endHour - startHour)) * 100}%` }}
               >
-                <span className="absolute -top-1 -left-1.5 size-3.5 rounded-full bg-red-300" />
+                <span className="absolute -top-1 -left-1.5 size-3.5 rounded-full bg-foreground" />
               </div>
             )}
           </div>

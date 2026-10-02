@@ -27,10 +27,11 @@ import {
   type TimeOfDay,
 } from './lib/routines';
 import { useRefetchOn } from './lib/change-feed';
+import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
 import type { RoutinesToday } from './lib/use-routines-today';
 
-const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
+const field = 'w-full text-base';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 const quiet = `${action} border border-border`;
 const iconAction = 'inline-flex size-12 shrink-0 items-center justify-center rounded-lg border border-border disabled:opacity-40';
@@ -172,21 +173,18 @@ function ProfileGroup({
     <section
       ref={group}
       aria-labelledby={`routines-${profile.id}`}
-      className={chart ? 'relative flex min-h-0 max-w-md min-w-64 flex-1 flex-col gap-3 rounded-xl border border-border p-4' : 'relative flex flex-col gap-2'}
+      className={`person ${chart ? 'relative flex min-h-0 max-w-md min-w-64 flex-1 flex-col gap-3 rounded-3xl bg-card p-4' : 'relative flex flex-col gap-2'}`}
+      style={personStyle(profile.color)}
     >
       {/* On the rail the header stays at the top of the rail while its group scrolls, on the rail's own ground so
           nothing shows through, so "All done" and the count are in view wherever the group is scrolled to. Its padding is
           taken back by its margins, so it takes the room it did before. The chart's column does not scroll: its list does. */}
-      <div className={chart ? 'flex flex-col gap-2' : 'sticky top-0 -mb-2 -mt-2 flex flex-col gap-2 bg-background py-2'}>
+      <div className={chart ? 'flex flex-col gap-2' : 'sticky top-0 -mb-2 -mt-2 flex flex-col gap-2 bg-card py-2'}>
         {/* A name too long to share the line with the count drops it to a line of its own, rather than squeezing the name.
             The count's room is as wide as "All done", so the heading wraps the same either way and nothing below it moves when one becomes the other. */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h3
-            id={`routines-${profile.id}`}
-            className={`flex min-w-0 items-center gap-2 font-semibold ${chart ? 'text-2xl' : 'text-xl'}`}
-            style={{ color: profile.color }}
-          >
-            <span aria-hidden className="size-4 shrink-0 rounded-full" style={{ backgroundColor: profile.color }} />
+          <h3 id={`routines-${profile.id}`} className={`flex min-w-0 items-center gap-2 font-semibold ${chart ? 'text-2xl' : 'text-xl'}`}>
+            <span aria-hidden className="size-4 shrink-0 rounded-full bg-person-strong" />
             <span className="min-w-0 break-words">{profile.name}</span>
           </h3>
           <span className={`ml-auto flex shrink-0 items-center justify-end gap-1.5 font-medium ${chart ? 'min-w-28 text-xl' : 'min-w-24 text-base'}`}>
@@ -213,7 +211,7 @@ function ProfileGroup({
           aria-valuenow={count}
           className={`overflow-hidden rounded-full bg-muted ring-1 ring-muted-foreground/60 ${chart ? 'h-3' : 'h-2'}`}
         >
-          <div className="h-full rounded-full" style={{ width: `${(count / total) * 100}%`, backgroundColor: profile.color }} />
+          <div className="h-full rounded-full bg-person-strong" style={{ width: `${(count / total) * 100}%` }} />
         </div>
       </div>
       <div className={chart ? '-m-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-1' : 'flex flex-col gap-2'}>
@@ -229,12 +227,7 @@ function ProfileGroup({
                       type="button"
                       aria-pressed={checked}
                       onClick={(event) => tap(routine, event.currentTarget)}
-                      className="flex min-h-14 w-full items-center gap-3 rounded-lg border-2 px-3 text-left text-lg"
-                      style={
-                        checked
-                          ? { backgroundColor: profile.color, borderColor: profile.color, color: '#09090b' }
-                          : { borderColor: profile.color }
-                      }
+                      className={`flex min-h-14 w-full items-center gap-3 rounded-lg border-2 px-3 text-left text-lg ${checked ? 'border-person-base bg-person-base text-person-on-base' : 'border-person-strong'}`}
                     >
                       {checked ? <Check aria-hidden className="size-6 shrink-0" /> : <Circle aria-hidden className="size-6 shrink-0" />}
                       <span className={checked ? 'line-through decoration-2' : ''}>{routine.title}</span>
@@ -260,7 +253,7 @@ export function RoutinesRail({ routines }: { routines: RoutinesToday }) {
   return (
     // No padding above, so a group's header can stay flush with the top of the rail with nothing showing through above it; the
     // title brings its own. The scroll padding is room for that header, so a button reached by keyboard is not scrolled under it.
-    <aside aria-label="Today's Routines" className="flex min-h-0 scroll-pt-24 flex-col gap-4 overflow-y-auto rounded-xl border border-border px-4 pb-4">
+    <aside aria-label="Today's Routines" className="flex min-h-0 scroll-pt-24 flex-col gap-4 overflow-y-auto rounded-3xl bg-card px-4 pb-4">
       <h2 className="mt-4 text-2xl font-semibold">Routines</h2>
       <RoutinesNotices loaded={loaded} failed={failed} problem={problem} empty={groups.length === 0} />
       {groups.map((group) => (
@@ -545,9 +538,14 @@ export function RoutinesPage({ household }: { household: Household }) {
         const times = groupByTimeOfDay(own);
         const headed = showsTimeOfDayHeadings(own);
         return (
-          <section key={profile.id} aria-labelledby={`profile-${profile.id}`} className="flex flex-col gap-3 rounded-lg border border-border p-3">
-            <h2 id={`profile-${profile.id}`} tabIndex={-1} className="flex items-center gap-2 text-xl font-semibold" style={{ color: profile.color }}>
-              <span aria-hidden className="size-4 shrink-0 rounded-full" style={{ backgroundColor: profile.color }} />
+          <section
+            key={profile.id}
+            aria-labelledby={`profile-${profile.id}`}
+            className="person flex flex-col gap-3 rounded-lg border border-border p-3"
+            style={personStyle(profile.color)}
+          >
+            <h2 id={`profile-${profile.id}`} tabIndex={-1} className="flex items-center gap-2 text-xl font-semibold">
+              <span aria-hidden className="size-4 shrink-0 rounded-full bg-person-strong" />
               {profile.name}
             </h2>
             {own.length === 0 && <p className="text-base">No Routines yet.</p>}

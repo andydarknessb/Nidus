@@ -31,7 +31,7 @@ const ITEM_TABLES = ['list_items'] as const;
 const ITEM_REFRESH_MS = 30_000;
 const LIST_TABLES = ['shared_lists', 'households'] as const;
 
-const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
+const field = 'w-full text-base';
 const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
 const quiet = `${action} border border-border`;
 const iconAction = 'inline-flex size-12 shrink-0 items-center justify-center rounded-lg border border-border';
@@ -233,7 +233,7 @@ export function PinnedListRail() {
   }, [changes]);
 
   return (
-    <aside aria-label="Pinned list" className="flex min-h-0 flex-col gap-4 rounded-xl border border-border p-4">
+    <aside aria-label="Pinned list" className="flex min-h-0 flex-col gap-4 rounded-3xl bg-card p-4">
       {pinned === undefined && !failed && <p className="text-base">Loading</p>}
       {failed && pinned === undefined && (
         <p role="alert" className="text-base">

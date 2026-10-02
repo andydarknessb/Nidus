@@ -29,7 +29,7 @@ export function EventDetails({
 
   return (
     <div
-      className="fixed inset-0 z-10 flex items-center justify-center bg-background/90 p-8"
+      className="fixed inset-0 z-10 flex items-center justify-center bg-scrim p-8"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -42,7 +42,7 @@ export function EventDetails({
         tabIndex={-1}
         // aria-modal: Tab and Shift+Tab stay inside the sheet instead of reaching the wall behind it.
         onKeyDown={(event) => dialogKeys(event, onClose)}
-        className="flex max-h-full w-full max-w-3xl flex-col gap-6 overflow-y-auto rounded-xl border-2 border-border bg-card p-8 outline-none"
+        className="flex max-h-full w-full max-w-3xl flex-col gap-6 overflow-y-auto rounded-3xl bg-card p-8 outline-none"
       >
         <header className="flex items-start justify-between gap-6">
           <h2 id="event-details-title" className="text-4xl font-semibold break-words">

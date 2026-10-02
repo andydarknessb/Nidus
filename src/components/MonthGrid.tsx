@@ -79,7 +79,7 @@ export function MonthGrid({
   const lines = linesPerCell(rowsPx / weeks.length, CELL_HEAD_REM * remPx, CELL_LINE_REM * remPx);
 
   return (
-    <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border">
+    <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
       {/* Every cell's name says its weekday already, so a screen reader need not hear the row of them first. */}
       <div aria-hidden className="grid grid-cols-7 divide-x divide-border border-b border-border">
         {WEEKDAYS.map((weekday) => (
@@ -206,10 +206,8 @@ function DayCell({
   timezone: string;
   onOpen: (date: string) => void;
 }) {
-  // A day of the neighbouring month is dimmed with the muted colour, which is AAA on the page ground (7.59:1) but
-  // not on today's lifted one (6.55:1), so today keeps the full colour wherever it falls. The same goes for a day
-  // beyond the window: against the lighter colour of its hatch, the lines (rgb 34 34 36 as rendered), the muted
-  // colour is 6.05:1 and the full colour 15.22:1.
+  // A day of the neighbouring month is dimmed with the muted colour, which holds 7:1 on every ground here (the
+  // card, today's lifted ground and the hatch's lines). Today and a day beyond the window keep the full colour.
   const dim = !inMonth && !beyond && !day.isToday ? 'text-muted-foreground' : '';
   // The date's line is shorter than its row so that today's underline sits inside the row, above the first line.
   const date = (
