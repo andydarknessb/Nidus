@@ -127,9 +127,10 @@ function MealsGrid({ days }: { days: WallDay[] }) {
   const known = meals !== null;
   const rows = mealGrid(meals ?? [], days.map((day) => day.date));
   const template: CSSProperties = {
-    // The slot column is 7 rem and the heading row 3.5 rem; a day never narrows past a finger.
+    // The slot column is 7 rem and the heading row 3.875 rem (the weekday's 18 px, 2, the 38 px date and 4 to spare); a
+    // day never narrows past a finger.
     gridTemplateColumns: `7rem repeat(${days.length}, minmax(3rem, 1fr))`,
-    gridTemplateRows: `3.5rem repeat(${rows.length}, minmax(min-content, 1fr))`,
+    gridTemplateRows: `3.875rem repeat(${rows.length}, minmax(min-content, 1fr))`,
   };
 
   return (
@@ -203,8 +204,9 @@ function MealsGrid({ days }: { days: WallDay[] }) {
   );
 }
 
-// A day's heading: the weekday over the date, which is the same 32 px tall on every day so the weekday words share a
-// line. Today says so in words, puts its date in a --primary disc and sits on --muted, so it never rests on a tint alone.
+// A day's heading: the weekday over the date, which is the same 38 px tall on every day so the weekday words share a
+// line. Today says so in words, puts its date in a 38 px --primary disc (the schedule's size, so two digits are not
+// crowded) and sits on --muted, so it never rests on a tint alone.
 function DayHeading({ day }: { day: WallDay }) {
   const { short } = WEEKDAYS[day.weekday]!;
   const date = Number(day.date.slice(8));
@@ -215,7 +217,7 @@ function DayHeading({ day }: { day: WallDay }) {
       className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[14px] font-normal ${day.isToday ? 'bg-muted' : ''}`}
     >
       <span className={`text-sm leading-[18px] ${day.isToday ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{day.isToday ? 'Today' : short}</span>
-      <span className={`flex h-8 items-center justify-center font-display text-[22px] leading-none ${day.isToday ? 'size-8 rounded-full bg-primary text-primary-foreground' : ''}`}>{date}</span>
+      <span className={`flex h-[38px] items-center justify-center font-display text-[22px] leading-none ${day.isToday ? 'size-[38px] rounded-full bg-primary text-primary-foreground' : ''}`}>{date}</span>
     </h3>
   );
 }
