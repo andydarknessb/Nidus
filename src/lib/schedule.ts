@@ -4,14 +4,15 @@ import { routineProgress, type ProfileRoutines } from './routines';
 
 // The schedule (docs/look.md, The parts): Home and Week draw each day as a column of event pills, and the people strip
 // above them shows each person's Routines. Everything they decide is here and pure, so it is tested without a screen
-// (tests/schedule.test.ts): which pills a day lists and what each says under its title, which one is on now, how many
-// a column holds, who a pill is for, and the words on the strip. Every date is read in the Household Timezone, which a
+// (tests/schedule.test.ts): which pills a day lists and what each says under its title, which one is on now, which a
+// column shows, who a pill is for, and the words on the strip. Every date is read in the Household Timezone, which a
 // WallDay carries; nothing reads the machine's.
 
 // ---- The columns -----------------------------------------------------------------------------------
 
-// One event on one day: what the pill says under its title, and whether it is the one on now.
-export type Pill = { occurrence: Occurrence; time: string; onNow: boolean };
+// One event on one day: what the pill says under its title, whether it is the one on now, and in today's column when it
+// ended, if it has: a pill that is over gives way first when the column is full.
+export type Pill = { occurrence: Occurrence; time: string; onNow: boolean; endedAt: number | null };
 
 export type ScheduleColumn = { day: WallDay; pills: Pill[] };
 
@@ -40,33 +41,70 @@ export function isOnNow(occurrence: Occurrence, day: WallDay, now: Date): boolea
   return Date.parse(occurrence.starts_at) <= at && at < Date.parse(occurrence.ends_at);
 }
 
+// When the pill of `occurrence` on `day` ended, if it has: the end of a timed event that is over, in today's column only. An
+// all-day event, a timed event that covers all of today (its pill says "All day") and anything in another day's column has
+// not ended, however long ago it was over: only today has a column to put in order of what is happening.
+export function whenEnded(occurrence: Occurrence, day: WallDay, now: Date): number | null {
+  if (!day.isToday || saysAllDay(occurrence, day)) return null;
+  const end = Date.parse(occurrence.ends_at);
+  return end <= now.getTime() ? end : null;
+}
+
 // A column for each of `days`: the occurrences on that day, all-day first, then by start, then by title
 // (dayOccurrences, which the month's cells use), each with the words under its title. The Profile filter has been
 // applied to `occurrences` already, where they are read.
 export function scheduleColumns(occurrences: Occurrence[], days: WallDay[], now: Date): ScheduleColumn[] {
   return days.map((day) => ({
     day,
-    pills: dayOccurrences(occurrences, day).map((occurrence) => ({ occurrence, time: pillTime(occurrence, day), onNow: isOnNow(occurrence, day, now) })),
+    pills: dayOccurrences(occurrences, day).map((occurrence) => ({
+      occurrence,
+      time: pillTime(occurrence, day),
+      onNow: isOnNow(occurrence, day, now),
+      endedAt: whenEnded(occurrence, day, now),
+    })),
   }));
 }
 
-// ---- How many pills fit ----------------------------------------------------------------------------
+// ---- Which pills show ------------------------------------------------------------------------------
 
-// How many of a column's pills to draw. The pills, in order, and then the "+N more" button stack in a column `heightPx`
-// tall with `gapPx` between them: every pill when they all fit, and no button; otherwise as many as fit above the button,
-// which is then drawn, and at least none. `pillPx` are the pills' own heights, measured, so a title of two lines counts for
-// what it takes. The measuring is the screen's; this only decides.
-export function pillsThatFit({ heightPx, pillPx, gapPx, morePx }: { heightPx: number; pillPx: readonly number[]; gapPx: number; morePx: number }): number {
+// Which of a column's pills to draw, a flag for each in order. The pills, in order, and then the "+N more" button stack in a
+// column `heightPx` tall with `gapPx` between them: every pill when they all fit, and no button; otherwise the button is
+// drawn and as many pills as fit above it. `pillPx` are the pills' own heights, measured, so a title of two lines counts for
+// what it takes.
+//
+// In today's column what has ended gives way first (`endedAt` is when each pill ended, null for one that has not, which is
+// every pill of any other day). The pills that are not over, all-day ones included, show in order, as many as fit; only
+// when every one of them shows do the ones that are over fill what room is left, the one that ended last first, each in its
+// own place in the order. So a pill that is on or to come is never left out for one that is over, and an older one that is
+// over never takes the place of a later one that did not fit. The measuring is the screen's; this only decides.
+export function pillsToShow({
+  heightPx,
+  pillPx,
+  gapPx,
+  morePx,
+  endedAt = [],
+}: {
+  heightPx: number;
+  pillPx: readonly number[];
+  gapPx: number;
+  morePx: number;
+  endedAt?: readonly (number | null)[];
+}): boolean[] {
   const all = pillPx.reduce((sum, px) => sum + px, 0) + gapPx * Math.max(pillPx.length - 1, 0);
-  if (all <= heightPx) return pillPx.length;
+  if (all <= heightPx) return pillPx.map(() => true);
+  const shown = pillPx.map(() => false);
   // The button first, then each pill with the gap that follows it (the next pill, or the button).
   let used = morePx;
-  let shown = 0;
-  for (const px of pillPx) {
-    used += px + gapPx;
-    if (used > heightPx) break;
-    shown += 1;
-  }
+  const take = (index: number): boolean => {
+    used += pillPx[index]! + gapPx;
+    if (used > heightPx) return false;
+    shown[index] = true;
+    return true;
+  };
+  const indices = pillPx.map((_, index) => index);
+  for (const index of indices.filter((each) => endedAt[each] == null)) if (!take(index)) return shown;
+  const over = indices.filter((each) => endedAt[each] != null).sort((a, b) => endedAt[b]! - endedAt[a]! || b - a);
+  for (const index of over) if (!take(index)) break;
   return shown;
 }
 

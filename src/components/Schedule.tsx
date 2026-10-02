@@ -3,7 +3,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { canOpenDay, describeCell, pagingWindow, type Occurrence, type WallDay } from '../lib/calendar-occurrences';
 import type { Profile } from '../lib/profiles';
 import { WEEKDAYS } from '../lib/routines';
-import { pillPeople, pillsThatFit, scheduleColumns, type ScheduleColumn } from '../lib/schedule';
+import { pillPeople, pillsToShow, scheduleColumns, type ScheduleColumn } from '../lib/schedule';
 import { useOccurrences } from '../lib/wall-hooks';
 import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
 import { EventPill } from './EventPill';
@@ -53,9 +53,10 @@ function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | n
   );
 }
 
-// One day. Every pill is drawn in the column, in order, so that each can be measured: the ones past what fits are held
-// out of the flow, invisible and out of reach, and the button says how many. The count is measured again whenever the
-// column is drawn or resized, and when the fonts have loaded, which change how a title wraps.
+// One day. Every pill is drawn in the column, in order, so that each can be measured: the ones that do not show are held
+// out of the flow, invisible and out of reach, and the button says how many. Which show is measured again whenever the
+// column is drawn or resized, and when the fonts have loaded, which change how a title wraps; in today's column the pills
+// that are over give way first (pillsToShow), and each says when it ended in `data-ended-at`, read with its height.
 function DayColumn({
   column,
   profiles,
@@ -73,22 +74,25 @@ function DayColumn({
 }) {
   const { day, pills } = column;
   const list = useRef<HTMLDivElement>(null);
-  // How many pills fit: all of them until the column has been measured.
-  const [fit, setFit] = useState(pills.length);
-  const shown = Math.min(fit, pills.length);
+  // Which pills show: all of them until the column has been measured.
+  const [shown, setShown] = useState<readonly boolean[] | null>(null);
+  const shows = (index: number) => shown?.[index] ?? true;
+  const left = pills.filter((_, index) => !shows(index)).length;
 
   const measure = useCallback(() => {
     const element = list.current;
     if (!element) return;
     const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    setFit(
-      pillsThatFit({
-        heightPx: element.getBoundingClientRect().height,
-        pillPx: [...element.querySelectorAll<HTMLElement>('[data-pill]')].map((pill) => pill.getBoundingClientRect().height),
-        gapPx: parseFloat(getComputedStyle(element).rowGap) || 0,
-        morePx: MORE_REM * rem,
-      }),
-    );
+    const drawn = [...element.querySelectorAll<HTMLElement>('[data-pill]')];
+    const next = pillsToShow({
+      heightPx: element.getBoundingClientRect().height,
+      pillPx: drawn.map((pill) => pill.getBoundingClientRect().height),
+      gapPx: parseFloat(getComputedStyle(element).rowGap) || 0,
+      morePx: MORE_REM * rem,
+      endedAt: drawn.map((pill) => (pill.dataset.endedAt === undefined ? null : Number(pill.dataset.endedAt))),
+    });
+    // The same flags are the same state, so a read that changed nothing is not a render.
+    setShown((last) => (last && last.length === next.length && last.every((flag, index) => flag === next[index]) ? last : next));
   }, []);
   useLayoutEffect(() => {
     const element = list.current;
@@ -106,8 +110,7 @@ function DayColumn({
       document.fonts.removeEventListener('loadingdone', measure);
     };
   }, [measure]);
-  // New events, a new minute and a new heading all come through a render; measuring is a read, and a count that has not
-  // changed is not a render.
+  // New events, a new minute (an event may have ended) and a new heading all come through a render; measuring is a read.
   useLayoutEffect(measure);
 
   return (
@@ -129,16 +132,16 @@ function DayColumn({
             day={day}
             people={pillPeople(pill.occurrence, profiles)}
             onOpen={onOpen}
-            className={index < shown ? undefined : 'invisible absolute inset-x-0 top-0'}
+            className={shows(index) ? undefined : 'invisible absolute inset-x-0 top-0'}
           />
         ))}
-        {shown < pills.length &&
+        {left > 0 &&
           (onOpenDay ? (
             <Button variant="quiet" onClick={() => onOpenDay(day.date)} className="h-12 w-full rounded-[14px] px-0 text-sm font-medium">
-              +{pills.length - shown} more
+              +{left} more
             </Button>
           ) : (
-            <p className="flex h-12 items-center justify-center text-sm font-medium text-muted-foreground">+{pills.length - shown} more</p>
+            <p className="flex h-12 items-center justify-center text-sm font-medium text-muted-foreground">+{left} more</p>
           ))}
       </div>
     </section>

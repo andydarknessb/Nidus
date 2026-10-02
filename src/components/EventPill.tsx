@@ -70,6 +70,7 @@ export function EventPill({
     <Button
       variant="quiet"
       data-pill
+      data-ended-at={pill.endedAt ?? undefined}
       aria-label={pillName(pill, day, people)}
       onClick={() => onOpen(occurrence)}
       className={cn(

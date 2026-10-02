@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fiveDays, pageDays, type Occurrence } from '../src/lib/calendar-occurrences';
 import type { Profile } from '../src/lib/profiles';
 import type { ProfileRoutines, Routine } from '../src/lib/routines';
-import { isOnNow, pillName, pillPeople, pillsThatFit, pillTime, scheduleColumns, stripPeople } from '../src/lib/schedule';
+import { isOnNow, pillName, pillPeople, pillsToShow, pillTime, scheduleColumns, stripPeople } from '../src/lib/schedule';
 
 // The schedule: the columns of Home and Week built from occurrences, the words under a pill's title, which pill is
 // on now, how many pills a column holds, who a pill is for, and the words on the people strip. All of it is pure, and
@@ -221,54 +221,201 @@ describe('the words under a title', () => {
   });
 });
 
-describe('how many pills fit', () => {
-  const fit = (heightPx: number, pillPx: number[], gapPx = 8, morePx = 48) => pillsThatFit({ heightPx, pillPx, gapPx, morePx });
+describe('what has ended', () => {
+  const days = fiveDays(CHICAGO, NOW);
+  const endedAts = (occurrences: Occurrence[], now = NOW, over = days) => scheduleColumns(occurrences, over, now).map((column) => column.pills.map((pill) => pill.endedAt));
 
-  it('is every pill, and no button, when they all fit with their gaps', () => {
-    expect(fit(172, [52, 52, 52])).toBe(3);
-    expect(fit(600, [52, 70, 52])).toBe(3);
+  it('is the instant a timed event ended, in today\'s column', () => {
+    // Standup 9:00 to 9:30 AM is over at 7:21 PM; the Family dinner is on now and the Book club is still to come.
+    expect(
+      endedAts([event('Standup', '2026-10-01T14:00:00Z', '2026-10-01T14:30:00Z'), event('Family dinner', '2026-10-01T23:30:00Z', '2026-10-02T01:00:00Z'), event('Book club', '2026-10-02T01:00:00Z', '2026-10-02T02:00:00Z')])[0],
+    ).toEqual([Date.parse('2026-10-01T14:30:00Z'), null, null]);
   });
 
-  it('is none for a day with no pills', () => {
-    expect(fit(500, [])).toBe(0);
-    expect(fit(0, [])).toBe(0);
+  it('is never an all-day event, whenever its day began, nor a timed event that covers all of today', () => {
+    expect(endedAts([allDay('Grandma visiting', '2026-10-01', '2026-10-02'), event('Camping', '2026-09-30T01:00:00Z', '2026-10-03T08:00:00Z')])[0]).toEqual([null, null]);
   });
 
-  it('is one pill that fills the column exactly', () => {
-    expect(fit(52, [52])).toBe(1);
+  it('is the moment an event ends: one that ends at this minute is over, one that ends the next is not', () => {
+    expect(endedAts([event('Ends at this minute', '2026-10-01T23:00:00Z', '2026-10-02T00:21:00Z'), event('Ends next minute', '2026-10-01T23:00:00Z', '2026-10-02T00:22:00Z')])[0]).toEqual([Date.parse('2026-10-02T00:21:00Z'), null]);
   });
 
-  it('leaves room for the button as soon as one pill does not fit: a pixel short, and the last pill goes', () => {
-    // Three 52 px pills need 172. With the button, two pills need 52 + 8 + 52 + 8 + 48 = 168.
-    expect(fit(171, [52, 52, 52])).toBe(2);
-    expect(fit(168, [52, 52, 52])).toBe(2);
-    expect(fit(167, [52, 52, 52])).toBe(1);
+  it('is an event of no length once its moment has come', () => {
+    expect(endedAts([event('Reminder', '2026-10-01T22:00:00Z', '2026-10-01T22:00:00Z'), event('Later reminder', '2026-10-02T01:00:00Z', '2026-10-02T01:00:00Z')])[0]).toEqual([Date.parse('2026-10-01T22:00:00Z'), null]);
   });
 
-  it('takes the room for the button from the pills, not from below them', () => {
-    // 120 px holds two pills (112) but not two pills and the button; one pill and the button need 108.
-    expect(fit(120, [52, 52, 52, 52])).toBe(1);
+  it('is the end of an event that began on an earlier day, once it has ended: "Until 2:00 AM" at 7:21 PM', () => {
+    // From Wed 10:00 PM to Thu 2:00 AM, seen on Thursday evening.
+    expect(endedAts([event('Sleepover', '2026-10-01T03:00:00Z', '2026-10-01T07:00:00Z')])[0]).toEqual([Date.parse('2026-10-01T07:00:00Z')]);
   });
 
-  it('counts each pill at its own height: a pill of two lines takes more room', () => {
-    // 70 + 52 + 52 + 70 and three gaps is 268 px; 200 px holds 70 + 8 + 52 + 8 + 48 = 186, not three pills and the button.
-    expect(fit(200, [70, 52, 52, 70])).toBe(2);
-    expect(fit(200, [52, 52, 70, 70])).toBe(2);
-    expect(fit(200, [52, 70, 70, 52])).toBe(2);
+  it('is nothing in the columns of other days, though what they hold is over: only today gives way', () => {
+    // Seen on a Thursday, the week's Monday and Tuesday hold events that ended days ago.
+    const week = pageDays('week', '2026-10-01', CHICAGO, NOW);
+    const columns = endedAts([event('Standup', '2026-09-28T14:00:00Z', '2026-09-28T14:30:00Z'), event('Dentist', '2026-09-29T16:00:00Z', '2026-09-29T17:00:00Z'), event('Standup', '2026-10-01T14:00:00Z', '2026-10-01T14:30:00Z')], NOW, week);
+    expect(columns[1]).toEqual([null]);
+    expect(columns[2]).toEqual([null]);
+    expect(columns[4]).toEqual([Date.parse('2026-10-01T14:30:00Z')]);
   });
 
-  it('is none when only the button fits, and none when not even that does', () => {
-    expect(fit(50, [52, 52])).toBe(0);
-    expect(fit(48, [52, 52])).toBe(0);
-    expect(fit(10, [52, 52])).toBe(0);
-    expect(fit(200, [300])).toBe(0);
+  it('is nothing on a page that does not hold today', () => {
+    const nextWeek = pageDays('week', '2026-10-08', CHICAGO, NOW);
+    expect(endedAts([event('Standup', '2026-10-08T14:00:00Z', '2026-10-08T14:30:00Z')], NOW, nextWeek).flat()).toEqual([null]);
   });
 
-  it('takes the gap and the button as they are given', () => {
-    // No gap: three pills and a 48 px button are 204 px. With 16 px gaps and a 40 px button, two pills and the button are 176.
-    expect(fit(204, [52, 52, 52, 52], 0, 48)).toBe(3);
-    expect(fit(203, [52, 52, 52, 52], 0, 48)).toBe(2);
-    expect(fit(200, [52, 52, 52, 52], 16, 40)).toBe(2);
+  it('is decided in the Household Timezone: today is the Household\'s today', () => {
+    // 04:45Z is 1:45 PM on Thu Oct 1 in Tokyo, where an event from 04:00Z to 04:30Z (1:00 to 1:30 PM) is over.
+    const at = new Date('2026-10-01T04:45:00Z');
+    expect(endedAts([event('Lunch', '2026-10-01T04:00:00Z', '2026-10-01T04:30:00Z')], at, fiveDays(TOKYO, at))[0]).toEqual([Date.parse('2026-10-01T04:30:00Z')]);
+  });
+});
+
+describe('which pills show', () => {
+  // The indices of the pills that show, in order. `endedAt` is each pill's end, or null for one that has not ended.
+  const show = (heightPx: number, pillPx: number[], endedAt: (number | null)[] = [], gapPx = 8, morePx = 48) =>
+    pillsToShow({ heightPx, pillPx, gapPx, morePx, endedAt }).flatMap((shown, index) => (shown ? [index] : []));
+
+  describe('when nothing has ended, which is every day but today and today before its first event is over', () => {
+    it('is every pill, and no button, when they all fit with their gaps', () => {
+      expect(show(172, [52, 52, 52])).toEqual([0, 1, 2]);
+      expect(show(600, [52, 70, 52])).toEqual([0, 1, 2]);
+    });
+
+    it('is none for a day with no pills', () => {
+      expect(show(500, [])).toEqual([]);
+      expect(show(0, [])).toEqual([]);
+    });
+
+    it('is one pill that fills the column exactly', () => {
+      expect(show(52, [52])).toEqual([0]);
+    });
+
+    it('leaves room for the button as soon as one pill does not fit: a pixel short, and the last pill goes', () => {
+      // Three 52 px pills need 172. With the button, two pills need 52 + 8 + 52 + 8 + 48 = 168.
+      expect(show(171, [52, 52, 52])).toEqual([0, 1]);
+      expect(show(168, [52, 52, 52])).toEqual([0, 1]);
+      expect(show(167, [52, 52, 52])).toEqual([0]);
+    });
+
+    it('takes the room for the button from the pills, not from below them', () => {
+      // 120 px holds two pills (112) but not two pills and the button; one pill and the button need 108.
+      expect(show(120, [52, 52, 52, 52])).toEqual([0]);
+    });
+
+    it('counts each pill at its own height: a pill of two lines takes more room', () => {
+      // 70 + 52 + 52 + 70 and three gaps is 268 px; 200 px holds 70 + 8 + 52 + 8 + 48 = 186, not three pills and the button.
+      expect(show(200, [70, 52, 52, 70])).toEqual([0, 1]);
+      expect(show(200, [52, 52, 70, 70])).toEqual([0, 1]);
+      expect(show(200, [52, 70, 70, 52])).toEqual([0, 1]);
+    });
+
+    it('is the first pills in order, as many as fit, and no later pill in place of one that did not: a tall pill stops the list', () => {
+      expect(show(180, [52, 88, 52, 52])).toEqual([0]);
+      expect(show(150, [88, 40, 40])).toEqual([0]);
+    });
+
+    it('is none when only the button fits, and none when not even that does', () => {
+      expect(show(50, [52, 52])).toEqual([]);
+      expect(show(48, [52, 52])).toEqual([]);
+      expect(show(10, [52, 52])).toEqual([]);
+      expect(show(200, [300])).toEqual([]);
+    });
+
+    it('takes the gap and the button as they are given', () => {
+      // No gap: three pills and a 48 px button are 204 px. With 16 px gaps and a 40 px button, two pills and the button are 176.
+      expect(show(204, [52, 52, 52, 52], [], 0, 48)).toEqual([0, 1, 2]);
+      expect(show(203, [52, 52, 52, 52], [], 0, 48)).toEqual([0, 1]);
+      expect(show(200, [52, 52, 52, 52], [], 16, 40)).toEqual([0, 1]);
+    });
+
+    it('is the same as a column where every pill has not ended, whether endedAt is given or left out', () => {
+      expect(show(171, [52, 52, 52], [null, null, null])).toEqual(show(171, [52, 52, 52]));
+    });
+  });
+
+  // Today's column, at 7:21 PM with six events over: what is on, and what is coming, comes before what is over.
+  describe('when some have ended, in today\'s column', () => {
+    it('shows every pill, ended ones too, when they all fit: nothing gives way to nothing', () => {
+      expect(show(600, [52, 52, 52, 52], [10, 20, null, null])).toEqual([0, 1, 2, 3]);
+      // Four pills and their gaps are 232 px: exactly that, and they all show.
+      expect(show(232, [52, 52, 52, 52], [10, 20, null, null])).toEqual([0, 1, 2, 3]);
+    });
+
+    it('starts dropping the pill that ended first the moment one pixel is missing, the button taking less than the pill it replaces', () => {
+      // Three pills and the button are 228 px: the two to come, and the one that ended last.
+      expect(show(231, [52, 52, 52, 52], [10, 20, null, null])).toEqual([1, 2, 3]);
+      expect(show(227, [52, 52, 52, 52], [10, 20, null, null])).toEqual([2, 3]);
+    });
+
+    it('drops the pills that have ended first, and shows those on or to come, in order', () => {
+      // Five pills, two ended: room for three and the button (3 x 60 + 48 = 228) is the three that are not over.
+      expect(show(228, [52, 52, 52, 52, 52], [10, 20, null, null, null])).toEqual([2, 3, 4]);
+    });
+
+    it('fills what room is left with the pills that ended last, each in its own place in the order', () => {
+      // Room for four and the button (288): the three that are not over, and the one that ended last (index 1, ended at 20).
+      expect(show(288, [52, 52, 52, 52, 52], [10, 20, null, null, null])).toEqual([1, 2, 3, 4]);
+      // Five pills and their gaps are 292 px; a pixel short of that the one that ended first is the one to go.
+      expect(show(291, [52, 52, 52, 52, 52], [10, 20, null, null, null])).toEqual([1, 2, 3, 4]);
+      expect(show(292, [52, 52, 52, 52, 52], [10, 20, null, null, null])).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('chooses the ended pills by when they ended, the latest first, and not by where they stand in the order', () => {
+      // Everything has ended, in a different order from the one the pills stand in; room for two and the button (168).
+      expect(show(168, [52, 52, 52, 52, 52], [50, 20, 40, 10, 30])).toEqual([0, 2]);
+      // Room for three and the button (228).
+      expect(show(228, [52, 52, 52, 52, 52], [50, 20, 40, 10, 30])).toEqual([0, 2, 4]);
+    });
+
+    it('is some of each: the pills that are not over, then the ended ones that ended last', () => {
+      // Six pills: indices 2, 3 and 5 are not over; 0, 1 and 4 are, and ended at 100, 200 and 150. Room for five and the button.
+      expect(show(348, [52, 52, 52, 52, 52, 52], [100, 200, null, null, 150, null])).toEqual([1, 2, 3, 4, 5]);
+      // Room for four and the button: the three that are not over, and the one that ended last.
+      expect(show(288, [52, 52, 52, 52, 52, 52], [100, 200, null, null, 150, null])).toEqual([1, 2, 3, 5]);
+    });
+
+    it('keeps the all-day pills, which stand first and never end, whatever else gives way', () => {
+      // An all-day pill, two that are over, and one to come: room for two and the button.
+      expect(show(168, [52, 52, 52, 52], [null, 10, 20, null])).toEqual([0, 3]);
+    });
+
+    it('never shows an ended pill while a pill that is on or to come is left out, whatever room that leaves', () => {
+      // An ended pill of 40 px, then a pill of 88 and one of 52 that are not over. Room for the 88 and the button leaves 50 px,
+      // and the 40 px pill that is over would fit in it; but the pill of 52 to come does not, so nothing that is over shows.
+      expect(show(194, [40, 88, 52], [10, null, null])).toEqual([1]);
+    });
+
+    it('fills with ended pills in the order of when they ended, and stops at the first that does not fit: a tall one keeps an older one out', () => {
+      // Two to come take 2 x 60 + 48 = 168 of 230; 62 px is left. The pill that ended last is 88 px and does not fit, so the
+      // older one of 40 px does not show in its place.
+      expect(show(230, [40, 88, 52, 52], [10, 20, null, null])).toEqual([2, 3]);
+      // The same room, and the pill that ended last is 40 px: it shows, and the older one of 88 px does not.
+      expect(show(230, [88, 40, 52, 52], [10, 20, null, null])).toEqual([1, 2, 3]);
+    });
+
+    it('is the pills to come that fit, in order, when even they do not all fit', () => {
+      expect(show(168, [52, 52, 52, 52, 52], [10, null, null, null, null])).toEqual([1, 2]);
+    });
+
+    it('is nothing but the button for a column where the first pill to come is too tall, ended pills or not', () => {
+      expect(show(100, [52, 88], [10, null])).toEqual([]);
+    });
+
+    it('moves on as the time moves past an event\'s end: the dinner is on now, and then it is over', () => {
+      const [today] = fiveDays(CHICAGO, NOW);
+      const standup = event('Standup', '2026-10-01T14:00:00Z', '2026-10-01T14:30:00Z');
+      const dinner = event('Family dinner', '2026-10-01T23:30:00Z', '2026-10-02T01:00:00Z');
+      const bookClub = event('Book club', '2026-10-02T01:00:00Z', '2026-10-02T02:00:00Z');
+      const showAt = (now: Date) => {
+        const [column] = scheduleColumns([standup, dinner, bookClub], [today!], now);
+        // Room for one pill and the button.
+        return show(108, [52, 52, 52], column!.pills.map((pill) => pill.endedAt));
+      };
+      // At 7:21 PM only the Standup is over: the dinner that is on now shows, and the book club does not fit.
+      expect(showAt(NOW)).toEqual([1]);
+      // At 8:01 PM the dinner is over too, so it gives way and the book club, on now, takes its place.
+      expect(showAt(new Date('2026-10-02T01:01:00Z'))).toEqual([2]);
+    });
   });
 });
 

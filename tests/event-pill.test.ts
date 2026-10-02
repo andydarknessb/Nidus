@@ -192,6 +192,13 @@ describe('an event pill', () => {
     expect(html).toContain('min-h-13');
   });
 
+  it('says when it ended, for the column to read with its height, only when it has', () => {
+    // Standup was 9:00 to 9:30 AM, over at 7:21 PM; the Family dinner is on now.
+    const over = pill(event('Standup', ['p-cory'], { starts_at: '2026-10-01T14:00:00Z', ends_at: '2026-10-01T14:30:00Z' }));
+    expect(over).toContain(`data-ended-at="${Date.parse('2026-10-01T14:30:00Z')}"`);
+    expect(pill(event('Family dinner', []))).not.toContain('data-ended-at');
+  });
+
   it('says the time under the title, with the AM or PM held to the time', () => {
     expect(pill(event('Family dinner', []))).toContain('6:30\u00a0PM');
   });
