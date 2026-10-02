@@ -54,6 +54,20 @@ describe('the status line', () => {
     expect(status.line()).toBe('');
   });
 
+  // A screen reader announces a change to the words, so the same words said twice would be heard once. Every saying counts,
+  // the line drawn is keyed on the count, and so it is a new line each time and is announced each time.
+  it('counts every saying, the same words again included, and does not count a line going', () => {
+    const status = createStatusLine();
+    expect(status.count()).toBe(0);
+    status.say('Added milk');
+    expect(status.count()).toBe(1);
+    status.say('Added milk');
+    expect(status.count()).toBe(2);
+    vi.advanceTimersByTime(STATUS_LINE_MS);
+    expect(status.line()).toBe('');
+    expect(status.count()).toBe(2);
+  });
+
   it('tells its listeners when the line changes and when it goes, until they stop listening', () => {
     const status = createStatusLine();
     const heard: string[] = [];
