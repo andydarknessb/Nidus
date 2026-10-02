@@ -20,6 +20,7 @@ import { localStore, writeLastMode } from './lib/mode';
 import { useForecast } from './lib/use-forecast';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useLightMode, useWallMode } from './lib/use-mode';
+import { useProfiles } from './lib/use-profiles';
 import { useRoutinesToday } from './lib/use-routines-today';
 import { MealsScreen } from './MealsPage';
 import { RoutinesChart } from './RoutinesPage';
@@ -214,12 +215,14 @@ function HomeShell({ owner }: { owner: boolean }) {
   useDocumentTitle(listsOpen ? 'Lists' : VIEW_TITLES[route.view]);
   // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
   // The context hands the pressed ids to every calendar view, a way to clear it to the Native Event
-  // sheet and a way to keep it open to the calendar; the chips prune it when the Profiles change. It says
+  // sheet and a way to keep it open to the calendar; reading the Profiles prunes it when they change. It says
   // its own clearing on the status line.
   const say = useStatusLine();
   const [filter] = useState(() => createProfileFilter(say));
   const pressed = useSyncExternalStore(filter.subscribe, filter.pressed);
   const filterView = useMemo(() => ({ pressed, clear: filter.clear, touch: filter.touch }), [pressed, filter]);
+  // The Household's Profiles, read once for the people strip and for the colour of every event.
+  const profiles = useProfiles(filter);
   useEffect(() => () => filter.dispose(), [filter]);
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
   const [adding, setAdding] = useState(false);
@@ -301,7 +304,7 @@ function HomeShell({ owner }: { owner: boolean }) {
             <BeforeHousehold label="Meals" failed={view.failed} words="Could not load meals. Check your connection." />
           )
         ) : route.view !== 'home' && timezone ? (
-          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} />
+          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day, Week or Month.
@@ -309,7 +312,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : (
         <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
           {timezone ? (
-            <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} />
+            <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
           ) : (
             <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
           )}

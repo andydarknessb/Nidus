@@ -1,0 +1,202 @@
+import { cn } from 'cn';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { canOpenDay, describeCell, pagingWindow, type Occurrence, type WallDay } from '../lib/calendar-occurrences';
+import type { Profile } from '../lib/profiles';
+import { WEEKDAYS } from '../lib/routines';
+import { pillPeople, pillsThatFit, scheduleColumns, type ScheduleColumn } from '../lib/schedule';
+import { useOccurrences } from '../lib/wall-hooks';
+import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
+import { EventPill } from './EventPill';
+import { EventSheets, type OpenEvent } from './EventSheets';
+import { Button } from './ui/button';
+import { DayWeather } from './Weather';
+
+// The schedule (docs/look.md, The parts): Home draws today and the next four days, Week Sunday to Saturday, each as a
+// column. A column is a heading that opens the day, the day's forecast under it (outside the button), and the day's
+// events as pills, all-day first, then by start, then by title. A column that cannot hold its pills draws as many as
+// fit and a "+N more" button that opens the day: nothing is ever clipped.
+
+// The "+N more" button is 3 rem tall (h-12), like the pills it takes the place of.
+const MORE_REM = 3;
+
+// A day's heading cell: the weekday over the date, which opens the day. Today says "Today" over the date in a --primary
+// disc. A day that cannot be opened (`onOpen` null: it lies beyond the calendar's range) is only a heading. 64 px tall,
+// and the forecast line, outside the button, makes it the 82 of the drawing.
+function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | null }) {
+  const date = Number(day.date.slice(8));
+  const words = (
+    <>
+      <span className={cn('text-sm leading-[18px]', day.isToday ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground')}>{day.isToday ? 'Today' : WEEKDAYS[day.weekday]!.short}</span>
+      {day.isToday ? (
+        <span className="grid size-[38px] place-items-center rounded-full bg-primary font-display text-[21px] leading-none text-primary-foreground">{date}</span>
+      ) : (
+        <span className="flex h-[38px] items-center font-display text-[28px] leading-none text-foreground">{date}</span>
+      )}
+    </>
+  );
+  return (
+    <h2 aria-current={onOpen ? undefined : day.isToday ? 'date' : undefined}>
+      {onOpen ? (
+        <Button
+          variant="quiet"
+          aria-current={day.isToday ? 'date' : undefined}
+          aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}, open day`}
+          onClick={onOpen}
+          className="h-16 w-full flex-col gap-0.5 rounded-[14px] px-0"
+        >
+          {words}
+        </Button>
+      ) : (
+        <span className="flex h-16 flex-col items-center justify-center gap-0.5">{words}</span>
+      )}
+    </h2>
+  );
+}
+
+// One day. Every pill is drawn in the column, in order, so that each can be measured: the ones past what fits are held
+// out of the flow, invisible and out of reach, and the button says how many. The count is measured again whenever the
+// column is drawn or resized, and when the fonts have loaded, which change how a title wraps.
+function DayColumn({
+  column,
+  profiles,
+  onOpenDay,
+  onOpen,
+  weather,
+  room,
+}: {
+  column: ScheduleColumn;
+  profiles: readonly Profile[];
+  onOpenDay: ((date: string) => void) | null;
+  onOpen: (occurrence: Occurrence) => void;
+  weather: ForecastDay | undefined;
+  room: boolean;
+}) {
+  const { day, pills } = column;
+  const list = useRef<HTMLDivElement>(null);
+  // How many pills fit: all of them until the column has been measured.
+  const [fit, setFit] = useState(pills.length);
+  const shown = Math.min(fit, pills.length);
+
+  const measure = useCallback(() => {
+    const element = list.current;
+    if (!element) return;
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    setFit(
+      pillsThatFit({
+        heightPx: element.getBoundingClientRect().height,
+        pillPx: [...element.querySelectorAll<HTMLElement>('[data-pill]')].map((pill) => pill.getBoundingClientRect().height),
+        gapPx: parseFloat(getComputedStyle(element).rowGap) || 0,
+        morePx: MORE_REM * rem,
+      }),
+    );
+  }, []);
+  useLayoutEffect(() => {
+    const element = list.current;
+    if (!element) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    // A font that arrives changes how a title wraps, and so how tall a pill is: measure once the fonts are ready, and
+    // again each time more of them load (the subset an accented title needs comes later).
+    let live = true;
+    void document.fonts.ready.then(() => live && measure());
+    document.fonts.addEventListener('loadingdone', measure);
+    return () => {
+      live = false;
+      observer.disconnect();
+      document.fonts.removeEventListener('loadingdone', measure);
+    };
+  }, [measure]);
+  // New events, a new minute and a new heading all come through a render; measuring is a read, and a count that has not
+  // changed is not a render.
+  useLayoutEffect(measure);
+
+  return (
+    <section aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`} className={cn('flex min-h-0 min-w-0 flex-col gap-2 rounded-[18px] p-1.5', day.isToday && 'bg-muted')}>
+      <div className="flex-none">
+        <ColumnHeading day={day} onOpen={onOpenDay && (() => onOpenDay(day.date))} />
+        {/* A line for the forecast while the Household has a place, empty for a day it does not cover, so a column is as tall before the forecast arrives as after. */}
+        {room && (
+          <div className="flex h-[18px] items-center justify-center">
+            <DayWeather day={weather} />
+          </div>
+        )}
+      </div>
+      <div ref={list} className="relative flex min-h-0 flex-1 flex-col gap-2">
+        {pills.map((pill, index) => (
+          <EventPill
+            key={pill.occurrence.id}
+            pill={pill}
+            day={day}
+            people={pillPeople(pill.occurrence, profiles)}
+            onOpen={onOpen}
+            className={index < shown ? undefined : 'invisible absolute inset-x-0 top-0'}
+          />
+        ))}
+        {shown < pills.length &&
+          (onOpenDay ? (
+            <Button variant="quiet" onClick={() => onOpenDay(day.date)} className="h-12 w-full rounded-[14px] px-0 text-sm font-medium">
+              +{pills.length - shown} more
+            </Button>
+          ) : (
+            <p className="flex h-12 items-center justify-center text-sm font-medium text-muted-foreground">+{pills.length - shown} more</p>
+          ))}
+      </div>
+    </section>
+  );
+}
+
+// The calendar of Home and Week: a column for each of `days`, reading what the Profile filter lets through. `version`
+// changes when the screen around the calendar has written an event, so it reads again at once; `forecast` is the
+// Household's weather and `weatherOn` says it has a place. `onOpenDay` opens a day from its heading, null when the
+// page's days are not to be opened; a day beyond the paging window is only a heading. `profiles` colour the pills: null
+// until they are read, and the pills wait for them.
+export function Schedule({
+  timezone,
+  now,
+  days,
+  version,
+  onOpenDay,
+  forecast,
+  weatherOn,
+  profiles,
+}: {
+  timezone: string;
+  now: Date;
+  days: WallDay[];
+  version: number;
+  onOpenDay: ((date: string) => void) | null;
+  forecast: Forecast | null;
+  weatherOn: boolean;
+  profiles: Profile[] | null;
+}) {
+  const [open, setOpen] = useState<OpenEvent>(null);
+  // An edit made here counts into `version`, so it reads again like an event added around the calendar.
+  const [edits, setEdits] = useState(0);
+  const { occurrences, failed } = useOccurrences(days, version + edits);
+  const pageWindow = pagingWindow(timezone, now);
+  const columns = scheduleColumns(profiles === null ? [] : (occurrences ?? []), days, now);
+
+  return (
+    <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col rounded-3xl bg-card p-2">
+      {failed && occurrences === null && (
+        <p role="alert" className="p-4 text-xl">
+          Could not load the calendar. Check your connection.
+        </p>
+      )}
+      <div style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-x-1.5">
+        {columns.map((column) => (
+          <DayColumn
+            key={column.day.date}
+            column={column}
+            profiles={profiles ?? []}
+            onOpenDay={onOpenDay && canOpenDay(column.day.date, pageWindow) ? onOpenDay : null}
+            onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })}
+            weather={forecastDay(forecast, column.day.date)}
+            room={weatherOn}
+          />
+        ))}
+      </div>
+      <EventSheets open={open} onChange={setOpen} timezone={timezone} date={days[0]!.date} onEdited={() => setEdits((count) => count + 1)} />
+    </section>
+  );
+}
