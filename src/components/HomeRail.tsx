@@ -1,14 +1,14 @@
 import type { RoutinesToday } from '../lib/use-routines-today';
 import { RoutinesRail } from '../RoutinesPage';
-import { PinnedListRail } from '../SharedListsPage';
+import { PinnedListCard } from '../SharedListsPage';
 
 // The Home screen's right-hand column: today's Routines above the pinned Shared List. `timezone` is
 // null until the Household is read, and `failed` says that read has failed, so the Routines card can
-// say so.
+// say so. `onOpenLists` opens the Lists screen, from the pinned list's link.
 //
 // The two share the right rail and keep 13 rem each (the pinned list's controls and an item need
 // that): past it the card shrinks and scrolls, so the wall never does.
-export function HomeRail({ timezone, routines, failed }: { timezone: string | null; routines: RoutinesToday; failed: boolean }) {
+export function HomeRail({ timezone, routines, failed, onOpenLists }: { timezone: string | null; routines: RoutinesToday; failed: boolean; onOpenLists: () => void }) {
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <div className="grid min-h-[27rem] flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
@@ -23,7 +23,7 @@ export function HomeRail({ timezone, routines, failed }: { timezone: string | nu
             )}
           </aside>
         )}
-        <PinnedListRail />
+        <PinnedListCard onOpenLists={onOpenLists} />
       </div>
     </div>
   );

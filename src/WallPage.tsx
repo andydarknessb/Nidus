@@ -25,7 +25,7 @@ import { useProfiles } from './lib/use-profiles';
 import { useRoutinesToday } from './lib/use-routines-today';
 import { MealsScreen } from './MealsPage';
 import { RoutinesChart } from './RoutinesPage';
-import { WallListsScreen } from './SharedListsPage';
+import { ListsScreen } from './SharedListsPage';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
 const HEARTBEAT_MS = 30_000;
@@ -169,7 +169,7 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
 
 // Which screen the address names. The wall pages with pushState rather than reloading, so a tap
 // never drops the session or the Routines rail, and Back returns to the previous page.
-function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void, (date: string | null) => void, () => void] {
+function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void, (date: string | null) => void, () => void, () => void] {
   const read = () => parseWallRoute(window.location.pathname, window.location.search);
   const [route, setRoute] = useState<WallRoute>(read);
   useEffect(() => {
@@ -182,7 +182,7 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
     if (path !== window.location.pathname + window.location.search) window.history.pushState(null, '', path);
     setRoute(read());
   };
-  return [route, (view, date) => go(wallPath(view, date)), () => go('/'), (date) => go(mealsPath(date)), () => go('/routines')];
+  return [route, (view, date) => go(wallPath(view, date)), () => go('/'), (date) => go(mealsPath(date)), () => go('/routines'), () => go('/lists')];
 }
 
 // What stands in for a screen until the Household has been read (its Timezone says which day every screen
@@ -201,19 +201,18 @@ function BeforeHousehold({ label, failed, words }: { label: string; failed: bool
 }
 
 // What each view of the Wall is called in the document's title.
-const VIEW_TITLES: Record<WallRoute['view'], string> = { home: 'Home', day: 'Day', week: 'Week', month: 'Month', routines: 'Routines', meals: 'Meals' };
+const VIEW_TITLES: Record<WallRoute['view'], string> = { home: 'Home', day: 'Day', week: 'Week', month: 'Month', routines: 'Routines', meals: 'Meals', lists: 'Lists' };
 
 // The landscape wall: a navigation rail down the left, then the header over the screen. The home
 // screen is the five-day calendar on the left and, on its right rail, today's Routines above the
-// pinned Shared List; the other lists open from the navigation rail. The header carries the next
-// meal, on every screen but Meals.
+// pinned Shared List; every list is on the Lists screen, opened from the navigation rail. The header
+// carries the next meal, on every screen but Meals.
 function HomeShell({ owner }: { owner: boolean }) {
-  const [route, openView, openHome, openMeals, openRoutines] = useWallRoute();
+  const [route, openView, openHome, openMeals, openRoutines, openLists] = useWallRoute();
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
-  const [listsOpen, setListsOpen] = useState(false);
-  // Each view names itself in the document's title; the Lists screen, which opens over them, does too.
-  useDocumentTitle(listsOpen ? 'Lists' : VIEW_TITLES[route.view]);
+  // Each view names itself in the document's title.
+  useDocumentTitle(VIEW_TITLES[route.view]);
   // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
   // The context hands the pressed ids to every calendar view, a way to clear it to the Native Event
   // sheet and a way to keep it open to the calendar; reading the Profiles prunes it when they change. It says
@@ -280,7 +279,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         onHome={openHome}
         onRoutines={openRoutines}
         onMeals={() => openMeals(null)}
-        onLists={() => setListsOpen(true)}
+        onLists={openLists}
         onAdd={() => setAdding(true)}
         onToggleMode={toggleMode}
       />
@@ -309,6 +308,9 @@ function HomeShell({ owner }: { owner: boolean }) {
           ) : (
             <BeforeHousehold label="Meals" failed={view.failed} words="Could not load meals. Check your connection." />
           )
+        ) : route.view === 'lists' ? (
+          // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
+          <ListsScreen />
         ) : route.view !== 'home' && timezone ? (
           <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
         ) : route.view !== 'home' ? (
@@ -322,10 +324,9 @@ function HomeShell({ owner }: { owner: boolean }) {
           ) : (
             <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
           )}
-          <HomeRail timezone={timezone} routines={routines} failed={view.failed} />
+          <HomeRail timezone={timezone} routines={routines} failed={view.failed} onOpenLists={openLists} />
         </div>
         )}
-        {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
         {adding && timezone && today && (
           <NativeEventSheet
             timezone={timezone}
