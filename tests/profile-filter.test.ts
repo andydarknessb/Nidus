@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Occurrence } from '../src/lib/calendar-occurrences';
-import { createProfileFilter, filterOccurrences, FILTER_CLEARED_WORDS, prunePressed } from '../src/lib/profile-filter';
+import { onCalendarScreen, type Occurrence, type WallRoute } from '../src/lib/calendar-occurrences';
+import { createProfileFilter, filterOccurrences, FILTER_CLEARED_WORDS, prunePressed, sayOnCalendar } from '../src/lib/profile-filter';
 
 // The Profile filter: which occurrences the pressed Profiles keep, which pressed ids survive a
 // Profile being deleted, and the state holder that clears itself two minutes after the last touch
@@ -345,6 +345,57 @@ describe('createProfileFilter', () => {
       filter.toggle('ben');
       vi.advanceTimersByTime(2 * 60_000);
       expect(said).toEqual([FILTER_CLEARED_WORDS, FILTER_CLEARED_WORDS]);
+    });
+  });
+
+  // The filter lives as long as the shell and clears wherever the Wall is, but "Showing everyone's events again" is about events: it is
+  // said on the screens that show them (the ones the people strip is on) and on no other.
+  describe('saying so, by screen', () => {
+    const screens: WallRoute['view'][] = ['home', 'day', 'week', 'month', 'routines', 'meals', 'lists'];
+    const calendar: WallRoute['view'][] = ['home', 'day', 'week', 'month'];
+
+    it('counts Home, Day, Week and Month as the calendar screens, and nothing else', () => {
+      expect(screens.filter(onCalendarScreen)).toEqual(calendar);
+    });
+
+    it('says its clearing on a calendar screen and on no other, and clears on every one', () => {
+      for (const view of screens) {
+        const said: string[] = [];
+        const filter = createProfileFilter(sayOnCalendar((words) => said.push(words), () => view));
+        filter.toggle('ada');
+        vi.advanceTimersByTime(2 * 60_000);
+        expect(filter.pressed(), view).toEqual([]);
+        expect(said, view).toEqual(calendar.includes(view) ? [FILTER_CLEARED_WORDS] : []);
+        filter.dispose();
+      }
+    });
+
+    it('looks at the screen the Wall is on when the time is up, not the one the Profile was pressed on', () => {
+      let view: WallRoute['view'] = 'home';
+      const said: string[] = [];
+      const filter = createProfileFilter(sayOnCalendar((words) => said.push(words), () => view));
+      filter.toggle('ada');
+      vi.advanceTimersByTime(60_000);
+      // The Wall moves on to Lists, and the filter clears there with nothing said.
+      view = 'lists';
+      vi.advanceTimersByTime(60_000);
+      expect(filter.pressed()).toEqual([]);
+      expect(said).toEqual([]);
+      // Pressed again on Home and left on Week, it says it there.
+      view = 'home';
+      filter.toggle('ben');
+      view = 'week';
+      vi.advanceTimersByTime(2 * 60_000);
+      expect(said).toEqual([FILTER_CLEARED_WORDS]);
+    });
+
+    it('says nothing of its own: nothing is said when someone clears it, on any screen', () => {
+      const said: string[] = [];
+      const filter = createProfileFilter(sayOnCalendar((words) => said.push(words), () => 'home'));
+      filter.toggle('ada');
+      filter.clear();
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(said).toEqual([]);
     });
   });
 });

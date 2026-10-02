@@ -241,6 +241,12 @@ export function wallPath(view: CalendarView, date: string): string {
   return `/${view}?date=${date}`;
 }
 
+// Whether `view` shows the calendar's events: Home, Day, Week and Month. The people strip is on these and on no other screen, and so
+// is what the Profile filter says (profile-filter.ts): Meals, Routines and Lists have no events for it to hide.
+export function onCalendarScreen(view: WallRoute['view']): boolean {
+  return view === 'home' || view === 'day' || view === 'week' || view === 'month';
+}
+
 // The Meals screen's address: no date for this week, which the screen then follows as the weeks turn
 // (a Wall left on it moves on at Saturday midnight), else the Sunday its week is anchored on.
 export function mealsPath(date: string | null): string {

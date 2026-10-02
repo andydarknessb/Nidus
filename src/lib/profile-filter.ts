@@ -1,5 +1,5 @@
 import { createContext } from 'react';
-import type { Occurrence } from './calendar-occurrences';
+import { onCalendarScreen, type Occurrence, type WallRoute } from './calendar-occurrences';
 import type { Profile } from './profiles';
 
 // The Profile filter on the Wall (CONTEXT.md: Profile): tap a name on the people strip and the calendar shows that
@@ -50,6 +50,16 @@ export type ProfileFilter = {
   // Stops the timer, for when the screen that held the filter is gone.
   dispose(): void;
 };
+
+// What the shell gives the filter to say with: the status line, but only while a calendar screen is up (Home, Day, Week or Month), the
+// screens that show the events the filter hides. The filter lives as long as the shell and clears wherever the Wall is; on Meals, Routines
+// and Lists it clears with nothing said, since "Showing everyone's events again" would be about events that are not on the screen.
+// `view` is read when the time is up: the screen the Wall is on then, not the one the Profile was pressed on.
+export function sayOnCalendar(say: (words: string) => void, view: () => WallRoute['view']): (words: string) => void {
+  return (words) => {
+    if (onCalendarScreen(view())) say(words);
+  };
+}
 
 // `say` is the status line: the filter says its own clearing when the two minutes are up, and nothing when someone
 // clears it, lets the last Profile go or a Profile is deleted, who know already.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
@@ -11,11 +11,11 @@ import { PeopleStrip } from './components/PeopleStrip';
 import { StatusLineProvider } from './components/StatusLine';
 import { WallHeader, WallTime } from './components/WallHeader';
 import { useChangeTick } from './lib/change-feed';
-import { mealsPath, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
+import { mealsPath, onCalendarScreen, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
 import { householdDay } from './lib/routines';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { deviceStorage, gateWords, recallHousehold, rememberHousehold } from './lib/remembered-household';
-import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
+import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useStatusLine } from './lib/status-line';
 import { localStore, writeLastMode } from './lib/mode';
@@ -235,9 +235,13 @@ function HomeShell({ owner }: { owner: boolean }) {
   // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
   // The context hands the pressed ids to every calendar view, a way to clear it to the Native Event
   // sheet and a way to keep it open to the calendar; reading the Profiles prunes it when they change. It says
-  // its own clearing on the status line.
+  // its own clearing on the status line, on the calendar screens and no other: it reads the screen when the time is up.
   const say = useStatusLine();
-  const [filter] = useState(() => createProfileFilter(say));
+  const screen = useRef(route.view);
+  useEffect(() => {
+    screen.current = route.view;
+  });
+  const [filter] = useState(() => createProfileFilter(sayOnCalendar(say, () => screen.current)));
   const pressed = useSyncExternalStore(filter.subscribe, filter.pressed);
   const filterView = useMemo(() => ({ pressed, clear: filter.clear, touch: filter.touch }), [pressed, filter]);
   // The Household's Profiles, read once for the people strip and for the colour of every event.
@@ -287,7 +291,7 @@ function HomeShell({ owner }: { owner: boolean }) {
 
   const today = timezone ? householdDay(timezone).date : null;
   // The people strip is for the calendar screens (Home, Day, Week and Month), and for no other.
-  const onCalendar = route.view === 'home' || route.view === 'day' || route.view === 'week' || route.view === 'month';
+  const onCalendar = onCalendarScreen(route.view);
 
   return (
     <main className="grid h-svh grid-cols-[6rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
