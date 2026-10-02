@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { canOpenDay, describeCell, pagingWindow, type Occurrence, type WallDay } from '../lib/calendar-occurrences';
+import { focusElement, focusEvent } from '../lib/focus';
 import type { Profile } from '../lib/profiles';
 import { dayHeadingName, headingLabel, pillPeople, pillsToShow, scheduleColumns, type ScheduleColumn } from '../lib/schedule';
 import { useOccurrences } from '../lib/wall-hooks';
@@ -21,7 +22,7 @@ const MORE_REM = 3;
 // A day's heading cell: the weekday over the date, which opens the day. Today says "Today" over the date in a --primary
 // disc. The button is named by what is drawn on it ("Fri 2, open day"). A day that cannot be opened (`onOpen` null: it lies
 // beyond the calendar's range) is only a heading. 64 px tall, and the forecast line, outside the button, makes it the 82 of
-// the drawing.
+// the drawing. `data-day` is the date, so focus can be put back on the heading of the day an event was on (lib/focus.ts).
 function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | null }) {
   const date = Number(day.date.slice(8));
   const words = (
@@ -39,6 +40,7 @@ function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | n
       {onOpen ? (
         <Button
           variant="quiet"
+          data-day={day.date}
           aria-current={day.isToday ? 'date' : undefined}
           aria-label={dayHeadingName(day)}
           onClick={onOpen}
@@ -47,7 +49,9 @@ function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | n
           {words}
         </Button>
       ) : (
-        <span className="flex h-16 flex-col items-center justify-center gap-0.5">{words}</span>
+        <span data-day={day.date} tabIndex={-1} className="flex h-16 flex-col items-center justify-center gap-0.5">
+          {words}
+        </span>
       )}
     </h2>
   );
@@ -178,6 +182,8 @@ export function Schedule({
   const { occurrences, failed } = useOccurrences(days, version + edits);
   const pageWindow = pagingWindow(timezone, now);
   const columns = scheduleColumns(profiles === null ? [] : (occurrences ?? []), days, now);
+  // The day of the column the event that a sheet is open for was tapped in: where focus goes if that event is not on the screen any more.
+  const openedOn = useRef(days[0]!.date);
 
   return (
     <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col rounded-3xl bg-card p-2">
@@ -193,13 +199,28 @@ export function Schedule({
             column={column}
             profiles={profiles ?? []}
             onOpenDay={onOpenDay && canOpenDay(column.day.date, pageWindow) ? onOpenDay : null}
-            onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })}
+            onOpen={(occurrence) => {
+              openedOn.current = column.day.date;
+              setOpen({ sheet: 'details', occurrence });
+            }}
             weather={forecastDay(forecast, column.day.date)}
             room={weatherOn}
           />
         ))}
       </div>
-      <EventSheets open={open} onChange={setOpen} timezone={timezone} date={days[0]!.date} onEdited={() => setEdits((count) => count + 1)} />
+      <EventSheets
+        open={open}
+        onChange={setOpen}
+        timezone={timezone}
+        date={days[0]!.date}
+        profiles={profiles ?? []}
+        occurrences={occurrences}
+        onEdited={() => setEdits((count) => count + 1)}
+        // After an event is deleted from its sheet, or moved by an edit: to its pill if it is still in a column, else the heading of its day.
+        returnFocus={(occurrence) => {
+          if (!focusEvent(occurrence.id)) focusElement(document.querySelector<HTMLElement>(`[data-day="${openedOn.current}"]`));
+        }}
+      />
     </section>
   );
 }

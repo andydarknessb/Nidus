@@ -62,18 +62,22 @@ const holdTime = (time: string) => time.replace(/ ([AP]M)$/, '\u00a0$1');
 // when the time's words and the discs do not fit together ("Until 12:30 PM" and two discs), so nothing is ever clipped or
 // overlapped. A Native Event has the pin before its title. The timed event that is on now has a 2.5 px inset ring in
 // --foreground, drawn over the fill as a shape of its own so the focus ring (the outline) stays free for the keyboard.
-// `className` is for the column that holds a pill it is not drawing: it is still measured.
+// `className` is for the column that holds a pill it is not drawing: it is still measured. `lines` is how many lines the
+// title may take: two, or one for a row that is exactly one pill tall (the Day view's rows above and below its grid).
+// `data-event` is the event's id, so focus can be put back on its pill when a sheet it opened has closed (lib/focus.ts).
 export function EventPill({
   pill,
   day,
   people,
   onOpen,
+  lines = 2,
   className,
 }: {
   pill: Pill;
   day: WallDay;
   people: PillPeople;
   onOpen: (occurrence: Occurrence) => void;
+  lines?: 1 | 2;
   className?: string | undefined;
 }) {
   const { occurrence } = pill;
@@ -81,6 +85,7 @@ export function EventPill({
     <Button
       variant="quiet"
       data-pill
+      data-event={occurrence.id}
       data-ended-at={pill.endedAt ?? undefined}
       aria-label={pillName(pill, day, people)}
       onClick={() => onOpen(occurrence)}
@@ -90,7 +95,7 @@ export function EventPill({
       )}
     >
       <EventFill people={people} />
-      <span className="relative line-clamp-2 text-[15px] text-ellipsis leading-[19px] font-semibold">
+      <span className={cn('relative text-[15px] text-ellipsis leading-[19px] font-semibold', lines === 1 ? 'line-clamp-1' : 'line-clamp-2')}>
         {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="mr-1 inline size-3.5 align-[-2px]" />}
         {occurrence.title}
       </span>

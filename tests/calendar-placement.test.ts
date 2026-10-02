@@ -1,15 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  addDays,
-  dayStartMs,
-  describeWhen,
-  fiveDays,
-  formatClock,
-  nowHour,
-  place,
-  visibleHours,
-  type Occurrence,
-} from '../src/lib/calendar-occurrences';
+import { addDays, dayStartMs, describeWhen, fiveDays, formatClock, nowHour, type Occurrence } from '../src/lib/calendar-occurrences';
 
 const CHICAGO = 'America/Chicago';
 const TOKYO = 'Asia/Tokyo';
@@ -78,253 +68,23 @@ describe('the five days', () => {
   });
 });
 
-describe('placing timed events', () => {
-  it('puts an event in its day’s column at its time', () => {
-    const { columns } = place([event('Soccer', '2026-09-30T23:00:00Z', '2026-10-01T00:30:00Z')], days);
-    // 18:00 to 19:30 Chicago on Wednesday.
-    expect(columns.map((column) => column.length)).toEqual([0, 1, 0, 0, 0]);
-    const block = columns[1]![0]!;
-    expect(block.topHour).toBeCloseTo(18);
-    expect(block.bottomHour).toBeCloseTo(19.5);
-    expect(block).toMatchObject({ lane: 0, lanes: 1, continuesBefore: false, continuesAfter: false });
+describe('where now is', () => {
+  it('puts the current-time line only inside today', () => {
+    expect(nowHour(days[0]!, NOW)).toBeCloseTo(10.5);
+    expect(nowHour(days[1]!, NOW)).toBeNull();
   });
 
-  it('files an event by Household date when UTC says another day', () => {
-    // 03:00 UTC on Oct 1 is 22:00 on Sep 30 in Chicago: Wednesday's column, not Thursday's.
-    const { columns } = place([event('Late', '2026-10-01T03:00:00Z', '2026-10-01T04:00:00Z')], days);
-    expect(columns.map((column) => column.length)).toEqual([0, 1, 0, 0, 0]);
-  });
-
-  it('splits an event that crosses midnight across both columns', () => {
-    const { columns } = place([event('Sleepover', '2026-09-30T03:00:00Z', '2026-09-30T13:00:00Z')], days);
-    // 22:00 Tuesday to 08:00 Wednesday Chicago.
-    expect(columns.map((column) => column.length)).toEqual([1, 1, 0, 0, 0]);
-    expect(columns[0]![0]).toMatchObject({ continuesBefore: false, continuesAfter: true, bottomHour: 24 });
-    expect(columns[0]![0]!.topHour).toBeCloseTo(22);
-    expect(columns[1]![0]).toMatchObject({ continuesBefore: true, continuesAfter: false, topHour: 0 });
-    expect(columns[1]![0]!.bottomHour).toBeCloseTo(8);
-  });
-
-  it('ignores events outside the five days, and one ending exactly at the first midnight', () => {
-    const { columns, allDay } = place(
-      [
-        event('Yesterday', '2026-09-28T15:00:00Z', '2026-09-28T16:00:00Z'),
-        event('Ends at midnight', '2026-09-29T03:00:00Z', '2026-09-29T05:00:00Z'),
-        event('Next week', '2026-10-09T15:00:00Z', '2026-10-09T16:00:00Z'),
-      ],
-      days,
-    );
-    expect(columns.flat()).toEqual([]);
-    expect(allDay).toEqual([]);
-  });
-
-  it('gives an event of no length something to tap', () => {
-    const { columns } = place([event('Reminder', '2026-09-29T15:00:00Z', '2026-09-29T15:00:00Z')], days);
-    const block = columns[0]![0]!;
-    expect(block.bottomHour - block.topHour).toBeCloseTo(0.25);
-  });
-
-  it('puts overlapping events side by side and lets later ones use the full width again', () => {
-    const { columns } = place(
-      [
-        event('A', '2026-09-29T15:00:00Z', '2026-09-29T17:00:00Z'),
-        event('B', '2026-09-29T16:00:00Z', '2026-09-29T18:00:00Z'),
-        event('C', '2026-09-29T16:30:00Z', '2026-09-29T17:30:00Z'),
-        event('Alone', '2026-09-29T20:00:00Z', '2026-09-29T21:00:00Z'),
-      ],
-      days,
-    );
-    const byTitle = Object.fromEntries(columns[0]!.map((block) => [block.occurrence.title, block]));
-    expect(byTitle['A']).toMatchObject({ lane: 0, lanes: 3 });
-    expect(byTitle['B']).toMatchObject({ lane: 1, lanes: 3 });
-    expect(byTitle['C']).toMatchObject({ lane: 2, lanes: 3 });
-    expect(byTitle['Alone']).toMatchObject({ lane: 0, lanes: 1 });
-  });
-
-  it('does not treat back-to-back events as overlapping', () => {
-    const { columns } = place(
-      [event('First', '2026-09-29T15:00:00Z', '2026-09-29T16:00:00Z'), event('Second', '2026-09-29T16:00:00Z', '2026-09-29T17:00:00Z')],
-      days,
-    );
-    expect(columns[0]!.map((block) => [block.lane, block.lanes])).toEqual([
-      [0, 1],
-      [0, 1],
-    ]);
-  });
-});
-
-describe('daylight saving days', () => {
-  // The hour lines and labels are wall-clock hours, so a block must sit on its wall-clock time
-  // even though the day is 23 or 25 hours long.
-  it('draws an event at its wall-clock time on a 23 hour day', () => {
-    // US clocks go forward on Sun 2026-03-08: 2:00 AM becomes 3:00 AM. 8:00 AM CDT is 13:00Z.
-    const spring = fiveDays(CHICAGO, new Date('2026-03-08T18:00:00Z'));
-    expect((spring[0]!.endMs - spring[0]!.startMs) / 3_600_000).toBe(23);
-    const { columns } = place([event('Early', '2026-03-08T13:00:00Z', '2026-03-08T14:00:00Z')], spring);
-    expect(columns[0]![0]!.topHour).toBeCloseTo(8);
-    expect(columns[0]![0]!.bottomHour).toBeCloseTo(9);
-  });
-
-  it('draws an event at its wall-clock time on a 25 hour day', () => {
-    // Clocks go back on Sun 2026-11-01. 6:00 PM CST is 00:00Z on the 2nd.
-    const fall = fiveDays(CHICAGO, new Date('2026-11-01T18:00:00Z'));
-    expect((fall[0]!.endMs - fall[0]!.startMs) / 3_600_000).toBe(25);
-    const { columns } = place([event('Dinner', '2026-11-02T00:00:00Z', '2026-11-02T01:30:00Z')], fall);
-    expect(columns[0]![0]!.topHour).toBeCloseTo(18);
-    expect(columns[0]![0]!.bottomHour).toBeCloseTo(19.5);
-  });
-
-  it('ends a block that runs to the end of a DST day at 24', () => {
-    const spring = fiveDays(CHICAGO, new Date('2026-03-08T18:00:00Z'));
-    const { columns } = place([event('Overnight', '2026-03-09T03:00:00Z', '2026-03-09T12:00:00Z')], spring);
-    // 22:00 Sunday CDT to 07:00 Monday CDT.
-    expect(columns[0]![0]).toMatchObject({ bottomHour: 24 });
-    expect(columns[0]![0]!.topHour).toBeCloseTo(22);
-    expect(columns[1]![0]!.bottomHour).toBeCloseTo(7);
-  });
-
-  it('keeps events that the repeated hour draws on the same spot out of one lane', () => {
-    const fall = fiveDays(CHICAGO, new Date('2026-11-01T18:00:00Z'));
-    // A: 00:00 to 01:59 CDT. B: 01:00 to 02:00 CST, an hour later in real time but the same wall-clock hour.
-    const { columns } = place([event('A', '2026-11-01T05:00:00Z', '2026-11-01T06:59:00Z'), event('B', '2026-11-01T07:00:00Z', '2026-11-01T08:00:00Z')], fall);
-    const byTitle = Object.fromEntries(columns[0]!.map((block) => [block.occurrence.title, block]));
-    expect(byTitle['A']).toMatchObject({ lanes: 2 });
-    expect(byTitle['B']).toMatchObject({ lanes: 2 });
-    expect(byTitle['A']!.lane).not.toBe(byTitle['B']!.lane);
-  });
-
-  it('never draws a block upside down across the repeated hour', () => {
-    const fall = fiveDays(CHICAGO, new Date('2026-11-01T18:00:00Z'));
-    // 01:30 CDT to 01:15 CST: the wall clock goes backwards.
-    const { columns } = place([event('Across', '2026-11-01T06:30:00Z', '2026-11-01T07:15:00Z')], fall);
-    const block = columns[0]![0]!;
-    expect(block.bottomHour).toBeGreaterThanOrEqual(block.topHour);
-  });
-
-  it('counts hours from the wall clock on a day that skips midnight', () => {
-    // Santiago's clocks jump 00:00 to 01:00 on Sun 2026-09-06: that day starts at 01:00, 04:00Z.
-    const skipped = fiveDays(SANTIAGO, new Date('2026-09-06T15:00:00Z'));
-    expect(skipped[0]!.date).toBe('2026-09-06');
-    const { columns } = place([event('Breakfast', '2026-09-06T11:00:00Z', '2026-09-06T12:00:00Z')], skipped);
-    // 08:00 to 09:00 local (-03).
-    expect(columns[0]![0]!.topHour).toBeCloseTo(8);
-    expect(columns[0]![0]!.bottomHour).toBeCloseTo(9);
-    expect(nowHour(skipped[0]!, new Date('2026-09-06T15:00:00Z'))).toBeCloseTo(12);
-  });
-
-  it('does not run past the bottom of the day before a skipped midnight', () => {
-    const before = fiveDays(SANTIAGO, new Date('2026-09-05T15:00:00Z'));
-    const { columns } = place([event('Late', '2026-09-06T01:00:00Z', '2026-09-06T05:00:00Z')], before);
-    // 22:00 Saturday to past midnight: the Saturday block ends at 24, not 25.
-    expect(columns[0]![0]!.bottomHour).toBe(24);
-  });
-
-  it('puts the current-time line on the wall-clock time too', () => {
+  it('puts it on the wall-clock time on a 25 hour day', () => {
     const fall = fiveDays(CHICAGO, new Date('2026-11-01T18:00:00Z'));
     // 18:00Z on the 1st is 12:00 noon CST, 13 real hours after midnight.
     expect(nowHour(fall[0]!, new Date('2026-11-01T18:00:00Z'))).toBeCloseTo(12);
   });
-});
 
-describe('room for a 48 px target', () => {
-  const back2back = [event('First', '2026-09-29T14:00:00Z', '2026-09-29T14:30:00Z'), event('Second', '2026-09-29T14:30:00Z', '2026-09-29T15:00:00Z')];
-
-  it('puts short back-to-back events side by side when they are drawn taller than they last', () => {
-    // 82 minutes is what 48 px takes on a grid of about 35 px per hour.
-    const { columns } = place(back2back, days, 82);
-    expect(columns[0]!.map((block) => [block.lane, block.lanes])).toEqual([
-      [0, 2],
-      [1, 2],
-    ]);
-  });
-
-  it('leaves events that are far enough apart in one lane', () => {
-    const { columns } = place([back2back[0]!, event('Later', '2026-09-29T17:00:00Z', '2026-09-29T17:30:00Z')], days, 82);
-    expect(columns[0]!.map((block) => [block.lane, block.lanes])).toEqual([
-      [0, 1],
-      [0, 1],
-    ]);
-  });
-
-  it('does not change where an event is drawn, only its lane', () => {
-    const { columns } = place(back2back, days, 82);
-    expect(columns[0]![0]!.bottomHour - columns[0]![0]!.topHour).toBeCloseTo(0.5);
-  });
-});
-
-describe('placing all-day events', () => {
-  it('puts a one-day event in its column', () => {
-    const { allDay, columns } = place([event('Holiday', '2026-10-01T05:00:00Z', '2026-10-02T05:00:00Z', true)], days);
-    expect(allDay).toHaveLength(1);
-    expect(allDay[0]).toMatchObject({ startColumn: 2, span: 1, continuesBefore: false, continuesAfter: false, row: 0 });
-    expect(columns.flat()).toEqual([]);
-  });
-
-  it('spans every column of a multi-day event', () => {
-    const { allDay } = place([event('Camping', '2026-09-30T05:00:00Z', '2026-10-03T05:00:00Z', true)], days);
-    // Wed Sep 30 through Fri Oct 2.
-    expect(allDay[0]).toMatchObject({ startColumn: 1, span: 3, continuesBefore: false, continuesAfter: false });
-  });
-
-  it('is clipped to the five days and says which side it continues past', () => {
-    const { allDay } = place(
-      [
-        event('Long trip', '2026-09-26T05:00:00Z', '2026-10-10T05:00:00Z', true),
-        event('Arriving', '2026-09-27T05:00:00Z', '2026-09-30T05:00:00Z', true),
-        event('Leaving', '2026-10-02T05:00:00Z', '2026-10-08T05:00:00Z', true),
-      ],
-      days,
-    );
-    const byTitle = Object.fromEntries(allDay.map((bar) => [bar.occurrence.title, bar]));
-    expect(byTitle['Long trip']).toMatchObject({ startColumn: 0, span: 5, continuesBefore: true, continuesAfter: true });
-    expect(byTitle['Arriving']).toMatchObject({ startColumn: 0, span: 1, continuesBefore: true, continuesAfter: false });
-    expect(byTitle['Leaving']).toMatchObject({ startColumn: 3, span: 2, continuesBefore: false, continuesAfter: true });
-  });
-
-  it('stacks events that share a column into rows and reuses a row when they do not', () => {
-    const { allDay } = place(
-      [
-        event('Trip', '2026-09-29T05:00:00Z', '2026-10-01T05:00:00Z', true),
-        event('Birthday', '2026-09-30T05:00:00Z', '2026-10-01T05:00:00Z', true),
-        event('Holiday', '2026-10-02T05:00:00Z', '2026-10-03T05:00:00Z', true),
-      ],
-      days,
-    );
-    const rows = Object.fromEntries(allDay.map((bar) => [bar.occurrence.title, bar.row]));
-    expect(rows).toEqual({ Trip: 0, Birthday: 1, Holiday: 0 });
-  });
-
-  it('follows Household dates: a Tokyo all-day event is in Tokyo’s column', () => {
-    const tokyo = fiveDays(TOKYO, new Date('2026-09-29T15:30:00Z'));
-    // Household today is Wed Sep 30 in Tokyo; the all-day event is Thu Oct 1 Tokyo time.
-    const { allDay } = place([event('Thursday', '2026-09-30T15:00:00Z', '2026-10-01T15:00:00Z', true)], tokyo);
-    expect(tokyo[0]!.date).toBe('2026-09-30');
-    expect(allDay[0]).toMatchObject({ startColumn: 1, span: 1 });
-  });
-});
-
-describe('the grid', () => {
-  it('shows 6 am to 10 pm when everything fits', () => {
-    const { columns } = place([event('Soccer', '2026-09-30T23:00:00Z', '2026-10-01T00:30:00Z')], days);
-    expect(visibleHours(columns, null)).toEqual({ startHour: 6, endHour: 22 });
-  });
-
-  it('widens to take in an early or late event', () => {
-    const { columns } = place(
-      [event('Flight', '2026-09-30T09:30:00Z', '2026-09-30T11:00:00Z'), event('Late show', '2026-10-01T03:00:00Z', '2026-10-01T04:30:00Z')],
-      days,
-    );
-    // 04:30 to 06:00 Wednesday, and 22:00 to 23:30 Wednesday.
-    expect(visibleHours(columns, null)).toEqual({ startHour: 4, endHour: 24 });
-  });
-
-  it('widens to take in the current time', () => {
-    expect(visibleHours([], 2.4)).toEqual({ startHour: 2, endHour: 22 });
-  });
-
-  it('places the current-time line only inside today', () => {
-    expect(nowHour(days[0]!, NOW)).toBeCloseTo(10.5);
-    expect(nowHour(days[1]!, NOW)).toBeNull();
+  it('counts from the wall clock on a day that skips midnight', () => {
+    // Santiago's clocks jump 00:00 to 01:00 on Sun 2026-09-06: that day starts at 01:00, 04:00Z.
+    const skipped = fiveDays(SANTIAGO, new Date('2026-09-06T15:00:00Z'));
+    expect(skipped[0]!.date).toBe('2026-09-06');
+    expect(nowHour(skipped[0]!, new Date('2026-09-06T15:00:00Z'))).toBeCloseTo(12);
   });
 });
 

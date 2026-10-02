@@ -154,6 +154,10 @@ describe('an event pill', () => {
     expect(html).toContain(`aria-label="${name}"`);
   });
 
+  it('says which event it is, so focus can be put back on it when a sheet it opened has closed', () => {
+    expect(pill(event('Piano', ['p-ava']))).toContain('data-event="event-Piano"');
+  });
+
   it('has the pin before the title of a Native Event, and no pin on a Synced Event', () => {
     const native = pill(event('Plumber coming', [], { source: 'native', calendar_id: null, calendar_name: 'Nidus' }));
     expect(native).toContain('data-testid="native-mark"');
