@@ -6,7 +6,10 @@ import type { ComponentProps } from 'react';
 // The one button (docs/look.md, The parts). Four voices: primary (--primary; one to a screen), secondary (--muted),
 // quiet (no fill, --muted-foreground) and delete (--destructive). Two sizes: the Wall's and the phone's. Pressed, a
 // button dips; secondary and quiet also take --accent, while primary and delete keep their fill so their words keep
-// their contrast. Switched off it is 40% and cannot be tapped. The focus ring is the base rule's in index.css, so
+// their contrast. Switched off it is 40% and cannot be tapped: `disabled`, or `aria-disabled` for a button that has or may have
+// focus (one that is busy with the write it started), since a button that is disabled while it has focus drops it to the page.
+// An aria-disabled button is drawn the same and does not dip, its handler ignores the press, and it still takes a tap, so the
+// tap does not move the focus off it either. The focus ring is the base rule's in index.css, so
 // there is none here. A button that is not a rectangle (a round switch, an icon over a word) sets its own shape
 // with `className`, which wins over what is set here.
 //
@@ -17,7 +20,7 @@ import type { ComponentProps } from 'react';
 const selected = 'selected:bg-accent selected:font-semibold selected:text-foreground selected:ring-2 selected:ring-foreground selected:ring-inset';
 
 const buttonVariants = cva(
-  'inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl text-base font-semibold whitespace-nowrap transition-[transform,background-color] duration-75 select-none active:translate-y-0.5 disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=size-])]:size-5',
+  'inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl text-base font-semibold whitespace-nowrap transition-[transform,background-color] duration-75 select-none active:translate-y-0.5 disabled:pointer-events-none disabled:opacity-40 aria-disabled:opacity-40 aria-disabled:active:translate-y-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=size-])]:size-5',
   {
     variants: {
       variant: {

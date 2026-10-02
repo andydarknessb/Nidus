@@ -106,9 +106,13 @@ describe('the Appearance section: what the last save did', () => {
   });
 
   it('says so, as an alert and not as Saved., when a save did not go through', () => {
-    expect(alert({ status: 'failed' })?.words).toBe('Could not save. Try again.');
+    expect(alert({ status: 'failed' })?.words).toBe('That did not save. Try again.');
     expect(statusLine({ status: 'failed' })?.words).toBe('');
     expect(render({ status: 'failed' })).not.toContain('Saved.');
+  });
+
+  it('says what it is told when a save did not go through, as the Wall does with no connection', () => {
+    expect(alert({ status: 'failed', words: 'No internet, so that did not save. Try again soon.' })?.words).toBe('No internet, so that did not save. Try again soon.');
   });
 });
 

@@ -7,7 +7,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type Profile = { id: string; name: string; color: string; avatar_url: string | null; sort_order: number };
 
-export type ProfileInput = { name: string; color: string; avatar_url: string | null };
+// What the phone writes for a person: a name and a colour. The picture address left the form in v3 and its column stays, so
+// nothing the app does writes it: `avatar_url` is optional, and a write that leaves it out leaves what is stored alone, which
+// is what an edit does. Only a test sets it, to have a picture address to leave alone.
+export type ProfileInput = { name: string; color: string; avatar_url?: string | null };
 
 // The fixed palette every later feature colours from. Tailwind's 300 shades, the step a
 // Profile stores: look.ts takes the other steps of each family from it, and
@@ -76,10 +79,18 @@ export function movedIds(ids: string[], id: string, offset: number): string[] {
   return next;
 }
 
-// A blank avatar field means no avatar.
-export function cleanAvatarUrl(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
+// The colour a new person starts on: the one the fewest people have, and the first in the palette among those tied. So it is the
+// first colour nobody has (a gap is filled before the end is extended), and once all ten are taken it is the one least shared.
+// A colour is compared as the palette writes it, in lower case: one stored in capitals is the same colour, and one that is not in
+// the palette is nobody's.
+export function firstFreeColor(profiles: readonly { color: string }[]): string {
+  const counts = PROFILE_PALETTE.map(({ hex }) => profiles.filter((profile) => profile.color.toLowerCase() === hex).length);
+  return PROFILE_PALETTE[counts.indexOf(Math.min(...counts))]!.hex;
+}
+
+// Everyone who has this colour, in the order given.
+export function colorOwners<T extends { color: string }>(profiles: readonly T[], hex: string): T[] {
+  return profiles.filter((profile) => profile.color.toLowerCase() === hex.toLowerCase());
 }
 
 // ---- Household Account writes; Household Account or Device reads ----------------

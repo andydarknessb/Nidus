@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import type { Appearance } from '@/lib/mode';
+import { useWriteProblem } from '@/lib/use-write-problem';
+import { NOT_SAVED } from '@/lib/write-failure';
 
 // Light and Dark carry the icon of what they are; Auto is the Wall following the sun, which no one icon says.
 const OPTIONS: { value: Appearance; label: string; Icon?: typeof Sun }[] = [
@@ -22,17 +24,20 @@ const AUTO_WORDS = {
 export type SaveStatus = 'idle' | 'saved' | 'failed';
 
 // The section as it is drawn for what it is told: the choice made, whether the Household has a weather place, and what the last
-// save did. Kept apart from the saving so that it can be rendered, and tested, in each state. It brings its own heading, as the
-// other sections do, so a card can take it whole.
+// save did, in `words` when it did not go through (the Wall's two sentences, by what went wrong). Kept apart from the saving so
+// that it can be rendered, and tested, in each state. It brings its own heading, as the other sections do, so a card can take it
+// whole.
 export function AppearanceControl({
   chosen,
   weatherOn,
   status,
+  words = NOT_SAVED,
   onChoose,
 }: {
   chosen: Appearance;
   weatherOn: boolean;
   status: SaveStatus;
+  words?: string | undefined;
   onChoose: (appearance: Appearance) => void;
 }) {
   return (
@@ -59,7 +64,7 @@ export function AppearanceControl({
             line it keeps is one line tall whichever of the two says something, so nothing below moves. */}
         <div className="min-h-6 text-base">
           <p role="status">{status === 'saved' && 'Saved.'}</p>
-          {status === 'failed' && <p role="alert">Could not save. Try again.</p>}
+          {status === 'failed' && <p role="alert">{words}</p>}
         </div>
       </div>
     </section>
@@ -73,6 +78,7 @@ export function AppearanceSection({ household, onSaved }: { household: Household
   // The choice being saved shows as chosen at once; it goes back to the saved one if the save fails.
   const [saving, setSaving] = useState<Appearance | null>(null);
   const [status, setStatus] = useState<SaveStatus>('idle');
+  const problems = useWriteProblem();
 
   async function choose(appearance: Appearance) {
     // One save at a time, so a slow answer can never land after a newer one; the chosen one is already saved.
@@ -82,12 +88,21 @@ export function AppearanceSection({ household, onSaved }: { household: Household
     try {
       onSaved(await updateHousehold(household.id, { appearance }));
       setStatus('saved');
-    } catch {
+    } catch (error) {
+      problems.fail('appearance', error);
       setStatus('failed');
     } finally {
       setSaving(null);
     }
   }
 
-  return <AppearanceControl chosen={saving ?? household.appearance} weatherOn={household.weather_place !== null} status={status} onChoose={(appearance) => void choose(appearance)} />;
+  return (
+    <AppearanceControl
+      chosen={saving ?? household.appearance}
+      weatherOn={household.weather_place !== null}
+      status={status}
+      words={problems.at('appearance')?.words}
+      onChoose={(appearance) => void choose(appearance)}
+    />
+  );
 }

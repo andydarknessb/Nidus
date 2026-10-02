@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   PROFILE_PALETTE,
   byPosition,
-  cleanAvatarUrl,
   contrastRatio,
   createProfile,
   deleteProfile,
@@ -65,11 +64,6 @@ describe('profile helpers', () => {
     expect(initialOf('🐶 Rex')).toBe('🐶');
     expect(initialOf('   ')).toBe('');
   });
-
-  it('treats a blank avatar as none', () => {
-    expect(cleanAvatarUrl('  ')).toBeNull();
-    expect(cleanAvatarUrl(' https://example.com/a.png ')).toBe('https://example.com/a.png');
-  });
 });
 
 describe('profiles', () => {
@@ -114,6 +108,25 @@ describe('profiles', () => {
 
     await deleteProfile(phone, mom.id);
     expect((await loadProfiles(phone)).map((p) => p.name)).toEqual(['Samuel']);
+  });
+
+  it('editing a Profile the way the phone does leaves its stored picture address alone', async () => {
+    const { arranged, phone } = await household('The Andersons');
+    const id = arranged.household.id;
+    // The picture address left the form in v3 and its column stays: one stored before is still there, and a write that names
+    // only a name and a colour never touches it.
+    const kid = await createProfile(phone, id, { name: 'Sam', color: blue, avatar_url: 'https://example.com/sam.png' }, 0);
+
+    await updateProfile(phone, kid.id, { name: 'Samuel', color: red });
+    expect((await loadProfiles(phone)).find((p) => p.id === kid.id)).toMatchObject({
+      name: 'Samuel',
+      color: red,
+      avatar_url: 'https://example.com/sam.png',
+    });
+
+    // And a person made the way the form makes one has none.
+    const made = await createProfile(phone, id, { name: 'Ava', color: blue }, 1);
+    expect(made.avatar_url).toBeNull();
   });
 
   it('rejects an empty name, a malformed colour and a non-web avatar', async () => {

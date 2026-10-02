@@ -19,3 +19,9 @@ export function lastSeenLabel(lastSeenAt: string | null, now: Date): string {
   if (hours < 48) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
   return `${Math.floor(hours / 24)} days ago`;
 }
+
+// The line under a tablet's name on the phone: "Seen 2 minutes ago", "Seen just now", "Not seen yet".
+export function seenWords(lastSeenAt: string | null, now: Date): string {
+  const label = lastSeenLabel(lastSeenAt, now);
+  return lastSeenAt ? `Seen ${label === 'Just now' ? 'just now' : label}` : label;
+}
