@@ -211,18 +211,8 @@ function ItemRow({ item, size, onToggle }: { item: ListItem; size: keyof typeof 
 
 // The field that adds an item, and its button: 52 px on the Wall, 56 on the phone. `onAdd` says whether the item was added. The
 // field empties at once, so a second Enter while the first is still out has nothing to add; if the item could not be added the
-// words come back, unless something else has been typed there since. `inputRef` is for a screen that needs to put focus in the field.
-function AddRow({
-  listName,
-  size = 'wall',
-  inputRef,
-  onAdd,
-}: {
-  listName: string;
-  size?: 'wall' | 'phone';
-  inputRef?: RefObject<HTMLInputElement | null>;
-  onAdd: (text: string) => Promise<boolean>;
-}) {
+// words come back, unless something else has been typed there since.
+function AddRow({ listName, size = 'wall', onAdd }: { listName: string; size?: 'wall' | 'phone'; onAdd: (text: string) => Promise<boolean> }) {
   const [text, setText] = useState('');
 
   async function submit(event: FormEvent) {
@@ -236,7 +226,6 @@ function AddRow({
   return (
     <form onSubmit={(event) => void submit(event)} className="flex shrink-0 gap-2">
       <input
-        ref={inputRef}
         className={`min-w-0 flex-1 text-[17px] ${size === 'phone' ? 'h-14' : ''}`}
         value={text}
         onChange={(event) => setText(event.target.value)}
@@ -249,6 +238,17 @@ function AddRow({
       </Button>
     </form>
   );
+}
+
+// What a card's title is called on the page, so that focus can be put on it from the phone's list editor, which is not the component that
+// draws the title.
+const titleId = (listId: string) => `title-${listId}`;
+
+// After "Clear N crossed off" the button is gone, and focus with it. It goes to the card's title (tabIndex -1: reached by script, not by
+// Tab), not to the field, which would raise a tablet's or a phone's keyboard; the next Tab lands on what follows the title. Focus does
+// not scroll the page, so a long list on the phone stays where it is.
+function focusTitle(listId: string) {
+  document.getElementById(titleId(listId))?.focus({ preventScroll: true });
 }
 
 // The mark on the Pinned List, on the Wall's card and on the phone's.
@@ -271,7 +271,6 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
   const left = withoutCrossed(items).length;
   const crossed = items.length - left;
   const rows = useRef<HTMLUListElement>(null);
-  const field = useRef<HTMLInputElement>(null);
   // How many items have been added here. The one just added is last: bring it into view when the list is longer than the card.
   // ponytail: "last" holds while a new item always goes to the bottom (nextSortOrder); find it by id if one ever lands elsewhere.
   const [added, setAdded] = useState(0);
@@ -286,13 +285,14 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
         <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
           <List className="size-[22px]" />
         </span>
-        <h3 className="min-w-0 flex-1 truncate font-display text-2xl leading-[30px]">{list.name}</h3>
+        <h3 id={titleId(list.id)} tabIndex={-1} className="min-w-0 flex-1 truncate font-display text-2xl leading-[30px]">
+          {list.name}
+        </h3>
         {loaded && <span className="shrink-0 text-[15px] text-muted-foreground">{left} to get</span>}
       </div>
       {pinned && <PinnedMark />}
       <AddRow
         listName={list.name}
-        inputRef={field}
         onAdd={async (text) => {
           // The new row shows at once, as the last one: bring it into view now, not when the server has answered.
           setAdded((count) => count + 1);
@@ -319,9 +319,9 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
           variant="secondary"
           aria-label={`Clear ${crossed} crossed off from ${list.name}`}
           className="h-12 w-full shrink-0 rounded-[14px]"
-          // The button goes when nothing is crossed off any more, and focus would fall to the page with it: put it in the field, which stays.
+          // The button goes when nothing is crossed off any more, and focus would fall to the page with it.
           onClick={() => {
-            field.current?.focus();
+            focusTitle(list.id);
             void clear();
           }}
         >
@@ -495,11 +495,10 @@ const ICON_ACTION = 'size-12 rounded-full px-0';
 function ItemsEditor({ listId, listName }: { listId: string; listName: string }) {
   const { items, loaded, problem, add, toggle, clear, move } = useItems(listId);
   const crossed = items.length - withoutCrossed(items).length;
-  const field = useRef<HTMLInputElement>(null);
 
   return (
     <div className="flex flex-col gap-4">
-      <AddRow listName={listName} size="phone" inputRef={field} onAdd={async (text) => (await add(text)) !== null} />
+      <AddRow listName={listName} size="phone" onAdd={async (text) => (await add(text)) !== null} />
       {problem && (
         <p role="alert" className="text-base">
           {problem}
@@ -529,9 +528,9 @@ function ItemsEditor({ listId, listName }: { listId: string; listName: string })
           size="phone"
           aria-label={`Clear ${crossed} crossed off from ${listName}`}
           className="w-full"
-          // As on the Wall: the button goes when nothing is crossed off any more, so focus moves to the field, which stays.
+          // As on the Wall: the button goes when nothing is crossed off any more, so focus moves to the card's title.
           onClick={() => {
-            field.current?.focus();
+            focusTitle(listId);
             void clear();
           }}
         >
@@ -641,6 +640,7 @@ export function SharedListsPage({ household }: { household: Household }) {
               {renaming?.id === list.id ? (
                 <form onSubmit={(event) => void rename(event)} className="flex flex-col gap-3">
                   <input
+                    id={titleId(list.id)}
                     className="h-14 text-[17px]"
                     value={renaming.name}
                     onChange={(e) => setRenaming({ id: list.id, name: e.target.value })}
@@ -667,7 +667,9 @@ export function SharedListsPage({ household }: { household: Household }) {
               ) : (
                 // The arrows move the whole card, so they sit with its name.
                 <div className="flex items-center gap-2">
-                  <h2 className={`${CARD_TITLE} min-w-0 flex-1 break-words`}>{list.name}</h2>
+                  <h2 id={titleId(list.id)} tabIndex={-1} className={`${CARD_TITLE} min-w-0 flex-1 break-words`}>
+                    {list.name}
+                  </h2>
                   <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} up`} disabled={index === 0} onClick={() => void move(list.id, -1)}>
                     <ArrowUp aria-hidden className="size-5" />
                   </Button>
