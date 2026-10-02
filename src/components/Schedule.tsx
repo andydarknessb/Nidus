@@ -154,9 +154,8 @@ function DayColumn({
 
 // The calendar of Home and Week: a column for each of `days`, reading what the Profile filter lets through. `version`
 // changes when the screen around the calendar has written an event, so it reads again at once; `forecast` is the
-// Household's weather and `weatherOn` says it has a place. `onOpenDay` opens a day from its heading, null when the
-// page's days are not to be opened; a day beyond the paging window is only a heading. `profiles` colour the pills: null
-// until they are read, and the pills wait for them.
+// Household's weather and `weatherOn` says it has a place. `onOpenDay` opens a day from its heading; a day beyond the
+// paging window is only a heading. `profiles` colour the pills: null until they are read, and the pills wait for them.
 export function Schedule({
   timezone,
   now,
@@ -171,7 +170,7 @@ export function Schedule({
   now: Date;
   days: WallDay[];
   version: number;
-  onOpenDay: ((date: string) => void) | null;
+  onOpenDay: (date: string) => void;
   forecast: Forecast | null;
   weatherOn: boolean;
   profiles: Profile[] | null;
@@ -198,7 +197,7 @@ export function Schedule({
             key={column.day.date}
             column={column}
             profiles={profiles ?? []}
-            onOpenDay={onOpenDay && canOpenDay(column.day.date, pageWindow) ? onOpenDay : null}
+            onOpenDay={canOpenDay(column.day.date, pageWindow) ? onOpenDay : null}
             onOpen={(occurrence) => {
               openedOn.current = column.day.date;
               setOpen({ sheet: 'details', occurrence });

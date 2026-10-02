@@ -9,7 +9,6 @@ import {
   loadProfiles,
   movedIds,
   nextSortOrder,
-  paletteColorName,
   reorderProfiles,
   updateProfile,
 } from '../src/lib/profiles';
@@ -32,8 +31,8 @@ const blue = PROFILE_PALETTE[7].hex;
 describe('the Profile palette', () => {
   it('has distinct colours with names', () => {
     expect(new Set(PROFILE_PALETTE.map((color) => color.hex)).size).toBe(PROFILE_PALETTE.length);
-    expect(paletteColorName(red)).toBe('Red');
-    expect(paletteColorName('#000000')).toBeUndefined();
+    expect(new Set(PROFILE_PALETTE.map((color) => color.name)).size).toBe(PROFILE_PALETTE.length);
+    expect(PROFILE_PALETTE[0].name).toBe('Red');
   });
 
   it('computes contrast the WCAG way', () => {

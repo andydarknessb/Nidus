@@ -19,8 +19,8 @@ const initialSize = (disc: number) => Math.max(11, Math.round(disc * 0.46));
 // the disc is drawn.
 const iconSize = (px: number): CSSProperties => ({ width: px, height: px });
 
-// A person: a disc in their strong colour with their initial, at 24, 34, 40, 44 or 56 px. The name is always beside
-// it, so it is hidden from a screen reader.
+// A person: a disc in their strong colour with their initial, at 16, 24, 34, 40, 44 or 56 px (the 16 px disc is for the end of
+// a Month line). The name is always beside it, so it is hidden from a screen reader.
 export function PersonDisc({ name, color, size = 40 }: { name: string; color: string; size?: number }) {
   return (
     <span
@@ -43,11 +43,11 @@ export function HouseDisc({ size = 40 }: { size?: number }) {
 }
 
 // An empty ring waiting for a tick: --input, or with `color` that person's strong colour (a to-do Routine's tile).
-export function EmptyRing({ size = 44, width = 3, color, className }: { size?: number; width?: number; color?: string | undefined; className?: string }) {
+export function EmptyRing({ size = 44, width = 3, color }: { size?: number; width?: number; color?: string | undefined }) {
   return (
     <span
       aria-hidden
-      className={cn('shrink-0 rounded-full', color === undefined ? 'text-input' : 'person text-person-strong', className)}
+      className={cn('shrink-0 rounded-full', color === undefined ? 'text-input' : 'person text-person-strong')}
       style={{ ...(color === undefined ? {} : personStyle(color)), width: size, height: size, boxShadow: `inset 0 0 0 ${width}px currentColor` }}
     />
   );
@@ -55,10 +55,10 @@ export function EmptyRing({ size = 44, width = 3, color, className }: { size?: n
 
 // A filled tick: in --primary, or with `color` in that person's tick pair, which is for a finished tile. With `strong` as
 // well it is their strong pair instead, which is for beside their progress. `strong` means nothing without `color`.
-export function Tick({ size = 44, color, strong = false, className }: { size?: number; color?: string | undefined; strong?: boolean; className?: string }) {
+export function Tick({ size = 44, color, strong = false }: { size?: number; color?: string | undefined; strong?: boolean }) {
   const look = color === undefined ? 'bg-primary text-primary-foreground' : strong ? 'person bg-person-strong text-person-on-strong' : 'person bg-person-tick text-person-on-tick';
   return (
-    <span aria-hidden className={cn('flex shrink-0 items-center justify-center rounded-full', look, className)} style={{ ...(color === undefined ? {} : personStyle(color)), width: size, height: size }}>
+    <span aria-hidden className={cn('flex shrink-0 items-center justify-center rounded-full', look)} style={{ ...(color === undefined ? {} : personStyle(color)), width: size, height: size }}>
       <Check style={iconSize(Math.round(size * 0.55))} strokeWidth={3.2} />
     </span>
   );

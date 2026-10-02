@@ -50,10 +50,6 @@ export function contrastRatio(a: string, b: string): number {
   return (light + 0.05) / (dark + 0.05);
 }
 
-export function paletteColorName(hex: string): string | undefined {
-  return PROFILE_PALETTE.find((color) => color.hex === hex)?.name;
-}
-
 // The letter a person's disc carries: the first character of their name, in capitals.
 export function initialOf(name: string): string {
   return [...name.trim()][0]?.toUpperCase() ?? '';
