@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 import type { Appearance } from './mode';
+import { keepIfSame } from './same-data';
 import { supabase } from './supabase';
 import { browserTimezone } from './timezones';
 import { capPlace, type TemperatureUnit, type WeatherPlace } from './weather';
@@ -50,9 +51,12 @@ export type HouseholdView = { household: Household | null; failed: boolean };
 
 // The wall re-reads the Household on a timer. A failed read never discards a
 // Household already read; a successful one replaces it (a changed timezone included).
+// A read that finds nothing new gives back the view it was given, and keeps the Household it holds when only a failure ended: every
+// read is a new object, and a new view is a new render of the whole Wall, one every 30 seconds for nothing.
 export function householdViewAfter(prev: HouseholdView, read: { household: Household } | { failed: true }): HouseholdView {
-  if ('failed' in read) return { household: prev.household, failed: true };
-  return { household: read.household, failed: false };
+  if ('failed' in read) return prev.failed ? prev : { household: prev.household, failed: true };
+  const household = keepIfSame(prev.household, read.household);
+  return !prev.failed && household === prev.household ? prev : { household, failed: false };
 }
 
 // Household Account only: a Device reads the Household and the database refuses its write. The Appearance is saved on

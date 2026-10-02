@@ -27,6 +27,7 @@ import {
   type TickProblems,
   type TimeOfDay,
 } from './routines';
+import { keepIfSame } from './same-data';
 import { supabase } from './supabase';
 import { createSyncedReader, type SyncedReader } from './synced-reader';
 import { useHouseholdDay } from './wall-hooks';
@@ -109,7 +110,8 @@ export function useRoutinesToday(timezone: string | null): RoutinesToday {
         return { date, profiles, routines, done: new Set(completed) };
       },
       (today) => {
-        setLoaded(today);
+        // A read that finds what the Wall already shows keeps the object it has: a new one is a new render of the whole shell.
+        setLoaded((held) => keepIfSame(held, today));
         setFailed(false);
       },
       () => setFailed(true),
