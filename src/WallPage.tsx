@@ -275,7 +275,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         onAdd={() => setAdding(true)}
         onToggleMode={toggleMode}
       />
-      <WallHeader household={view.household} today={today} forecast={forecast} filter={filter} pressed={pressed} chipsHidden={!onCalendar} />
+      <WallHeader household={view.household} today={today} forecast={forecast} filter={filter} pressed={pressed} chipsHidden={!onCalendar} onMeals={route.view === 'meals' ? null : () => openMeals(null)} />
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
           timezone ? (

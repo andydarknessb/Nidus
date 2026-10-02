@@ -8,6 +8,7 @@ import type { ProfileFilter } from '../lib/profile-filter';
 import { supabase } from '../lib/supabase';
 import { useNow } from '../lib/wall-hooks';
 import type { Forecast } from '../lib/weather';
+import { NextMeal } from '../MealsPage';
 import { ConnectionBadge } from './ConnectionBadge';
 import { ProfileChips } from './ProfileChips';
 import { WeatherNow } from './Weather';
@@ -84,7 +85,8 @@ function SyncBadge() {
 // At 1280 px the header is 1136 px. The clock, the date, the weather and the marks never shrink and never overlap
 // anything; what is left goes to the Profile chips, which scroll inside their own box when they do not fit, and
 // the Household's name gives way inside the date's own column. The marks sit straight in the header, not in a
-// wrapper, so that with none showing they cost no gap.
+// wrapper, so that with none showing they cost no gap. The next meal (NextMeal) follows the weather and gives way
+// before anything else here does; `onMeals` opens Meals, and is null on the Meals screen, where it is not drawn.
 export function WallHeader({
   household,
   today,
@@ -92,6 +94,7 @@ export function WallHeader({
   filter,
   pressed,
   chipsHidden,
+  onMeals,
 }: {
   household: Household | null;
   today: string | null;
@@ -99,12 +102,14 @@ export function WallHeader({
   filter: ProfileFilter;
   pressed: readonly string[];
   chipsHidden: boolean;
+  onMeals: (() => void) | null;
 }) {
   const timezone = household?.timezone ?? null;
   return (
     <header className="flex h-21 items-center gap-6">
       {timezone && <WallTime name={household?.name ?? ''} timezone={timezone} />}
       {household && today && <WeatherNow forecast={forecast} unit={household.temperature_unit} today={today} />}
+      {timezone && <NextMeal timezone={timezone} onOpen={onMeals} />}
       <ProfileChips filter={filter} pressed={pressed} hidden={chipsHidden} />
       <ConnectionBadge compact />
       <SyncBadge />

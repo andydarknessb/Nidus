@@ -4,13 +4,13 @@ import { Button } from './components/ui/button';
 import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
 import { useChangeTick } from './lib/change-feed';
 import { dialogKeys } from './lib/dialog';
-import { loadMeals, mealGrid, setMeal, type Meal, type MealSlot } from './lib/meals';
-import { WEEKDAYS } from './lib/routines';
+import { loadMeals, mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
+import { householdDay, WEEKDAYS } from './lib/routines';
 import { supabase } from './lib/supabase';
-import { useHouseholdDay } from './lib/wall-hooks';
+import { useHouseholdDay, useNow } from './lib/wall-hooks';
 
-// Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the home screen's
-// card of today's. Written by a Household Account or a Device, whichever session `supabase` holds.
+// Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the header's button for the
+// next meal of today. Written by a Household Account or a Device, whichever session `supabase` holds.
 
 // A change heard from the server reads at once; this slow read is the backstop for one that was
 // missed while the connection was down. A read that failed is tried again sooner, as the calendar's is.
@@ -19,7 +19,7 @@ const RETRY_MS = 5_000;
 // What each read here listens to: a Meal changed anywhere in the Household.
 const MEAL_TABLES = ['meals'] as const;
 
-// The picture each slot is marked with, in the plan's rows.
+// The picture each slot is marked with, in the plan's rows and on the header's button.
 const SLOT_PICTURES: Record<MealSlot, LucideIcon> = { breakfast: Sunrise, lunch: Sun, dinner: Moon, snack: Cookie };
 
 // The Meals from `from` to `to` (Household dates), read again when a Meal changes anywhere in the
@@ -314,37 +314,45 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
   );
 }
 
-// ---- The home screen's card -----------------------------------------------------------
+// ---- The header's next meal -------------------------------------------------------------
 
-// The home screen's card of today's Meals, for the right rail above the Routines: the slots planned
-// for today, in slot order, one line each. Nothing at all when none is planned or today's Meals have
-// not been read, so a Household that plans no meals never sees an empty card. It moves on to the new
-// day at Household midnight and reads that day's Meals, with no reload.
-export function TodaysMealsCard({ timezone }: { timezone: string }) {
-  const today = useHouseholdDay(timezone).date;
-  // Keyed on the day, so yesterday's Meals are never shown as today's.
-  return <TodaysMeals key={today} date={today} />;
+// The header's room for the next meal, after the weather: it takes what the clock, the date, the weather and the
+// marks leave, none of which shrinks, and holds the button against the marks. It is on the page whether or not there
+// is a button, so the marks stay at the far end. It is also a size container, which is how the button tells how much
+// room it has: its words are cut short with an ellipsis, and when there is not even room for the picture and a few
+// letters (11 rem) the button goes, before anything else in the header gives way. `onOpen` is null on the Meals
+// screen, where the button is not drawn.
+export function NextMeal({ timezone, onOpen }: { timezone: string; onOpen: (() => void) | null }) {
+  return <div className="@container flex min-w-0 flex-1 justify-end">{onOpen && <NextMealButton timezone={timezone} onOpen={onOpen} />}</div>;
 }
 
-function TodaysMeals({ date }: { date: string }) {
-  const { meals } = useMeals(date, date);
-  const planned = mealGrid(meals ?? [], [date]).flatMap(({ slot, label, cells }) => (cells[0] ? [{ slot, label, title: cells[0].title }] : []));
-  if (planned.length === 0) return null;
-
+// The first planned slot of today that is still ahead (nextMeal), as a 64 px button: the slot's picture on --everyone,
+// the slot's words ("Dinner tonight") over the Meal's name, and a chevron. Nothing while today's Meals have not been
+// read, and nothing when no slot ahead is planned. Read again when a Meal changes anywhere in the Household, so a Meal
+// written on another screen lands within a second or two, and drawn again each minute and at Household midnight, so
+// lunch gives way to the snack at 14:00 with no reload.
+function NextMealButton({ timezone, onOpen }: { timezone: string; onOpen: () => void }) {
+  const now = useNow(timezone);
+  const today = householdDay(timezone, now).date;
+  const { meals } = useMeals(today, today);
+  const next = meals && nextMeal(meals, now, timezone);
+  if (!next) return null;
+  const Picture = SLOT_PICTURES[next.slot];
+  const words = nextMealWords(next.slot);
   return (
-    // Small, since it takes its height from the Routines rail and the pinned list: a title is cut at
-    // the end of its line (the whole of it stays in the text, and on the Meals screen). It is also
-    // free to shrink and scroll, because the right rail gives those two their room first.
-    <aside aria-label="Today's meals" className="flex min-h-0 flex-col gap-1 overflow-y-auto rounded-3xl bg-card px-4 py-3">
-      <h2 className="text-lg font-semibold">Today&apos;s meals</h2>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 text-lg leading-6">
-        {planned.map(({ slot, label, title }) => (
-          <Fragment key={slot}>
-            <dt className="font-semibold">{label}</dt>
-            <dd className="truncate">{title}</dd>
-          </Fragment>
-        ))}
-      </dl>
-    </aside>
+    <Button
+      aria-label={`${words}: ${next.title}. Open Meals`}
+      onClick={onOpen}
+      className="hidden h-16 max-w-full min-w-0 gap-3 rounded-[20px] bg-card p-0 pr-3 pl-2 font-normal @min-[11rem]:flex"
+    >
+      <span aria-hidden className="flex size-12 shrink-0 items-center justify-center rounded-[14px] bg-everyone">
+        <Picture className="size-6" />
+      </span>
+      <span className="flex min-w-0 flex-col text-left">
+        <span className="truncate text-sm leading-[18px] text-muted-foreground">{words}</span>
+        <span className="truncate font-display text-[22px] leading-7">{next.title}</span>
+      </span>
+      <ChevronRight aria-hidden className="size-[22px] text-muted-foreground" strokeWidth={2.2} />
+    </Button>
   );
 }
