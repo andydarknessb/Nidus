@@ -17,7 +17,7 @@ export type Pill = { occurrence: Occurrence; time: string; onNow: boolean; ended
 export type ScheduleColumn = { day: WallDay; pills: Pill[] };
 
 // Whether a pill on `day` says "All day": an all-day event, or a timed event that covers the day from end to end.
-function saysAllDay(occurrence: Occurrence, day: WallDay): boolean {
+export function saysAllDay(occurrence: Occurrence, day: WallDay): boolean {
   return occurrence.is_all_day || (Date.parse(occurrence.starts_at) <= day.startMs && Date.parse(occurrence.ends_at) >= day.endMs);
 }
 
@@ -152,7 +152,7 @@ export function pillPeople(occurrence: Occurrence, profiles: readonly Profile[])
 }
 
 // "Ava", "Ava and Ben", "Cory, Sam and Ava".
-function listNames(names: readonly string[]): string {
+export function listNames(names: readonly string[]): string {
   return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 }
 
