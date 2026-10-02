@@ -121,13 +121,15 @@ export function AdminApp() {
           <ConnectionBadge />
         </div>
         <nav aria-label="Settings sections" className="sticky top-0 z-10 bg-background">
-          {/* 4 px above, for the ring a focused tab draws past its edge when the bar is stuck at the top; below 380 px the bar
-              gives up 8 px at each side to keep its 8 px between tabs, as "Household" in 600 needs 74 px. */}
-          <div className="mx-auto grid w-full max-w-md grid-cols-4 gap-2 px-4 pt-1 pb-2 max-[380px]:px-2">
+          {/* Four equal columns while each word fits its column, and each tab as wide as its word needs when it does not (at 320 px
+              "Household" in 600 is 74 px and an equal column is 70): the label is always inside the tab and its ring. 4 px above, for
+              the ring a focused tab draws past its edge when the bar is stuck at the top; below 380 px the bar gives up 8 px at each
+              side, keeping its 8 px between tabs. */}
+          <div className="mx-auto grid w-full max-w-md grid-cols-[repeat(4,minmax(max-content,1fr))] gap-2 px-4 pt-1 pb-2 max-[380px]:px-2">
             {SETTINGS_TABS.map(({ tab: id, path, label }) => {
               const Icon = TAB_ICONS[id];
               return (
-                <Button key={id} asChild variant="quiet" className="h-16 flex-col gap-1 rounded-2xl px-0 text-sm font-medium">
+                <Button key={id} asChild variant="quiet" className="h-16 flex-col gap-1 rounded-2xl px-1 text-sm font-medium">
                   <a href={path} aria-current={id === tab ? 'page' : undefined}>
                     <Icon aria-hidden className="size-6" />
                     <span>{label}</span>
