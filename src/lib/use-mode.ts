@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { watchMinute } from './household-day';
 import type { Mode } from './look';
-import { applyMode, localStore, nextBoundary, readLastMode, readOverride, resolveMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeOverride } from './mode';
+import { applyMode, canResolve, localStore, nextBoundary, readLastMode, readOverride, resolveMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeOverride } from './mode';
 import type { SunDay } from './weather';
 
 // What a screen's mode follows as time passes. The logic is src/lib/mode.ts's, which is pure and tested; this file
@@ -42,16 +42,17 @@ export function useWallMode({ timezone, appearance, sun }: WallModeSettings): ()
         setOverride(null);
         return;
       }
-      // While resolveMode cannot say it hands back `last`, the mode the screen has: nothing changes and nothing is stored,
-      // so what the screen keeps for the next load is only what it resolved.
-      const next = resolveMode({ appearance, override, now, timezone, sunKnown: sun !== null, last: mode, ...(timezone !== null ? sunAt(sun ?? [], timezone, now) : {}) });
-      if (next === mode) return;
-      setMode(next);
-      writeLastMode(store, next);
+      const inputs = { appearance, override, now, timezone, sunKnown: sun !== null, ...(timezone !== null ? sunAt(sun ?? [], timezone, now) : {}) };
+      // While the inputs cannot resolve a mode the screen keeps the one it has and keeps nothing new for its next load: what
+      // it keeps is only what it really resolved.
+      if (!canResolve(inputs)) return;
+      const resolved = resolveMode(inputs);
+      setMode(resolved);
+      writeLastMode(store, resolved);
     };
     resolve();
     return watchMinute(resolve);
-  }, [store, appearance, override, timezone, sun, mode]);
+  }, [store, appearance, override, timezone, sun]);
 
   useEffect(() => applyMode(mode), [mode]);
 

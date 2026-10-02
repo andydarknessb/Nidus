@@ -77,6 +77,14 @@ export function resolveMode({ appearance = 'auto', override, now, timezone, sunr
   return now >= sun.sunrise && now < sun.sunset ? 'light' : 'dark';
 }
 
+// Whether the inputs settle on a mode, or leave it to `last`: the Household is read, and something says what the mode is, an
+// override that has not ended, Light or Dark, or Auto with the sun known. A screen keeps for its next load only a mode it
+// really resolved, so it asks. resolveMode answers with `last` exactly when it cannot say, which is what this goes by: an
+// answer that is the same whatever `last` is, is one it gave, so the rule stays in resolveMode and nowhere else.
+export function canResolve(inputs: ModeInputs): boolean {
+  return resolveMode({ ...inputs, last: 'light' }) === resolveMode({ ...inputs, last: 'dark' });
+}
+
 // The next sunrise or sunset after `now`: when the switch's override ends. After today's sunset it is the next
 // morning's sunrise, `nextSunrise` if it is known and 7:00 on the Household's next date if not.
 export function nextBoundary({

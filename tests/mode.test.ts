@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { TOKENS } from '../src/lib/look';
-import { MAX_OVERRIDE_MS, MODE_KEY, OVERRIDE_KEY, nextBoundary, readLastMode, readOverride, resolveMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeStore } from '../src/lib/mode';
+import { MAX_OVERRIDE_MS, MODE_KEY, OVERRIDE_KEY, canResolve, nextBoundary, readLastMode, readOverride, resolveMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeStore } from '../src/lib/mode';
 import type { SunDay } from '../src/lib/weather';
 
 // Every instant is written in UTC and every Household Timezone is named, so no test reads the machine's zone.
@@ -366,6 +366,64 @@ describe('resolveMode: before the sun is known', () => {
         expect(resolveMode({ now: noon, timezone: null, sunKnown, appearance, override: { mode: 'dark', until }, last: 'light' }), label).toBe('light');
         expect(resolveMode({ now: night, timezone: null, sunKnown, appearance, last: 'dark' }), label).toBe('dark');
         expect(resolveMode({ now: noon, timezone: null, sunKnown, appearance }), label).toBe('light');
+      }
+    }
+  });
+});
+
+// What the screen keeps for the next load is only a mode it really resolved, and canResolve says when that is: the same rule
+// resolveMode follows, asked as a question.
+describe('canResolve: whether the inputs settle on a mode, or leave it to `last`', () => {
+  const noon = at('2026-10-01T18:00:00');
+  const until = at('2026-10-02T00:00:00');
+  const live = { mode: 'dark', until } as const;
+
+  it('is not while the Household is not read, whatever else is given', () => {
+    for (const sunKnown of [true, false]) {
+      for (const appearance of ['auto', 'light', 'dark'] as const) {
+        expect(canResolve({ now: noon, timezone: null, sunKnown, appearance, override: live }), `${appearance}, sun ${sunKnown}`).toBe(false);
+      }
+    }
+    expect(canResolve({ now: noon, timezone: null })).toBe(false);
+  });
+
+  it('is for Auto once the sun is known, a sun left out being known, and not before', () => {
+    expect(canResolve({ now: noon, timezone: CHICAGO, appearance: 'auto', sunKnown: true })).toBe(true);
+    expect(canResolve({ now: noon, timezone: CHICAGO })).toBe(true);
+    expect(canResolve({ now: noon, timezone: CHICAGO, appearance: 'auto', sunKnown: false })).toBe(false);
+    expect(canResolve({ now: noon, timezone: CHICAGO, sunKnown: false })).toBe(false);
+  });
+
+  it('is for Light and Dark, and for an override that has not ended, without the sun', () => {
+    expect(canResolve({ now: noon, timezone: CHICAGO, appearance: 'light', sunKnown: false })).toBe(true);
+    expect(canResolve({ now: noon, timezone: CHICAGO, appearance: 'dark', sunKnown: false })).toBe(true);
+    expect(canResolve({ now: noon, timezone: CHICAGO, appearance: 'auto', sunKnown: false, override: live })).toBe(true);
+    expect(canResolve({ now: until - 1, timezone: CHICAGO, sunKnown: false, override: live })).toBe(true);
+  });
+
+  it('is not for Auto again once the override has ended, with the sun still not known', () => {
+    expect(canResolve({ now: until, timezone: CHICAGO, sunKnown: false, override: live })).toBe(false);
+    expect(canResolve({ now: until + 60_000, timezone: CHICAGO, sunKnown: false, override: live })).toBe(false);
+    expect(canResolve({ now: until, timezone: CHICAGO, sunKnown: false, override: null })).toBe(false);
+    expect(canResolve({ now: until, timezone: CHICAGO, appearance: 'light', sunKnown: false, override: live })).toBe(true);
+  });
+
+  it('says so exactly when resolveMode gives its own answer and not `last`', () => {
+    const nows = [noon, at('2026-10-01T06:00:00'), until];
+    for (const timezone of [null, CHICAGO]) {
+      for (const appearance of ['auto', 'light', 'dark'] as const) {
+        for (const override of [null, live]) {
+          for (const sunKnown of [true, false]) {
+            for (const now of nows) {
+              const inputs = { now, timezone, appearance, override, sunKnown };
+              const label = JSON.stringify(inputs);
+              const asLight = resolveMode({ ...inputs, last: 'light' });
+              const asDark = resolveMode({ ...inputs, last: 'dark' });
+              if (canResolve(inputs)) expect(asLight, label).toBe(asDark);
+              else expect([asLight, asDark], label).toEqual(['light', 'dark']);
+            }
+          }
+        }
       }
     }
   });
