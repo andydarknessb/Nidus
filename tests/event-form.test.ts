@@ -10,6 +10,7 @@ import {
   isUntouched,
   moveToDay,
   openingTimes,
+  savedSentence,
   stepEnd,
   stepStart,
   type EventForm,
@@ -406,5 +407,34 @@ describe('what the status line says after an event is added', () => {
   it('keeps midnight and noon straight', () => {
     expect(addedSentence(input(form('00:00', '00:15')), CHICAGO)).toBe('Added Plumber coming: Fri, Oct 2, 12:00 AM');
     expect(addedSentence(input(form('12:00', '12:15')), CHICAGO)).toBe('Added Plumber coming: Fri, Oct 2, 12:00 PM');
+  });
+});
+
+// An edit that moves an event to another day takes it off the week on screen: the line says when the event is now, in the
+// words of the one an added event says, and not only that it was saved.
+describe('what the status line says after an event is saved', () => {
+  const input = (value: EventForm) => eventFormToInput({ ...value, title: ' Plumber coming ' }, CHICAGO) as NativeEventInput;
+
+  it('names the event, and the day and the time it is on now, in the Household Timezone', () => {
+    const moved = input({ ...blankEventForm('2026-10-14'), startTime: '14:00', endTime: '15:00' });
+    expect(savedSentence(moved, CHICAGO)).toBe('Saved Plumber coming: Wed, Oct 14, 2:00 PM');
+    expect(savedSentence(moved, 'Pacific/Auckland')).toBe('Saved Plumber coming: Thu, Oct 15, 8:00 AM');
+  });
+
+  it('says all day for an all-day event, and keeps midnight and noon straight', () => {
+    expect(savedSentence(input({ ...form('14:00', '15:00'), allDay: true }), CHICAGO)).toBe('Saved Plumber coming: Fri, Oct 2, all day');
+    expect(savedSentence(input(form('00:00', '00:15')), CHICAGO)).toBe('Saved Plumber coming: Fri, Oct 2, 12:00 AM');
+    expect(savedSentence(input(form('12:00', '12:15')), CHICAGO)).toBe('Saved Plumber coming: Fri, Oct 2, 12:00 PM');
+  });
+
+  it('is the added sentence with its own first word: one helper builds both', () => {
+    for (const value of [form('14:00', '15:00'), { ...form('09:00', '10:00'), allDay: true }, form('23:30', '23:45')]) {
+      const event = input(value);
+      expect(savedSentence(event, CHICAGO)).toBe(addedSentence(event, CHICAGO).replace(/^Added /, 'Saved '));
+    }
+  });
+
+  it('uses no dash of any length', () => {
+    expect(savedSentence(input(form('14:00', '15:00')), CHICAGO)).not.toMatch(/[–—]/);
   });
 });

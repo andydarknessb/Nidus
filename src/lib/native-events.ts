@@ -207,12 +207,20 @@ export function isUntouched(form: EventForm, opened: EventForm): boolean {
   );
 }
 
-// What the status line says once an event is added, in the Household Timezone: "Added Plumber coming: Fri, Oct 2, 2:00 PM",
-// or "…, all day".
-export function addedSentence(input: Pick<NativeEventInput, 'title' | 'starts_at' | 'is_all_day'>, timezone: string): string {
+// What the status line says of an event once it is written, and when it is, in the Household Timezone: "Added Plumber coming: Fri,
+// Oct 2, 2:00 PM", or "…, all day". The day and the time are the event's own, so an edit that moves it to another day, which takes it
+// off the week on screen, says where it went.
+type EventWhen = Pick<NativeEventInput, 'title' | 'starts_at' | 'is_all_day'>;
+const whenSentence = (verb: 'Added' | 'Saved', input: EventWhen, timezone: string): string => {
   const start = Date.parse(input.starts_at);
-  return `Added ${input.title}: ${formatDate(start, timezone)}, ${input.is_all_day ? 'all day' : formatClock(start, timezone)}`;
-}
+  return `${verb} ${input.title}: ${formatDate(start, timezone)}, ${input.is_all_day ? 'all day' : formatClock(start, timezone)}`;
+};
+
+// ...once an event is added.
+export const addedSentence = (input: EventWhen, timezone: string): string => whenSentence('Added', input, timezone);
+
+// ...once an event is saved after an edit: "Saved Plumber coming: Wed, Oct 14, 2:00 PM".
+export const savedSentence = (input: EventWhen, timezone: string): string => whenSentence('Saved', input, timezone);
 
 // A blank optional field means none.
 export function cleanOptional(value: string): string | null {

@@ -16,6 +16,7 @@ import {
   moveToDay,
   openingTimes,
   saveNativeEvent,
+  savedSentence,
   stepEnd,
   stepStart,
   type EventForm,
@@ -238,7 +239,7 @@ export function NativeEventSheet({
     void run(
       () => saveNativeEvent(supabase, input, occurrence?.id).then(() => undefined),
       'Could not save the event. Check your connection and try again.',
-      editing ? `Saved ${input.title}` : addedSentence(input, timezone),
+      editing ? savedSentence(input, timezone) : addedSentence(input, timezone),
     );
   }
 
