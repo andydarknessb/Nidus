@@ -7,6 +7,7 @@ import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { HomeRail } from './components/HomeRail';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { NavigationRail } from './components/NavigationRail';
+import { StatusLineProvider } from './components/StatusLine';
 import { WallHeader } from './components/WallHeader';
 import { useChangeTick } from './lib/change-feed';
 import { mealsPath, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
@@ -15,6 +16,7 @@ import { householdViewAfter, loadHousehold, type Household, type HouseholdView }
 import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useForecast } from './lib/use-forecast';
+import { useDocumentTitle } from './lib/use-document-title';
 import { useLightMode, useWallMode } from './lib/use-mode';
 import { useRoutinesToday } from './lib/use-routines-today';
 import { MealsScreen } from './MealsPage';
@@ -105,7 +107,9 @@ export function WallPage() {
   if (state.kind === 'paired') {
     return (
       <ChangeFeedProvider>
-        <HomeShell owner={state.owner} />
+        <StatusLineProvider>
+          <HomeShell owner={state.owner} />
+        </StatusLineProvider>
       </ChangeFeedProvider>
     );
   }
@@ -179,7 +183,7 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
 // the screen's own wording, so a Wall that cannot reach its server does not pass for a blank one.
 function BeforeHousehold({ label, failed, words }: { label: string; failed: boolean; words: string }) {
   return (
-    <section aria-label={label} className="rounded-xl border border-border">
+    <section aria-label={label} className="rounded-3xl bg-card">
       {failed && (
         <p role="alert" className="p-4 text-xl">
           {words}
@@ -188,6 +192,9 @@ function BeforeHousehold({ label, failed, words }: { label: string; failed: bool
     </section>
   );
 }
+
+// What each view of the Wall is called in the document's title.
+const VIEW_TITLES: Record<WallRoute['view'], string> = { home: 'Home', day: 'Day', week: 'Week', month: 'Month', routines: 'Routines', meals: 'Meals' };
 
 // The landscape wall: a navigation rail down the left, then the header over the screen. The home
 // screen is the five-day calendar on the left and, on its right rail, today's Meals (when any is
@@ -198,6 +205,8 @@ function HomeShell({ owner }: { owner: boolean }) {
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   const [listsOpen, setListsOpen] = useState(false);
+  // Each view names itself in the document's title; the Lists screen, which opens over them, does too.
+  useDocumentTitle(listsOpen ? 'Lists' : VIEW_TITLES[route.view]);
   // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
   // The context hands the pressed ids to every calendar view, and a way to clear it to the Native Event
   // sheet; the chips prune it when the Profiles change.
@@ -234,7 +243,7 @@ function HomeShell({ owner }: { owner: boolean }) {
   }, [householdChanges]);
   const timezone = view.household?.timezone ?? null;
   // The mode of the screen: what it last had until the Household is read, then light from 7:00 to 19:00 in its time zone.
-  useWallMode({ timezone });
+  const toggleMode = useWallMode({ timezone });
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
   const forecast = useForecast(view.household);
@@ -249,7 +258,7 @@ function HomeShell({ owner }: { owner: boolean }) {
   const onCalendar = route.view !== 'meals' && route.view !== 'routines';
 
   return (
-    <main className="grid h-svh grid-cols-[5.5rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
+    <main className="grid h-svh grid-cols-[6rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
       <NavigationRail
         owner={owner}
         route={route}
@@ -260,6 +269,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         onMeals={() => openMeals(null)}
         onLists={() => setListsOpen(true)}
         onAdd={() => setAdding(true)}
+        onToggleMode={toggleMode}
       />
       <WallHeader household={view.household} today={today} forecast={forecast} filter={filter} pressed={pressed} chipsHidden={!onCalendar} />
       <ProfileFilterContext.Provider value={filterView}>
@@ -268,7 +278,7 @@ function HomeShell({ owner }: { owner: boolean }) {
             <RoutinesChart routines={routines} />
           ) : (
             // The chart before the Household is read: an empty frame that says so if the read failed, as the Routines rail does.
-            <section aria-label="Routines" className="rounded-xl border border-border p-4">
+            <section aria-label="Routines" className="rounded-3xl bg-card p-4">
               {view.failed && (
                 <p role="alert" className="text-base">
                   Could not load Routines. Check your connection.

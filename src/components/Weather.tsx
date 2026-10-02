@@ -43,17 +43,17 @@ export function WeatherNow({ forecast, unit, today }: { forecast: Forecast | nul
     .filter(Boolean)
     .join(', ');
   return (
-    <div role="img" aria-label={heard} className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+    <div role="img" aria-label={heard} className="flex shrink-0 items-center gap-2.5 whitespace-nowrap">
       {reading && (
         <>
-          <Glyph icon={reading.icon} className="size-8 shrink-0" />
-          <span className="text-3xl font-semibold tabular-nums">{reading.temperature}°</span>
+          <Glyph icon={reading.icon} className="size-[30px] shrink-0" />
+          <span className="font-display text-[32px] leading-9">{reading.temperature}°</span>
         </>
       )}
       {day && (
-        <span className="flex flex-col text-base leading-5">
-          <span>H {day.high}°</span>
-          <span>L {day.low}°</span>
+        <span className="flex flex-col text-sm leading-[18px] text-muted-foreground">
+          <span>High {day.high}°</span>
+          <span>Low {day.low}°</span>
         </span>
       )}
     </div>

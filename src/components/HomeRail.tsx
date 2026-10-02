@@ -19,7 +19,7 @@ export function HomeRail({ timezone, routines, failed }: { timezone: string | nu
         {timezone ? (
           <RoutinesRail routines={routines} />
         ) : (
-          <aside aria-label="Today's Routines" className="rounded-xl border border-border p-4">
+          <aside aria-label="Today's Routines" className="rounded-3xl bg-card p-4">
             {failed && (
               <p role="alert" className="text-base">
                 Could not load Routines. Check your connection.
