@@ -1,17 +1,22 @@
+import { readFileSync } from 'node:fs';
 import { Fragment, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { CalendarsPage as CalendarsPageType } from '../src/CalendarsPage';
 import type { SettingsPage as SettingsPageType } from '../src/SettingsPage';
 import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson } from '../src/components/PersonEditor';
+import { UPDATE_FAILED_WORDS, accountStatusText } from '../src/lib/calendar-accounts';
 import { seenWords } from '../src/lib/device-format';
 import type { Household } from '../src/lib/household';
+import { TOKENS } from '../src/lib/look';
 import { PROFILE_PALETTE, colorOwners, eventPeople, firstFreeColor, namesInWords } from '../src/lib/profiles';
+import { SETTINGS_TABS, settingsPathNow, settingsTabOf } from '../src/lib/settings-tabs';
 import { timezoneName, timezoneOptions } from '../src/lib/timezones';
 
-// The phone's settings (spec 0003, Phone settings and People): what is pure about them. The first free colour, whose a colour is,
-// who an event is for, the time zone names, the words for a tablet last seen, and the parts the People card is made of, rendered
-// to markup so that what is asserted is what the browser is given. What the database does with a Profile's picture address is in
-// tests/profiles.test.ts, which needs the local stack.
+// The phone's settings (spec 0003, Phone settings and People): what is pure about them. The first free colour, the time zone
+// names, the tabs and where each page lives, the words for an account that failed and for a tablet last seen, and the parts the
+// People card is made of, rendered to markup so that what is asserted is what the browser is given. What the database does with
+// a Profile's picture address is in tests/profiles.test.ts, which needs the local stack.
 
 const hexes = PROFILE_PALETTE.map((color) => color.hex);
 const hex = (index: number) => hexes[index]!;
@@ -146,6 +151,55 @@ describe('time zones, listed by name', () => {
   });
 });
 
+describe('the phone\'s pages', () => {
+  it('are Household, Calendars, Routines and Lists, in that order, each at its own address', () => {
+    expect(SETTINGS_TABS.map(({ label, path }) => [label, path])).toEqual([
+      ['Household', '/settings'],
+      ['Calendars', '/settings/calendars'],
+      ['Routines', '/settings/routines'],
+      ['Lists', '/settings/lists'],
+    ]);
+  });
+
+  it('are told from the path, each tab current at its own address', () => {
+    for (const { tab, path } of SETTINGS_TABS) {
+      expect(settingsTabOf(path), path).toBe(tab);
+      expect(settingsTabOf(`${path}/`), `${path}/`).toBe(tab);
+    }
+  });
+
+  it('take /settings/events to the Calendars page, and the address with it', () => {
+    expect(settingsTabOf('/settings/events')).toBe('calendars');
+    expect(settingsPathNow('/settings/events')).toBe('/settings/calendars');
+    expect(settingsPathNow('/settings/events/')).toBe('/settings/calendars/');
+    for (const { path } of SETTINGS_TABS) expect(settingsPathNow(path), path).toBe(path);
+  });
+
+  it('treat any other address under /settings as Household, as the phone always has', () => {
+    expect(settingsTabOf('/settings/nonsense')).toBe('household');
+    expect(settingsTabOf('/settings/eventsfoo')).toBe('household');
+    expect(settingsPathNow('/settings/eventsfoo')).toBe('/settings/eventsfoo');
+  });
+});
+
+describe('what a Calendar Account says of itself', () => {
+  it('says Connected when its last update went through', () => {
+    expect(accountStatusText({ status: 'active', last_error: null })).toBe('Connected');
+  });
+
+  it('says that the last update failed, and that Nidus tries again every 5 minutes, and nothing of what Google said', () => {
+    const words = accountStatusText({ status: 'active', last_error: 'Family: Google answered 500; Sam: could not reach Google' });
+    expect(words).toBe('Connected, but the last update failed. Nidus tries again every 5 minutes.');
+    expect(words).toBe(UPDATE_FAILED_WORDS);
+    expect(words).not.toMatch(/Google|500|Family|Sam/);
+  });
+
+  it('says it has to be connected again when Google no longer trusts it, whatever went wrong before', () => {
+    expect(accountStatusText({ status: 'needs_reauth', last_error: null })).toBe('Needs to be connected again');
+    expect(accountStatusText({ status: 'needs_reauth', last_error: 'invalid_grant' })).toBe('Needs to be connected again');
+  });
+});
+
 describe('when a tablet was last seen', () => {
   const now = new Date('2026-10-01T19:21:00Z');
   const ago = (seconds: number) => new Date(now.getTime() - seconds * 1000).toISOString();
@@ -256,15 +310,30 @@ describe('deleting a person', () => {
   });
 });
 
-// The Household page as it is first drawn, before anything is read: the cards it is made of, in order, and the words in them.
+describe('the phone\'s manifest', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8')) as Record<string, unknown>;
+
+  it('does not ask for landscape, which the phone\'s pages never wanted', () => {
+    expect(manifest).not.toHaveProperty('orientation');
+  });
+
+  it('takes the light ground for its two colours', () => {
+    expect(manifest['theme_color']).toBe(TOKENS.light.background);
+    expect(manifest['background_color']).toBe(TOKENS.light.background);
+  });
+});
+
+// The two pages as they are first drawn, before anything is read: the cards they are made of, in order, and the words in them.
 // They import the Supabase client, which is built on import and is not used to draw: a placeholder URL and key are enough to load
 // them (as tests/appearance-section.test.ts does for the Appearance section).
-describe('the Household page, as it is first drawn', () => {
+describe("the phone's pages, as they are first drawn", () => {
   let SettingsPage: typeof SettingsPageType;
+  let CalendarsPage: typeof CalendarsPageType;
   beforeAll(async () => {
     vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
     vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
     ({ SettingsPage } = await import('../src/SettingsPage'));
+    ({ CalendarsPage } = await import('../src/CalendarsPage'));
   });
 
   const household: Household = {
@@ -278,6 +347,7 @@ describe('the Household page, as it is first drawn', () => {
     appearance: 'auto',
   };
   const householdPage = () => renderToStaticMarkup(createElement(SettingsPage, { household, onSaved: () => undefined, onSignOut: () => undefined }));
+  const calendarsPage = () => renderToStaticMarkup(createElement(CalendarsPage, { household }));
 
   const headings = (markup: string) => [...markup.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/g)].map(([, inner]) => words(inner ?? ''));
   const buttons = (markup: string) => [...markup.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)].map(([, attributes, inner]) => ({ attributes: attributes ?? '', name: words(inner ?? '') }));
@@ -301,9 +371,10 @@ describe('the Household page, as it is first drawn', () => {
     expect(markup).toMatch(/<div class="flex flex-col gap-4 rounded-3xl bg-card p-4"><section aria-labelledby="appearance-heading"/);
   });
 
-  it('have one primary action, Save, and never two bare Saves', () => {
+  it('have one primary action between them: Save, on the Household page, and never two bare Saves', () => {
     expect(primaries(householdPage()).map(({ name }) => name)).toEqual(['Save']);
     expect(buttons(householdPage()).filter(({ name }) => name === 'Save')).toHaveLength(1);
+    expect(primaries(calendarsPage())).toEqual([]);
   });
 
   it('list time zones by name, the stored one chosen, each with the IANA id as its value', () => {
@@ -313,7 +384,7 @@ describe('the Household page, as it is first drawn', () => {
   });
 
   it("say people, tablets, time zone, lists and unpair, and none of the glossary's words", () => {
-    for (const markup of [householdPage()]) {
+    for (const markup of [householdPage(), calendarsPage()]) {
       expect(words(markup)).not.toMatch(GLOSSARY);
     }
     expect(words(householdPage())).toContain('Time zone');
@@ -322,12 +393,20 @@ describe('the Household page, as it is first drawn', () => {
   });
 
   it('has no em-dash or en-dash', () => {
-    for (const markup of [householdPage()]) expect(markup).not.toMatch(/[–—]/);
+    for (const markup of [householdPage(), calendarsPage()]) expect(markup).not.toMatch(/[–—]/);
   });
 
   it('have no picture address field, and nothing that names one', () => {
     const markup = householdPage();
     expect(words(markup)).not.toMatch(/picture address|https:\/\//i);
     expect(markup).not.toMatch(/type="url"/);
+  });
+
+  it('put the Calendar Accounts and the events added in Nidus on the Calendars page, and no colour to choose', () => {
+    const markup = calendarsPage();
+    expect(headings(markup)).toEqual(['Google calendars', 'Events added in Nidus']);
+    expect(words(markup)).toContain('Connect a Google calendar');
+    expect(words(markup)).toContain('Add event');
+    expect(words(markup)).not.toMatch(/colour/i);
   });
 });

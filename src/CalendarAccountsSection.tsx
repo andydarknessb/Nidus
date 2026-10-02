@@ -1,5 +1,10 @@
+import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { Card, Field, helpClass, labelClass } from '@/components/phone';
+import { Button } from '@/components/ui/button';
+import { useRefetchOn } from '@/lib/change-feed';
 import {
+  accountStatusText,
   calendarsOfAccount,
   lastSyncedText,
   loadCalendarAccounts,
@@ -10,21 +15,13 @@ import {
   type CalendarAccount,
   type MirroredCalendar,
 } from '@/lib/calendar-accounts';
-import { PROFILE_PALETTE, loadProfiles, type Profile } from '@/lib/profiles';
+import { loadProfiles, type Profile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
-import { useRefetchOn } from '@/lib/change-feed';
 
 const CALENDAR_TABLES = ['calendar_accounts', 'mirrored_calendars', 'profiles'] as const;
 
-const field = 'w-full text-base';
-const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
-
-const STATUS_TEXT: Record<CalendarAccount['status'], string> = {
-  active: 'Connected',
-  needs_reauth: 'Needs to be connected again',
-};
-
-// The choice values a select can carry: '' is "no override" and "whole Household".
+// The choice values a select can carry: '' is "whole household". A calendar has no colour to choose any more (the Wall draws an
+// event in its person's colour); its stored one is sent back as it is, and nothing here shows it.
 function CalendarRow({
   calendar,
   profiles,
@@ -36,56 +33,33 @@ function CalendarRow({
 }) {
   const choice = { selected: calendar.selected, profile_id: calendar.profile_id, color: calendar.color };
   return (
-    <li className="flex flex-col gap-3 rounded-lg border border-border p-3">
-      <label className="flex min-h-12 items-center gap-3 text-base">
-        <input
-          type="checkbox"
-          className="size-6"
-          checked={calendar.selected}
-          onChange={(event) => onChange({ ...choice, selected: event.target.checked })}
-        />
-        <span className="break-words">{calendar.name}</span>
+    <li className="flex flex-col gap-2">
+      <label className="flex min-h-12 items-center gap-3 text-[17px]">
+        <input type="checkbox" className="size-6 shrink-0" checked={calendar.selected} onChange={(event) => onChange({ ...choice, selected: event.target.checked })} />
+        <span className="min-w-0 break-words">{calendar.name}</span>
       </label>
       {calendar.selected && (
-        <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-2 text-base">
-            Whose calendar is {calendar.name}?
-            <select
-              className={field}
-              value={calendar.profile_id ?? ''}
-              onChange={(event) => onChange({ ...choice, profile_id: event.target.value === '' ? null : event.target.value })}
-            >
-              <option value="">Whole household</option>
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-2 text-base">
-            Colour for {calendar.name}
-            <select
-              className={field}
-              value={calendar.color ?? ''}
-              onChange={(event) => onChange({ ...choice, color: event.target.value === '' ? null : event.target.value })}
-            >
-              <option value="">Use the Profile colour</option>
-              {PROFILE_PALETTE.map((color) => (
-                <option key={color.hex} value={color.hex}>
-                  {color.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <Field label={`Whose calendar is ${calendar.name}?`}>
+          <select
+            className="h-14 w-full text-[17px]"
+            value={calendar.profile_id ?? ''}
+            onChange={(event) => onChange({ ...choice, profile_id: event.target.value === '' ? null : event.target.value })}
+          >
+            <option value="">Whole household</option>
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+        </Field>
       )}
     </li>
   );
 }
 
-// Settings, phone only: connect a Google account, choose which of its calendars are
-// mirrored and whose they are, and remove an account. A Device never gets this screen.
+// Settings, phone only: connect a Google account, choose which of its calendars are mirrored and whose they are, and remove an
+// account. A Device never gets this screen.
 export function CalendarAccountsSection() {
   const [accounts, setAccounts] = useState<CalendarAccount[] | null>(null);
   const [calendars, setCalendars] = useState<MirroredCalendar[]>([]);
@@ -136,7 +110,7 @@ export function CalendarAccountsSection() {
   }
 
   // Reconnect an account that needs it: Google offers that account first, and the account's
-  // calendars, Profiles and colours are kept.
+  // calendars and people are kept.
   async function reconnect(email: string) {
     setNotice(null);
     try {
@@ -177,34 +151,30 @@ export function CalendarAccountsSection() {
     try {
       await removeCalendarAccount(supabase, id);
       setProblem(null);
-      setNotice('Calendar account removed.');
+      setNotice('Account removed.');
     } catch {
-      setProblem('Could not remove the calendar account. Try again.');
+      setProblem('Could not remove the account. Try again.');
     }
     setConfirming(null);
     await refresh();
   }
 
   return (
-    <section aria-labelledby="calendars-heading" className="flex flex-col gap-4">
-      <h2 id="calendars-heading" className="text-xl font-semibold">
-        Calendars
-      </h2>
-      <p className="text-base">
-        Nidus shows your Google calendars on the wall. It only reads them and never changes anything in Google.
-      </p>
-      <div className="flex flex-col gap-3">
-        <button type="button" className={`${action} bg-primary text-primary-foreground`} onClick={() => void connect()}>
+    <Card title="Google calendars">
+      <p className="text-base leading-6">Nidus shows your Google calendars on the Wall. It only reads them and never changes anything in Google.</p>
+      <div className="flex flex-col gap-2">
+        <Button variant="secondary" size="phone" className="w-full" onClick={() => void connect()}>
+          <Plus aria-hidden />
           Connect a Google calendar
-        </button>
-        <button type="button" className={`${action} border border-border`} onClick={() => void makeLink()}>
+        </Button>
+        <Button variant="quiet" size="phone" className="w-full" onClick={() => void makeLink()}>
           Copy a link for another adult
-        </button>
-        {link && <input className={field} readOnly value={link} aria-label="Link for another adult" onFocus={(event) => event.target.select()} />}
+        </Button>
+        {link && <input className="h-14 w-full text-[17px]" readOnly value={link} aria-label="Link for another adult" onFocus={(event) => event.target.select()} />}
+        <p role="status" className="min-h-6 text-base">
+          {notice}
+        </p>
       </div>
-      <p role="status" className="min-h-6 text-base">
-        {notice}
-      </p>
       {problem && (
         <p role="alert" className="text-base">
           {problem}
@@ -214,60 +184,52 @@ export function CalendarAccountsSection() {
       {accounts?.map((account) => {
         const own = calendarsOfAccount(calendars, account.id);
         return (
-          <div key={account.id} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+          <div key={account.id} className="flex flex-col gap-4 border-t border-border pt-4">
             <div className="flex flex-col gap-1">
-              <h3 className="break-words text-lg font-medium">{account.google_email}</h3>
-              <p className="text-base">
-                {STATUS_TEXT[account.status]}
-                {account.last_error ? `: ${account.last_error}` : ''}
-              </p>
-              <p className="text-base">{lastSyncedText(account.last_synced_at, now)}</p>
+              <h3 className="text-[17px] leading-6 font-semibold break-words">{account.google_email}</h3>
+              <p className="text-base leading-6">{accountStatusText(account)}</p>
+              <p className={helpClass}>{lastSyncedText(account.last_synced_at, now)}</p>
             </div>
             {account.status === 'needs_reauth' && (
               <div className="flex flex-col gap-3">
-                <p className="text-base">Nothing is lost. Connecting again keeps this account’s calendars and your choices for them.</p>
-                <button type="button" className={`${action} bg-primary text-primary-foreground`} onClick={() => void reconnect(account.google_email)}>
+                <p className="text-base leading-6">Nothing is lost. Connecting again keeps this account’s calendars and your choices for them.</p>
+                <Button variant="secondary" size="phone" className="h-auto min-h-14 py-2 whitespace-normal" onClick={() => void reconnect(account.google_email)}>
                   Connect {account.google_email} again
-                </button>
+                </Button>
               </div>
             )}
             {own.length === 0 ? (
               <p className="text-base">This account has no calendars to choose from.</p>
             ) : (
-              <>
-                <p className="text-base">Choose the calendars to show:</p>
-                <ul className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
+                <p className={labelClass}>Choose the calendars to show</p>
+                <ul className="flex flex-col gap-2">
                   {own.map((calendar) => (
-                    <CalendarRow
-                      key={calendar.id}
-                      calendar={calendar}
-                      profiles={profiles}
-                      onChange={(choice) => void choose(calendar.id, choice)}
-                    />
+                    <CalendarRow key={calendar.id} calendar={calendar} profiles={profiles} onChange={(choice) => void choose(calendar.id, choice)} />
                   ))}
                 </ul>
-              </>
+              </div>
             )}
             {confirming === account.id ? (
               <div role="group" aria-label={`Remove ${account.google_email}`} className="flex flex-col gap-3">
-                <p className="text-base">
-                  Remove {account.google_email}? Its calendars leave the wall and Nidus forgets its Google sign-in.
-                </p>
-                <button type="button" className={`${action} bg-primary text-primary-foreground`} onClick={() => void remove(account.id)}>
-                  Yes, remove it
-                </button>
-                <button type="button" className={`${action} border border-border`} onClick={() => setConfirming(null)}>
-                  Keep it
-                </button>
+                <p className="text-base leading-6">Remove {account.google_email}? Its calendars leave the Wall and Nidus forgets its Google sign-in.</p>
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="phone" className="flex-1" onClick={() => setConfirming(null)}>
+                    Keep it
+                  </Button>
+                  <Button variant="delete" size="phone" className="flex-[2]" onClick={() => void remove(account.id)}>
+                    Yes, remove it
+                  </Button>
+                </div>
               </div>
             ) : (
-              <button type="button" className={`${action} border border-border`} onClick={() => setConfirming(account.id)}>
+              <Button variant="secondary" size="phone" className="h-auto min-h-14 py-2 whitespace-normal" onClick={() => setConfirming(account.id)}>
                 Remove {account.google_email}
-              </button>
+              </Button>
             )}
           </div>
         );
       })}
-    </section>
+    </Card>
   );
 }

@@ -99,7 +99,7 @@ To confirm the second, `supabase.auth.signInWithPassword` against the hosted pro
 
 1. Site settings, Environment variables: `VITE_SUPABASE_URL=https://<project-ref>.supabase.co` and `VITE_SUPABASE_ANON_KEY=<the project's anon key>`.
 2. Deploy from `master`.
-3. Open `https://<site>` and sign in with Google at `https://<site>/settings`. Connect a Calendar Account and choose Mirrored Calendars.
+3. Open `https://<site>` and sign in with Google at `https://<site>/settings`. On the Calendars tab, connect a Google calendar (a Calendar Account) and choose which of its calendars to show (the Mirrored Calendars).
 
 ## 10. Installability
 
@@ -109,5 +109,5 @@ Lighthouse no longer has a Progressive Web App category, so check installability
 
 1. Set the tablet up as in `docs/fully-kiosk.md`, with the production start URL.
 2. The wall shows a six-character Pairing Code.
-3. On a phone, open `https://<site>/settings`, Devices, enter the code and a name for the tablet, and claim it.
+3. On a phone, open `https://<site>/settings`, go to Wall tablets and Pair a tablet, enter the code and a name for the tablet, and pair it.
 4. The wall switches to the home screen within seconds.

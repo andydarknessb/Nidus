@@ -106,6 +106,17 @@ export function lastSyncedText(lastSyncedAt: string | null, nowMs: number): stri
   return lastSyncedAt === null ? 'Not synced yet' : `Last synced ${formatAge(nowMs - Date.parse(lastSyncedAt))}`;
 }
 
+// What an account whose last update failed says, in words and not in the provider's: the sync runs every five minutes
+// (docs/calendar-sync.md), so a failure mends itself unless the sign-in itself has gone.
+export const UPDATE_FAILED_WORDS = 'Connected, but the last update failed. Nidus tries again every 5 minutes.';
+
+// How the settings screen says an account is doing. `last_error` is whatever the sync wrote when it failed, which is for the
+// logs: it is never shown.
+export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error'>): string {
+  if (account.status === 'needs_reauth') return 'Needs to be connected again';
+  return account.last_error ? UPDATE_FAILED_WORDS : 'Connected';
+}
+
 // What the wall needs to know about each account to say whether the mirror is behind.
 export type SyncFreshness = { last_synced_at: string | null; created_at: string };
 
