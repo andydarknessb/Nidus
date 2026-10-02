@@ -322,6 +322,7 @@ function DayHeading({
     </>
   );
   const text = `flex items-baseline justify-center gap-2 px-2 py-3 text-2xl font-semibold ${day.isToday ? 'underline decoration-4 underline-offset-8' : ''}`;
+  // The button fills its column, so its focus ring is drawn inside it: drawn outside, the next column and the edge clip it.
   const heading = onOpen ? (
     <h2>
       <button
@@ -329,7 +330,7 @@ function DayHeading({
         aria-current={day.isToday ? 'date' : undefined}
         aria-label={`${weekday} ${date}${day.isToday ? ' (today)' : ''}, open day`}
         onClick={() => onOpen(day.date)}
-        className={`${text} min-h-12 w-full`}
+        className={`${text} min-h-12 w-full focus-visible:-outline-offset-2`}
       >
         {words}
       </button>
