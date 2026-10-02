@@ -70,6 +70,7 @@ describe('gate words', () => {
 
   it('say No internet. Trying again. from the third', () => {
     expect(gateWords(3)).toBe('No internet. Trying again.');
+    expect(gateWords(4)).toBe('No internet. Trying again.');
     expect(gateWords(10)).toBe('No internet. Trying again.');
   });
 });

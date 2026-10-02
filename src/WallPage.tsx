@@ -66,8 +66,7 @@ async function ensureSession(): Promise<Session> {
 // offered a way into administration.
 export function WallPage() {
   const [state, setState] = useState<WallState>({ kind: 'connecting' });
-  // Failed tries in a row while connecting: the gate says "No internet" from the third. It is only drawn
-  // before the first success, so nothing ever needs to reset it.
+  // Failed tries in a row: the gate says "No internet" from the third; a successful step sets it back to zero.
   const [failedTries, setFailedTries] = useState(0);
 
   useEffect(() => {
@@ -98,6 +97,7 @@ export function WallPage() {
       let delay = RETRY_MS;
       try {
         delay = await step();
+        if (live) setFailedTries(0);
       } catch {
         // Offline or the server is restarting: keep what the wall shows and try again.
         if (live) setFailedTries((tries) => tries + 1);
