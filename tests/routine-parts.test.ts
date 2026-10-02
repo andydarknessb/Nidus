@@ -23,6 +23,7 @@ import {
   pickPart,
   todaysRoutines,
   upNext,
+  upNextLink,
   type Chart,
   type ProfileRoutines,
   type Routine,
@@ -474,6 +475,24 @@ describe('Up next', () => {
 
   it('does not count a completion that is not one of the Routines it is given', () => {
     expect(upNext([group(sam, [routine('a', 'evening')])], new Set(['elsewhere']), 'evening').tiles).toHaveLength(1);
+  });
+});
+
+describe("the link in Up next's heading", () => {
+  it('reads "All routines" when the tiles show everything left', () => {
+    expect(upNextLink(0)).toEqual({ words: 'All routines', name: 'All routines' });
+  });
+
+  it('reads how many more there are when the tiles do not show them all, and is still named for where it goes', () => {
+    expect(upNextLink(5)).toEqual({ words: '5 more', name: '5 more. All routines' });
+    expect(upNextLink(1)).toEqual({ words: '1 more', name: '1 more. All routines' });
+  });
+
+  it('shows the visible words inside its name, so what a person reads is what a screen reader says', () => {
+    for (const more of [0, 1, 2, 17]) {
+      const { words, name } = upNextLink(more);
+      expect(name.startsWith(words), String(more)).toBe(true);
+    }
   });
 });
 

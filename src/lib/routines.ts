@@ -265,6 +265,12 @@ export function upNext(groups: readonly ProfileRoutines[], done: ReadonlySet<str
   return { tiles, more: left - tiles.length };
 }
 
+// The link in Up next's heading to the chart: "All routines", or, when the tiles do not show all that is left today, how many
+// more there are ("5 more"). Its name always says where it goes, and starts with what is read, so the two agree.
+export function upNextLink(more: number): { words: string; name: string } {
+  return more > 0 ? { words: `${more} more`, name: `${more} more. All routines` } : { words: 'All routines', name: 'All routines' };
+}
+
 // ---- A tick that did not save ---------------------------------------------------------------------
 
 export const TICK_FAILED = 'That did not save. Try again.';
