@@ -310,7 +310,15 @@ export function WallListsScreen({ onClose }: { onClose: () => void }) {
           <ul className="grid grid-cols-2 gap-4">
             {others?.map((list) => (
               <li key={list.id}>
-                <button type="button" className="min-h-16 w-full rounded-xl border border-border px-4 text-left text-2xl" onClick={() => setOpen(list)}>
+                <button
+                  type="button"
+                  className="min-h-16 w-full rounded-xl border border-border px-4 text-left text-2xl"
+                  // This button goes with the lists, taking focus with it: keep it in the dialog, so Escape still reaches it.
+                  onClick={() => {
+                    setOpen(list);
+                    dialog.current?.focus();
+                  }}
+                >
                   {list.name}
                 </button>
               </li>
