@@ -70,8 +70,9 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
       await refresh();
       return true;
     } catch {
-      setProblem(failure);
+      // Said after the screen is read again, which would otherwise clear what it says is wrong.
       await refresh();
+      setProblem(failure);
       return false;
     } finally {
       setBusy(false);
@@ -194,7 +195,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                 )}
               </div>
             ) : (
-              <div className="flex h-14 items-center gap-3 rounded-2xl bg-muted pr-1 pl-1.5">
+              <div className="flex h-14 items-center gap-3 rounded-[14px] bg-muted pr-1 pl-1.5">
                 <PersonDisc name={profile.name} color={profile.color} size={44} />
                 <span className="min-w-0 flex-1 truncate text-[17px] font-medium">{profile.name}</span>
                 <Button

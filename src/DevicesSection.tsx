@@ -31,6 +31,7 @@ export function DevicesSection() {
   const [pairStatus, setPairStatus] = useState<PairStatus>('idle');
   // The tablet whose row is open, and whether it is being asked to be sure.
   const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
+  const [unpairing, setUnpairing] = useState(false);
   const [focusNext, setFocusNext] = useState<string | null>(null);
 
   // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
@@ -74,6 +75,8 @@ export function DevicesSection() {
   }
 
   async function unpair(id: string) {
+    if (unpairing) return;
+    setUnpairing(true);
     try {
       await revokeDevice(id);
       setOpen(null);
@@ -81,6 +84,8 @@ export function DevicesSection() {
       await refresh();
     } catch {
       setProblem('Could not unpair the tablet. Try again.');
+    } finally {
+      setUnpairing(false);
     }
   }
 
@@ -101,7 +106,7 @@ export function DevicesSection() {
                 id={`tablet-${device.id}`}
                 variant="secondary"
                 aria-expanded={expanded}
-                className="h-14 w-full justify-start gap-3 px-3.5 text-left font-medium"
+                className="h-14 w-full justify-start gap-3 rounded-[14px] px-3.5 text-left font-medium"
                 onClick={() => setOpen(expanded ? null : { id: device.id, confirming: false })}
               >
                 <Tablet aria-hidden className="size-[22px]" />
@@ -118,6 +123,7 @@ export function DevicesSection() {
                     words="The tablet stops showing your household and goes back to showing a code. You can pair it again any time."
                     cancel="Cancel"
                     confirm={`Unpair ${device.name}`}
+                    busy={unpairing}
                     onCancel={() => {
                       setOpen({ id: device.id, confirming: false });
                       setFocusNext(`unpair-${device.id}`);

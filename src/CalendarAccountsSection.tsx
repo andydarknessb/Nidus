@@ -23,7 +23,7 @@ const CALENDAR_TABLES = ['calendar_accounts', 'mirrored_calendars', 'profiles'] 
 
 // The choice values a select can carry: '' is "whole household". A calendar has no colour to choose any more (the Wall draws an
 // event in its person's colour); its stored one is sent back as it is, and nothing here shows it.
-function CalendarRow({
+export function CalendarRow({
   calendar,
   profiles,
   onChange,
@@ -62,6 +62,17 @@ function CalendarRow({
   );
 }
 
+// An account's name, how it is doing, and when it last synced. What the sync wrote when it failed is for the logs, and is not here.
+export function AccountSummary({ account, now }: { account: CalendarAccount; now: number }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <h3 className="text-[17px] leading-6 font-semibold break-words">{account.google_email}</h3>
+      <p className="text-base leading-6">{accountStatusText(account)}</p>
+      <p className={helpClass}>{lastSyncedText(account.last_synced_at, now)}</p>
+    </div>
+  );
+}
+
 // Settings, phone only: connect a Google account, choose which of its calendars are mirrored and whose they are, and remove an
 // account. A Device never gets this screen.
 export function CalendarAccountsSection() {
@@ -72,6 +83,7 @@ export function CalendarAccountsSection() {
   const [notice, setNotice] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
   const [focusNext, setFocusNext] = useState<string | null>(null);
   // Ticks each minute so "last synced N minutes ago" keeps up without a reload.
   const [now, setNow] = useState(() => Date.now());
@@ -149,33 +161,41 @@ export function CalendarAccountsSection() {
     }
   }
 
+  // A failed write is said after the screen has been read again: reading it again clears what the screen says is wrong.
   async function choose(id: string, choice: { selected: boolean; profile_id: string | null; color: string | null }) {
+    let failed = false;
     try {
       await updateMirroredCalendar(supabase, id, choice);
-      setProblem(null);
     } catch {
-      setProblem('Could not save that choice. Try again.');
+      failed = true;
     }
     await refresh();
+    if (failed) setProblem('Could not save that choice. Try again.');
   }
 
   async function remove(id: string) {
+    if (removing) return;
+    setRemoving(true);
+    let failed = false;
     try {
       await removeCalendarAccount(supabase, id);
-      setProblem(null);
       setNotice('Account removed.');
     } catch {
-      setProblem('Could not remove the account. Try again.');
+      failed = true;
     }
     setConfirming(null);
+    // The account is gone and with it the button that asked: focus goes to the first button of the card, or back to the one that asked.
+    setFocusNext(failed ? `remove-${id}` : 'connect-google');
     await refresh();
+    if (failed) setProblem('Could not remove the account. Try again.');
+    setRemoving(false);
   }
 
   return (
     <Card title="Google calendars">
       <p className="text-base leading-6">Nidus shows your Google calendars on the Wall. It only reads them and never changes anything in Google.</p>
       <div className="flex flex-col gap-2">
-        <Button variant="secondary" size="phone" className="w-full" onClick={() => void connect()}>
+        <Button id="connect-google" variant="secondary" size="phone" className="w-full" onClick={() => void connect()}>
           <Plus aria-hidden />
           Connect a Google calendar
         </Button>
@@ -197,11 +217,7 @@ export function CalendarAccountsSection() {
         const own = calendarsOfAccount(calendars, account.id);
         return (
           <div key={account.id} className="flex flex-col gap-4 border-t border-border pt-4">
-            <div className="flex flex-col gap-1">
-              <h3 className="text-[17px] leading-6 font-semibold break-words">{account.google_email}</h3>
-              <p className="text-base leading-6">{accountStatusText(account)}</p>
-              <p className={helpClass}>{lastSyncedText(account.last_synced_at, now)}</p>
-            </div>
+            <AccountSummary account={account} now={now} />
             {account.status === 'needs_reauth' && (
               <div className="flex flex-col gap-3">
                 <p className="text-base leading-6">Nothing is lost. Connecting again keeps this account’s calendars and your choices for them.</p>
@@ -228,6 +244,7 @@ export function CalendarAccountsSection() {
                 words="Its calendars leave the Wall and Nidus forgets its Google sign-in."
                 cancel="Keep it"
                 confirm="Yes, remove it"
+                busy={removing}
                 onCancel={() => {
                   setConfirming(null);
                   setFocusNext(`remove-${account.id}`);

@@ -19,7 +19,7 @@ const initialsOf = (owners: readonly Pick<Profile, 'name'>[]) =>
     .map((owner) => initialOf(owner.name))
     .join('') + (owners.length > 2 ? `+${owners.length - 2}` : '');
 
-// The ten colours as a group of radios, five to a row. Nothing here is told by colour alone: each swatch is named, the chosen one
+// The ten colours as a group of radios, five to a row (four where the card is narrower than five 48 px swatches need). Nothing here is told by colour alone: each swatch is named, the chosen one
 // has a ring, and a colour someone already has carries their initial and says whose it is in its name. A colour in use can still
 // be chosen: two children may share one on purpose, and the first free colour is only where a new person starts. `profiles` is
 // everyone, the person being edited included, whose own colour then carries their own initial.
@@ -38,7 +38,7 @@ export function ColorPicker({
   return (
     <fieldset className="flex flex-col">
       <legend className={`${labelClass} mb-2`}>Colour</legend>
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-5 gap-3 max-[351px]:grid-cols-4">
         {PROFILE_PALETTE.map(({ name, hex }) => {
           const owners = colorOwners(profiles, hex);
           return (

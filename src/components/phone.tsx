@@ -50,8 +50,8 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 }
 
 // Before something that cannot be undone: what is about to happen, in words, and the two ways out, the safe one first and the one
-// that does it in the delete voice, with room for a name. It takes the focus when it opens, so a screen reader reads what is about
-// to happen before it can be done.
+// that does it in the delete voice, with room for a name. It is a group named by its question and described by its words, and it
+// takes the focus when it opens, so a screen reader reads both before anything can be done.
 export function Confirm({
   title,
   words,
@@ -69,14 +69,18 @@ export function Confirm({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => heading.current?.focus(), []);
+  const group = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const wordsId = useId();
+  useEffect(() => group.current?.focus(), []);
   return (
-    <div className="flex flex-col gap-3">
-      <h3 ref={heading} tabIndex={-1} className="text-[17px] leading-6 font-semibold break-words">
+    <div ref={group} role="group" tabIndex={-1} aria-labelledby={titleId} aria-describedby={wordsId} className="flex flex-col gap-3 rounded-lg">
+      <h3 id={titleId} className="text-[17px] leading-6 font-semibold break-words">
         {title}
       </h3>
-      <p className="text-base leading-6">{words}</p>
+      <p id={wordsId} className="text-base leading-6">
+        {words}
+      </p>
       <div className="flex gap-2">
         <Button variant="secondary" size="phone" className="flex-1" onClick={onCancel}>
           {cancel}

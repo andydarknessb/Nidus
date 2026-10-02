@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Fragment, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { AccountSummary as AccountSummaryType, CalendarRow as CalendarRowType } from '../src/CalendarAccountsSection';
 import type { CalendarsPage as CalendarsPageType } from '../src/CalendarsPage';
 import type { SettingsPage as SettingsPageType } from '../src/SettingsPage';
 import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '../src/components/PersonEditor';
@@ -433,11 +434,58 @@ describe("the phone's pages, as they are first drawn", () => {
     expect(markup).not.toMatch(/type="url"/);
   });
 
-  it('put the Calendar Accounts and the events added in Nidus on the Calendars page, and no colour to choose', () => {
+  it('put the Google calendars and the events added in Nidus on the Calendars page', () => {
     const markup = calendarsPage();
     expect(headings(markup)).toEqual(['Google calendars', 'Events added in Nidus']);
     expect(words(markup)).toContain('Connect a Google calendar');
     expect(words(markup)).toContain('Add event');
-    expect(words(markup)).not.toMatch(/colour/i);
+  });
+});
+
+// An account and a calendar of it, drawn from what they are told, since the page above is drawn before any is read.
+describe('a Calendar Account and its calendars', () => {
+  let CalendarRow: typeof CalendarRowType;
+  let AccountSummary: typeof AccountSummaryType;
+  beforeAll(async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+    ({ CalendarRow, AccountSummary } = await import('../src/CalendarAccountsSection'));
+  });
+
+  const members = [
+    { id: 'p-cory', name: 'Cory', color: hex(7), avatar_url: null, sort_order: 0 },
+    { id: 'p-sam', name: 'Sam', color: hex(9), avatar_url: null, sort_order: 1 },
+  ];
+  // A calendar that still has the colour it was given before a calendar had none.
+  const family = { id: 'c1', calendar_account_id: 'a1', google_calendar_id: 'g1', name: 'Family', color: hex(7), profile_id: null, selected: true };
+  const row = (calendar = family) => renderToStaticMarkup(createElement(CalendarRow, { calendar, profiles: members, onChange: () => undefined }));
+
+  it('has whose it is to choose, and no colour to choose, though one is stored', () => {
+    const markup = row();
+    expect(markup.match(/<select/g)).toHaveLength(1);
+    expect([...markup.matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map(([, option]) => option)).toEqual(['Whole household', 'Cory', 'Sam']);
+    expect(words(markup)).toContain('Whose calendar is Family?');
+    expect(words(markup)).not.toMatch(/colou?r/i);
+    for (const { name } of PROFILE_PALETTE) expect(markup).not.toContain(`>${name}<`);
+    expect(markup).not.toContain(hex(7));
+  });
+
+  it('is a checkbox that is the whole row, ticked when the calendar is shown', () => {
+    const shown = row();
+    expect(shown).toMatch(/<input[^>]*type="checkbox"[^>]*checked=""/);
+    expect(shown).toMatch(/<input[^>]*type="checkbox"[^>]*class="[^"]*\binset-0\b[^"]*\bsize-full\b/);
+    const hidden = row({ ...family, selected: false });
+    expect(hidden).not.toMatch(/checked=""/);
+    expect(hidden).not.toContain('<select');
+  });
+
+  it('says of an account whose last update failed what Nidus says, and none of what the sync wrote', () => {
+    const now = Date.parse('2026-10-01T19:21:00Z');
+    const account = { id: 'a1', google_email: 'sam.work@example.com', status: 'active' as const, last_synced_at: '2026-10-01T16:21:00Z', last_error: 'Work: Google answered 500 (backendError)' };
+    const shown = words(renderToStaticMarkup(createElement(AccountSummary, { account, now })));
+    expect(shown).toContain('sam.work@example.com');
+    expect(shown).toContain('Connected, but the last update failed. Nidus tries again every 5 minutes.');
+    expect(shown).toContain('Last synced 3 hours ago');
+    expect(shown).not.toMatch(/answered|500|backendError|Work/);
   });
 });

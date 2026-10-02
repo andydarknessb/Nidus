@@ -112,7 +112,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
 
   return (
     <Card title="Weather">
-      <div className="flex min-h-14 items-center gap-3 rounded-2xl bg-muted py-1 pr-1 pl-3.5">
+      <div className="flex min-h-14 items-center gap-3 rounded-[14px] bg-muted py-1 pr-1 pl-3.5">
         <Cloud aria-hidden className="size-[22px] shrink-0" />
         <p className="line-clamp-2 min-w-0 flex-1 text-[17px] leading-[22px] font-medium">{household.weather_place ?? 'Weather is off'}</p>
         <Button

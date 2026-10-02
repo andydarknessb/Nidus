@@ -47,6 +47,15 @@ export function AdminApp() {
   // Each page says where it is in the document's title, from the first paint: the sign-in and the dead end have their own.
   useDocumentTitle(session === null ? 'Sign in' : device ? 'Settings are for phones' : household ? settingsLabelOf(tab) : 'Settings');
 
+  // The tabs stay at the top while a page scrolls under them, so a control that is scrolled to for the keyboard must stop short of them:
+  // 5 rem is the bar (76 px) and a little air.
+  useEffect(() => {
+    document.documentElement.style.scrollPaddingTop = '5rem';
+    return () => {
+      document.documentElement.style.scrollPaddingTop = '';
+    };
+  }, []);
+
   // The events added in Nidus were at /settings/events: that address now is /settings/calendars, and the address bar says so.
   useEffect(() => {
     const { pathname, search, hash } = window.location;
@@ -112,7 +121,9 @@ export function AdminApp() {
           <ConnectionBadge />
         </div>
         <nav aria-label="Settings sections" className="sticky top-0 z-10 bg-background">
-          <div className="mx-auto grid w-full max-w-md grid-cols-4 gap-2 px-4 pb-2 max-[380px]:gap-1">
+          {/* 4 px above, for the ring a focused tab draws past its edge when the bar is stuck at the top; below 380 px the bar
+              gives up 8 px at each side to keep its 8 px between tabs, as "Household" in 600 needs 74 px. */}
+          <div className="mx-auto grid w-full max-w-md grid-cols-4 gap-2 px-4 pt-1 pb-2 max-[380px]:px-2">
             {SETTINGS_TABS.map(({ tab: id, path, label }) => {
               const Icon = TAB_ICONS[id];
               return (
