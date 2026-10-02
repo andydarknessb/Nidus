@@ -201,9 +201,9 @@ function BeforeHousehold({ label, failed, words }: { label: string; failed: bool
 const VIEW_TITLES: Record<WallRoute['view'], string> = { home: 'Home', day: 'Day', week: 'Week', month: 'Month', routines: 'Routines', meals: 'Meals' };
 
 // The landscape wall: a navigation rail down the left, then the header over the screen. The home
-// screen is the five-day calendar on the left and, on its right rail, today's Meals (when any is
-// planned) above today's Routines above the pinned Shared List; the other lists open from the
-// navigation rail.
+// screen is the five-day calendar on the left and, on its right rail, today's Routines above the
+// pinned Shared List; the other lists open from the navigation rail. The header carries the next
+// meal, on every screen but Meals.
 function HomeShell({ owner }: { owner: boolean }) {
   const [route, openView, openHome, openMeals, openRoutines] = useWallRoute();
   // The Household Timezone decides which day the Routines rail shows; none until it is read.
@@ -275,7 +275,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         onAdd={() => setAdding(true)}
         onToggleMode={toggleMode}
       />
-      <WallHeader household={view.household} today={today} forecast={forecast} filter={filter} pressed={pressed} chipsHidden={!onCalendar} />
+      <WallHeader household={view.household} today={today} forecast={forecast} filter={filter} pressed={pressed} chipsHidden={!onCalendar} onMeals={route.view === 'meals' ? null : () => openMeals(null)} />
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
           timezone ? (

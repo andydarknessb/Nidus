@@ -31,7 +31,7 @@ export function useNow(timezone: string): Date {
 }
 
 // The current Household day, moved on at Household midnight with no refresh. A screen that follows
-// "today" (Meals and its card) reads it here; the zone changing under a mounted screen moves it too.
+// "today" (the Meals screen and the Routines reader) reads it here; the zone changing under a mounted screen moves it too.
 export function useHouseholdDay(timezone: string): HouseholdDay {
   const [day, setDay] = useState(() => householdDay(timezone));
   useEffect(() => {

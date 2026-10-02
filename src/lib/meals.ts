@@ -1,8 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { wallMs } from './native-events';
+import { householdDay } from './routines';
 
 // Meals (CONTEXT.md): what the Household plans to eat for one slot on one Household date, as free
-// text. A Household Account (the phone) or a Device (the wall) writes them. Every function takes
-// the client so the same code runs in the app and in tests, against the local stack.
+// text. A Household Account (the phone) or a Device (the wall) writes them. Every function that
+// reads or writes takes the client so the same code runs in the app and in tests, against the
+// local stack; the rest are pure.
 
 // The slots of a day in the order the wall shows them, and the word each goes by.
 export const MEAL_SLOTS = [
@@ -43,4 +46,33 @@ export function mealGrid(meals: Meal[], dates: string[]): MealRow[] {
     label,
     cells: dates.map((date) => meals.find((meal) => meal.meal_date === date && meal.slot === slot) ?? null),
   }));
+}
+
+// The slots in the order the day happens, which is not the grid's (the snack comes before dinner), each with the
+// Household wall-clock time after which it is no longer ahead. Dinner has none: it stays until Household midnight,
+// when the date turns over and the new day's Meals are the ones counted.
+const DAY_SLOTS: readonly { slot: MealSlot; until: string | null }[] = [
+  { slot: 'breakfast', until: '10:00' },
+  { slot: 'lunch', until: '14:00' },
+  { slot: 'snack', until: '17:00' },
+  { slot: 'dinner', until: null },
+];
+
+// The Meal the header offers as the next one: the first planned slot of today (the Household date at `now`) that
+// is still ahead, or null when none is. A slot is ahead until its time on the Household's own wall clock, so the
+// clocks changing never moves it, and `meals` may be any read: only today's count.
+export function nextMeal(meals: readonly Meal[], now: Date, timezone: string): Meal | null {
+  const today = householdDay(timezone, now).date;
+  for (const { slot, until } of DAY_SLOTS) {
+    if (until !== null && now.getTime() >= wallMs(today, until, timezone)) continue;
+    const planned = meals.find((meal) => meal.meal_date === today && meal.slot === slot);
+    if (planned) return planned;
+  }
+  return null;
+}
+
+// What the header calls the next meal's slot: "Dinner tonight", "Lunch today".
+export function nextMealWords(slot: MealSlot): string {
+  const { label } = MEAL_SLOTS.find((entry) => entry.slot === slot)!;
+  return slot === 'dinner' ? `${label} tonight` : `${label} today`;
 }
