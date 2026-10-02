@@ -27,17 +27,18 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
   const [state, setState] = useState({ overflowing: false, atEnd: false });
   const sideways = axis === 'x';
 
-  // What the browser says about the box now, and what the button holds back while it is drawn: its size, and beside the box
-  // the gap the row puts between them, which is room too.
+  // What the browser says about the box now, and what the button holds back while it is drawn: its size, and beside the box the gap
+  // the row puts between them, which is room too.
   const read = useCallback((): Scroll | null => {
     const element = box.current;
     if (!element) return null;
+    const button = piece.current;
     let buttonSize = 0;
-    if (fit && piece.current) {
-      buttonSize = sideways ? piece.current.offsetWidth : piece.current.offsetHeight;
-      if (fit === 'beside' && element.parentElement) {
-        const gap = getComputedStyle(element.parentElement);
-        buttonSize += parseFloat(sideways ? gap.columnGap : gap.rowGap) || 0;
+    if (fit && button) {
+      buttonSize = sideways ? button.offsetWidth : button.offsetHeight;
+      if (fit === 'beside' && button.parentElement) {
+        const row = getComputedStyle(button.parentElement);
+        buttonSize += parseFloat(sideways ? row.columnGap : row.rowGap) || 0;
       }
     }
     return {

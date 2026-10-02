@@ -16,7 +16,8 @@ export type Axis = 'x' | 'y';
 // drawing the button never decides whether it is needed, and it does not come and go.
 export type Scroll = { scrollSize: number; clientSize: number; scrollOffset: number; buttonSize: number; over?: boolean };
 
-// `next` is where a press takes the box: on by most of a page, but never past the end, and from the end back to the start.
+// `next` is where a press takes the box: on by most of a page, but never past the end (and all the way to it when only a sliver
+// would be left, rather than a press for a few pixels), and from the end back to the start.
 export type OverflowState = { overflowing: boolean; atEnd: boolean; next: number };
 
 // The browser reports sizes in whole pixels, so a box that holds 0.4 px more than it shows reports 1 px more. One pixel is not
@@ -33,10 +34,14 @@ export function overflowState({ scrollSize, clientSize, scrollOffset, buttonSize
   // that, and nothing slips under the button between one press and the next. At least one pixel, so a box too short for its
   // button still moves on.
   const page = clientSize - (over ? buttonSize : 0);
+  const target = scrollOffset + Math.max(PAGE_STEP * page, 1);
+  // A press keeps the rest of a page in view (the fifth it does not move by). When no more than that would be left beyond where it
+  // lands, one more press would move the box by less than that: this one goes to the end.
+  const sliver = farthest - target < Math.max((1 - PAGE_STEP) * page, 0);
   return {
     overflowing: scrollSize > clientSize + buttonSize + SLACK_PX,
     atEnd,
-    next: atEnd ? 0 : Math.min(scrollOffset + Math.max(PAGE_STEP * page, 1), farthest),
+    next: atEnd ? 0 : sliver ? farthest : target,
   };
 }
 

@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { FOOT_SCROLL_PADDING, OverflowButton } from '../src/components/OverflowButton';
+import { FOOT_CLEARANCE, OverflowButton } from '../src/components/OverflowButton';
 import { overflowState, overflowWords, PAGE_STEP, type Axis, type Scroll } from '../src/lib/overflow';
 import type { OverflowControl } from '../src/lib/use-overflow';
 
@@ -115,6 +115,20 @@ describe('where one press goes', () => {
     // 2000 of content in 1000 scrolls 1000 px: from 700 a page would reach 1500.
     expect(overflowState(box(2000, { scrollOffset: 700 })).next).toBe(1000);
     expect(overflowState(box(1500, { scrollOffset: 0 })).next).toBe(500);
+  });
+
+  it('goes all the way when only a sliver would be left beyond it, so no press is spent on a few pixels', () => {
+    // A press keeps the last fifth of a page in view. 1950 of content in 1000 scrolls 950: a page on would leave 150, less than that
+    // fifth, so the press goes to the end; with 200 left, exactly the fifth, it goes by its page and the next is a real one.
+    expect(overflowState(box(1950)).next).toBe(950);
+    expect(overflowState(box(1951)).next).toBe(951);
+    expect(overflowState(box(1999)).next).toBe(999);
+    expect(overflowState(box(2000)).next).toBe(800);
+    expect(overflowState(box(2001)).next).toBe(800);
+    // The same in a column whose foot covers 74 px of 476: a page is the 402 that is clear, a press 321.6 of it, and a fifth 80.4.
+    const column = { scrollSize: 1126, clientSize: 476, buttonSize: 74, over: true };
+    expect(overflowState({ ...column, scrollOffset: 0 }).next).toBeCloseTo(321.6, 6);
+    expect(overflowState({ ...column, scrollOffset: 322 }).next).toBe(650);
   });
 
   it('goes back to the start from the end', () => {
@@ -313,11 +327,16 @@ describe('the button', () => {
     }
   });
 
-  it('is as tall, as a foot, as the end padding it asks of its list, so the last tile can always be scrolled clear of it', () => {
-    // The foot is h-16 (64 px): the button's 48 and a 16 px fade above it. Its list scrolls to 64 px clear of its end (scroll-pb-16),
-    // and the foot, the last thing in the list, is what pads its end.
+  it('is kept clear of by the items of its list: they scroll to stop short of the foot by more than its height', () => {
+    // The foot is h-16 (64 px): the button's 48 and a 16 px fade above it. The scroll margin is on the list's items (the li, which a
+    // new item is scrolled to, and its button, which the keyboard's focus is) and never on the list itself: padding on the list would
+    // make the browser scroll it whenever the foot's own button took the focus, as Tab does, and the button would turn itself into
+    // "Back".
     expect(tags(render('y', false, 'Groceries')).foot).toMatch(/\bh-16\b/);
-    expect(FOOT_SCROLL_PADDING).toBe('scroll-pb-16');
+    expect(Number(/scroll-mb-(\d+)/.exec(FOOT_CLEARANCE)?.[1]) * 4).toBeGreaterThan(64);
+    expect(FOOT_CLEARANCE).toContain('[&_li]:scroll-mb-');
+    expect(FOOT_CLEARANCE).toContain('[&_li_button]:scroll-mb-');
+    expect(FOOT_CLEARANCE).not.toMatch(/(^| )scroll-p/);
   });
 
   it('is a row\'s button as it was in the people strip: a button of its own, with no foot or fade', () => {

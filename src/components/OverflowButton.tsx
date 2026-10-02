@@ -17,11 +17,13 @@ import { Button } from './ui/button';
 // In a row it is a button of its own, beside the row or in the screen's heading row. In a column it is the column's foot: the last
 // thing the column's list holds, stuck to the foot of what the list shows while there is more below, over a short fade in the colour
 // the list sits on, so the tiles run out under it. Taps go through the fade to the tiles; only the button takes them. The foot is in
-// the list's flow, so the list ends with room for it and the last tile can always be scrolled clear of it, and the list asks to be
-// scrolled to that clearance (FOOT_SCROLL_PADDING) so a tile that takes the keyboard's focus is never left under the foot.
+// the list's flow, so the list ends with room for it and the last tile can always be scrolled clear of it. A tile scrolled to for any
+// reason (the keyboard's focus, a new item) stops FOOT_CLEARANCE short of the foot, so it is never left under it. The clearance is on
+// the list's items and not on the list, which would make the browser scroll the list when the foot's own button takes the focus.
 
-// The foot is 64 px: the button's 48 and a 16 px fade above it. The list scrolls to 64 px clear of its end to match.
-export const FOOT_SCROLL_PADDING = 'scroll-pb-16';
+// The foot is 64 px: the button's 48 and a 16 px fade above it. An item scrolls to 72 px clear of the end of the list: the foot, and
+// 8 px more for the room a focus ring takes outside a tile.
+export const FOOT_CLEARANCE = '[&_li]:scroll-mb-18 [&_li_button]:scroll-mb-18';
 
 // What a column's foot sits on: the fade is in that colour, and the button is the surface that is told apart from it (a card on a
 // person's column, as the tiles are; a row's colour on a card, as the items are).
@@ -33,6 +35,7 @@ const SURFACE: Record<Surface, { fade: string; button: string }> = {
 
 const LABEL = 'col-start-1 row-start-1 flex items-center justify-center gap-1';
 
+// `className` is for the box this draws: the button, in a row; the foot that holds it, in a column.
 export function OverflowButton({ control, of, surface = 'card', className }: { control: OverflowControl; of: string; surface?: Surface; className?: string }) {
   if (!control.overflowing) return null;
   const { axis, atEnd } = control;
@@ -48,10 +51,11 @@ export function OverflowButton({ control, of, surface = 'card', className }: { c
       variant="secondary"
       aria-label={atEnd ? words.back.name : words.more.name}
       onClick={control.step}
-      className={cn(
-        column ? cn('pointer-events-auto h-12 w-full gap-1 rounded-[14px] px-3.5 text-sm focus-visible:-outline-offset-2', SURFACE[surface].button) : 'h-14 gap-1 rounded-[18px] bg-card px-3.5 text-sm',
-        className,
-      )}
+      className={
+        column
+          ? cn('pointer-events-auto h-12 w-full gap-1 rounded-[14px] px-3.5 text-sm focus-visible:-outline-offset-2', SURFACE[surface].button)
+          : cn('h-14 gap-1 rounded-[18px] bg-card px-3.5 text-sm', className)
+      }
     >
       <span className="grid">
         <span aria-hidden={atEnd || undefined} className={cn(LABEL, atEnd && 'invisible')}>
@@ -68,7 +72,7 @@ export function OverflowButton({ control, of, surface = 'card', className }: { c
   if (!column) return button;
 
   return (
-    <div ref={control.piece} className={cn('pointer-events-none sticky bottom-0 flex h-16 items-end bg-linear-to-t from-75% to-transparent', SURFACE[surface].fade)}>
+    <div ref={control.piece} className={cn('pointer-events-none sticky bottom-0 flex h-16 shrink-0 items-end bg-linear-to-t from-75% to-transparent', SURFACE[surface].fade, className)}>
       {button}
     </div>
   );
