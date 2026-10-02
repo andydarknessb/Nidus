@@ -1,4 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
+import type { Appearance } from './mode';
 import { supabase } from './supabase';
 import { browserTimezone } from './timezones';
 import { capPlace, type TemperatureUnit, type WeatherPlace } from './weather';
@@ -12,11 +13,13 @@ export type Household = {
   latitude: number | null;
   longitude: number | null;
   temperature_unit: TemperatureUnit;
+  // How the Household wants the Wall to look; the database refuses any other value.
+  appearance: Appearance;
 };
 
 // What every read of a Household asks for: one name wrong here and the Wall reads nothing at all.
 // Exported so a test can read with exactly this list.
-export const householdColumns = 'id, name, timezone, weather_place, latitude, longitude, temperature_unit';
+export const householdColumns = 'id, name, timezone, weather_place, latitude, longitude, temperature_unit, appearance';
 
 export function displayNameOf(session: Session): string {
   const meta = session.user.user_metadata as { full_name?: string; name?: string };
@@ -52,7 +55,9 @@ export function householdViewAfter(prev: HouseholdView, read: { household: House
   return { household: read.household, failed: false };
 }
 
-export async function updateHousehold(id: string, changes: { name: string; timezone: string }): Promise<Household> {
+// Household Account only: a Device reads the Household and the database refuses its write. The Appearance is saved on
+// its own, from its own section of the phone's settings.
+export async function updateHousehold(id: string, changes: { name: string; timezone: string } | { appearance: Appearance }): Promise<Household> {
   const { data, error } = await supabase
     .from('households')
     .update(changes)

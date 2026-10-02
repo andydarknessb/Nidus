@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { Household } from './household';
-import { fetchForecast, forecastToShow, readDelayMs, staleDelayMs, type Forecast } from './weather';
+import { fetchForecast, forecastToShow, readDelayMs, staleDelayMs, type Forecast, type SunDay } from './weather';
 
 // A forecast and when it landed, so a reading left standing by an outage stops passing as current.
 type Reading = { forecast: Forecast; fetchedAt: number };
+
+// The sun of a Wall with no forecast to go on. One array, so what takes it as a dependency sees no change.
+const NO_DAYS: SunDay[] = [];
 
 // The forecast for the Household's place (issue #58): nothing, and no request, while it has none.
 // It is read when the Wall opens, every half hour (readDelayMs), and again when the place, unit or
@@ -14,8 +17,17 @@ type Reading = { forecast: Forecast; fetchedAt: number };
 // that never settles would put off for good. A change of place or unit drops the forecast first,
 // since one for another place or unit is a wrong number. Kept out of components/Weather.tsx so that
 // file exports only components, which Fast Refresh needs.
-export function useForecast(household: Household | null): Forecast | null {
+//
+// It also says what the Wall's mode goes on for the sun (`sun`, src/lib/use-mode.ts): the days of the last forecast
+// read, which a change of place or unit does not drop, so the mode does not flip while the new forecast is read.
+// null while the Household has a weather place and no read of it has finished or failed, when Auto waits for it (Light,
+// Dark and the switch do not); empty when there is no forecast to go on, whether the weather is off or the first read failed.
+export function useForecast(household: Household | null): { forecast: Forecast | null; sun: SunDay[] | null } {
   const [reading, setReading] = useState<Reading | null>(null);
+  // ponytail: a first read that never settles (a WebView without AbortSignal.timeout on a dead connection, see
+  // requestInit) leaves Auto on the mode the screen had for good, as the spec has it; Light, Dark and the switch still
+  // work. Give that wait a deadline if it is ever seen.
+  const [days, setDays] = useState<SunDay[] | null>(null);
   // The clock as of the latest attempt to read, or of the reading in hand turning too old (the timer
   // below): what forecastToShow judges the reading's age against. Failed attempts move it on too.
   const [now, setNow] = useState(() => Date.now());
@@ -25,10 +37,11 @@ export function useForecast(household: Household | null): Forecast | null {
   const longitude = household?.longitude ?? null;
   const unit = household?.temperature_unit ?? null;
   const timezone = household?.timezone ?? null;
+  const weatherOn = latitude !== null && longitude !== null && unit !== null && timezone !== null;
 
   useEffect(() => {
     setReading(null);
-    if (latitude === null || longitude === null || unit === null || timezone === null) return;
+    if (!weatherOn) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -38,10 +51,15 @@ export function useForecast(household: Household | null): Forecast | null {
       try {
         const next = await fetchForecast(latitude, longitude, unit, timezone);
         failures = 0;
-        if (live) setReading({ forecast: next, fetchedAt: Date.now() });
+        if (live) {
+          setReading({ forecast: next, fetchedAt: Date.now() });
+          setDays(next.days);
+        }
       } catch {
         // Offline or Open-Meteo is down: keep what the Wall shows and try again.
         failures += 1;
+        // A first read that failed leaves the mode nothing to wait for: it goes on 7:00 and 19:00.
+        if (live) setDays((kept) => kept ?? NO_DAYS);
       }
       if (!live) return;
       setNow(Date.now());
@@ -53,7 +71,7 @@ export function useForecast(household: Household | null): Forecast | null {
       live = false;
       clearTimeout(timer);
     };
-  }, [latitude, longitude, unit, timezone]);
+  }, [weatherOn, latitude, longitude, unit, timezone]);
 
   // The moment the reading in hand turns too old, `now` moves on to it by itself, so the current
   // conditions go on time even when no attempt finishes to notice: a WebView without
@@ -76,5 +94,5 @@ export function useForecast(household: Household | null): Forecast | null {
     return () => clearTimeout(timer);
   }, [reading]);
 
-  return reading && forecastToShow(reading.forecast, reading.fetchedAt, now);
+  return { forecast: reading && forecastToShow(reading.forecast, reading.fetchedAt, now), sun: weatherOn ? days : NO_DAYS };
 }

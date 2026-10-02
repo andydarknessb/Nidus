@@ -2,6 +2,7 @@ import { addDays } from './calendar-occurrences';
 import { TOKENS, type Mode } from './look';
 import { wallMs } from './native-events';
 import { householdDay } from './routines';
+import type { SunDay } from './weather';
 
 // The mode of a screen: light or dark, by the Household's Appearance (CONTEXT.md), the screen's own switch, the
 // clock and the sun. The document's `data-mode` is the only switch: components never branch on it for colour
@@ -26,8 +27,27 @@ function sunToday(now: number, timezone: string, sunrise: number | undefined, su
   return { date, sunrise: sunrise ?? wallMs(date, SUNRISE, timezone), sunset: sunset ?? wallMs(date, SUNSET, timezone) };
 }
 
+// What the forecast says of the sun on one Household date, as instants (epoch milliseconds). A part it has nothing on is
+// left out, and resolveMode and nextBoundary use 7:00 and 19:00 for it.
+export type Sun = { sunrise?: number | undefined; sunset?: number | undefined; nextSunrise?: number | undefined };
+
+// The sun of the Household date `now` falls on, from the forecast's days: that day's sunrise and sunset, and the next
+// day's sunrise, which is where nextBoundary goes after today's sunset. The days hold instants already (parseForecast reads
+// Open-Meteo's text with the offset it answers with), so the Household Timezone only says which date `now` is. A date the
+// forecast does not cover has no sun of its own, and Auto then runs on 7:00 and 19:00. A caller asks again at each tick and
+// does not keep the answer: the Household date moves on at midnight, and the forecast's days already cover it.
+export function sunAt(days: readonly SunDay[], timezone: string, now: number): Sun {
+  const date = householdDay(timezone, new Date(now)).date;
+  const today = days.find((day) => day.date === date);
+  const next = days.find((day) => day.date === addDays(date, 1));
+  return {
+    ...(today && { sunrise: today.sunrise, sunset: today.sunset }),
+    ...(next && { nextSunrise: next.sunrise }),
+  };
+}
+
 export type ModeInputs = {
-  // The Household's Appearance. It is always Auto until the Appearance setting exists.
+  // The Household's Appearance; Auto until the Household has been read.
   appearance?: Appearance | undefined;
   // What this screen's switch set, if it has been used: it wins until the instant it ends.
   override?: ModeOverride | null | undefined;
@@ -37,19 +57,32 @@ export type ModeInputs = {
   // Today's sunrise and sunset, as instants; 7:00 and 19:00 in the Household Timezone when left out.
   sunrise?: number | undefined;
   sunset?: number | undefined;
-  // The mode this screen last resolved (light when it has none): what it keeps until the Household is read.
+  // Whether the sun is known yet: the first read of the Household's forecast has finished or failed, or the Household has no
+  // weather place, where 7:00 and 19:00 are the sun. Known when left out. Only Auto with no override in force waits for it.
+  sunKnown?: boolean | undefined;
+  // The mode this screen last resolved (light when it has none): what it keeps while it cannot resolve another.
   last?: Mode | undefined;
 };
 
 // An override that has not ended wins; otherwise Light or Dark as the Household set; otherwise Auto, which is
-// light from sunrise to sunset. Until the Household is read there is nothing to resolve with, so the screen
-// keeps the mode it last had and does not flip when the Household arrives.
-export function resolveMode({ appearance = 'auto', override, now, timezone, sunrise, sunset, last = 'light' }: ModeInputs): Mode {
+// light from sunrise to sunset. Only that last needs the sun, so only Auto with no override in force waits for it
+// (`sunKnown`), keeping the mode the screen last had until it is. Until the Household is read there is nothing to
+// resolve with at all, so the screen keeps that mode whatever else is given, and does not flip when the Household arrives.
+export function resolveMode({ appearance = 'auto', override, now, timezone, sunrise, sunset, sunKnown = true, last = 'light' }: ModeInputs): Mode {
   if (timezone === null) return last;
   if (override && now < override.until) return override.mode;
   if (appearance !== 'auto') return appearance;
+  if (!sunKnown) return last;
   const sun = sunToday(now, timezone, sunrise, sunset);
   return now >= sun.sunrise && now < sun.sunset ? 'light' : 'dark';
+}
+
+// Whether the inputs settle on a mode, or leave it to `last`: the Household is read, and something says what the mode is, an
+// override that has not ended, Light or Dark, or Auto with the sun known. A screen keeps for its next load only a mode it
+// really resolved, so it asks. resolveMode answers with `last` exactly when it cannot say, which is what this goes by: an
+// answer that is the same whatever `last` is, is one it gave, so the rule stays in resolveMode and nowhere else.
+export function canResolve(inputs: ModeInputs): boolean {
+  return resolveMode({ ...inputs, last: 'light' }) === resolveMode({ ...inputs, last: 'dark' });
 }
 
 // The next sunrise or sunset after `now`: when the switch's override ends. After today's sunset it is the next

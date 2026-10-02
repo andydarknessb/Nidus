@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { TOKENS } from '../src/lib/look';
-import { MAX_OVERRIDE_MS, MODE_KEY, OVERRIDE_KEY, nextBoundary, readLastMode, readOverride, resolveMode, writeLastMode, writeOverride, type ModeStore } from '../src/lib/mode';
+import { MAX_OVERRIDE_MS, MODE_KEY, OVERRIDE_KEY, canResolve, nextBoundary, readLastMode, readOverride, resolveMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeStore } from '../src/lib/mode';
+import type { SunDay } from '../src/lib/weather';
 
 // Every instant is written in UTC and every Household Timezone is named, so no test reads the machine's zone.
 const at = (iso: string) => Date.parse(`${iso}Z`);
@@ -88,6 +89,179 @@ describe('resolveMode: the Appearance', () => {
   });
 });
 
+// ---- The forecast's sunrise and sunset ----------------------------------------------------------
+// The Wall holds the forecast's days as src/lib/weather.ts reads them: each day's Household date, and its sunrise and sunset as
+// instants (Open-Meteo sends wall-clock text at one offset for the whole answer, and parseForecast turns it into the instant it
+// is). sunAt() picks the ones of the Household date `now` falls on. Chicago is on daylight time (UTC-5) from 2026-03-08 to
+// 2026-11-01 and on standard time (UTC-6) outside that.
+const OCTOBER: SunDay[] = [
+  { date: '2026-10-01', sunrise: at('2026-10-01T12:12:00'), sunset: at('2026-10-01T23:48:00') }, // 07:12 and 18:48 in Chicago
+  { date: '2026-10-02', sunrise: at('2026-10-02T12:13:00'), sunset: at('2026-10-02T23:46:00') },
+  { date: '2026-10-03', sunrise: at('2026-10-03T12:14:00'), sunset: at('2026-10-03T23:45:00') },
+];
+// The days either side of the spring change (Sunday 2026-03-08, 23 hours).
+const SPRING: SunDay[] = [
+  { date: '2026-03-07', sunrise: at('2026-03-07T12:27:00'), sunset: at('2026-03-08T00:09:00') }, // 06:27 and 18:09 on standard time
+  { date: '2026-03-08', sunrise: at('2026-03-08T12:26:00'), sunset: at('2026-03-09T00:10:00') }, // 07:26 and 19:10 on daylight time
+];
+// The days around the clocks going back in Chicago (Sunday 2025-11-02, 25 hours), with the sunrises Open-Meteo gave for Austin:
+// 7:45 AM on the 1st, on daylight time, and 6:46 AM on the 2nd, on standard time. Its text for the 2nd said 07:46, at the
+// answer's one offset, so the sunrise is the 6:46 AM of the Household's clock and never a 7:46 (tests/weather.test.ts).
+const FALL: SunDay[] = [
+  { date: '2025-11-01', sunrise: 1762001100000, sunset: at('2025-11-01T23:44:00') },
+  { date: '2025-11-02', sunrise: 1762087560000, sunset: at('2025-11-02T23:43:00') },
+  { date: '2025-11-03', sunrise: at('2025-11-03T12:46:00'), sunset: at('2025-11-03T23:42:00') },
+];
+
+describe("sunAt: the forecast's sun for the Household date", () => {
+  it("is the sunrise and sunset of the Household's date, and the next day's sunrise", () => {
+    expect(sunAt(OCTOBER, CHICAGO, at('2026-10-01T15:00:00'))).toEqual({
+      sunrise: at('2026-10-01T12:12:00'),
+      sunset: at('2026-10-01T23:48:00'),
+      nextSunrise: at('2026-10-02T12:13:00'),
+    });
+  });
+
+  it("goes by the Household's date, which is not the UTC date for hours of the evening, and by the Household Timezone's", () => {
+    // 02:00 UTC on the 2nd is 21:00 on the 1st in Chicago.
+    expect(sunAt(OCTOBER, CHICAGO, at('2026-10-02T02:00:00'))).toMatchObject({ sunrise: at('2026-10-01T12:12:00') });
+    // 05:00 UTC is the Household's midnight: the 2nd begins, and with it the 2nd's sun.
+    expect(sunAt(OCTOBER, CHICAGO, at('2026-10-02T04:59:59.999'))).toMatchObject({ sunrise: at('2026-10-01T12:12:00') });
+    expect(sunAt(OCTOBER, CHICAGO, at('2026-10-02T05:00:00'))).toMatchObject({ sunrise: at('2026-10-02T12:13:00'), sunset: at('2026-10-02T23:46:00') });
+    // The same instant is 11:00 on the 2nd in Tokyo: that Household is on the 2nd already.
+    expect(sunAt(OCTOBER, 'Asia/Tokyo', at('2026-10-02T02:00:00'))).toMatchObject({ sunrise: at('2026-10-02T12:13:00') });
+  });
+
+  it('gives the instants as they are: the Household Timezone only says which date it is', () => {
+    const now = at('2026-10-01T15:00:00');
+    expect(sunAt(OCTOBER, 'America/Denver', now)).toEqual(sunAt(OCTOBER, CHICAGO, now));
+  });
+
+  it('has none for a date the forecast does not cover, and none at all without a forecast', () => {
+    expect(sunAt(OCTOBER, CHICAGO, at('2026-10-05T15:00:00'))).toEqual({});
+    expect(sunAt([], CHICAGO, at('2026-10-01T15:00:00'))).toEqual({});
+  });
+
+  it("still has the next day's sunrise when only the next day is covered", () => {
+    // 2026-09-30 is the day before the forecast starts.
+    expect(sunAt(OCTOBER, CHICAGO, at('2026-09-30T15:00:00'))).toEqual({ nextSunrise: at('2026-10-01T12:12:00') });
+  });
+
+  it("has no next sunrise on the forecast's last day", () => {
+    expect(sunAt(OCTOBER, CHICAGO, at('2026-10-03T15:00:00'))).toEqual({ sunrise: at('2026-10-03T12:14:00'), sunset: at('2026-10-03T23:45:00') });
+  });
+
+  it("turns the Household date over at the Household's midnight on the 25 hour day the clocks go back", () => {
+    // The clocks go back at 02:00 on the 2nd: the midnight that starts it is 05:00 UTC (daylight time) and the one that ends it
+    // is 06:00 UTC on the 3rd (standard time), 25 hours on.
+    expect(sunAt(FALL, CHICAGO, at('2025-11-02T04:59:59.999')).sunrise).toBe(1762001100000);
+    expect(sunAt(FALL, CHICAGO, at('2025-11-02T05:00:00')).sunrise).toBe(1762087560000);
+    expect(sunAt(FALL, CHICAGO, at('2025-11-03T05:59:59.999')).sunrise).toBe(1762087560000);
+    expect(sunAt(FALL, CHICAGO, at('2025-11-03T06:00:00')).sunrise).toBe(at('2025-11-03T12:46:00'));
+    // And the 2nd has the 3rd's sunrise to come.
+    expect(sunAt(FALL, CHICAGO, at('2025-11-02T18:00:00'))).toEqual({
+      sunrise: 1762087560000,
+      sunset: at('2025-11-02T23:43:00'),
+      nextSunrise: at('2025-11-03T12:46:00'),
+    });
+  });
+
+  it("turns the Household date over at the Household's midnight on the 23 hour day the clocks go forward", () => {
+    // The midnight that starts the 8th is 06:00 UTC (standard time) and the one that ends it is 05:00 UTC on the 9th (daylight
+    // time), 23 hours on.
+    expect(sunAt(SPRING, CHICAGO, at('2026-03-08T05:59:59.999')).sunrise).toBe(at('2026-03-07T12:27:00'));
+    expect(sunAt(SPRING, CHICAGO, at('2026-03-08T06:00:00')).sunrise).toBe(at('2026-03-08T12:26:00'));
+    expect(sunAt(SPRING, CHICAGO, at('2026-03-09T04:59:59.999')).sunrise).toBe(at('2026-03-08T12:26:00'));
+    // The 9th is past the days it holds.
+    expect(sunAt(SPRING, CHICAGO, at('2026-03-09T05:00:00'))).toEqual({});
+  });
+});
+
+describe('resolveMode: the Appearance with the forecast\'s sun, without one, and on a daylight saving change', () => {
+  const mode = (iso: string, appearance: Appearance, days: SunDay[]) =>
+    resolveMode({ now: at(iso), timezone: CHICAGO, appearance, ...sunAt(days, CHICAGO, at(iso)) });
+
+  it('Auto is light from the forecast\'s sunrise to its sunset and dark either side, changing over at the minute', () => {
+    // 07:12 and 18:48 in Chicago on 2026-10-01.
+    expect(mode('2026-10-01T12:11:59.999', 'auto', OCTOBER)).toBe('dark');
+    expect(mode('2026-10-01T12:12:00', 'auto', OCTOBER)).toBe('light');
+    expect(mode('2026-10-01T23:47:59.999', 'auto', OCTOBER)).toBe('light');
+    expect(mode('2026-10-01T23:48:00', 'auto', OCTOBER)).toBe('dark');
+    // Not the 7:00 and 19:00 it would use without a forecast: 12:05 UTC is 07:05 and is still dark by the sun.
+    expect(mode('2026-10-01T12:05:00', 'auto', OCTOBER)).toBe('dark');
+    expect(mode('2026-10-01T23:55:00', 'auto', OCTOBER)).toBe('dark');
+  });
+
+  it('Light and Dark hold at any hour, with the forecast and without it', () => {
+    for (const days of [OCTOBER, []]) {
+      for (const iso of ['2026-10-01T05:00:00', '2026-10-01T12:11:59.999', '2026-10-01T12:12:00', '2026-10-01T18:00:00', '2026-10-01T23:47:59.999', '2026-10-01T23:48:00', '2026-10-02T03:00:00']) {
+        expect(mode(iso, 'light', days), `Light at ${iso}`).toBe('light');
+        expect(mode(iso, 'dark', days), `Dark at ${iso}`).toBe('dark');
+      }
+    }
+  });
+
+  it('Auto falls back to 7:00 and 19:00 with no forecast at all', () => {
+    expect(mode('2026-10-01T11:59:59.999', 'auto', [])).toBe('dark');
+    expect(mode('2026-10-01T12:00:00', 'auto', [])).toBe('light');
+    expect(mode('2026-10-01T23:59:59.999', 'auto', [])).toBe('light');
+    expect(mode('2026-10-02T00:00:00', 'auto', [])).toBe('dark');
+  });
+
+  it('Auto falls back to 7:00 and 19:00 when the forecast does not cover the date', () => {
+    // Oct 5 is past the forecast's last day: the same hours as with none.
+    expect(mode('2026-10-05T11:59:59.999', 'auto', OCTOBER)).toBe('dark');
+    expect(mode('2026-10-05T12:00:00', 'auto', OCTOBER)).toBe('light');
+    expect(mode('2026-10-05T23:59:59.999', 'auto', OCTOBER)).toBe('light');
+    expect(mode('2026-10-06T00:00:00', 'auto', OCTOBER)).toBe('dark');
+  });
+
+  it('Auto follows the sun across the spring change, where 7:00 on the wall moves an hour in UTC', () => {
+    // Sunrise 07:26 and sunset 19:10 on the 8th, both on daylight time (UTC-5).
+    expect(mode('2026-03-08T12:25:59.999', 'auto', SPRING)).toBe('dark');
+    expect(mode('2026-03-08T12:26:00', 'auto', SPRING)).toBe('light');
+    expect(mode('2026-03-09T00:09:59.999', 'auto', SPRING)).toBe('light');
+    expect(mode('2026-03-09T00:10:00', 'auto', SPRING)).toBe('dark');
+    // The day before is on standard time (UTC-6): sunrise 06:27 is 12:27 UTC.
+    expect(mode('2026-03-07T12:26:59.999', 'auto', SPRING)).toBe('dark');
+    expect(mode('2026-03-07T12:27:00', 'auto', SPRING)).toBe('light');
+    for (const iso of ['2026-03-08T05:00:00', '2026-03-08T18:00:00']) {
+      expect(mode(iso, 'light', SPRING), iso).toBe('light');
+      expect(mode(iso, 'dark', SPRING), iso).toBe('dark');
+    }
+  });
+
+  it('Auto goes light at 6:46 AM Chicago time on the day the clocks go back, not an hour later', () => {
+    // On the Household date 2025-11-02 the sunrise is 12:46 UTC, 6:46 AM on standard time, and the sunset is 23:43 UTC, 5:43 PM.
+    // The forecast's text for that sunrise said 07:46: read as 7:46 AM Chicago time it would be 13:46 UTC, an hour late.
+    expect(mode('2025-11-02T12:45:59.999', 'auto', FALL)).toBe('dark');
+    expect(mode('2025-11-02T12:46:00', 'auto', FALL)).toBe('light');
+    expect(mode('2025-11-02T13:30:00', 'auto', FALL)).toBe('light');
+    expect(mode('2025-11-02T23:42:59.999', 'auto', FALL)).toBe('light');
+    expect(mode('2025-11-02T23:43:00', 'auto', FALL)).toBe('dark');
+    // The day before is still on daylight time: its sunrise is 12:45 UTC, 7:45 AM.
+    expect(mode('2025-11-01T12:44:59.999', 'auto', FALL)).toBe('dark');
+    expect(mode('2025-11-01T12:45:00', 'auto', FALL)).toBe('light');
+    // The hour from 01:00 to 02:00 happens twice that night, at 06:30 UTC and again at 07:30 UTC: dark both times, and Light
+    // and Dark hold through it.
+    for (const iso of ['2025-11-02T06:30:00', '2025-11-02T07:30:00']) {
+      expect(mode(iso, 'auto', FALL), iso).toBe('dark');
+      expect(mode(iso, 'light', FALL), iso).toBe('light');
+      expect(mode(iso, 'dark', FALL), iso).toBe('dark');
+    }
+  });
+
+  it("the screen's switch still wins over each Appearance with the forecast, until it ends", () => {
+    const now = at('2026-10-01T15:00:00');
+    const until = at('2026-10-01T23:48:00');
+    for (const appearance of ['auto', 'light', 'dark'] as const) {
+      expect(resolveMode({ now, timezone: CHICAGO, appearance, ...sunAt(OCTOBER, CHICAGO, now), override: { mode: 'dark', until } }), appearance).toBe('dark');
+    }
+    // At the sunset the override ends and Auto is dark by itself; Light is light again.
+    expect(resolveMode({ now: until, timezone: CHICAGO, appearance: 'light', ...sunAt(OCTOBER, CHICAGO, until), override: { mode: 'dark', until } })).toBe('light');
+  });
+});
+
 describe('resolveMode: the screen\'s override', () => {
   const noon = at('2026-10-01T18:00:00');
   const until = at('2026-10-02T00:00:00');
@@ -120,6 +294,141 @@ describe('resolveMode: before the Household is known', () => {
   });
 });
 
+// The first read of the forecast has not finished or failed, so the sun is not known. Only Auto with no override in force
+// needs the sun, so only that waits for it: an override that has not ended and Light or Dark say what the mode is at once.
+describe('resolveMode: before the sun is known', () => {
+  const waiting = { timezone: CHICAGO, sunKnown: false };
+  const noon = at('2026-10-01T18:00:00'); // 13:00 in Chicago, where Auto says light
+  const night = at('2026-10-01T06:00:00'); // 01:00, where Auto says dark
+  const until = at('2026-10-02T00:00:00'); // 19:00
+
+  it('keeps the mode the screen last resolved for Auto, light when it has none', () => {
+    expect(resolveMode({ now: noon, ...waiting, last: 'dark' })).toBe('dark');
+    expect(resolveMode({ now: night, ...waiting, last: 'light' })).toBe('light');
+    expect(resolveMode({ now: noon, ...waiting, appearance: 'auto', last: 'dark' })).toBe('dark');
+    expect(resolveMode({ now: noon, ...waiting })).toBe('light');
+    expect(resolveMode({ now: night, ...waiting })).toBe('light');
+  });
+
+  it('resolves Auto as soon as the sun is known, and a sun left out is known', () => {
+    expect(resolveMode({ now: noon, timezone: CHICAGO, sunKnown: true, last: 'dark' })).toBe('light');
+    expect(resolveMode({ now: night, timezone: CHICAGO, sunKnown: true, last: 'light' })).toBe('dark');
+    expect(resolveMode({ now: noon, timezone: CHICAGO, last: 'dark' })).toBe('light');
+  });
+
+  it('does not make Light or Dark wait', () => {
+    for (const now of [noon, night]) {
+      expect(resolveMode({ now, ...waiting, appearance: 'light', last: 'dark' })).toBe('light');
+      expect(resolveMode({ now, ...waiting, appearance: 'dark', last: 'light' })).toBe('dark');
+    }
+  });
+
+  it('does not make an override that has not ended wait, whatever the Appearance', () => {
+    for (const appearance of ['auto', 'light', 'dark'] as const) {
+      expect(resolveMode({ now: noon, ...waiting, appearance, override: { mode: 'dark', until }, last: 'light' }), appearance).toBe('dark');
+      expect(resolveMode({ now: noon, ...waiting, appearance, override: { mode: 'light', until }, last: 'dark' }), appearance).toBe('light');
+      expect(resolveMode({ now: until - 1, ...waiting, appearance, override: { mode: 'dark', until }, last: 'light' }), appearance).toBe('dark');
+    }
+  });
+
+  it('has Auto wait again once the override has ended, and Light and Dark carry on', () => {
+    expect(resolveMode({ now: until, ...waiting, override: { mode: 'light', until }, last: 'dark' })).toBe('dark');
+    expect(resolveMode({ now: until + 60_000, ...waiting, override: { mode: 'dark', until }, last: 'light' })).toBe('light');
+    expect(resolveMode({ now: until, ...waiting, appearance: 'light', override: { mode: 'dark', until }, last: 'dark' })).toBe('light');
+  });
+
+  // The screen's switch goes on what the screen has at that moment: with no days the forecast says nothing of the sun, so it is
+  // 7:00 and 19:00 in the Household Timezone, and an override set then ends at the next of them.
+  it('has an override set while the sun is unknown end at the next 7:00 or 19:00 Household time', () => {
+    const ends = (iso: string) => nextBoundary({ now: at(iso), timezone: CHICAGO, ...sunAt([], CHICAGO, at(iso)) });
+    expect(ends('2026-10-01T06:00:00')).toBe(at('2026-10-01T12:00:00'));
+    expect(ends('2026-10-01T18:00:00')).toBe(at('2026-10-02T00:00:00'));
+    expect(ends('2026-10-02T01:00:00')).toBe(at('2026-10-02T12:00:00'));
+    // Across a daylight saving change the 7:00 after Saturday evening is 12:00 UTC on the Sunday it goes forward.
+    expect(ends('2026-03-08T02:00:00')).toBe(at('2026-03-08T12:00:00'));
+  });
+
+  it('shows that override at once, until then, and has Auto wait again after it', () => {
+    // Tapped at 13:00 while the screen shows dark: light until 19:00, then Auto waits for the sun and keeps what it has.
+    const ends = nextBoundary({ now: noon, timezone: CHICAGO, ...sunAt([], CHICAGO, noon) });
+    expect(ends).toBe(until);
+    expect(resolveMode({ now: noon, ...waiting, override: { mode: 'light', until: ends }, last: 'dark' })).toBe('light');
+    expect(resolveMode({ now: ends - 1, ...waiting, override: { mode: 'light', until: ends }, last: 'light' })).toBe('light');
+    expect(resolveMode({ now: ends, ...waiting, override: { mode: 'light', until: ends }, last: 'light' })).toBe('light');
+    expect(resolveMode({ now: ends, ...waiting, override: { mode: 'light', until: ends }, last: 'dark' })).toBe('dark');
+  });
+
+  it('is held back by nothing but the Household: with it not read the screen keeps its mode whatever else is given', () => {
+    for (const sunKnown of [true, false]) {
+      for (const appearance of ['auto', 'light', 'dark'] as const) {
+        const label = `${appearance}, sun ${sunKnown ? 'known' : 'unknown'}`;
+        expect(resolveMode({ now: noon, timezone: null, sunKnown, appearance, override: { mode: 'light', until }, last: 'dark' }), label).toBe('dark');
+        expect(resolveMode({ now: noon, timezone: null, sunKnown, appearance, override: { mode: 'dark', until }, last: 'light' }), label).toBe('light');
+        expect(resolveMode({ now: night, timezone: null, sunKnown, appearance, last: 'dark' }), label).toBe('dark');
+        expect(resolveMode({ now: noon, timezone: null, sunKnown, appearance }), label).toBe('light');
+      }
+    }
+  });
+});
+
+// What the screen keeps for the next load is only a mode it really resolved, and canResolve says when that is: the same rule
+// resolveMode follows, asked as a question.
+describe('canResolve: whether the inputs settle on a mode, or leave it to `last`', () => {
+  const noon = at('2026-10-01T18:00:00');
+  const until = at('2026-10-02T00:00:00');
+  const live = { mode: 'dark', until } as const;
+
+  it('is not while the Household is not read, whatever else is given', () => {
+    for (const sunKnown of [true, false]) {
+      for (const appearance of ['auto', 'light', 'dark'] as const) {
+        expect(canResolve({ now: noon, timezone: null, sunKnown, appearance, override: live }), `${appearance}, sun ${sunKnown}`).toBe(false);
+      }
+    }
+    expect(canResolve({ now: noon, timezone: null })).toBe(false);
+  });
+
+  it('is for Auto once the sun is known, a sun left out being known, and not before', () => {
+    expect(canResolve({ now: noon, timezone: CHICAGO, appearance: 'auto', sunKnown: true })).toBe(true);
+    expect(canResolve({ now: noon, timezone: CHICAGO })).toBe(true);
+    expect(canResolve({ now: noon, timezone: CHICAGO, appearance: 'auto', sunKnown: false })).toBe(false);
+    expect(canResolve({ now: noon, timezone: CHICAGO, sunKnown: false })).toBe(false);
+  });
+
+  it('is for Light and Dark, and for an override that has not ended, without the sun', () => {
+    expect(canResolve({ now: noon, timezone: CHICAGO, appearance: 'light', sunKnown: false })).toBe(true);
+    expect(canResolve({ now: noon, timezone: CHICAGO, appearance: 'dark', sunKnown: false })).toBe(true);
+    expect(canResolve({ now: noon, timezone: CHICAGO, appearance: 'auto', sunKnown: false, override: live })).toBe(true);
+    expect(canResolve({ now: until - 1, timezone: CHICAGO, sunKnown: false, override: live })).toBe(true);
+  });
+
+  it('is not for Auto again once the override has ended, with the sun still not known', () => {
+    expect(canResolve({ now: until, timezone: CHICAGO, sunKnown: false, override: live })).toBe(false);
+    expect(canResolve({ now: until + 60_000, timezone: CHICAGO, sunKnown: false, override: live })).toBe(false);
+    expect(canResolve({ now: until, timezone: CHICAGO, sunKnown: false, override: null })).toBe(false);
+    expect(canResolve({ now: until, timezone: CHICAGO, appearance: 'light', sunKnown: false, override: live })).toBe(true);
+  });
+
+  it('says so exactly when resolveMode gives its own answer and not `last`', () => {
+    const nows = [noon, at('2026-10-01T06:00:00'), until];
+    for (const timezone of [null, CHICAGO]) {
+      for (const appearance of ['auto', 'light', 'dark'] as const) {
+        for (const override of [null, live]) {
+          for (const sunKnown of [true, false]) {
+            for (const now of nows) {
+              const inputs = { now, timezone, appearance, override, sunKnown };
+              const label = JSON.stringify(inputs);
+              const asLight = resolveMode({ ...inputs, last: 'light' });
+              const asDark = resolveMode({ ...inputs, last: 'dark' });
+              if (canResolve(inputs)) expect(asLight, label).toBe(asDark);
+              else expect([asLight, asDark], label).toEqual(['light', 'dark']);
+            }
+          }
+        }
+      }
+    }
+  });
+});
+
 describe('nextBoundary: when the switch\'s override ends', () => {
   const boundary = (iso: string, more = {}) => nextBoundary({ now: at(iso), timezone: CHICAGO, ...more });
 
@@ -144,6 +453,26 @@ describe('nextBoundary: when the switch\'s override ends', () => {
     expect(boundary('2026-10-01T15:00:00', sun)).toBe(sun.sunset);
     const nextSunrise = at('2026-10-02T11:13:00');
     expect(boundary('2026-10-02T01:00:00', { ...sun, nextSunrise })).toBe(nextSunrise);
+  });
+
+  it("is the forecast's own sunrise and sunset, and the next sunrise after the sunset, as sunAt reads them", () => {
+    const next = (iso: string, days: SunDay[]) => boundary(iso, sunAt(days, CHICAGO, at(iso)));
+    expect(next('2026-10-01T10:00:00', OCTOBER)).toBe(at('2026-10-01T12:12:00'));
+    expect(next('2026-10-01T15:00:00', OCTOBER)).toBe(at('2026-10-01T23:48:00'));
+    // After the sunset it is the next morning's sunrise from the forecast, not 7:00.
+    expect(next('2026-10-02T01:00:00', OCTOBER)).toBe(at('2026-10-02T12:13:00'));
+    // The forecast's last day has no next morning to go on: 7:00.
+    expect(next('2026-10-04T01:00:00', OCTOBER)).toBe(at('2026-10-04T12:00:00'));
+  });
+
+  it("is the next sunrise on the other side of a daylight saving change, from the forecast's instants", () => {
+    const next = (iso: string, days: SunDay[]) => boundary(iso, sunAt(days, CHICAGO, at(iso)));
+    // Saturday 2026-03-07 at 20:00 in Chicago, after the 18:09 sunset: Sunday's sunrise is 12:26 UTC.
+    expect(next('2026-03-08T02:00:00', SPRING)).toBe(at('2026-03-08T12:26:00'));
+    // Saturday 2025-11-01 at 20:00 (01:00 UTC on the 2nd), after the 6:44 PM sunset: Sunday's is 6:46 AM on standard time, 12:46 UTC.
+    expect(next('2025-11-02T01:00:00', FALL)).toBe(1762087560000);
+    // Sunday at 19:00 on standard time (01:00 UTC on the 3rd), after its 5:43 PM sunset: Monday's, 12:46 UTC.
+    expect(next('2025-11-03T01:00:00', FALL)).toBe(at('2025-11-03T12:46:00'));
   });
 
   it('is never before now', () => {

@@ -1,26 +1,37 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { watchMinute } from './household-day';
 import type { Mode } from './look';
-import { applyMode, localStore, nextBoundary, readLastMode, readOverride, resolveMode, writeLastMode, writeOverride, type ModeInputs, type ModeOverride } from './mode';
+import { applyMode, canResolve, localStore, nextBoundary, readLastMode, readOverride, resolveMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeOverride } from './mode';
+import type { SunDay } from './weather';
 
 // What a screen's mode follows as time passes. The logic is src/lib/mode.ts's, which is pure and tested; this file
 // is the React that runs it. Kept out of mode.ts so that file needs no DOM to be tested.
 
-// What the Household says about the mode, so far as the Wall knows it. Only `timezone` is needed while the
-// Appearance is always Auto and the sun is the fallback hours; the rest is for the ticket that reads them.
-export type WallModeSettings = Omit<ModeInputs, 'now' | 'override' | 'last'> & { nextSunrise?: number | undefined };
+// What the Household says about the mode, so far as the Wall knows it.
+export type WallModeSettings = {
+  // The Household Timezone; null until the Household has been read.
+  timezone: string | null;
+  // The Household's Appearance; Auto until the Household has been read.
+  appearance?: Appearance | undefined;
+  // The forecast's days, which Auto takes its sunrise and sunset from (src/lib/use-forecast.ts). Empty when there is no
+  // forecast to go on, the weather being off or its first read having failed: Auto is then light from 7:00 to 19:00.
+  // null while the Household has a weather place and the first read of its forecast has not finished or failed: the sun is
+  // not known yet, and Auto waits for it. Light, Dark and the switch do not.
+  sun: readonly SunDay[] | null;
+};
 
-// Keeps the document's mode right on the Wall: the mode the screen last resolved until the Household is read,
-// then Auto, or the Household's Appearance, or the switch's override while it lasts. It moves at a boundary
-// (sunrise, sunset, the end of an override) at the start of the minute it falls in, with no reload, and it keeps
-// what it resolved for the next load to paint. Returns the switch: it sets an override for the opposite mode that
-// lasts until the next sunrise or sunset, on this screen only. It does nothing until the Household is read, since
-// that is what says when the next one is.
-export function useWallMode({ timezone, appearance, sunrise, sunset, nextSunrise }: WallModeSettings): () => void {
+// Keeps the document's mode right on the Wall: the switch's override while it lasts, else the Household's Appearance, which
+// for Auto is light from sunrise to sunset. The rule is resolveMode's, which this only feeds: while it cannot say, the
+// Household not being read yet or Auto waiting for the sun, the screen keeps the mode it last resolved. It moves at a boundary
+// (sunrise, sunset, the end of an override) at the start of the minute it falls in, with no reload, and it keeps what it
+// resolved for the next load to paint. The sun is read from the forecast at each minute and not once, so the Household date
+// moving on at midnight needs no new render. Returns the switch: it sets an override for the opposite mode that lasts until
+// the next sunrise or sunset, on this screen only. It works as soon as the Household is read.
+export function useWallMode({ timezone, appearance, sun }: WallModeSettings): () => void {
   const [store] = useState(localStore);
-  const [last] = useState(() => readLastMode(store));
   const [override, setOverride] = useState(() => readOverride(store, Date.now()));
-  const [mode, setMode] = useState<Mode>(last);
+  // What the screen shows is the mode it last resolved, until it resolves another.
+  const [mode, setMode] = useState<Mode>(() => readLastMode(store));
 
   useEffect(() => {
     const resolve = () => {
@@ -31,24 +42,28 @@ export function useWallMode({ timezone, appearance, sunrise, sunset, nextSunrise
         setOverride(null);
         return;
       }
-      setMode(resolveMode({ appearance, override, now, timezone, sunrise, sunset, last }));
+      const inputs = { appearance, override, now, timezone, sunKnown: sun !== null, ...(timezone !== null ? sunAt(sun ?? [], timezone, now) : {}) };
+      // While the inputs cannot resolve a mode the screen keeps the one it has and keeps nothing new for its next load: what
+      // it keeps is only what it really resolved.
+      if (!canResolve(inputs)) return;
+      const resolved = resolveMode(inputs);
+      setMode(resolved);
+      writeLastMode(store, resolved);
     };
     resolve();
     return watchMinute(resolve);
-  }, [store, appearance, override, timezone, sunrise, sunset, last]);
+  }, [store, appearance, override, timezone, sun]);
 
-  useEffect(() => {
-    applyMode(mode);
-    // What the screen last resolved is what the next load paints; before the Household is read it has resolved nothing.
-    if (timezone !== null) writeLastMode(store, mode);
-  }, [store, mode, timezone]);
+  useEffect(() => applyMode(mode), [mode]);
 
   return useCallback(() => {
     if (timezone === null) return;
-    const next: ModeOverride = { mode: mode === 'dark' ? 'light' : 'dark', until: nextBoundary({ now: Date.now(), timezone, sunrise, sunset, nextSunrise }) };
+    // The override ends at the next boundary from what the screen has now: the forecast's sun when it is known, else 7:00 and 19:00.
+    const now = Date.now();
+    const next: ModeOverride = { mode: mode === 'dark' ? 'light' : 'dark', until: nextBoundary({ now, timezone, ...sunAt(sun ?? [], timezone, now) }) };
     writeOverride(store, next);
     setOverride(next);
-  }, [store, mode, timezone, sunrise, sunset, nextSunrise]);
+  }, [store, mode, timezone, sun]);
 }
 
 // The phone's pages follow the phone: prefers-color-scheme, and light when it says nothing. They change when it
