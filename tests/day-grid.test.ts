@@ -8,6 +8,7 @@ import { addDays, dayStartMs, pageDays, type Occurrence } from '../src/lib/calen
 import { planDay, type DayPlan } from '../src/lib/day-view';
 import type { Profile } from '../src/lib/profiles';
 import type { OverflowControl } from '../src/lib/use-overflow';
+import { scrollers } from './support/markup';
 
 // What the Day view draws, rendered to markup (as tests/event-pill.test.ts does for the pill), so what is asserted is what the
 // browser is given: an hour is 3 rem, a block is never under one, the now line is drawn under the blocks, only the event that is on
@@ -344,5 +345,19 @@ describe('the list of a cluster', () => {
     expect(html).toContain('aria-label="Close"');
     expect([...html.matchAll(/aria-label="([ABC]), /g)].map((found) => found[1])).toEqual(['A', 'B', 'C']);
     expect(count(html, 'data-pill')).toBe(3);
+  });
+
+  it('holds all twelve events of a crowded cluster in the one box that scrolls, under a title row that stays in view', () => {
+    const p = plan('ABCDEFGHIJKL'.split('').map((title) => event(title, OCT1, '16:00', '17:00')));
+    const html = renderToStaticMarkup(createElement(ClusterList, { day: dayOf(OCT1), pills: p.folds[0]!.pills, profiles: FAMILY, onOpen: () => undefined, onClose: () => undefined }));
+    const [box] = scrollers(html);
+    expect(scrollers(html)).toHaveLength(1);
+    expect(count(box!, 'data-pill')).toBe(12);
+    expect(count(html, 'data-pill')).toBe(12);
+    // The title and Close are not in what scrolls; they are above it.
+    expect(box).not.toContain('12 events around this time');
+    expect(box).not.toContain('aria-label="Close"');
+    expect(html.indexOf('12 events around this time')).toBeLessThan(html.indexOf(box!));
+    expect(html.indexOf('aria-label="Close"')).toBeLessThan(html.indexOf(box!));
   });
 });

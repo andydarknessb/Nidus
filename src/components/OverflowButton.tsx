@@ -28,6 +28,11 @@ import { Button } from './ui/button';
 // 8 px more for the room a focus ring takes outside a tile.
 export const FOOT_CLEARANCE = '[&_li]:scroll-mb-18 [&_li_button]:scroll-mb-18';
 
+// The same distance for a body that is not a list (a sheet's: notes, pills, fields). It goes on the wrapper the content is in, never on
+// the box that scrolls (where it would move the box when the foot's own button took the focus), so the foot, which is outside the
+// wrapper, is not in what it is clear of.
+export const BODY_CLEARANCE = '[&_*]:scroll-mb-18';
+
 // What a column's foot sits on: the fade is in that colour, and the button is the surface that is told apart from it (a card on a
 // person's column, as the tiles are; a row's colour on a card, as the items are).
 export type Surface = 'card' | 'person';

@@ -25,7 +25,9 @@ import { loadProfiles, type Profile } from '../lib/profiles';
 import { householdDay } from '../lib/routines';
 import { useStatusLine } from '../lib/status-line';
 import { supabase } from '../lib/supabase';
+import { useOverflow } from '../lib/use-overflow';
 import { HouseDisc, PersonDisc } from './people';
+import { SheetBody } from './Sheet';
 import { Button } from './ui/button';
 
 // A field's caption, above it.
@@ -123,7 +125,8 @@ function Stepper({ id, words, noun, time, earlierStuck, laterStuck, onStep }: { 
 
 // Creates a Native Event, or edits or deletes the one in `occurrence`. One sheet for the Wall and the phone, written by a
 // Household Account or a Device, whichever session `supabase` holds. On the Wall it is 940 x 580 over the scrim in two
-// columns, with its title row and its footer always in view; below 960 px it is one column that scrolls between them.
+// columns, with its title row and its footer always in view; below 960 px it is one column that scrolls between them. What
+// scrolls between them is a SheetBody: with many people the Wall's two columns are taller than the screen, and it says so.
 // Focus moves in on open and back to what opened it on close. A tap on the scrim closes it only while nothing has been
 // typed or changed; Close, Cancel and Escape always do. After a save, an edit or a delete the status line says what
 // happened, from whichever screen opened the sheet (the Wall's, and the phone's pages have one too). On the Wall, a
@@ -147,6 +150,8 @@ export function NativeEventSheet({
 }) {
   const dialog = useRef<HTMLFormElement>(null);
   const dateField = useRef<HTMLInputElement>(null);
+  // Whether the fields hold more than the sheet shows.
+  const body = useOverflow('y', 'over');
   const { clear: clearFilter } = useContext(ProfileFilterContext);
   const say = useStatusLine();
   // The form as the sheet opened with it: what "nothing has been typed or changed" is measured against. A new event opens at
@@ -166,6 +171,7 @@ export function NativeEventSheet({
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const editing = occurrence !== undefined;
+  const title = editing ? 'Edit event' : 'New event';
   // Makes a change to the form and says whether it was one. A change that is none (a stepper at its limit) leaves a problem
   // that is showing where it is.
   const change = (next: (form: EventForm) => EventForm): boolean => {
@@ -266,16 +272,16 @@ export function NativeEventSheet({
       >
         <div className="flex h-12 flex-none items-center justify-between">
           <h2 id="native-event-title" className="font-display text-[30px] leading-9">
-            {editing ? 'Edit event' : 'New event'}
+            {title}
           </h2>
           <Button variant="quiet" aria-label="Close" onClick={onClose} className="size-12 rounded-full p-0">
             <X aria-hidden className="size-[26px]" strokeWidth={2.2} />
           </Button>
         </div>
 
-        {/* The fields scroll between the title row and the footer when the screen is short; the padding is room for a
-            focus ring at the edge, taken back by the margin. */}
-        <div className="-m-1 min-h-0 flex-1 overflow-y-auto p-1">
+        {/* The fields scroll between the title row and the footer when the screen is short, or the family is large; on the Wall
+            the foot of the box says so. */}
+        <SheetBody title={title} control={body}>
           <div className="grid grid-cols-1 gap-[18px] min-[960px]:grid-cols-2 min-[960px]:gap-x-6">
             <div className="@container flex min-w-0 flex-col justify-between gap-[18px]">
               <label className="flex flex-col gap-2">
@@ -402,7 +408,7 @@ export function NativeEventSheet({
               </label>
             </div>
           </div>
-        </div>
+        </SheetBody>
 
         <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2">
           {confirming && occurrence ? (

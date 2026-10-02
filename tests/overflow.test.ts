@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { FOOT_CLEARANCE, OverflowButton } from '../src/components/OverflowButton';
+import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from '../src/components/OverflowButton';
 import { createPressGate, overflowState, overflowWords, PAGE_STEP, PRESS_HOLD_MS, type Axis, type Scroll } from '../src/lib/overflow';
 import type { OverflowControl } from '../src/lib/use-overflow';
 
@@ -516,6 +516,16 @@ describe('the button', () => {
     expect(FOOT_CLEARANCE).toContain('[&_li]:scroll-mb-');
     expect(FOOT_CLEARANCE).toContain('[&_li_button]:scroll-mb-');
     expect(FOOT_CLEARANCE).not.toMatch(/(^| )scroll-p/);
+  });
+
+  it('is kept clear of by everything in a body that is not a list, too: every element in it stops short of the foot by more than its height', () => {
+    // A sheet's body holds fields, pills and notes, not `li` items. The same rule: the margin is on what is in the body (the wrapper
+    // the content is in, which the foot is not in) and never on the body, which would move it whenever the foot took the focus.
+    expect(Number(/scroll-mb-(\d+)/.exec(BODY_CLEARANCE)?.[1]) * 4).toBeGreaterThan(64);
+    expect(BODY_CLEARANCE).toContain('[&_*]:scroll-mb-');
+    expect(BODY_CLEARANCE).not.toMatch(/(^| )scroll-p/);
+    // The same distance as a list's items keep.
+    expect(/scroll-mb-(\d+)/.exec(BODY_CLEARANCE)?.[1]).toBe(/scroll-mb-(\d+)/.exec(FOOT_CLEARANCE)?.[1]);
   });
 
   it('is a row\'s button as it was in the people strip: a button of its own, with no foot or fade', () => {
