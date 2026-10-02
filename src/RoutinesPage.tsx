@@ -239,7 +239,9 @@ function Column({
       <div className="flex min-h-14 flex-none items-center gap-3">
         <PersonDisc name={profile.name} color={profile.color} size={56} />
         <div className="flex min-w-0 flex-col gap-0.5">
-          <h3 id={`routines-${profile.id}`} className="font-display text-[26px] leading-[30px] break-words">
+          {/* A name is words too (WORDS): too long for the line it is hyphenated or broken, in two lines at most and then cut with an ellipsis, so
+              no letter is cut with nothing to show it. The heading is the whole name, which is what the column is labelled by. */}
+          <h3 id={`routines-${profile.id}`} dir="auto" className={cn(WORDS, 'line-clamp-2 font-display text-[26px] leading-[30px]')}>
             {profile.name}
           </h3>
           <div className="flex items-center gap-1.5 text-[15px] leading-5">
