@@ -316,7 +316,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           // under a navigation rail entry that marks Day, Week or Month.
           <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
         ) : (
-        <div className="grid min-h-0 grid-cols-[1fr_22rem] gap-4">
+        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_20rem] gap-4">
           {timezone ? (
             <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
           ) : (
