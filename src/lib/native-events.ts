@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { offsetMs } from '../../supabase/functions/_shared/zoned-time.ts';
-import { addDays, dayStartMs, occurrenceColumns, type Occurrence } from './calendar-occurrences';
-import { householdDay } from './routines';
+import { addDays, dayStartMs, formatClock, formatDate, occurrenceColumns, type Occurrence } from './calendar-occurrences';
+import { householdDay, WEEKDAYS } from './routines';
 
 // Native Events (CONTEXT.md): created in Nidus, living only in Nidus. A Household Account (the
 // phone) or a Device (the wall) writes them. Every function takes the client so the same code
@@ -72,7 +72,12 @@ export function eventFormToInput(form: EventForm, timezone: string): NativeEvent
     }
     startsAt = wallMs(form.date, form.startTime, timezone);
     endsAt = wallMs(form.date, form.endTime, timezone);
-    if (endsAt <= startsAt) return { problem: 'The event must end after it starts.' };
+    if (endsAt <= startsAt) {
+      // An end after its start on the clock can still be at or before it here: a time inside the hour the clocks skip does
+      // not exist, and moves on by the hour (wallMs). Say which time that is, not that the end is before the start.
+      const skipped = form.endTime > form.startTime ? [form.startTime, form.endTime].find((time) => clock(wallMs(form.date, time, timezone), timezone) !== time) : undefined;
+      return { problem: skipped ? `The clocks go forward on this day, so there is no ${clockWords(skipped)}. Pick another time.` : 'The event must end after it starts.' };
+    }
   }
   return {
     title,
@@ -104,6 +109,109 @@ export function eventFormFromOccurrence(occurrence: Occurrence, timezone: string
     notes: occurrence.description ?? '',
     profileIds: occurrence.profile_ids,
   };
+}
+
+// ---- What the sheet does with the form -------------------------------------------------
+// Starts and Ends are steppers of a quarter hour that stay on the chosen date: Starts stops at 11:30 PM and Ends at
+// 11:45 PM, and Ends is always at least 15 minutes after Starts (an event that runs past midnight belongs in Google).
+// So a form the steppers made never has an end at or before its start. eventFormToInput still checks, for an event made
+// before the steppers and for a wall time that does not exist on the day clocks go forward.
+
+const QUARTER = 15;
+const LAST_START = 23 * 60 + 30;
+const LAST_END = 23 * 60 + 45;
+
+// Minutes into the day for an 'HH:MM', or null when it is not one.
+function minutesOf(time: string): number | null {
+  const found = /^(\d{2}):(\d{2})$/.exec(time);
+  return found ? Number(found[1]) * 60 + Number(found[2]) : null;
+}
+
+const timeOf = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+const within = (value: number, least: number, most: number) => Math.min(Math.max(value, least), most);
+
+// Where a step lands: a full quarter hour from a time on the quarter hour, the next quarter hour that way from one off it.
+const quarterFrom = (minutes: number, direction: 1 | -1) => (direction > 0 ? Math.floor(minutes / QUARTER) + 1 : Math.ceil(minutes / QUARTER) - 1) * QUARTER;
+
+// A step of Starts, and Ends by the same amount, as far as the limits let it. At a limit it is the same form.
+export function stepStart(form: EventForm, direction: 1 | -1): EventForm {
+  const start = minutesOf(form.startTime);
+  const end = minutesOf(form.endTime);
+  if (start === null || end === null || (direction > 0 ? start >= LAST_START : start <= 0)) return form;
+  const next = within(quarterFrom(start, direction), 0, LAST_START);
+  return { ...form, startTime: timeOf(next), endTime: timeOf(within(end + next - start, next + QUARTER, LAST_END)) };
+}
+
+// A step of Ends on its own, never to less than 15 minutes after Starts (the first quarter hour that is, when Starts is
+// off the quarter hour). At a limit it is the same form.
+export function stepEnd(form: EventForm, direction: 1 | -1): EventForm {
+  const start = minutesOf(form.startTime);
+  const end = minutesOf(form.endTime);
+  if (start === null || end === null) return form;
+  const earliest = Math.ceil((start + QUARTER) / QUARTER) * QUARTER;
+  if (direction > 0 ? end >= LAST_END : end <= earliest) return form;
+  return { ...form, endTime: timeOf(within(quarterFrom(end, direction), earliest, LAST_END)) };
+}
+
+// 'HH:MM' on the wall clock as a stepper shows it: "2:00 PM".
+export function clockWords(time: string): string {
+  return formatClock(Date.UTC(1970, 0, 1, 0, minutesOf(time) ?? 0), 'UTC');
+}
+
+// The days the sheet offers with one tap, from the Household's `today`: today and the next two ("Today", "Fri 2", "Sat 3").
+// Any other day is "Another day", which shows the date field.
+export type DayChoice = { date: string; label: string };
+
+export function dayChoices(today: string): DayChoice[] {
+  return [0, 1, 2].map((offset) => {
+    const date = addDays(today, offset);
+    const weekday = WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]!.short;
+    return { date, label: offset === 0 ? 'Today' : `${weekday} ${Number(date.slice(8))}` };
+  });
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+// The times a new event on `date` opens with. When `date` is today in the Household Timezone, the next whole hour for an
+// hour; on any other day, 9:00 AM to 10:00 AM. The hour comes from the instant: `now` moved on to the start of the next hour
+// on the Household's clock, then read there, never from adding to a time written as text, so the night the clocks go
+// forward cannot give a time that does not exist. It stays inside the day: Starts is 11:00 PM at the latest, and Ends is an
+// hour after it or 11:45 PM, whichever comes first.
+export function openingTimes(date: string, timezone: string, now: Date = new Date()): { startTime: string; endTime: string } {
+  if (householdDay(timezone, now).date !== date) return { startTime: '09:00', endTime: '10:00' };
+  // How far into its hour `now` is on the Household's clock. Every zone is a whole number of minutes from UTC, so the
+  // seconds and milliseconds are UTC's.
+  const intoHour = (Number(clock(now.getTime(), timezone).slice(3)) * 60 + now.getUTCSeconds()) * 1000 + now.getUTCMilliseconds();
+  const startsAt = now.getTime() - intoHour + HOUR_MS;
+  // `at` as the Household's clock reads it while that is still today and before `last`; otherwise `last`.
+  const readOr = (at: number, last: string) => (householdDay(timezone, new Date(at)).date === date && clock(at, timezone) < last ? clock(at, timezone) : last);
+  return { startTime: readOr(startsAt, '23:00'), endTime: readOr(startsAt + HOUR_MS, '23:45') };
+}
+
+// The form with its date moved to `date`. A new event whose times no stepper has moved takes that day's opening times (today
+// at the next whole hour, any other day at 9:00 AM); once a stepper has moved them, and always for an event being edited
+// (`keepTimes`), they stay as they are.
+export function moveToDay(form: EventForm, date: string, keepTimes: boolean, timezone: string, now: Date = new Date()): EventForm {
+  return { ...form, date, ...(keepTimes ? {} : openingTimes(date, timezone, now)) };
+}
+
+// Whether nothing has been typed or changed since the form `opened`: the one question that decides whether a tap outside
+// the sheet may close it. The same people pressed in another order are the same people.
+export function isUntouched(form: EventForm, opened: EventForm): boolean {
+  const { profileIds, ...fields } = form;
+  const { profileIds: openedIds, ...openedFields } = opened;
+  return (
+    (Object.keys(fields) as (keyof typeof fields)[]).every((key) => fields[key] === openedFields[key]) &&
+    profileIds.length === openedIds.length &&
+    profileIds.every((id) => openedIds.includes(id))
+  );
+}
+
+// What the status line says once an event is added, in the Household Timezone: "Added Plumber coming: Fri, Oct 2, 2:00 PM",
+// or "…, all day".
+export function addedSentence(input: Pick<NativeEventInput, 'title' | 'starts_at' | 'is_all_day'>, timezone: string): string {
+  const start = Date.parse(input.starts_at);
+  return `Added ${input.title}: ${formatDate(start, timezone)}, ${input.is_all_day ? 'all day' : formatClock(start, timezone)}`;
 }
 
 // A blank optional field means none.
