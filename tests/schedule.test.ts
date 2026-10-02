@@ -591,7 +591,7 @@ describe('the words on the people strip', () => {
   const BEN = profile('p-ben', 'Ben', 3);
 
   const routines = (profileId: string, count: number): Routine[] =>
-    Array.from({ length: count }, (_, index) => ({ id: `${profileId}-${index}`, profile_id: profileId, title: `Routine ${index}`, days_of_week: 127, time_of_day: null, sort_order: index, archived_at: null }));
+    Array.from({ length: count }, (_, index) => ({ id: `${profileId}-${index}`, profile_id: profileId, title: `Routine ${index}`, days_of_week: 127, time_of_day: null, sort_order: index, archived_at: null, picture: null }));
   const group = (profile: Profile, count: number): ProfileRoutines => ({ profile, routines: routines(profile.id, count) });
   const ticked = (profileId: string, count: number) => Array.from({ length: count }, (_, index) => `${profileId}-${index}`);
 

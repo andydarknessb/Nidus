@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { HOME_HOLD_MS } from './routines';
 
 // Shared Lists (CONTEXT.md). Every function takes the client so the same code
 // runs in the app (the global client) and in tests (a Household Account or a
@@ -55,8 +56,9 @@ export function rowsThatFit({ count, room, row, gap }: { count: number; room: nu
   return Math.min(count, Math.max(0, Math.floor((room + gap) / (row + gap))));
 }
 
-// How long, in ms, a row crossed off on Home stays where it is, ticked, so that a second tap can put it back.
-export const HOME_HOLD_MS = 4_000;
+// How long, in ms, a row crossed off on Home stays where it is, ticked, so that a second tap can put it back: the one
+// hold Home has, which Up next keeps a ticked Routine for too (src/lib/routines.ts).
+export { HOME_HOLD_MS };
 
 // The rows Home's card draws, in the list's order: the items still to get, and any crossed off on this card (`crossedHere`: an
 // item's id and the time it was crossed off, in ms) less than HOME_HOLD_MS before `now`. Such a row stays where it was, so a tap
