@@ -1,5 +1,8 @@
-import { ArrowDown, ArrowUp, Check, Circle, PartyPopper } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useReducer, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { cn } from 'cn';
+import { ArrowDown, ArrowUp, Moon, Star, Sun, Sunrise, type LucideIcon } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { EmptyRing, MAX_PIPS, PersonDisc, Pips, Tick } from './components/people';
+import { Button } from './components/ui/button';
 import type { Household } from './lib/household';
 import { PROFILE_PALETTE, loadProfiles, nextSortOrder, type Profile } from './lib/profiles';
 import {
@@ -7,13 +10,17 @@ import {
   TIME_OF_DAY_GROUPS,
   WEEKDAYS,
   archiveRoutine,
-  celebrate,
   createRoutine,
+  followClock,
   groupByTimeOfDay,
+  holdShown,
   loadRoutines,
   maskOf,
   movedIdsInGroup,
-  noCelebration,
+  openChart,
+  partDone,
+  partView,
+  pickPart,
   reorderRoutines,
   routineProgress,
   showsTimeOfDayHeadings,
@@ -21,46 +28,18 @@ import {
   updateRoutine,
   isScheduledOn,
   type Burst,
-  type CelebrationEvent,
+  type ChartPart,
   type Routine,
   type RoutineEdit,
   type TimeOfDay,
 } from './lib/routines';
+import { PictureField, RoutinePicture } from './lib/routine-pictures';
 import { useRefetchOn } from './lib/change-feed';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
-import type { RoutinesToday } from './lib/use-routines-today';
+import { useCelebration, type RoutinesToday } from './lib/use-routines-today';
 
-const field = 'w-full text-base';
-const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
-const quiet = `${action} border border-border`;
-const iconAction = 'inline-flex size-12 shrink-0 items-center justify-center rounded-lg border border-border disabled:opacity-40';
-// The small heading over a group of Routines (Morning, Afternoon, Evening, Any time): the same on the Routines rail and on the phone.
-const timeHeading = 'text-base font-medium text-muted-foreground';
-
-// ---- The wall: today's Routines, on the home screen's rail and on the Routines chart ----
-
-// What a screen of today's Routines says besides the Routines: that they are loading, that they could
-// not be read, that a tick was put back, or that none is scheduled.
-function RoutinesNotices({ loaded, failed, problem, empty }: { loaded: boolean; failed: boolean; problem: string; empty: boolean }) {
-  return (
-    <>
-      {!loaded && !failed && <p className="text-base">Loading</p>}
-      {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
-      {failed && !loaded && (
-        <p role="alert" className="text-base">
-          Could not load Routines. Check your connection.
-        </p>
-      )}
-      {problem && (
-        <p role="alert" className="text-base">
-          {problem}
-        </p>
-      )}
-      {loaded && empty && <p className="text-base">Nothing scheduled today.</p>}
-    </>
-  );
-}
+// ---- The wall: the Routines chart, and the tile that Up next shares --------------------------------
 
 // The pieces of one burst, one in each colour of the Profile palette: how far each flies sideways (as a
 // percentage of the group's width), how far it rises first and how far it then falls (rem, from where the
@@ -79,11 +58,11 @@ const CONFETTI = [
   [48, -2, 8.5, -480],
 ] as const;
 
-// A short burst of confetti over one Profile's group, starting `at` px down it: at the Routine that was
-// tapped, wherever the group is scrolled to. It is drawn over the group but never in the way of a tap or of
-// the layout, hidden from assistive technology (the words "All done" say it), and gone from the page once
-// its last piece has landed.
-function Confetti({ at, onDone }: { at: number; onDone: () => void }) {
+// A short burst of confetti over one Profile's group (a column of the chart, or Up next), starting `at` px down it: at
+// the Routine that was tapped, wherever the group is scrolled to. It is drawn over the group but never in the way of a tap
+// or of the layout, hidden from assistive technology (the words "All done" say it), and gone from the page once its last
+// piece has landed.
+export function Confetti({ at, onDone }: { at: number; onDone: () => void }) {
   return (
     <span aria-hidden className="confetti pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]" style={{ '--at': `${at}px` } as CSSProperties}>
       {CONFETTI.map(([sideways, rise, fall, turn], index) => (
@@ -107,199 +86,303 @@ function Confetti({ at, onDone }: { at: number; onDone: () => void }) {
   );
 }
 
-// The bursts playing on this screen, which each screen keeps for itself: celebrate() decides when one starts
-// and ends. The screen says what it shows on every render, and a burst whose Profile is no longer finished,
-// whose group has left the screen, or that began on another day goes in that very render, so not one frame
-// of it is drawn over "2 of 3" and it can never play again when a group returns.
-function useCelebration({ date, finished }: RoutinesToday) {
-  const [state, dispatch] = useReducer(celebrate, noCelebration);
-  const shown: CelebrationEvent = { type: 'shown', day: date, finished };
-  const current = celebrate(state, shown);
-  if (current !== state) dispatch(shown);
-  return {
-    bursts: current.bursts,
-    // `at`: how far down its group the Routine that finished the Profile is.
-    start(profileId: string, at: number) {
-      // Someone who asked for less motion gets "All done" and no burst.
-      if (date !== null && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) dispatch({ type: 'finished', profileId, day: date, at });
-    },
-    land: (profileId: string, id: number) => dispatch({ type: 'landed', profileId, id }),
-  };
+// A Routine's tile (docs/look.md, A Routine tile): the whole tile is the button, 80 px tall, with the picture in a 52 px disc,
+// the words on up to two lines and a 44 px ring. To do, the ring is the person's strong colour; done, the tile is filled
+// with their base colour and shows a tick, and its words stay as they are, not struck through. On the chart it is a card
+// on the person's column and says whether it is ticked. In Up next, which names the person under the words (`who`), it is
+// a tile on a card, only ever ticks, and has no done look: the Routine leaves Up next once it is ticked.
+export function RoutineTile({
+  routine,
+  color,
+  done = false,
+  who,
+  onTap,
+}: {
+  routine: Routine;
+  color: string;
+  done?: boolean;
+  who?: string;
+  onTap: (button: HTMLElement) => void;
+}) {
+  return (
+    <button
+      type="button"
+      {...(who === undefined ? { 'aria-pressed': done } : { 'aria-label': `Mark ${routine.title} done for ${who}` })}
+      onClick={(event) => onTap(event.currentTarget)}
+      className={cn(
+        'person flex h-20 w-full items-center gap-3 rounded-[18px] px-2.5 text-left select-none transition-transform duration-75 active:translate-y-0.5',
+        done ? 'bg-person-base text-person-on-base' : cn('active:bg-accent', who === undefined ? 'bg-card' : 'bg-muted'),
+      )}
+      style={personStyle(color)}
+    >
+      <span
+        aria-hidden
+        className={cn('flex size-13 shrink-0 items-center justify-center rounded-full', done ? 'bg-person-done-disc text-person-done-picture' : 'bg-person-fill text-person-strong')}
+      >
+        <RoutinePicture picture={routine.picture} />
+      </span>
+      {who === undefined ? (
+        <span className={cn('line-clamp-2 min-w-0 flex-1 text-[19px] leading-[1.2]', done ? 'font-semibold' : 'font-medium')}>{routine.title}</span>
+      ) : (
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[19px] leading-6 font-medium">{routine.title}</span>
+          <span className="text-sm leading-[18px] text-muted-foreground">{who}</span>
+        </span>
+      )}
+      {done ? <Tick color={color} /> : <EmptyRing color={color} />}
+    </button>
+  );
 }
 
-// One Profile's Routines today: its colour and name, how far along it is (the count and a progress
-// bar, or "All done" with an icon once every one is ticked), then the Routines as buttons to tick,
-// under their time of day headings when the Profile uses them. The Routines rail shows it compact; on
-// the chart it is a column of its own, which scrolls on its own when its Routines do not fit.
-function ProfileGroup({
+// The icon each part of the day has on the chart's control and over a column.
+const PART_ICON: Record<TimeOfDay, LucideIcon> = { morning: Sunrise, afternoon: Sun, evening: Moon };
+
+// The small heading over a group of tiles: the part of the day (with its icon), Left from earlier or Any time.
+function GroupLabel({ icon: Icon, children, status }: { icon?: LucideIcon | undefined; children: ReactNode; status?: ReactNode }) {
+  return (
+    <div className="flex h-[22px] flex-none items-center justify-between gap-2">
+      <h4 className="flex items-center gap-1.5 px-1 text-[14.5px] leading-[18px] font-medium text-muted-foreground">
+        {Icon && <Icon aria-hidden className="size-4" />}
+        {children}
+      </h4>
+      {status}
+    </div>
+  );
+}
+
+// One Profile's column of the chart: its disc, name and how far it is today, then the part of the day that is showing
+// (or every part), then the foot line for what was done earlier. It is as tall as what it holds, and the tiles scroll on
+// their own when they do not fit. A Profile with nothing today has the column and says so.
+function Column({
   profile,
   routines,
   done,
+  part,
+  held,
+  problem,
   onToggle,
   burst,
   onFinish,
   onLand,
-  chart = false,
 }: {
   profile: Profile;
   routines: Routine[];
   done: Set<string>;
+  part: ChartPart;
+  held: ReadonlySet<string>;
+  // What the last tick of this Profile's that did not save says; empty when it was saved.
+  problem: string | undefined;
   onToggle: (routine: Routine) => Promise<void>;
-  // Set while a burst plays over this group.
+  // Set while a burst plays over this column.
   burst: Burst | undefined;
-  // A tap on a Routine here finished the Profile, `at` px down the group; the burst's last piece has landed.
+  // A tap on a Routine here finished the Profile, `at` px down the column; the burst's last piece has landed.
   onFinish: (at: number) => void;
   onLand: (id: number) => void;
-  chart?: boolean;
 }) {
-  // A group always has a Routine today: groupByProfile leaves out the Profiles with none.
   const { done: count, total } = routineProgress(routines, done);
-  const finished = count === total;
-  const times = groupByTimeOfDay(routines);
-  const headed = showsTimeOfDayHeadings(routines);
-  const group = useRef<HTMLElement>(null);
+  const finished = total > 0 && count === total;
+  // With more Routines than pips, the count is all that says how far along they are, so it is read out.
+  const pips = total > 0 && total <= MAX_PIPS;
+  const view = part === 'whole' ? null : partView(routines, done, part, held);
+  const column = useRef<HTMLElement>(null);
 
   function tap(routine: Routine, button: HTMLElement) {
-    if (group.current && tapFinishesProfile(routines, done, routine.id, !done.has(routine.id))) {
-      // Where the burst starts: the middle of the button, measured from the group's padding edge, which is the burst's own top.
+    if (column.current && tapFinishesProfile(routines, done, routine.id, !done.has(routine.id))) {
+      // Where the burst starts: the middle of the button, measured from the column's padding edge, which is the burst's own top.
       const box = button.getBoundingClientRect();
-      const top = group.current.getBoundingClientRect().top + group.current.clientTop;
+      const top = column.current.getBoundingClientRect().top + column.current.clientTop;
       onFinish(box.top + box.height / 2 - top);
     }
     void onToggle(routine);
   }
 
+  const tiles = (list: Routine[]) => (
+    <ul className="flex flex-col gap-2.5">
+      {list.map((routine) => (
+        <li key={routine.id}>
+          <RoutineTile routine={routine} color={profile.color} done={done.has(routine.id)} onTap={(button) => tap(routine, button)} />
+        </li>
+      ))}
+    </ul>
+  );
+
   return (
     <section
-      ref={group}
+      ref={column}
       aria-labelledby={`routines-${profile.id}`}
-      className={`person ${chart ? 'relative flex min-h-0 max-w-md min-w-64 flex-1 flex-col gap-3 rounded-3xl bg-card p-4' : 'relative flex flex-col gap-2'}`}
+      className="person relative flex max-h-full min-h-0 max-w-md min-w-[17rem] flex-1 flex-col gap-2.5 rounded-3xl bg-person-soft p-3.5"
       style={personStyle(profile.color)}
     >
-      {/* On the rail the header stays at the top of the rail while its group scrolls, on the rail's own ground so
-          nothing shows through, so "All done" and the count are in view wherever the group is scrolled to. Its padding is
-          taken back by its margins, so it takes the room it did before. The chart's column does not scroll: its list does. */}
-      <div className={chart ? 'flex flex-col gap-2' : 'sticky top-0 -mb-2 -mt-2 flex flex-col gap-2 bg-card py-2'}>
-        {/* A name too long to share the line with the count drops it to a line of its own, rather than squeezing the name.
-            The count's room is as wide as "All done", so the heading wraps the same either way and nothing below it moves when one becomes the other. */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h3 id={`routines-${profile.id}`} className={`flex min-w-0 items-center gap-2 font-semibold ${chart ? 'text-2xl' : 'text-xl'}`}>
-            <span aria-hidden className="size-4 shrink-0 rounded-full bg-person-strong" />
-            <span className="min-w-0 break-words">{profile.name}</span>
+      <div className="flex min-h-14 flex-none items-center gap-3">
+        <PersonDisc name={profile.name} color={profile.color} size={56} />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h3 id={`routines-${profile.id}`} className="font-display text-[26px] leading-[30px] break-words">
+            {profile.name}
           </h3>
-          <span className={`ml-auto flex shrink-0 items-center justify-end gap-1.5 font-medium ${chart ? 'min-w-28 text-xl' : 'min-w-24 text-base'}`}>
-            {/* The progress bar's name says it, so the visible count is left out of what a screen reader reads. */}
-            {!finished && <span aria-hidden>{`${count} of ${total}`}</span>}
-            {/* Always on the page, so a screen reader hears "All done" when it appears and not when Routines load
-                already done, and whose it is, because it is heard from wherever the screen reader is. */}
-            <span role="status" className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 text-[15px] leading-5">
+            {total === 0 && <span className="text-muted-foreground">Nothing today</span>}
+            {total > 0 && !finished && (
+              <span aria-hidden={pips || undefined} className="text-muted-foreground">
+                {count} of {total} done
+              </span>
+            )}
+            {/* Always on the page, so a screen reader hears "All done" when it appears and not when Routines load already done, and
+                whose it is, because it is heard from wherever the screen reader is. */}
+            <span role="status" className="flex items-center gap-1.5 font-semibold">
               {finished && (
                 <>
                   <span className="sr-only">{profile.name}: </span>
-                  <PartyPopper aria-hidden className="size-5 shrink-0" />
+                  <Star aria-hidden className="size-4 shrink-0" />
                   All done
                 </>
               )}
             </span>
+          </div>
+        </div>
+      </div>
+      <Pips done={count} total={total} label={`${profile.name}: ${count} of ${total} ${total === 1 ? 'Routine' : 'Routines'} done`} color={profile.color} height={10} />
+      {total > 0 && (
+        // The padding is room for a tile's focus ring, which the scrolling box would otherwise clip.
+        <div className="-m-1 flex min-h-0 flex-col gap-2.5 overflow-y-auto p-1">
+          {view === null
+            ? groupByTimeOfDay(routines).map((group) => (
+                <Fragment key={group.label}>
+                  <GroupLabel icon={group.value === null ? undefined : PART_ICON[group.value]}>{group.label}</GroupLabel>
+                  {tiles(group.routines)}
+                </Fragment>
+              ))
+            : part !== 'whole' && (
+                <>
+                  <GroupLabel
+                    icon={PART_ICON[part]}
+                    status={
+                      <span role="status" className="flex items-center gap-1.5 text-[14.5px] leading-[18px] font-semibold">
+                        {partDone(view, done) && (
+                          <>
+                            <span className="sr-only">
+                              {profile.name}: {timeWord(part)}{' '}
+                            </span>
+                            <Tick size={20} color={profile.color} strong />
+                            Done
+                          </>
+                        )}
+                      </span>
+                    }
+                  >
+                    {timeWord(part)}
+                  </GroupLabel>
+                  {view.own.length > 0 && tiles(view.own)}
+                  {view.earlier.length > 0 && (
+                    <>
+                      <GroupLabel>Left from earlier</GroupLabel>
+                      {tiles(view.earlier)}
+                    </>
+                  )}
+                  {view.anytime.length > 0 && (
+                    <>
+                      <GroupLabel>Any time</GroupLabel>
+                      {tiles(view.anytime)}
+                    </>
+                  )}
+                  {view.own.length + view.earlier.length + view.anytime.length === 0 && <p className="px-1 text-[15px] text-muted-foreground">Nothing this {part}.</p>}
+                </>
+              )}
+        </div>
+      )}
+      {view !== null && view.doneEarlier > 0 && (
+        <div className="mt-1 flex h-6 flex-none items-center gap-2">
+          <span aria-hidden className="flex gap-1">
+            {Array.from({ length: Math.min(view.doneEarlier, 3) }, (_, index) => (
+              <Tick key={index} size={20} color={profile.color} strong />
+            ))}
           </span>
+          <span className="min-w-0 flex-1 truncate text-sm leading-[18px] text-muted-foreground">{view.doneEarlier} done earlier today</span>
         </div>
-        <div
-          role="progressbar"
-          aria-label={`${profile.name}: ${count} of ${total} ${total === 1 ? 'Routine' : 'Routines'} done`}
-          aria-valuemin={0}
-          aria-valuemax={total}
-          aria-valuenow={count}
-          className={`overflow-hidden rounded-full bg-muted ring-1 ring-muted-foreground/60 ${chart ? 'h-3' : 'h-2'}`}
-        >
-          <div className="h-full rounded-full bg-person-strong" style={{ width: `${(count / total) * 100}%` }} />
-        </div>
-      </div>
-      <div className={chart ? '-m-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-1' : 'flex flex-col gap-2'}>
-        {times.map((time) => (
-          <Fragment key={time.label}>
-            {headed && <h4 className={timeHeading}>{time.label}</h4>}
-            <ul className="flex flex-col gap-2">
-              {time.routines.map((routine) => {
-                const checked = done.has(routine.id);
-                return (
-                  <li key={routine.id}>
-                    <button
-                      type="button"
-                      aria-pressed={checked}
-                      onClick={(event) => tap(routine, event.currentTarget)}
-                      className={`flex min-h-14 w-full items-center gap-3 rounded-lg border-2 px-3 text-left text-lg ${checked ? 'border-person-base bg-person-base text-person-on-base' : 'border-person-strong'}`}
-                    >
-                      {checked ? <Check aria-hidden className="size-6 shrink-0" /> : <Circle aria-hidden className="size-6 shrink-0" />}
-                      <span className={checked ? 'line-through decoration-2' : ''}>{routine.title}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </Fragment>
-        ))}
-      </div>
+      )}
+      {problem && (
+        <p role="alert" className="flex-none px-1 text-[15px] leading-5">
+          {problem}
+        </p>
+      )}
       {burst !== undefined && <Confetti key={burst.id} at={burst.at} onDone={() => onLand(burst.id)} />}
     </section>
   );
 }
 
-// Today's Routines under each Profile's name and colour: the home screen's right rail. The Wall reads
-// them once and hands them to this and to the chart; the bursts are this screen's own.
-export function RoutinesRail({ routines }: { routines: RoutinesToday }) {
-  const { loaded, failed, problem, groups, done, toggle } = routines;
-  const celebration = useCelebration(routines);
+// The words and icon on the chart's control, one choice for each part of the day and one for all of it.
+const CHART_CHOICES: { part: ChartPart; label: string; icon?: LucideIcon }[] = [
+  { part: 'morning', label: 'Morning', icon: Sunrise },
+  { part: 'afternoon', label: 'Afternoon', icon: Sun },
+  { part: 'evening', label: 'Evening', icon: Moon },
+  { part: 'whole', label: 'Whole day' },
+];
 
-  return (
-    // No padding above, so a group's header can stay flush with the top of the rail with nothing showing through above it; the
-    // title brings its own. The scroll padding is room for that header, so a button reached by keyboard is not scrolled under it.
-    <aside aria-label="Today's Routines" className="flex min-h-0 scroll-pt-24 flex-col gap-4 overflow-y-auto rounded-3xl bg-card px-4 pb-4">
-      <h2 className="mt-4 text-2xl font-semibold">Routines</h2>
-      <RoutinesNotices loaded={loaded} failed={failed} problem={problem} empty={groups.length === 0} />
-      {groups.map((group) => (
-        <ProfileGroup
-          key={group.profile.id}
-          profile={group.profile}
-          routines={group.routines}
-          done={done}
-          onToggle={toggle}
-          burst={celebration.bursts[group.profile.id]}
-          onFinish={(at) => celebration.start(group.profile.id, at)}
-          onLand={(id) => celebration.land(group.profile.id, id)}
-        />
-      ))}
-    </aside>
-  );
-}
-
-// The Routines chart, a screen of its own: a column for each Profile that has Routines today, side by
-// side in the Profiles' order and filling the height, reading and ticking exactly as the Routines rail
-// does. Only when there are more Profiles than fit at a readable width does the row scroll sideways.
+// The Routines chart, a screen of its own: a control for the part of the day and a column for each Profile that has a
+// Routine on any day, side by side in the Profiles' order. It opens on the part it is now, and moves to a new part when
+// that part begins; a part picked by hand holds until then. Only when there are more Profiles than fit at a readable
+// width does the row scroll sideways.
 export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
-  const { loaded, failed, problem, groups, done, toggle } = routines;
+  const { loaded, settled, failed, part: clock, problems, columns, done, toggle } = routines;
   const celebration = useCelebration(routines);
   // Focus goes to the page's title on arrival, as on the calendar pages, rather than staying on the navigation rail.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
 
+  // What the chart shows follows the clock, and keeps in place what it has shown as left from earlier, in this render, so
+  // that not one frame of it is drawn with a Routine gone that was ticked a moment ago. See followClock and holdShown. What
+  // is shown before the day's ticks have been read is not kept: it is not what is left.
+  const [chart, setChart] = useState(() => openChart(clock));
+  const followed = followClock(chart, clock);
+  const shown = followed.part;
+  const current = holdShown(
+    followed,
+    shown === 'whole' || !settled ? [] : columns.flatMap((column) => partView(column.routines, done, shown).earlier.map((routine) => routine.id)),
+  );
+  if (current !== chart) setChart(current);
+
   return (
-    <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-4">
-      <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="text-2xl font-semibold outline-none">
-        Routines
-      </h2>
-      <RoutinesNotices loaded={loaded} failed={failed} problem={problem} empty={groups.length === 0} />
-      <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto">
-        {groups.map((group) => (
-          <ProfileGroup
-            key={group.profile.id}
-            chart
-            profile={group.profile}
-            routines={group.routines}
+    <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-3">
+      <div className="flex h-14 flex-none items-center justify-between gap-4">
+        <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="font-display text-[30px] leading-9 outline-none">
+          Routines
+        </h2>
+        <div role="group" aria-label="Part of the day" className="flex h-14 flex-none gap-1 rounded-[18px] bg-card p-1">
+          {CHART_CHOICES.map(({ part, label, icon: Icon }) => (
+            <Button
+              key={part}
+              variant="quiet"
+              aria-pressed={shown === part}
+              onClick={() => setChart(pickPart(current, part))}
+              className="h-12 gap-2 rounded-[14px] px-4 text-[15px] font-medium"
+            >
+              {Icon && <Icon aria-hidden className="size-5" />}
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {!loaded && !failed && <p className="text-base">Loading</p>}
+      {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
+      {failed && !loaded && (
+        <p role="alert" className="text-base">
+          Could not load Routines. Check your connection.
+        </p>
+      )}
+      {loaded && columns.length === 0 && <p className="text-base">No Routines yet.</p>}
+      <div className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
+        {columns.map(({ profile, routines: today }) => (
+          <Column
+            key={profile.id}
+            profile={profile}
+            routines={today}
             done={done}
+            part={shown}
+            held={current.held}
+            problem={problems[profile.id]}
             onToggle={toggle}
-            burst={celebration.bursts[group.profile.id]}
-            onFinish={(at) => celebration.start(group.profile.id, at)}
-            onLand={(id) => celebration.land(group.profile.id, id)}
+            burst={celebration.bursts[profile.id]}
+            onFinish={(at) => celebration.start(profile.id, at)}
+            onLand={(id) => celebration.land(profile.id, id)}
           />
         ))}
       </div>
@@ -342,7 +425,7 @@ const weekOrder = [...WEEKDAYS.slice(1), WEEKDAYS[0]];
 // The Time of day choices as the select lists them: Any time, the default, first.
 const timeOfDayChoices = [...TIME_OF_DAY_GROUPS.slice(-1), ...TIME_OF_DAY_GROUPS.slice(0, -1)];
 
-// One form for adding a Routine and for editing one: a title, the days and a time of day.
+// One form for adding a Routine and for editing one: a title, the days, a time of day and a picture.
 // Given a Routine it starts from that Routine and offers Cancel; without one it starts blank
 // and, once the Routine is added, blank again.
 function RoutineForm({
@@ -359,6 +442,7 @@ function RoutineForm({
   const [title, setTitle] = useState(routine?.title ?? '');
   const [mask, setMask] = useState(routine?.days_of_week ?? allDays);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay | null>(routine?.time_of_day ?? null);
+  const [picture, setPicture] = useState<string | null>(routine?.picture ?? null);
   // Saving is true while a save is in flight, so a second tap cannot send it twice. Failed says the
   // last one did not go through: the form stays open with what was typed, and says so beside Save.
   const [saving, setSaving] = useState(false);
@@ -371,22 +455,23 @@ function RoutineForm({
     if (!title.trim() || mask === 0 || saving) return;
     setSaving(true);
     setFailed(false);
-    const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture: routine?.picture ?? null });
+    const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture });
     setSaving(false);
     setFailed(!saved);
     if (saved && !routine) {
       setTitle('');
       setMask(allDays);
       setTimeOfDay(null);
+      setPicture(null);
     }
   }
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-3">
-      <label className="flex flex-col gap-2 text-base">
+    <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
+      <label className="flex flex-col gap-2 text-[15px] text-muted-foreground">
         {routine ? `Title for ${routine.title}` : `New Routine for ${profile.name}`}
         <input
-          className={field}
+          className="w-full text-[17px] text-foreground"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           maxLength={100}
@@ -396,47 +481,49 @@ function RoutineForm({
         />
       </label>
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-base">Days for {about}</legend>
+        <legend className="mb-2 text-[15px] text-muted-foreground">Days for {about}</legend>
         <div className="flex flex-wrap gap-2">
-          {weekOrder.map((weekday) => (
-            <label
-              key={weekday.bit}
-              className="flex min-h-12 min-w-12 cursor-pointer items-center justify-center rounded-lg border-2 border-border px-2 text-base font-medium has-[:checked]:border-foreground has-[:checked]:bg-muted has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-foreground"
-            >
-              <input
-                type="checkbox"
-                className="sr-only"
-                checked={isScheduledOn(mask, weekday.bit)}
-                onChange={(e) => setMask(e.target.checked ? mask | (1 << weekday.bit) : mask & ~(1 << weekday.bit))}
+          {weekOrder.map((weekday) => {
+            const on = isScheduledOn(mask, weekday.bit);
+            return (
+              <Button
+                key={weekday.bit}
+                variant="secondary"
+                aria-pressed={on}
                 aria-label={weekday.name}
-              />
-              {weekday.short}
-            </label>
-          ))}
+                onClick={() => setMask(on ? mask & ~(1 << weekday.bit) : mask | (1 << weekday.bit))}
+                className="h-12 min-w-12 rounded-2xl px-3 font-medium"
+              >
+                {weekday.short}
+              </Button>
+            );
+          })}
         </div>
       </fieldset>
-      <label className="flex flex-col gap-2 text-base">
+      <label className="flex flex-col gap-2 text-[15px] text-muted-foreground">
         Time of day for {about}
         <select
-          className={field}
+          className="w-full text-[17px] text-foreground"
           value={timeOfDay ?? ''}
           onChange={(e) => setTimeOfDay(TIME_OF_DAY_GROUPS.find((group) => group.value === e.target.value)?.value ?? null)}
         >
-          {timeOfDayChoices.map((choice) => (
-            <option key={choice.label} value={choice.value ?? ''}>
-              {choice.label}
+          {timeOfDayChoices.map((option) => (
+            <option key={option.label} value={option.value ?? ''}>
+              {option.label}
             </option>
           ))}
         </select>
       </label>
+      <PictureField about={about} picture={picture} onChange={setPicture} />
       <div className="flex gap-3">
-        <button type="submit" className={`${action} flex-1 bg-primary text-primary-foreground disabled:opacity-40`} disabled={mask === 0 || saving}>
+        {/* A page of forms has one primary: the Save of the Routine being edited. Adding is secondary. */}
+        <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" disabled={mask === 0 || saving}>
           {routine ? 'Save' : 'Add Routine'}
-        </button>
+        </Button>
         {onCancel && (
-          <button type="button" className={quiet} onClick={onCancel}>
+          <Button size="phone" variant="quiet" onClick={onCancel}>
             Cancel
-          </button>
+          </Button>
         )}
       </div>
       {failed && (
@@ -521,79 +608,60 @@ export function RoutinesPage({ household }: { household: Household }) {
   const ofProfile = (profileId: string) => routines.filter((routine) => routine.profile_id === profileId);
 
   return (
-    <main className="mx-auto flex min-h-svh max-w-md flex-col gap-6 p-4">
-      <h1 className="text-2xl font-semibold">Routines</h1>
+    <main className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pt-2 pb-6">
+      <h1 className="sr-only">Routines</h1>
       <p role="status" className="min-h-6 text-base">
         {problem}
       </p>
       {profiles?.length === 0 && (
         <p className="text-base">
-          Add a Profile first, in <a href="/settings" className="underline">Household settings</a>. Routines belong to a Profile.
+          Add a person first, in <a href="/settings" className="underline">Household settings</a>. Routines belong to a person.
         </p>
       )}
 
       {profiles?.map((profile) => {
         const own = ofProfile(profile.id);
-        // The groups, their order and the heading rule are the Routines rail's, so the phone never lists an order the Wall does not show.
+        // The groups, their order and the heading rule are the Wall's, so the phone never lists an order the Wall does not show.
         const times = groupByTimeOfDay(own);
         const headed = showsTimeOfDayHeadings(own);
         return (
           <section
             key={profile.id}
             aria-labelledby={`profile-${profile.id}`}
-            className="person flex flex-col gap-3 rounded-lg border border-border p-3"
+            className="person flex flex-col gap-4 rounded-3xl bg-card p-4"
             style={personStyle(profile.color)}
           >
-            <h2 id={`profile-${profile.id}`} tabIndex={-1} className="flex items-center gap-2 text-xl font-semibold">
-              <span aria-hidden className="size-4 shrink-0 rounded-full bg-person-strong" />
+            <h2 id={`profile-${profile.id}`} tabIndex={-1} className="flex items-center gap-3 font-display text-[22px] leading-7 outline-none">
+              <PersonDisc name={profile.name} color={profile.color} size={44} />
               {profile.name}
             </h2>
             {own.length === 0 && <p className="text-base">No Routines yet.</p>}
             {times.map((time) => (
               <Fragment key={time.label}>
-                {headed && <h3 className={timeHeading}>{time.label}</h3>}
-                <ul className="flex flex-col gap-3">
+                {headed && <h3 className="text-sm font-medium text-muted-foreground">{time.label}</h3>}
+                <ul className="flex flex-col gap-2">
                   {time.routines.map((routine, index) => (
-                    <li key={routine.id} className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                    <li key={routine.id} className={cn('flex flex-col gap-2', editing !== routine.id && 'rounded-[14px] bg-muted p-3')}>
                       {editing === routine.id ? (
                         <RoutineForm profile={profile} routine={routine} onSave={(input) => save(routine.id, input)} onCancel={() => stopEditing(routine.id)} />
                       ) : (
                         <>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1">
-                              <p className="text-base font-medium">{routine.title}</p>
-                              <p className="text-base">{scheduleSummary(routine.days_of_week, routine.time_of_day)}</p>
+                          <div className="flex items-center gap-3">
+                            <span aria-hidden className="flex size-12 shrink-0 items-center justify-center rounded-full bg-person-fill text-person-strong">
+                              <RoutinePicture picture={routine.picture} size={26} />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[17px] leading-6 font-medium break-words">{routine.title}</p>
+                              <p className="text-sm leading-[18px] text-muted-foreground">{scheduleSummary(routine.days_of_week, routine.time_of_day)}</p>
                             </div>
-                            <button
-                              type="button"
-                              className={iconAction}
-                              aria-label={`Move ${routineName(routine)} up`}
-                              disabled={index === 0}
-                              onClick={() =>
-                                void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder Routines. Try again.')
-                              }
-                            >
-                              <ArrowUp aria-hidden className="size-5" />
-                            </button>
-                            <button
-                              type="button"
-                              className={iconAction}
-                              aria-label={`Move ${routineName(routine)} down`}
-                              disabled={index === time.routines.length - 1}
-                              onClick={() =>
-                                void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder Routines. Try again.')
-                              }
-                            >
-                              <ArrowDown aria-hidden className="size-5" />
-                            </button>
                           </div>
                           {confirming === routine.id ? (
-                            <div className="flex gap-3">
-                              <button
-                                type="button"
+                            <div className="flex gap-2">
+                              <Button
                                 autoFocus
+                                variant="delete"
                                 aria-label={`Archive ${routineName(routine)}`}
-                                className={`${action} flex-1 border-2 border-destructive bg-primary text-primary-foreground`}
+                                className="h-12 flex-1 rounded-[14px]"
                                 onClick={() => {
                                   setConfirming(null);
                                   setFocusNext(`profile-${profile.id}`);
@@ -601,38 +669,60 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 }}
                               >
                                 Archive {routine.title}
-                              </button>
-                              <button
-                                type="button"
-                                className={quiet}
+                              </Button>
+                              <Button
+                                variant="quiet"
+                                className="h-12 rounded-[14px]"
                                 onClick={() => {
                                   setConfirming(null);
                                   setFocusNext(`archive-${routine.id}`);
                                 }}
                               >
                                 Keep it
-                              </button>
+                              </Button>
                             </div>
                           ) : (
-                            <div className="flex gap-3">
-                              <button
-                                type="button"
+                            <div className="flex gap-2">
+                              <Button
                                 id={`edit-${routine.id}`}
-                                className={`${quiet} flex-1`}
+                                variant="quiet"
+                                className="h-12 flex-1 rounded-[14px]"
                                 aria-label={`Edit ${routineName(routine)}`}
                                 onClick={() => startEditing(routine.id)}
                               >
                                 Edit
-                              </button>
-                              <button
-                                type="button"
+                              </Button>
+                              <Button
                                 id={`archive-${routine.id}`}
-                                className={`${quiet} flex-1`}
+                                variant="quiet"
+                                className="h-12 flex-1 rounded-[14px]"
                                 aria-label={`Archive ${routineName(routine)}`}
                                 onClick={() => setConfirming(routine.id)}
                               >
                                 Archive
-                              </button>
+                              </Button>
+                              <Button
+                                variant="quiet"
+                                className="size-12 rounded-full p-0"
+                                aria-label={`Move ${routineName(routine)} up`}
+                                disabled={index === 0}
+                                onClick={() =>
+                                  void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder Routines. Try again.')
+                                }
+                              >
+                                <ArrowUp aria-hidden className="size-5" />
+                              </Button>
+                              <Button
+                                variant="quiet"
+                                className="size-12 rounded-full p-0"
+                                aria-label={`Move ${routineName(routine)} down`}
+                                disabled={index === time.routines.length - 1}
+                                onClick={() =>
+                                  void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder Routines. Try again.')
+                                }
+                              >
+                                <ArrowDown aria-hidden className="size-5" />
+                              </Button>
                             </div>
                           )}
                         </>
@@ -642,10 +732,12 @@ export function RoutinesPage({ household }: { household: Household }) {
                 </ul>
               </Fragment>
             ))}
-            <RoutineForm
-              profile={profile}
-              onSave={(input) => change(() => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined))}
-            />
+            <div className={own.length > 0 ? 'border-t border-border pt-4' : undefined}>
+              <RoutineForm
+                profile={profile}
+                onSave={(input) => change(() => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined))}
+              />
+            </div>
           </section>
         );
       })}

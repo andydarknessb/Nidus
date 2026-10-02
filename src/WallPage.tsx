@@ -29,7 +29,7 @@ const HEARTBEAT_MS = 30_000;
 // While showing a code, ask often so a claim is noticed within seconds.
 const CLAIM_POLL_MS = 3_000;
 const RETRY_MS = 5_000;
-// Same cadence as the Routines rail, so a changed Household Timezone reaches the wall within a read.
+// Same cadence as the Routines read, so a changed Household Timezone reaches the wall within a read.
 const HOUSEHOLD_REFRESH_MS = 30_000;
 // After a failed Household read, retry sooner.
 const HOUSEHOLD_RETRY_MS = 5_000;
@@ -165,7 +165,7 @@ function PairingScreen({ pairing }: { pairing: PairingCode }) {
 }
 
 // Which screen the address names. The wall pages with pushState rather than reloading, so a tap
-// never drops the session or the Routines rail, and Back returns to the previous page.
+// never drops the session or the Routines read, and Back returns to the previous page.
 function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void, (date: string | null) => void, () => void] {
   const read = () => parseWallRoute(window.location.pathname, window.location.search);
   const [route, setRoute] = useState<WallRoute>(read);
@@ -202,11 +202,11 @@ const VIEW_TITLES: Record<WallRoute['view'], string> = { home: 'Home', day: 'Day
 
 // The landscape wall: a navigation rail down the left, then the header over the screen. The home
 // screen is the five-day calendar on the left and, on its right rail, today's Meals (when any is
-// planned) above today's Routines above the pinned Shared List; the other lists open from the
+// planned) above Up next above the pinned Shared List; the other lists open from the
 // navigation rail.
 function HomeShell({ owner }: { owner: boolean }) {
   const [route, openView, openHome, openMeals, openRoutines] = useWallRoute();
-  // The Household Timezone decides which day the Routines rail shows; none until it is read.
+  // The Household Timezone decides which day Up next and the Routines chart show; none until it is read.
   const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   const [listsOpen, setListsOpen] = useState(false);
   // Each view names itself in the document's title; the Lists screen, which opens over them, does too.
@@ -235,7 +235,7 @@ function HomeShell({ owner }: { owner: boolean }) {
       }
       if (!live) return;
       setView((prev) => householdViewAfter(prev, outcome));
-      // After a failed read retry sooner, so the Routines rail appears once the connection is back.
+      // After a failed read retry sooner, so Up next appears once the connection is back.
       timer = setTimeout(() => void read(), 'household' in outcome ? HOUSEHOLD_REFRESH_MS : HOUSEHOLD_RETRY_MS);
     }
 
@@ -252,7 +252,7 @@ function HomeShell({ owner }: { owner: boolean }) {
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
   const forecast = useForecast(view.household);
   const weatherOn = view.household !== null && view.household.weather_place !== null;
-  // Today's Routines, read once for as long as the shell lives and handed to the Routines rail on Home and to
+  // Today's Routines, read once for as long as the shell lives and handed to Up next on Home and to
   // the Routines chart, so going from one to the other reads nothing again and a tick in flight is not dropped.
   const routines = useRoutinesToday(timezone);
 
@@ -281,7 +281,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           timezone ? (
             <RoutinesChart routines={routines} />
           ) : (
-            // The chart before the Household is read: an empty frame that says so if the read failed, as the Routines rail does.
+            // The chart before the Household is read: an empty frame that says so if the read failed, as Up next does.
             <section aria-label="Routines" className="rounded-3xl bg-card p-4">
               {view.failed && (
                 <p role="alert" className="text-base">
@@ -310,7 +310,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           ) : (
             <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
           )}
-          <HomeRail timezone={timezone} routines={routines} failed={view.failed} />
+          <HomeRail timezone={timezone} routines={routines} failed={view.failed} onOpenRoutines={openRoutines} />
         </div>
         )}
         {listsOpen && <WallListsScreen onClose={() => setListsOpen(false)} />}
