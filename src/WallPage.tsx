@@ -15,6 +15,7 @@ import { householdDay } from './lib/routines';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
+import { useStatusLine } from './lib/status-line';
 import { localStore, writeLastMode } from './lib/mode';
 import { useForecast } from './lib/use-forecast';
 import { useDocumentTitle } from './lib/use-document-title';
@@ -212,11 +213,13 @@ function HomeShell({ owner }: { owner: boolean }) {
   // Each view names itself in the document's title; the Lists screen, which opens over them, does too.
   useDocumentTitle(listsOpen ? 'Lists' : VIEW_TITLES[route.view]);
   // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
-  // The context hands the pressed ids to every calendar view, and a way to clear it to the Native Event
-  // sheet; the chips prune it when the Profiles change.
-  const [filter] = useState(createProfileFilter);
+  // The context hands the pressed ids to every calendar view, a way to clear it to the Native Event
+  // sheet and a way to keep it open to the calendar; the chips prune it when the Profiles change. It says
+  // its own clearing on the status line.
+  const say = useStatusLine();
+  const [filter] = useState(() => createProfileFilter(say));
   const pressed = useSyncExternalStore(filter.subscribe, filter.pressed);
-  const filterView = useMemo(() => ({ pressed, clear: filter.clear }), [pressed, filter]);
+  const filterView = useMemo(() => ({ pressed, clear: filter.clear, touch: filter.touch }), [pressed, filter]);
   useEffect(() => () => filter.dispose(), [filter]);
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
   const [adding, setAdding] = useState(false);
