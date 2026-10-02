@@ -67,12 +67,10 @@ export function useSystemMode(): void {
   useEffect(() => applyMode(dark ? 'dark' : 'light'), [dark]);
 }
 
-// The pairing screen is always light, and so is the next load: a tablet with no Household has resolved nothing.
+// The pairing screen is always light. What the next load paints is stored by WallPage the moment it learns the tablet is
+// unpaired, which is earlier than this screen can mount: it waits for a code.
 export function useLightMode(): void {
-  useEffect(() => {
-    applyMode('light');
-    writeLastMode(localStore(), 'light');
-  }, []);
+  useEffect(() => applyMode('light'), []);
 }
 
 // The mode the document is in, for the rare component that must draw something other than a colour by it, such as
