@@ -194,7 +194,7 @@ export function PagedCalendar({
         />
       ) : (
         // The month's cells carry no weather: the spec puts it on the day headings of Home, Day and Week.
-        <MonthGrid key={`${view}:${anchor}`} timezone={timezone} today={today} anchor={anchor} window={window} version={version} onOpenDay={(day) => onNavigate('day', day)} />
+        <MonthGrid key={`${view}:${anchor}`} timezone={timezone} today={today} anchor={anchor} window={window} version={version} onOpenDay={(day) => onNavigate('day', day)} profiles={profiles} />
       )}
     </div>
   );
