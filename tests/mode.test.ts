@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { TOKENS } from '../src/lib/look';
-import { MODE_KEY, OVERRIDE_KEY, nextBoundary, readLastMode, readOverride, resolveMode, writeLastMode, writeOverride, type ModeStore } from '../src/lib/mode';
+import { MAX_OVERRIDE_MS, MODE_KEY, OVERRIDE_KEY, nextBoundary, readLastMode, readOverride, resolveMode, writeLastMode, writeOverride, type ModeStore } from '../src/lib/mode';
 
 // Every instant is written in UTC and every Household Timezone is named, so no test reads the machine's zone.
 const at = (iso: string) => Date.parse(`${iso}Z`);
@@ -211,6 +211,21 @@ describe('the override a screen keeps', () => {
     expect(readOverride(store, until - 1)).toEqual({ mode: 'dark', until });
     expect(readOverride(store, until)).toBeNull();
     expect(readOverride(store, until + 1)).toBeNull();
+  });
+
+  // The switch sets one that ends at the next sunrise or sunset, which is never more than a day away. One that ends later than
+  // that was written by a wrong clock or by hand, and would hold a mode for days.
+  it('is none when it ends more than 24 hours from now, a wrong clock cannot hold a mode for days', () => {
+    const store = fakeStore();
+    expect(MAX_OVERRIDE_MS).toBe(24 * 60 * 60 * 1000);
+    writeOverride(store, { mode: 'dark', until: now + MAX_OVERRIDE_MS });
+    expect(readOverride(store, now)).toEqual({ mode: 'dark', until: now + MAX_OVERRIDE_MS });
+    writeOverride(store, { mode: 'dark', until: now + MAX_OVERRIDE_MS + 1 });
+    expect(readOverride(store, now)).toBeNull();
+    writeOverride(store, { mode: 'dark', until: now + 365 * 24 * 60 * 60 * 1000 });
+    expect(readOverride(store, now)).toBeNull();
+    // The same override, read once the clock has moved on far enough, is within the day and counts.
+    expect(readOverride(store, now + 364 * 24 * 60 * 60 * 1000)).not.toBeNull();
   });
 
   it('is cleared when it is written as none', () => {
