@@ -217,7 +217,7 @@ function ProfileGroup({
   return (
     <section
       aria-labelledby={`routines-${profile.id}`}
-      className={chart ? 'relative flex min-h-0 min-w-64 flex-1 flex-col gap-3 rounded-xl border border-border p-4' : 'relative flex flex-col gap-2'}
+      className={chart ? 'relative flex min-h-0 max-w-md min-w-64 flex-1 flex-col gap-3 rounded-xl border border-border p-4' : 'relative flex flex-col gap-2'}
     >
       <div className="flex flex-col gap-2">
         {/* A name too long to share the line with the count drops it to a line of its own, rather than squeezing the name.
