@@ -223,6 +223,8 @@ describe('the times a new event opens with', () => {
   it('never lands on a time the clocks skip', () => {
     // Chicago, 2027-03-14: at 2:00 AM the clocks go to 3:00 AM. The next whole hour after 1:30 AM is 3:00 AM.
     expect(opening('2027-03-14', CHICAGO, '2027-03-14T01:30:00-06:00')).toEqual(['03:00', '04:00']);
+    // The same night in a zone east of UTC (Auckland, 2026-09-27).
+    expect(opening('2026-09-27', AUCKLAND, '2026-09-27T01:30:00+12:00')).toEqual(['03:00', '04:00']);
     // The hour after Starts is an hour of real time too, so from 12:10 AM it ends at 3:00 AM on the clock.
     expect(opening('2027-03-14', CHICAGO, '2027-03-14T00:10:00-06:00')).toEqual(['01:00', '03:00']);
     // London, 2027-03-28: 1:00 AM does not exist.
