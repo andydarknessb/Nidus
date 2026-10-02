@@ -38,6 +38,8 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const changeButton = useRef<HTMLButtonElement>(null);
+  // Which search is the latest, so that an answer that comes after the search was closed, or after a newer one began, is let go.
+  const latestSearch = useRef(0);
 
   const options = describePlaces(matches);
   const unit = savingUnit ?? household.temperature_unit;
@@ -49,6 +51,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
       : null;
 
   function close() {
+    latestSearch.current += 1;
     setChanging(false);
     setQuery('');
     setMatches([]);
@@ -59,15 +62,17 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
     event.preventDefault();
     const name = query.trim();
     if (name === '') return;
+    const mine = ++latestSearch.current;
     setSearchStatus('searching');
     // Matches from an earlier search are gone from the moment a new one starts.
     setMatches([]);
     try {
       const found = await searchPlaces(name);
+      if (mine !== latestSearch.current) return;
       setMatches(found);
       setSearchStatus(found.length === 0 ? 'none' : 'found');
     } catch {
-      setSearchStatus('failed');
+      if (mine === latestSearch.current) setSearchStatus('failed');
     }
   }
 

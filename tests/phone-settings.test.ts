@@ -10,7 +10,7 @@ import { seenWords } from '../src/lib/device-format';
 import type { Household } from '../src/lib/household';
 import { TOKENS } from '../src/lib/look';
 import { PROFILE_PALETTE, colorOwners, eventPeople, firstFreeColor, namesInWords } from '../src/lib/profiles';
-import { SETTINGS_TABS, settingsPathNow, settingsTabOf } from '../src/lib/settings-tabs';
+import { SETTINGS_TABS, settingsLabelOf, settingsPathNow, settingsTabOf } from '../src/lib/settings-tabs';
 import { timezoneName, timezoneOptions } from '../src/lib/timezones';
 
 // The phone's settings (spec 0003, Phone settings and People): what is pure about them. The first free colour, the time zone
@@ -159,6 +159,10 @@ describe('the phone\'s pages', () => {
       ['Routines', '/settings/routines'],
       ['Lists', '/settings/lists'],
     ]);
+  });
+
+  it("are called by the word on their tab, which is also the page in the document's title", () => {
+    for (const { tab, label } of SETTINGS_TABS) expect(settingsLabelOf(tab), tab).toBe(label);
   });
 
   it('are told from the path, each tab current at its own address', () => {
