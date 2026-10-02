@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { offsetMs } from '../../supabase/functions/_shared/zoned-time.ts';
 import { byPosition, movedIds, type Profile } from './profiles';
 
 // Routines and Routine Completions (CONTEXT.md). Every function takes the client
@@ -111,8 +112,8 @@ export function groupByTimeOfDay(routines: Routine[]): TimeOfDayRoutines[] {
     .filter((group) => group.routines.length > 0);
 }
 
-// Whether a Profile's Routines get group headings. Not when every one is Any time, so a Household
-// that never sets a time of day sees the Routines rail as it always was.
+// Whether a Profile's Routines get group headings on the phone's list. Not when every one is Any time, so a Household
+// that never sets a time of day sees the list as it always was.
 export function showsTimeOfDayHeadings(routines: Routine[]): boolean {
   return routines.some((routine) => routine.time_of_day !== null);
 }
@@ -156,6 +157,128 @@ export function finishedProfiles(groups: readonly ProfileRoutines[], doneIds: Re
       })
       .map(({ profile }) => profile.id),
   );
+}
+
+// ---- The parts of the day ---------------------------------------------------------------------
+
+// The parts of the day, in the order the day happens. Any time is not one.
+export const PARTS: readonly TimeOfDay[] = ['morning', 'afternoon', 'evening'];
+
+// Where the afternoon and the evening begin, as the hour of the Household's wall clock. The morning begins at midnight,
+// not at 5:00, so nothing of a new day is ever "left from earlier".
+const AFTERNOON_FROM = 12;
+const EVENING_FROM = 17;
+
+// The hour of the Household's wall clock at `now`, 0 to 23, daylight saving included. Never the machine's zone.
+function householdHour(timezone: string, now: Date): number {
+  return new Date(now.getTime() + offsetMs(now.getTime(), timezone)).getUTCHours();
+}
+
+// The part of the day `now` is in, by the Household's wall clock. On a 23 or 25 hour day it follows the clock on the wall
+// and not the hours that have passed, so the afternoon still begins at 12:00.
+export function partOfDay(timezone: string, now: Date = new Date()): TimeOfDay {
+  const hour = householdHour(timezone, now);
+  return hour >= EVENING_FROM ? 'evening' : hour >= AFTERNOON_FROM ? 'afternoon' : 'morning';
+}
+
+// What the chart shows one Profile for one part of the day.
+export type PartView = {
+  // The part's own Routines, ticked or not.
+  own: Routine[];
+  // "Left from earlier": Routines of earlier parts that are not ticked, and the ones that were not when the chart showed
+  // them (`held`), which stay where they are, done, until the part changes. The morning's first, each part in its order.
+  earlier: Routine[];
+  // Routines with no time of day, ticked or not: they belong to every part.
+  anytime: Routine[];
+  // Routines of earlier parts that are ticked and not shown: what the foot line counts.
+  doneEarlier: number;
+};
+
+// What a part shows a Profile: its own Routines, then what is left from earlier, then Any time. `routines` are that
+// Profile's Routines today and `done` the ids ticked today.
+export function partView(routines: Routine[], done: ReadonlySet<string>, part: TimeOfDay, held: ReadonlySet<string> = new Set()): PartView {
+  const of = (timeOfDay: TimeOfDay | null) => byPosition(routines.filter((routine) => routine.time_of_day === timeOfDay));
+  const before = PARTS.slice(0, PARTS.indexOf(part)).flatMap(of);
+  const earlier = before.filter((routine) => !done.has(routine.id) || held.has(routine.id));
+  return { own: of(part), earlier, anytime: of(null), doneEarlier: before.length - earlier.length };
+}
+
+// Whether the part is done: everything it shows is ticked, and it shows something.
+export function partDone(view: PartView, done: ReadonlySet<string>): boolean {
+  const shown = [...view.own, ...view.earlier, ...view.anytime];
+  return shown.length > 0 && shown.every((routine) => done.has(routine.id));
+}
+
+// ---- The chart: which part it shows -------------------------------------------------------------
+
+// What the Routines chart is showing: a part of the day, or the whole day. `clock` is the part the clock was in when the
+// chart last looked, so it can tell a new part has begun; `held` is what the part has shown as not ticked, to keep in place.
+export type ChartPart = TimeOfDay | 'whole';
+export type Chart = { part: ChartPart; clock: TimeOfDay; held: ReadonlySet<string> };
+
+const nothingHeld: ReadonlySet<string> = new Set();
+
+// A chart opens on the part it is now.
+export const openChart = (clock: TimeOfDay): Chart => ({ part: clock, clock, held: nothingHeld });
+
+// A part picked by hand holds until a new part begins. Moving to another part lets go of what the last one held.
+export const pickPart = (chart: Chart, part: ChartPart): Chart => (part === chart.part ? chart : { ...chart, part, held: nothingHeld });
+
+// An open chart moves to a new part when that part begins, whatever was picked.
+export const followClock = (chart: Chart, clock: TimeOfDay): Chart => (clock === chart.clock ? chart : openChart(clock));
+
+// Keeps in place the Routines the part has shown as not ticked, so one ticked while it is shown stays where it is, done,
+// until the part changes. It is the same chart when there is nothing new to keep.
+export function holdShown(chart: Chart, shown: Iterable<string>): Chart {
+  const fresh = [...shown].filter((id) => !chart.held.has(id));
+  return fresh.length === 0 ? chart : { ...chart, held: new Set([...chart.held, ...fresh]) };
+}
+
+// A column for every Profile that has a Routine on any day, in Profile order, so a child's column never moves. Each holds the
+// Routines scheduled for `weekday`, which are none on a day its Profile has none.
+export function columnsOf(profiles: Profile[], routines: Routine[], weekday: number): ProfileRoutines[] {
+  return groupByProfile(
+    profiles,
+    routines.filter((routine) => routine.archived_at === null),
+  ).map(({ profile, routines: own }) => ({ profile, routines: todaysRoutines(own, weekday) }));
+}
+
+// ---- Up next -------------------------------------------------------------------------------------
+
+// Up next on Home shows a tile for this many people at most.
+export const UP_NEXT_TILES = 3;
+
+export type UpNextTile = { profile: Profile; routine: Routine };
+
+// `tiles`: one for each of the first Profiles in order that have something left, each showing that Profile's first Routine
+// not ticked among the part's own, what is left from earlier, and Any time. `more`: today's Routines not ticked that no
+// tile shows, which include a later part's. `groups` are the Profiles' Routines today.
+export function upNext(groups: readonly ProfileRoutines[], done: ReadonlySet<string>, part: TimeOfDay): { tiles: UpNextTile[]; more: number } {
+  const tiles = groups
+    .flatMap(({ profile, routines }) => {
+      const view = partView(routines, done, part);
+      const routine = [...view.own, ...view.earlier, ...view.anytime].find((candidate) => !done.has(candidate.id));
+      return routine ? [{ profile, routine }] : [];
+    })
+    .slice(0, UP_NEXT_TILES);
+  const left = groups.reduce((count, { routines }) => count + routines.filter((routine) => !done.has(routine.id)).length, 0);
+  return { tiles, more: left - tiles.length };
+}
+
+// ---- A tick that did not save ---------------------------------------------------------------------
+
+export const TICK_FAILED = 'That did not save. Try again.';
+export const TICK_OFFLINE = 'No internet, so that did not save. Try again soon.';
+
+// What each Profile's last tick, if it did not save, says: by Profile id.
+export type TickProblems = Readonly<Record<string, string>>;
+
+// Said under a person's column, or tile, when their tick did not save, in words for the screen being offline or not; it goes
+// at that person's next tick that saves. Nothing else takes it away: not another person's tick, and not coming back online.
+export function afterTick(problems: TickProblems, profileId: string, saved: boolean, offline: boolean): TickProblems {
+  if (!saved) return { ...problems, [profileId]: offline ? TICK_OFFLINE : TICK_FAILED };
+  if (problems[profileId] === undefined) return problems;
+  return Object.fromEntries(Object.entries(problems).filter(([id]) => id !== profileId));
 }
 
 // ---- The celebration ------------------------------------------------------------------------
