@@ -644,7 +644,7 @@ export function RoutinesPage({ household }: { household: Household }) {
       </p>
       {profiles?.length === 0 && (
         <p className="text-base">
-          Add a person first, in <a href="/settings" className="underline">Household settings</a>. Routines belong to a person.
+          <a href="/settings" className="underline">Add a person first</a>. Routines belong to a person.
         </p>
       )}
 
