@@ -247,14 +247,34 @@ describe('the override a screen keeps', () => {
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
 
-// Runs the page's inline script in a page that has what is given, and says what it set data-mode to (undefined
-// when it set nothing, which leaves the page light) and whether it threw.
-function paint({ path, stored, prefersDark = false, storage = 'works' }: { path: string; stored?: string; prefersDark?: boolean; storage?: 'works' | 'blocked' }) {
-  const page: { mode?: string } = {};
+// Runs the page's inline script in a page that has what is given, and says what it set data-mode to (undefined when it set
+// nothing, which leaves the page light), what it put in the color-scheme and theme-color metas, whether it threw, and which
+// globals it left behind.
+function paint({
+  path,
+  stored,
+  prefersDark = false,
+  storage = 'works',
+  metas = 'present',
+}: {
+  path: string;
+  stored?: string;
+  prefersDark?: boolean;
+  storage?: 'works' | 'blocked';
+  metas?: 'present' | 'missing';
+}) {
+  const page: { mode?: string; metas: Record<string, string> } = { metas: {} };
   const sandbox: Record<string, unknown> = {
     location: { pathname: path },
     matchMedia: (query: string) => ({ matches: query === '(prefers-color-scheme: dark)' && prefersDark }),
-    document: { documentElement: { setAttribute: (name: string, value: string) => void (name === 'data-mode' && (page.mode = value)) } },
+    document: {
+      documentElement: { setAttribute: (name: string, value: string) => void (name === 'data-mode' && (page.mode = value)) },
+      querySelector: (selector: string) => {
+        const meta = /name=["']?([\w-]+)/.exec(selector)?.[1];
+        if (metas === 'missing' || meta === undefined) return null;
+        return { setAttribute: (name: string, value: string) => void (name === 'content' && (page.metas[meta] = value)) };
+      },
+    },
   };
   if (storage === 'blocked') {
     Object.defineProperty(sandbox, 'localStorage', {
@@ -265,13 +285,14 @@ function paint({ path, stored, prefersDark = false, storage = 'works' }: { path:
   } else {
     sandbox.localStorage = fakeStore(stored === undefined ? {} : { [MODE_KEY]: stored });
   }
+  const before = new Set(Object.keys(sandbox));
   let threw = false;
   try {
     runInNewContext(script!, sandbox);
   } catch {
     threw = true;
   }
-  return { mode: page.mode, threw };
+  return { mode: page.mode, metas: page.metas, threw, leaked: Object.keys(sandbox).filter((key) => !before.has(key)) };
 }
 
 describe('the inline script in index.html', () => {
@@ -283,10 +304,28 @@ describe('the inline script in index.html', () => {
   });
 
   it('paints the mode the Wall last resolved, light when it has none', () => {
-    expect(paint({ path: '/', stored: 'dark' })).toEqual({ mode: 'dark', threw: false });
-    expect(paint({ path: '/week', stored: 'light' })).toEqual({ mode: 'light', threw: false });
-    expect(paint({ path: '/routines' })).toEqual({ mode: 'light', threw: false });
-    expect(paint({ path: '/meals', stored: 'purple' })).toEqual({ mode: 'light', threw: false });
+    expect(paint({ path: '/', stored: 'dark' })).toMatchObject({ mode: 'dark', threw: false });
+    expect(paint({ path: '/week', stored: 'light' })).toMatchObject({ mode: 'light', threw: false });
+    expect(paint({ path: '/routines' })).toMatchObject({ mode: 'light', threw: false });
+    expect(paint({ path: '/meals', stored: 'purple' })).toMatchObject({ mode: 'light', threw: false });
+  });
+
+  // So a dark reload does not show a light browser bar until React mounts and applyMode() catches up.
+  it('sets the color-scheme and theme-color metas with the mode, the Wall and the phone alike', () => {
+    expect(paint({ path: '/', stored: 'dark' }).metas).toEqual({ 'color-scheme': 'dark', 'theme-color': TOKENS.dark.background });
+    expect(paint({ path: '/', stored: 'light' }).metas).toEqual({ 'color-scheme': 'light', 'theme-color': TOKENS.light.background });
+    expect(paint({ path: '/settings', prefersDark: true }).metas).toEqual({ 'color-scheme': 'dark', 'theme-color': TOKENS.dark.background });
+    expect(paint({ path: '/settings', prefersDark: false, stored: 'dark' }).metas).toEqual({ 'color-scheme': 'light', 'theme-color': TOKENS.light.background });
+  });
+
+  it('sets data-mode even when a meta element is missing', () => {
+    expect(paint({ path: '/', stored: 'dark', metas: 'missing' })).toMatchObject({ mode: 'dark', threw: false, metas: {} });
+  });
+
+  it('keeps its variables to itself: it leaves no globals behind, whichever way it ends', () => {
+    for (const options of [{ path: '/', stored: 'dark' }, { path: '/settings', prefersDark: true }, { path: '/', storage: 'blocked' as const }]) {
+      expect(paint(options).leaked, JSON.stringify(options)).toEqual([]);
+    }
   });
 
   it("paints the phone's pages from prefers-color-scheme, never from what the Wall stored", () => {
@@ -302,7 +341,7 @@ describe('the inline script in index.html', () => {
   });
 
   it('leaves the page light, without throwing, when the browser will not give it localStorage', () => {
-    expect(paint({ path: '/', storage: 'blocked' })).toEqual({ mode: undefined, threw: false });
+    expect(paint({ path: '/', storage: 'blocked' })).toMatchObject({ mode: undefined, threw: false, metas: {} });
   });
 
   it('still follows the phone when localStorage is blocked, since it never needed it there', () => {

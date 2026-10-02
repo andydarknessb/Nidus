@@ -8,14 +8,22 @@
     <script>
       // Sets the mode before the first paint, so a reload never flashes the other one; src/lib/mode.ts keeps it
       // right from there. The Wall paints the mode it last resolved (light when it has none). The phone's pages,
-      // under /settings, paint what the phone prefers and never what the Wall stored. If anything throws, such as
-      // blocked localStorage, nothing is set and the page is light, which is what index.css draws with no mode.
-      try {
-        var path = location.pathname;
-        var phone = path === '/settings' || path.indexOf('/settings/') === 0;
-        var dark = phone ? matchMedia('(prefers-color-scheme: dark)').matches : localStorage.getItem('nidus:mode') === 'dark';
-        document.documentElement.setAttribute('data-mode', dark ? 'dark' : 'light');
-      } catch (e) {}
+      // under /settings, paint what the phone prefers and never what the Wall stored. The two metas follow, so a dark
+      // reload shows no light browser bar until React mounts; their colours are the page colours of src/lib/look.ts
+      // (tests/mode.test.ts holds them equal). If anything throws, such as blocked localStorage, nothing more is set
+      // and the page is light, which is what index.css draws with no mode.
+      (function () {
+        try {
+          var path = location.pathname;
+          var phone = path === '/settings' || path.indexOf('/settings/') === 0;
+          var dark = phone ? matchMedia('(prefers-color-scheme: dark)').matches : localStorage.getItem('nidus:mode') === 'dark';
+          document.documentElement.setAttribute('data-mode', dark ? 'dark' : 'light');
+          var scheme = document.querySelector('meta[name="color-scheme"]');
+          var bar = document.querySelector('meta[name="theme-color"]');
+          if (scheme) scheme.setAttribute('content', dark ? 'dark' : 'light');
+          if (bar) bar.setAttribute('content', dark ? '#0E1016' : '#F1F4F9');
+        } catch (e) {}
+      })();
     </script>
     <link rel="icon" type="image/png" href="/icons/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
