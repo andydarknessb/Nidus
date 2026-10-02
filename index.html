@@ -1,10 +1,22 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#09090b" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#F1F4F9" />
+    <script>
+      // Sets the mode before the first paint, so a reload never flashes the other one; src/lib/mode.ts keeps it
+      // right from there. The Wall paints the mode it last resolved (light when it has none). The phone's pages,
+      // under /settings, paint what the phone prefers and never what the Wall stored. If anything throws, such as
+      // blocked localStorage, nothing is set and the page is light, which is what index.css draws with no mode.
+      try {
+        var path = location.pathname;
+        var phone = path === '/settings' || path.indexOf('/settings/') === 0;
+        var dark = phone ? matchMedia('(prefers-color-scheme: dark)').matches : localStorage.getItem('nidus:mode') === 'dark';
+        document.documentElement.setAttribute('data-mode', dark ? 'dark' : 'light');
+      } catch (e) {}
+    </script>
     <link rel="icon" type="image/png" href="/icons/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Nidus</title>

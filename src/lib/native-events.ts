@@ -45,7 +45,7 @@ export function blankEventForm(date: string): EventForm {
 // The instant `time` on `date` is on the wall clock of `timezone`. The offsets a day either side
 // give the two candidates: a time that happens twice (clocks going back) takes the earlier, and a
 // time that does not exist (clocks going forward) moves on by the skipped hour, never back.
-function wallMs(date: string, time: string, timezone: string): number {
+export function wallMs(date: string, time: string, timezone: string): number {
   const [year, month, day] = date.split('-').map(Number) as [number, number, number];
   const [hour, minute] = time.split(':').map(Number) as [number, number];
   const wall = Date.UTC(year, month - 1, day, hour, minute);

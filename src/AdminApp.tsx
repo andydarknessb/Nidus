@@ -9,6 +9,7 @@ import { SharedListsPage } from './SharedListsPage';
 import { isDeviceSession } from './lib/device';
 import { ensureHousehold, signInWithGoogle, type Household } from './lib/household';
 import { supabase } from './lib/supabase';
+import { useSystemMode } from './lib/use-mode';
 
 const navLink = 'inline-flex min-h-12 items-center rounded-lg border border-border px-4 text-base font-medium aria-[current=page]:bg-muted';
 const action = 'min-h-12 rounded-lg bg-primary px-6 text-base font-medium text-primary-foreground';
@@ -27,6 +28,8 @@ function useSession(): Session | null | undefined {
 // Administration, phone only: gated on a Household Account session. A Device
 // (anonymous session) gets a dead end, never a screen that can change anything.
 export function AdminApp() {
+  // The phone's pages follow the phone's own light or dark, never the Wall's.
+  useSystemMode();
   const session = useSession();
   const [household, setHousehold] = useState<Household | null>(null);
   const [failed, setFailed] = useState(false);

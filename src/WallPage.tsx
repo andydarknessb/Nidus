@@ -15,6 +15,7 @@ import { householdViewAfter, loadHousehold, type Household, type HouseholdView }
 import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useForecast } from './lib/use-forecast';
+import { useLightMode, useWallMode } from './lib/use-mode';
 import { useRoutinesToday } from './lib/use-routines-today';
 import { MealsScreen } from './MealsPage';
 import { RoutinesChart } from './RoutinesPage';
@@ -119,6 +120,7 @@ export function WallPage() {
 }
 
 function PairingScreen({ pairing }: { pairing: PairingCode }) {
+  useLightMode();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -231,6 +233,8 @@ function HomeShell({ owner }: { owner: boolean }) {
     };
   }, [householdChanges]);
   const timezone = view.household?.timezone ?? null;
+  // The mode of the screen: what it last had until the Household is read, then light from 7:00 to 19:00 in its time zone.
+  useWallMode({ timezone });
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
   const forecast = useForecast(view.household);
