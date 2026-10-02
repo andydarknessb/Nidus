@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { AppearanceSection } from '@/AppearanceSection';
 import { CalendarAccountsSection } from '@/CalendarAccountsSection';
 import { DevicesSection } from '@/DevicesSection';
 import { ProfilesSection } from '@/ProfilesSection';
@@ -53,6 +54,7 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
           {status === 'failed' && 'Could not save. Check the name and try again.'}
         </p>
       </form>
+      <AppearanceSection household={household} onSaved={onSaved} />
       <WeatherSection household={household} onSaved={onSaved} />
       <ProfilesSection householdId={household.id} />
       <CalendarAccountsSection />
