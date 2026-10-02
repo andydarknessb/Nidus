@@ -15,6 +15,7 @@ import { householdDay } from './lib/routines';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { createProfileFilter, ProfileFilterContext } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
+import { localStore, writeLastMode } from './lib/mode';
 import { useForecast } from './lib/use-forecast';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useLightMode, useWallMode } from './lib/use-mode';
@@ -80,7 +81,10 @@ export function WallPage() {
         if (live) setState((prev) => (prev.kind === 'paired' && !prev.owner ? prev : { kind: 'paired', owner: false }));
         return HEARTBEAT_MS;
       }
-      // Never paired, or revoked: show a code that still has time on it.
+      // Never paired, or revoked. The pairing screen is always light, so light is what the next load paints, as soon as the
+      // tablet learns this: one revoked at night, whose code cannot be fetched yet, does not paint dark first when it is
+      // loaded again. Then show a code that still has time on it.
+      writeLastMode(localStore(), 'light');
       if (!pairing || pairing.expiresAt.getTime() <= Date.now()) pairing = await requestPairingCode();
       const shown = pairing;
       if (live) setState((prev) => (prev.kind === 'unpaired' && prev.pairing === shown ? prev : { kind: 'unpaired', pairing: shown }));

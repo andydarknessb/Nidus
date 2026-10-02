@@ -11,11 +11,10 @@ import type { ComponentProps } from 'react';
 // with `className`, which wins over what is set here.
 //
 // Selected (--accent, a 2 px inset ring in --foreground, weight 600) is for secondary and quiet buttons that say so
-// themselves: aria-pressed for a pill or a segmented control's choice, aria-current="page" for the current rail
-// entry or tab. Nothing else to pass.
-const selected =
-  'aria-pressed:bg-accent aria-pressed:font-semibold aria-pressed:text-foreground aria-pressed:ring-2 aria-pressed:ring-foreground aria-pressed:ring-inset ' +
-  'aria-[current=page]:bg-accent aria-[current=page]:font-semibold aria-[current=page]:text-foreground aria-[current=page]:ring-2 aria-[current=page]:ring-foreground aria-[current=page]:ring-inset';
+// themselves: aria-pressed for a pill or a segmented control's choice, aria-checked for a radio, aria-selected for a tab,
+// aria-current="page" for the current rail entry. `selected:` is the variant in index.css that answers all four.
+// Nothing else to pass.
+const selected = 'selected:bg-accent selected:font-semibold selected:text-foreground selected:ring-2 selected:ring-foreground selected:ring-inset';
 
 const buttonVariants = cva(
   'inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl text-base font-semibold whitespace-nowrap transition-[transform,background-color] duration-75 select-none active:translate-y-0.5 disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=size-])]:size-5',

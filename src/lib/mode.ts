@@ -108,11 +108,16 @@ export function writeLastMode(store: ModeStore | null, mode: Mode): void {
   }
 }
 
-// The switch's override, if it has not ended by `now`.
+// The longest a stored override may still have to run. The switch sets one that ends at the next sunrise or sunset, which is
+// never more than a day away, so one that ends later was written by a wrong clock or by hand, and would hold a mode for days.
+export const MAX_OVERRIDE_MS = 24 * 60 * 60 * 1000;
+
+// The switch's override, if it has not ended by `now` and does not end more than a day after it.
 export function readOverride(store: ModeStore | null, now: number): ModeOverride | null {
   try {
     const stored = JSON.parse(store?.getItem(OVERRIDE_KEY) ?? 'null') as Partial<ModeOverride> | null;
-    const valid = stored && (stored.mode === 'light' || stored.mode === 'dark') && typeof stored.until === 'number' && stored.until > now;
+    const valid =
+      stored && (stored.mode === 'light' || stored.mode === 'dark') && typeof stored.until === 'number' && stored.until > now && stored.until - now <= MAX_OVERRIDE_MS;
     return valid ? { mode: stored.mode as Mode, until: stored.until as number } : null;
   } catch {
     return null;

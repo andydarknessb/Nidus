@@ -10,6 +10,9 @@ export const STATUS_LINE_MS = 6_000;
 export type StatusLine = {
   // The line being shown, or '' when there is none.
   line(): string;
+  // How many times anything has been said, the same words again included; a line going does not count. A screen reader
+  // announces a change, so the line is drawn keyed on this and is a new line each time it is said.
+  count(): number;
   // Shows `words` in place of what is there, for six seconds from now.
   say(words: string): void;
   // Calls `listener` after each change. Returns the function that stops it.
@@ -20,6 +23,7 @@ export type StatusLine = {
 
 export function createStatusLine(): StatusLine {
   let line = '';
+  let said = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>();
 
@@ -30,10 +34,12 @@ export function createStatusLine(): StatusLine {
 
   return {
     line: () => line,
+    count: () => said,
     say(words) {
       // The older line's timer must not take the newer line down.
       clearTimeout(timer);
       timer = setTimeout(() => set(''), STATUS_LINE_MS);
+      said += 1;
       set(words);
     },
     subscribe(listener) {

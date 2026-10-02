@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { Button } from '../src/components/ui/button';
 import {
   ALIASES,
   DARK_MIX,
@@ -9,8 +12,8 @@ import {
   mix,
   personRoles,
   personStyle,
-  type FamilySteps,
   type Mode,
+  type Steps,
   type TokenName,
 } from '../src/lib/look';
 import { PROFILE_PALETTE, contrastRatio } from '../src/lib/profiles';
@@ -26,8 +29,8 @@ const SHAPE = 3;
 
 type Pair = { what: string; foreground: string; ground: string; floor: number };
 
-// Every pair the look draws in one mode, for one family: the person's own roles, and the chrome on them.
-function pairsOf(mode: Mode, family: FamilySteps): Pair[] {
+// Every pair the look draws in one mode, for one person's four steps: the person's own roles, and the chrome on them.
+function pairsOf(mode: Mode, family: Steps & { name: string }): Pair[] {
   const t = TOKENS[mode];
   const p = personRoles(mode, family);
   return [
@@ -125,11 +128,20 @@ describe('a Profile colour', () => {
 
 const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 
-// The declarations of the one top-level block whose selector is exactly `selector`.
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// How many top-level blocks in the file have exactly this selector (at the start of a line, then ` {`).
+const blockCount = (selector: string) => [...css.matchAll(new RegExp(`^${escapeRegExp(selector)} \\{`, 'gm'))].length;
+
+// How many times a custom property is declared anywhere in the file, in any block, inside any @media or @layer.
+const declaredCount = (name: string) => [...css.matchAll(new RegExp(`(?<![\\w-])${escapeRegExp(name)}\\s*:`, 'g'))].length;
+
+// The declarations of the one top-level block whose selector is exactly `selector`. It throws unless there is exactly one:
+// a second block would otherwise go unread, and its values would be what the browser draws.
 function declarations(selector: string): Map<string, string> {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const open = new RegExp(`^${escaped} \\{`, 'm').exec(css);
-  if (!open) throw new Error(`src/index.css has no "${selector}" block`);
+  const found = blockCount(selector);
+  if (found !== 1) throw new Error(`src/index.css has ${found} "${selector}" blocks, and the look wants exactly one`);
+  const open = new RegExp(`^${escapeRegExp(selector)} \\{`, 'm').exec(css)!;
   const start = open.index + open[0].length;
   const body = css.slice(start, css.indexOf('}', start));
   return new Map([...body.matchAll(/([\w-]+)\s*:\s*([^;]+);/g)].map((match) => [match[1]!, match[2]!.trim()]));
@@ -155,6 +167,15 @@ function evaluate(value: string, scope: ReadonlyMap<string, string>): string {
 function scopeOf(mode: Mode): Map<string, string> {
   const scope = declarations(':root');
   if (mode === 'dark') for (const [name, value] of declarations(":root[data-mode='dark']")) scope.set(name, value);
+  return scope;
+}
+
+// The custom properties in force on an element with the class `person` and no style of its own: the mode's, with the `.person`
+// rules over them. A style from personStyle() sets the four steps on top of these.
+function personScope(mode: Mode): Map<string, string> {
+  const scope = scopeOf(mode);
+  for (const [name, value] of declarations('.person')) scope.set(name, value);
+  if (mode === 'dark') for (const [name, value] of declarations(":root[data-mode='dark'] .person")) scope.set(name, value);
   return scope;
 }
 
@@ -186,11 +207,8 @@ describe('src/index.css', () => {
 
   it("derives a person's roles from the four steps to the colours look.ts holds, for all ten families in both modes", () => {
     for (const mode of MODES) {
-      const roles = declarations('.person');
-      if (mode === 'dark') for (const [name, value] of declarations(":root[data-mode='dark'] .person")) roles.set(name, value);
       for (const family of FAMILIES) {
-        const scope = scopeOf(mode);
-        for (const [name, value] of roles) scope.set(name, value);
+        const scope = personScope(mode);
         for (const step of [100, 200, 300, 800] as const) scope.set(`--person-${step}`, family[step]);
         for (const [role, expected] of Object.entries(personRoles(mode, family))) {
           expect(evaluate(`var(--person-${kebab(role)})`, scope), `${mode}: ${family.name} ${role}`).toBe(expected);
@@ -199,11 +217,34 @@ describe('src/index.css', () => {
     }
   });
 
-  it('mixes the dark roles at the percentages look.ts exports', () => {
+  // A custom property that nothing sets leaves a background transparent and words with no ground, so a `person` element that
+  // was given no steps (a style forgotten, a Profile not read yet) would draw white initials on nothing. `.person` carries
+  // neutral steps made of surface tokens instead, which the style from personStyle() replaces. They are held to every floor.
+  it('gives a person with no colour of its own neutral steps from the surface tokens, whose roles hold every floor', () => {
+    for (const mode of MODES) {
+      const scope = personScope(mode);
+      const neutral = { name: 'Neutral', 100: '', 200: '', 300: '', 800: '' };
+      for (const step of [100, 200, 300, 800] as const) {
+        neutral[step] = evaluate(`var(--person-${step})`, scope);
+        expect(neutral[step], `${mode}: --person-${step}`).toMatch(/^#[0-9A-F]{6}$/);
+      }
+      for (const [role, expected] of Object.entries(personRoles(mode, neutral))) {
+        expect(evaluate(`var(--person-${kebab(role)})`, scope), `${mode}: neutral ${role}`).toBe(expected);
+      }
+      for (const pair of pairsOf(mode, neutral)) {
+        expect(contrastRatio(pair.foreground, pair.ground), `${mode}: ${pair.what}`).toBeGreaterThanOrEqual(pair.floor);
+      }
+    }
+  });
+
+  // The build lowers each color-mix() to its first operand where a browser lacks it, so that operand is the colour it is safe to
+  // be left with: the card for soft and fill (the words on them stay readable), the 300 for the done disc (so does its picture).
+  // look.ts says "the 300 mixed 13% into the card"; the card first at 87% is the same colour.
+  it('mixes the dark roles at the percentages look.ts exports, the safe colour first', () => {
     const dark = declarations(":root[data-mode='dark'] .person");
-    expect(dark.get('--person-soft')).toBe(`color-mix(in srgb, var(--person-300) ${DARK_MIX.soft}%, var(--card))`);
-    expect(dark.get('--person-fill')).toBe(`color-mix(in srgb, var(--person-300) ${DARK_MIX.fill}%, var(--card))`);
-    expect(dark.get('--person-done-disc')).toBe(`color-mix(in srgb, var(--ink) ${DARK_MIX.doneDisc}%, var(--person-300))`);
+    expect(dark.get('--person-soft')).toBe(`color-mix(in srgb, var(--card) ${100 - DARK_MIX.soft}%, var(--person-300))`);
+    expect(dark.get('--person-fill')).toBe(`color-mix(in srgb, var(--card) ${100 - DARK_MIX.fill}%, var(--person-300))`);
+    expect(dark.get('--person-done-disc')).toBe(`color-mix(in srgb, var(--person-300) ${100 - DARK_MIX.doneDisc}%, var(--ink))`);
   });
 
   it('maps every token and every person role to a Tailwind colour once, in @theme inline', () => {
@@ -222,5 +263,125 @@ describe('src/index.css', () => {
   it('is light on :root and says so to the browser', () => {
     expect(declarations(':root').get('color-scheme')).toBe('light');
     expect(declarations(":root[data-mode='dark']").get('color-scheme')).toBe('dark');
+  });
+
+  // Young Serif's default figures are old-style (a 7 hangs below the line, a 2 and a 1 sit at x-height), so wherever the display
+  // face is used its figures are lining and tabular. It is one utility, so no caller can forget; a plain `--font-display` in
+  // @theme would be a second font-display that leaves them old-style.
+  it('draws the display face with lining, tabular figures wherever it is used', () => {
+    expect(css.match(/@utility font-display \{/g)).toHaveLength(1);
+    const utility = /@utility font-display \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(utility).toMatch(/font-family:\s*'Young Serif'/);
+    expect(utility).toMatch(/font-variant-numeric:\s*lining-nums tabular-nums;/);
+    expect(css).not.toMatch(/--font-display\s*:/);
+  });
+
+  // Nine tickets edit this file side by side: a block or a declaration added beside the ones above would be read by the
+  // browser and by no test, so these fail on a second block, a second declaration and an override inside @media.
+  it('has each block that holds tokens exactly once', () => {
+    for (const selector of [':root', ":root[data-mode='dark']", '.person', ":root[data-mode='dark'] .person", '@theme inline']) {
+      expect(blockCount(selector), selector).toBe(1);
+    }
+  });
+
+  it('declares every token of the table exactly twice, once light and once dark, and nowhere else', () => {
+    for (const name of Object.keys(TOKENS.light)) {
+      expect(declaredCount(`--${name}`), `--${name}`).toBe(2);
+      expect(declarations(':root').has(`--${name}`), `--${name} on :root`).toBe(true);
+      expect(declarations(":root[data-mode='dark']").has(`--${name}`), `--${name} in the dark block`).toBe(true);
+    }
+  });
+
+  it('declares each token that is another token exactly once, on :root', () => {
+    for (const name of Object.keys(ALIASES)) {
+      expect(declaredCount(`--${name}`), `--${name}`).toBe(1);
+      expect(declarations(':root').has(`--${name}`), `--${name} on :root`).toBe(true);
+    }
+  });
+
+  it("declares each of a person's roles exactly twice, once light and once dark, and nowhere else", () => {
+    for (const role of Object.keys(personRoles('light', FAMILIES[0]!))) {
+      const name = `--person-${kebab(role)}`;
+      expect(declaredCount(name), name).toBe(2);
+      expect(declarations('.person').has(name), `${name} on .person`).toBe(true);
+      expect(declarations(":root[data-mode='dark'] .person").has(name), `${name} in the dark .person`).toBe(true);
+    }
+  });
+
+  // The Selected look is one variant, so every part that draws it answers every way a control says it is selected.
+  it('has a selected variant for aria-pressed, aria-checked, aria-selected and aria-current page', () => {
+    const variant = /@custom-variant selected \((.*)\);/.exec(css)?.[1] ?? '';
+    for (const attribute of ["[aria-pressed='true']", "[aria-checked='true']", "[aria-selected='true']", "[aria-current='page']"]) {
+      expect(variant, attribute).toContain(attribute);
+    }
+  });
+
+  it('declares the four neutral steps once on .person, each a token, and the 300 once more for dark', () => {
+    const tokens = new Set(Object.keys(TOKENS.light).map((name) => `var(--${name})`));
+    for (const step of [100, 200, 300, 800]) {
+      const name = `--person-${step}`;
+      expect(declaredCount(name), name).toBe(step === 300 ? 2 : 1);
+      expect(tokens, `${name} on .person`).toContain(declarations('.person').get(name));
+    }
+    expect(tokens, '--person-300 in the dark .person').toContain(declarations(":root[data-mode='dark'] .person").get('--person-300'));
+  });
+});
+
+// ---- docs/look.md: the tables a person reads, equal to look.ts ------------------------------------
+
+const doc = readFileSync(new URL('../docs/look.md', import.meta.url), 'utf8');
+
+// The rows of the markdown table whose header line starts with `header`, as cells with a wrapping pair of backticks taken off.
+function table(header: string): string[][] {
+  const lines = doc.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.startsWith(header));
+  if (start < 0) throw new Error(`docs/look.md has no table headed "${header}"`);
+  const rows: string[][] = [];
+  for (const line of lines.slice(start + 2)) {
+    if (!line.startsWith('|')) break;
+    rows.push(line.split('|').slice(1, -1).map((cell) => cell.trim().replace(/^`(.*)`$/, '$1')));
+  }
+  return rows;
+}
+
+describe('docs/look.md', () => {
+  it('has the tokens of look.ts, light and dark', () => {
+    const rows = table('| Token | Role | Light | Dark |');
+    const named = (column: number) => Object.fromEntries(rows.map((row) => [row[0]!.replace(/^--/, ''), row[column]]));
+    expect(named(2)).toEqual(TOKENS.light);
+    expect(named(3)).toEqual(TOKENS.dark);
+  });
+
+  it('has the ten families of look.ts, four steps each, in the palette order', () => {
+    const rows = table('| Family | 100 | 200 | 300 (stored) | 800 |');
+    expect(rows.map(([name, a, b, c, d]) => ({ name, 100: a, 200: b, 300: c, 800: d }))).toEqual(
+      FAMILIES.map((family) => ({ name: family.name, 100: family[100], 200: family[200], 300: family[300], 800: family[800] })),
+    );
+  });
+
+  it('mixes the dark roles at the percentages look.ts exports', () => {
+    const dark = Object.fromEntries(table('| Role | Used for | Light | Dark |').map((row) => [row[0], row[3]]));
+    const percent = (cell: string | undefined) => Number(/(\d+)%/.exec(cell ?? '')?.[1]);
+    expect(percent(dark['soft'])).toBe(DARK_MIX.soft);
+    expect(percent(dark['fill'])).toBe(DARK_MIX.fill);
+    expect(percent(dark['done picture'])).toBe(DARK_MIX.doneDisc);
+  });
+});
+
+// ---- The button: the Selected look is the variant above, on the two voices that can be selected --------------------
+
+describe('the button', () => {
+  const classesOf = (variant: 'primary' | 'secondary' | 'quiet' | 'delete') =>
+    /class="([^"]*)"/.exec(renderToStaticMarkup(createElement(Button, { variant })))?.[1]?.split(' ') ?? [];
+  const SELECTED = ['bg-accent', 'font-semibold', 'text-foreground', 'ring-2', 'ring-foreground', 'ring-inset'].map((name) => `selected:${name}`);
+
+  it('shows the Selected look on a secondary or quiet button that says so itself', () => {
+    for (const variant of ['secondary', 'quiet'] as const) expect(classesOf(variant), variant).toEqual(expect.arrayContaining(SELECTED));
+  });
+
+  it('keeps its fill when primary or delete, so its words keep their contrast', () => {
+    for (const variant of ['primary', 'delete'] as const) {
+      expect(classesOf(variant).filter((name) => name.startsWith('selected:')), variant).toEqual([]);
+    }
   });
 });

@@ -5,6 +5,11 @@
 /* Tailwind's dark: variant follows the document's mode (src/lib/mode.ts), not the operating system's. */
 @custom-variant dark (&:where([data-mode='dark'], [data-mode='dark'] *));
 
+/* The Selected look (docs/look.md) is for a control that says so itself: aria-pressed (a pill, a segmented control's choice),
+   aria-checked (a radio), aria-selected (a tab) or aria-current="page" (the current rail entry). It is one variant, so what
+   draws it says `selected:` and answers all four. */
+@custom-variant selected (&:is([aria-pressed='true'], [aria-checked='true'], [aria-selected='true'], [aria-current='page']));
+
 /* The look (docs/look.md): one set of tokens in two modes. Light is on :root, so a page with no mode set is light
    and fully coloured, never colourless; dark is under [data-mode='dark'], which src/lib/mode.ts keeps on <html>.
    The values are src/lib/look.ts's, and tests/look.test.ts fails if the two disagree. */
@@ -59,9 +64,20 @@
 /* A person (docs/look.md, People). An element with the class `person` carries four custom properties, the steps of
    its family (personStyle() in src/lib/look.ts sets them from a Profile's stored colour), and the roles below are
    derived from them, once for each mode. Light takes the steps as they are; dark mixes the 300 into --card with
-   color-mix(), at the percentages look.ts exports as DARK_MIX. Words on a soft or a fill are --foreground and never
-   a person's colour. */
+   color-mix(), at the percentages look.ts exports as DARK_MIX (the 300 at 13% for soft and 28% for fill, so the card
+   at 87% and 72%). The colour that is safe to be left with comes first: the build lowers a color-mix() to its first
+   operand where a browser has none, and words on the card are readable where words on a pastel are not. Words on a
+   soft or a fill are --foreground and never a person's colour.
+
+   A person that is given no steps (a style forgotten, a Profile not read yet) is neutral, not colourless: a custom property
+   that nothing sets would leave a background transparent and the words on it with no ground. So `.person` sets the four
+   steps itself, from surface tokens, and the style from personStyle() replaces them. The neutral 300 is --accent in light and
+   --muted-foreground in dark, where the 300 is what shows. tests/look.test.ts holds the roles they make to every floor. */
 .person {
+  --person-100: var(--muted);
+  --person-200: var(--accent);
+  --person-300: var(--accent);
+  --person-800: var(--foreground);
   --person-soft: var(--person-100);
   --person-fill: var(--person-200);
   --person-base: var(--person-300);
@@ -75,15 +91,16 @@
 }
 
 :root[data-mode='dark'] .person {
-  --person-soft: color-mix(in srgb, var(--person-300) 13%, var(--card));
-  --person-fill: color-mix(in srgb, var(--person-300) 28%, var(--card));
+  --person-300: var(--muted-foreground);
+  --person-soft: color-mix(in srgb, var(--card) 87%, var(--person-300));
+  --person-fill: color-mix(in srgb, var(--card) 72%, var(--person-300));
   --person-base: var(--person-300);
   --person-on-base: var(--ink);
   --person-strong: var(--person-300);
   --person-on-strong: var(--ink);
   --person-tick: var(--ink);
   --person-on-tick: var(--person-300);
-  --person-done-disc: color-mix(in srgb, var(--ink) 20%, var(--person-300));
+  --person-done-disc: color-mix(in srgb, var(--person-300) 80%, var(--ink));
   --person-done-picture: var(--ink);
 }
 
@@ -125,9 +142,17 @@
   --color-person-on-tick: var(--person-on-tick);
   --color-person-done-disc: var(--person-done-disc);
   --color-person-done-picture: var(--person-done-picture);
-  /* Young Serif has one weight, 400: it is never bold. Lexend carries everything else (400, 500, 600). */
+  /* Lexend carries everything the display face does not (400, 500, 600). */
   --font-sans: 'Lexend Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Young Serif', Georgia, 'Times New Roman', serif;
+}
+
+/* The display face, Young Serif: the clock, dates, names and titles. It has one weight, 400, and is never bold. Its default
+   figures are old-style (a 7 hangs below the line, a 2 and a 1 sit at x-height, so a clock looks small), so wherever it is
+   used the figures are lining and tabular: all one height, and all one width, which keeps a time from shifting. This is
+   the one definition of font-display, so no caller can forget; it is not a theme variable, which would make a second one. */
+@utility font-display {
+  font-family: 'Young Serif', Georgia, 'Times New Roman', serif;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 @layer base {
