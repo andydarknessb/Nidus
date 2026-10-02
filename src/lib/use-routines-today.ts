@@ -106,6 +106,9 @@ export function useRoutinesToday(timezone: string | null): RoutinesToday {
     const date = day.date;
     const next = createSyncedReader(
       async () => {
+        // ponytail: the Profiles are read again here with every Routines read, though the shell has them (useProfiles): two more reads a
+        // minute, and one for each change heard, which is nothing for a table of a handful of rows. The way out: hand this reader the
+        // shell's Profiles and read only the Routines and the ticks.
         const [profiles, routines, completed] = await Promise.all([loadProfiles(supabase), loadRoutines(supabase), loadCompletions(supabase, date)]);
         return { date, profiles, routines, done: new Set(completed) };
       },

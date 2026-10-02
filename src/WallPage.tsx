@@ -244,7 +244,9 @@ function HomeShell({ owner }: { owner: boolean }) {
   const [filter] = useState(() => createProfileFilter(sayOnCalendar(say, () => screen.current)));
   const pressed = useSyncExternalStore(filter.subscribe, filter.pressed);
   const filterView = useMemo(() => ({ pressed, clear: filter.clear, touch: filter.touch }), [pressed, filter]);
-  // The Household's Profiles, read once for the people strip and for the colour of every event.
+  // The Household's Profiles, read here (and again when they change) for the people strip and for the colour of every event, and handed
+  // to every calendar view. They are read by two other readers as well: the Routines reader below, with the Routines every 30 seconds,
+  // and the Add event sheet when it opens.
   const profiles = useProfiles(filter);
   useEffect(() => () => filter.dispose(), [filter]);
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.

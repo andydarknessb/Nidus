@@ -37,7 +37,7 @@ import { DayWeather } from './Weather';
 // The home screen: today and the next four days. `version` changes when the screen around the calendar has written an
 // event, so the calendar reads again at once. `forecast` is the Household's weather, read once by the screen around the
 // calendar; `weatherOn` says the Household has a place, so each day heading keeps a line for it (empty while there is no
-// forecast, or none for that day). `profiles` are the Household's, read once by that screen: they colour the events, and
+// forecast, or none for that day). `profiles` are the Household's, read by that screen and handed down: they colour the events, and
 // are null until read. A touch anywhere in the calendar keeps the Profile filter open.
 export function FiveDayCalendar({
   timezone,

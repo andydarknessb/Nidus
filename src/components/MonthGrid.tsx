@@ -10,8 +10,8 @@ import { CELL_HEAD_REM, CELL_LINE_REM, DayCell } from './MonthCell';
 // more there are. Events are not tappable here, the day is.
 
 // `anchor` is the 1st of the month shown. `version` changes when the screen around the calendar has written
-// an event, so every week reads again at once. `profiles` are the Household's, read once by that screen: they fill the event
-// lines, and are null until read, when the lines wait for them as the schedule's pills do.
+// an event, so every week reads again at once. `profiles` are the Household's, read by that screen and handed down: they fill the
+// event lines, and are null until read, when the lines wait for them as the schedule's pills do.
 export function MonthGrid({
   timezone,
   today,
