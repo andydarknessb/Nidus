@@ -94,6 +94,7 @@ describe('household weather', () => {
     latitude: true,
     longitude: true,
     temperature_unit: true,
+    appearance: true,
   };
 
   it("reads a Household with the app's own column list, as a Household Account and as a Device", async () => {
@@ -244,7 +245,9 @@ describe('household weather', () => {
 
     for (const [who, client] of [['Household Account', theirPhone], ['Device', theirWall]] as const) {
       const read = await client.from('households').select(columns).eq('id', id);
-      expect(read.data ?? [], `a ${who} reading`).toEqual([]);
+      // No error and no rows: a read that failed would also have no data, so the error is asserted, not defaulted away.
+      expect(read.error, `a ${who} reading: the read itself`).toBeNull();
+      expect(read.data, `a ${who} reading`).toEqual([]);
 
       const attempt = await client.from('households').update({ ...noPlace, temperature_unit: 'fahrenheit' }).eq('id', id).select('id');
       expect(attempt.data ?? [], `a ${who} writing`).toEqual([]);
@@ -281,5 +284,143 @@ describe('household weather', () => {
     const write = await visitor.from('households').update({ ...place, temperature_unit: 'celsius' }).eq('id', id).select('id');
     expect(write.error?.code).toBe('42501');
     expect(await stored(id)).toEqual(none);
+  });
+});
+
+// How the Household wants the Wall to look: Auto (light from sunrise to sunset), Light or Dark. The column needs no grant
+// or policy of its own: the table-level select and update that `authenticated` holds, and the update policy that keeps a
+// write with the Household Account, are what these tests hold it to.
+describe('household appearance', () => {
+  const households: HouseholdAccount[] = [];
+  const tablets: Tablet[] = [];
+
+  afterEach(async () => {
+    await Promise.all(tablets.splice(0).map(destroyTablet));
+    await Promise.all(households.splice(0).map(destroyHousehold));
+  });
+
+  async function household(name: string) {
+    const arranged = await createHousehold(name);
+    households.push(arranged);
+    return { arranged, id: arranged.household.id, phone: await asHouseholdAccount(arranged) };
+  }
+
+  async function device(account: HouseholdAccount) {
+    const arranged = await asDevice(account);
+    tablets.push(arranged);
+    return arranged.client;
+  }
+
+  // What the Household row holds, read past row-level security.
+  async function stored(id: string) {
+    const { data } = await asServiceRole().from('households').select('appearance').eq('id', id).single();
+    return data?.appearance;
+  }
+
+  it('a new Household is Auto', async () => {
+    const { phone, id } = await household('The Andersons');
+
+    const { data, error } = await phone.from('households').select('appearance').eq('id', id).single();
+
+    expect(error).toBeNull();
+    expect(data).toEqual({ appearance: 'auto' });
+  });
+
+  it('a Household Account sets Light, Dark and Auto, in any order', async () => {
+    const { phone, id } = await household('The Andersons');
+
+    for (const appearance of ['light', 'dark', 'auto', 'dark', 'light']) {
+      const { data, error } = await phone.from('households').update({ appearance }).eq('id', id).select('appearance').single();
+
+      expect(error, appearance).toBeNull();
+      expect(data, appearance).toEqual({ appearance });
+      expect(await stored(id), appearance).toBe(appearance);
+    }
+  });
+
+  it('refuses a value outside Auto, Light and Dark, and no value at all', async () => {
+    const { phone, id } = await household('The Andersons');
+    expect((await phone.from('households').update({ appearance: 'dark' }).eq('id', id)).error).toBeNull();
+    const refused: [string, string | null, string][] = [
+      ['an unknown word', 'sepia', '23514'],
+      ['a capital', 'Dark', '23514'],
+      ['all capitals', 'AUTO', '23514'],
+      ['a trailing space', 'light ', '23514'],
+      ['an empty string', '', '23514'],
+      ['no value', null, '23502'],
+    ];
+
+    for (const [label, appearance, code] of refused) {
+      const { error } = await phone.from('households').update({ appearance }).eq('id', id);
+      expect(error?.code, label).toBe(code);
+    }
+
+    expect(await stored(id)).toBe('dark');
+  });
+
+  it("a Device reads its Household's Appearance and cannot change it", async () => {
+    const { arranged, phone, id } = await household('The Andersons');
+    await phone.from('households').update({ appearance: 'dark' }).eq('id', id);
+    const wall = await device(arranged);
+
+    const read = await wall.from('households').select('appearance');
+    expect(read.error).toBeNull();
+    expect(read.data).toEqual([{ appearance: 'dark' }]);
+
+    // Each attempt matches no row for a Device.
+    for (const appearance of ['light', 'auto']) {
+      const attempt = await wall.from('households').update({ appearance }).eq('id', id).select('id');
+      expect(attempt.data ?? [], appearance).toEqual([]);
+    }
+    expect(await stored(id)).toBe('dark');
+  });
+
+  it("another Household's Household Account and Device read and change nothing", async () => {
+    const { phone: ours, id } = await household('Ours');
+    const { arranged: theirs, phone: theirPhone, id: theirId } = await household('Theirs');
+    await ours.from('households').update({ appearance: 'dark' }).eq('id', id);
+    const theirWall = await device(theirs);
+
+    for (const [who, client] of [['Household Account', theirPhone], ['Device', theirWall]] as const) {
+      const read = await client.from('households').select('appearance').eq('id', id);
+      // No error and no rows: a read that failed would also have no data, so the error is asserted, not defaulted away.
+      expect(read.error, `a ${who} reading: the read itself`).toBeNull();
+      expect(read.data, `a ${who} reading`).toEqual([]);
+
+      const attempt = await client.from('households').update({ appearance: 'light' }).eq('id', id).select('id');
+      expect(attempt.data ?? [], `a ${who} writing`).toEqual([]);
+    }
+
+    expect(await stored(id)).toBe('dark');
+    // And their own Household is as it was: nothing of ours leaked into it.
+    expect(await stored(theirId)).toBe('auto');
+  });
+
+  it('an unpaired tablet reads no Household and cannot set an Appearance on one', async () => {
+    const { id } = await household('The Andersons');
+    const tablet = await asTablet();
+    tablets.push(tablet);
+
+    const read = await tablet.client.from('households').select('appearance');
+    expect(read.error).toBeNull();
+    expect(read.data).toEqual([]);
+
+    // It holds the table-level update grant, so the write is no error: it simply matches no row.
+    const write = await tablet.client.from('households').update({ appearance: 'dark' }).eq('id', id).select('id');
+    expect(write.data ?? []).toEqual([]);
+    expect(await stored(id)).toBe('auto');
+  });
+
+  it('refuses a client with no session', async () => {
+    const { id } = await household('The Andersons');
+    const visitor = asAnonymous();
+
+    const read = await visitor.from('households').select('appearance');
+    expect(read.error?.code).toBe('42501');
+    expect(read.data).toBeNull();
+
+    const write = await visitor.from('households').update({ appearance: 'dark' }).eq('id', id).select('id');
+    expect(write.error?.code).toBe('42501');
+    expect(await stored(id)).toBe('auto');
   });
 });

@@ -70,3 +70,29 @@ households            + weather_place, latitude, longitude, temperature_unit (fa
 routines              + time_of_day (morning|afternoon|evening, null = any time)
 meals                 id, household_id, meal_date, slot (breakfast|lunch|dinner|snack), title   unique(household_id, meal_date, slot)
 ```
+
+## v3: the look
+
+Settled on 2026-10-02 after a UI and UX audit of the v2 build and the owner's review of the drawings that followed it. The spec is [0003](specs/0003-the-look.md); the tokens and parts are in [look.md](look.md).
+
+### Decisions
+
+- **Two modes**: light by day, dark at night. This replaces "dark theme always" above. Auto follows sunrise and sunset from the forecast the Wall already fetches (7:00 and 19:00 in the Household Timezone when there is none). A switch on the Wall overrides it on that screen until the next sunrise or sunset, and the Household's Appearance (Auto, Light, Dark) is set on the phone. AAA contrast holds in both. Night dimming and the screensaver still belong to Fully Kiosk.
+- **One set of tokens**: the chrome is neutral and colour belongs to people. A Profile still stores one colour; the look uses four steps of its family, and what each step is for changes with the mode in CSS, not in components. The whole Household and Meals share a warm neutral.
+- **Never colour alone**: a person is a disc with their initial. Photos stay off the Wall.
+- **Home and Week are a schedule**: events stack under their day in time order instead of sitting on an hour grid, so nothing collides and no title breaks inside a word. The gaps between events are no longer drawn there; the Day view keeps the hour grid, at 48 px an hour.
+- **A calendar has no colour of its own**: an event takes the colour of the Profile its Mirrored Calendar is set to, or the whole Household's. The phone's colour picker for a calendar goes; the column stays.
+- **People strip**: a row of people under the header replaces the header's Profile chips. It shows each person's Routines for today and is the Profile filter, whose two minutes now restart on any touch inside the calendar.
+- **Routines**: a picture each, from a fixed set, picked on the phone. The chart opens on the part of the day it is now and follows it: morning until 12:00 (from midnight, so a new day is never "left from earlier"), afternoon from 12:00, evening from 17:00, in the Household Timezone. What was missed earlier stays in view. The chart keeps a column for every Profile that has a Routine on any day. On Home, Up next (a tile each for up to three people with something left) replaces the Routines rail. Still no points and no streaks.
+- **Lists**: a view inside the shell with every Shared List on it, the Pinned List first. The full-screen overlay goes.
+- **Meals on Home**: the header's next-meal button replaces the Today's meals card.
+- **Native Events stay inside a day**: the redrawn sheet's times stop before midnight. An event that runs past it belongs in Google.
+- **Type**: Young Serif for the clock, dates, names and titles, Lexend for everything else, both shipped with the app.
+- **Deploy order**: as v2. Two additive migrations, pushed together immediately before the pull request that reads them is merged.
+
+### Tables
+
+```
+households            + appearance (auto|light|dark, default auto)
+routines              + picture (a key from the app's fixed set, null = none)
+```

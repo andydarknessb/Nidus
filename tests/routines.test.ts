@@ -52,7 +52,7 @@ const SAT = 6;
 const SUN = 0;
 
 function routine(overrides: Partial<Routine> & Pick<Routine, 'id'>): Routine {
-  return { profile_id: 'p1', title: 'Brush teeth', days_of_week: 127, time_of_day: null, sort_order: 0, archived_at: null, ...overrides };
+  return { profile_id: 'p1', title: 'Brush teeth', days_of_week: 127, time_of_day: null, picture: null, sort_order: 0, archived_at: null, ...overrides };
 }
 
 // The Household date `days` calendar days from `date` ('YYYY-MM-DD'). Stepping by 24 hours from now
@@ -709,7 +709,7 @@ describe('routines', () => {
     const before = await completions();
     expect(before?.map((c) => c.completed_on)).toEqual([yesterday, today]);
 
-    await updateRoutine(phone, walk.id, { title: ' Walk the dog ', days_of_week: maskOf([MON, WED]), time_of_day: 'morning' });
+    await updateRoutine(phone, walk.id, { title: ' Walk the dog ', days_of_week: maskOf([MON, WED]), time_of_day: 'morning', picture: null });
 
     // The three fields changed (the title trimmed); nothing else about it did, and no other Routine moved.
     const after = await loadRoutines(phone);
@@ -720,7 +720,7 @@ describe('routines', () => {
     expect(await loadCompletions(phone, today)).toEqual([walk.id]);
 
     // The time of day can be taken away again: any time.
-    await updateRoutine(phone, walk.id, { title: 'Walk the dog', days_of_week: everyDay, time_of_day: null });
+    await updateRoutine(phone, walk.id, { title: 'Walk the dog', days_of_week: everyDay, time_of_day: null, picture: null });
     expect((await loadRoutines(phone)).find((r) => r.id === walk.id)).toEqual({ ...walk, title: 'Walk the dog', time_of_day: null });
   });
 
@@ -728,8 +728,8 @@ describe('routines', () => {
     const { phone, profile, householdId } = await household('The Andersons');
     const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0);
 
-    await expect(updateRoutine(phone, pills.id, { title: '   ', days_of_week: everyDay, time_of_day: 'evening' })).rejects.toMatchObject({ code: '23514' });
-    await expect(updateRoutine(phone, pills.id, { title: 'Vitamins', days_of_week: 0, time_of_day: 'evening' })).rejects.toMatchObject({ code: '23514' });
+    await expect(updateRoutine(phone, pills.id, { title: '   ', days_of_week: everyDay, time_of_day: 'evening', picture: null })).rejects.toMatchObject({ code: '23514' });
+    await expect(updateRoutine(phone, pills.id, { title: 'Vitamins', days_of_week: 0, time_of_day: 'evening', picture: null })).rejects.toMatchObject({ code: '23514' });
     expect(await loadRoutines(phone)).toEqual([pills]);
   });
 
@@ -739,7 +739,7 @@ describe('routines', () => {
     await archiveRoutine(phone, pills.id);
 
     // It has left the phone's list, but a form left open on another screen can still hold its id.
-    await expect(updateRoutine(phone, pills.id, { title: 'Renamed', days_of_week: 1, time_of_day: 'evening' })).rejects.toBeTruthy();
+    await expect(updateRoutine(phone, pills.id, { title: 'Renamed', days_of_week: 1, time_of_day: 'evening', picture: null })).rejects.toBeTruthy();
 
     const kept = await asServiceRole().from('routines').select('title, days_of_week, time_of_day, sort_order, archived_at').eq('id', pills.id).single();
     expect(kept.data).toMatchObject({ title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning', sort_order: 0 });
@@ -777,7 +777,7 @@ describe('routines', () => {
     const theirs = await household('Theirs');
     const mine = await createRoutine(ours.phone, ours.householdId, ours.profile.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: 'morning' }, 0);
     const theirWall = await device(theirs.arranged);
-    const hijack = { title: 'Hijacked', days_of_week: 1, time_of_day: 'evening' } as const;
+    const hijack = { title: 'Hijacked', days_of_week: 1, time_of_day: 'evening', picture: null } as const;
 
     expect(await loadRoutines(theirs.phone)).toEqual([]);
     expect(await loadRoutines(theirWall)).toEqual([]);
@@ -811,7 +811,7 @@ describe('routines', () => {
     expect(await loadRoutines(wall)).toEqual([pills]);
 
     await expect(createRoutine(wall, householdId, profile.id, { title: 'Sneaky', days_of_week: 1, time_of_day: 'evening' }, 1)).rejects.toBeTruthy();
-    await expect(updateRoutine(wall, pills.id, { title: 'Renamed', days_of_week: 1, time_of_day: 'evening' })).rejects.toBeTruthy();
+    await expect(updateRoutine(wall, pills.id, { title: 'Renamed', days_of_week: 1, time_of_day: 'evening', picture: null })).rejects.toBeTruthy();
     // Nor by writing the column on its own.
     const raw = await wall.from('routines').update({ time_of_day: 'evening' }).eq('id', pills.id).select('id');
     expect(raw.data ?? []).toEqual([]);
@@ -828,7 +828,7 @@ describe('routines', () => {
 
     expect(await loadRoutines(tablet.client)).toEqual([]);
     await expect(createRoutine(tablet.client, householdId, profile.id, { title: 'Planted', days_of_week: 1, time_of_day: 'evening' }, 1)).rejects.toBeTruthy();
-    await expect(updateRoutine(tablet.client, pills.id, { title: 'Hijacked', days_of_week: 1, time_of_day: 'evening' })).rejects.toBeTruthy();
+    await expect(updateRoutine(tablet.client, pills.id, { title: 'Hijacked', days_of_week: 1, time_of_day: 'evening', picture: null })).rejects.toBeTruthy();
     const raw = await tablet.client.from('routines').update({ time_of_day: 'evening' }).eq('id', pills.id).select('id');
     expect(raw.data ?? []).toEqual([]);
     expect(await loadRoutines(phone)).toEqual([pills]);
@@ -951,7 +951,134 @@ describe('routines', () => {
     const visitor = asAnonymous();
     expect((await visitor.from('routines').select('time_of_day')).error).toBeTruthy();
     await expect(createRoutine(visitor, householdId, profile.id, { title: 'Planted', days_of_week: 1, time_of_day: 'evening' }, 1)).rejects.toBeTruthy();
-    await expect(updateRoutine(visitor, pills.id, { title: 'Hijacked', days_of_week: 1, time_of_day: 'evening' })).rejects.toBeTruthy();
+    await expect(updateRoutine(visitor, pills.id, { title: 'Hijacked', days_of_week: 1, time_of_day: 'evening', picture: null })).rejects.toBeTruthy();
+    expect(await loadRoutines(phone)).toEqual([pills]);
+  });
+
+  it("a Household Account sets, changes and clears a Routine's picture, and makes a Routine with one or without", async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+
+    const made = [
+      await createRoutine(phone, householdId, profile.id, { title: 'Brush teeth', days_of_week: everyDay, picture: 'teeth' }, 0),
+      await createRoutine(phone, householdId, profile.id, { title: 'Walk the dog', days_of_week: everyDay, picture: null }, 1),
+      // Not saying a picture is the same as none.
+      await createRoutine(phone, householdId, profile.id, { title: 'Water plants', days_of_week: everyDay }, 2),
+      // The database keeps no list of pictures: a key this build does not know is stored as it is.
+      await createRoutine(phone, householdId, profile.id, { title: 'Juggle', days_of_week: everyDay, picture: 'juggling' }, 3),
+    ];
+    expect(made.map((r) => r.picture)).toEqual(['teeth', null, null, 'juggling']);
+    // What the database holds, read back, not only what the insert echoed.
+    expect((await loadRoutines(phone)).map((r) => [r.title, r.picture])).toEqual([
+      ['Brush teeth', 'teeth'],
+      ['Walk the dog', null],
+      ['Water plants', null],
+      ['Juggle', 'juggling'],
+    ]);
+
+    // Changed, then cleared, then set again: nothing else about the Routine moves.
+    const teeth = made[0]!;
+    const setPicture = (picture: string | null) =>
+      updateRoutine(phone, teeth.id, { title: teeth.title, days_of_week: teeth.days_of_week, time_of_day: teeth.time_of_day, picture });
+    const read = async () => (await loadRoutines(phone)).find((r) => r.id === teeth.id);
+    await setPicture('bed');
+    expect(await read()).toEqual({ ...teeth, picture: 'bed' });
+    await setPicture(null);
+    expect(await read()).toEqual({ ...teeth, picture: null });
+    await setPicture('shower');
+    expect(await read()).toEqual({ ...teeth, picture: 'shower' });
+  });
+
+  it("an edit sends the picture as the form holds it, and leaves the Routine Completions alone", async () => {
+    const { arranged, phone, profile, householdId } = await household('The Andersons');
+    const walk = await createRoutine(phone, householdId, profile.id, { title: 'Walk the dog', days_of_week: everyDay, picture: 'pet' }, 0);
+    const today = householdDay(arranged.household.timezone).date;
+    await completeRoutine(phone, walk.id, today);
+
+    await updateRoutine(phone, walk.id, { title: 'Walk the dog', days_of_week: maskOf([MON]), time_of_day: 'evening', picture: walk.picture });
+    expect((await loadRoutines(phone)).find((r) => r.id === walk.id)).toEqual({ ...walk, days_of_week: maskOf([MON]), time_of_day: 'evening' });
+    await updateRoutine(phone, walk.id, { title: 'Walk the dog', days_of_week: maskOf([MON]), time_of_day: 'evening', picture: 'sport' });
+    expect((await loadRoutines(phone)).find((r) => r.id === walk.id)?.picture).toBe('sport');
+    expect(await loadCompletions(phone, today)).toEqual([walk.id]);
+  });
+
+  it('accepts a picture key of 32 characters and refuses one of 33 or a blank one, on create and on edit', async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, picture: 'medicine' }, 0);
+    const longest = 'k'.repeat(32);
+    const tooLong = 'k'.repeat(33);
+
+    expect((await createRoutine(phone, householdId, profile.id, { title: 'Longest', days_of_week: everyDay, picture: longest }, 1)).picture).toBe(longest);
+    await expect(createRoutine(phone, householdId, profile.id, { title: 'Too long', days_of_week: everyDay, picture: tooLong }, 2)).rejects.toMatchObject({ code: '23514' });
+    await expect(createRoutine(phone, householdId, profile.id, { title: 'Blank', days_of_week: everyDay, picture: '' }, 2)).rejects.toMatchObject({ code: '23514' });
+    const edit = (picture: string) => updateRoutine(phone, pills.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: null, picture });
+    await expect(edit(tooLong)).rejects.toMatchObject({ code: '23514' });
+    await expect(edit('')).rejects.toMatchObject({ code: '23514' });
+    await expect(edit(longest)).resolves.toBeUndefined();
+    await expect(edit('medicine')).resolves.toBeUndefined();
+
+    expect((await loadRoutines(phone)).map((r) => [r.title, r.picture])).toEqual([
+      ['Vitamins', 'medicine'],
+      ['Longest', longest],
+    ]);
+  });
+
+  it("another household's account and Device can neither read a Routine's picture nor set it", async () => {
+    const ours = await household('Ours');
+    const theirs = await household('Theirs');
+    const mine = await createRoutine(ours.phone, ours.householdId, ours.profile.id, { title: 'Vitamins', days_of_week: everyDay, picture: 'medicine' }, 0);
+    const theirWall = await device(theirs.arranged);
+    const hijack = { title: 'Hijacked', days_of_week: 1, time_of_day: null, picture: 'bed' } as const;
+
+    expect(await loadRoutines(theirs.phone)).toEqual([]);
+    expect(await loadRoutines(theirWall)).toEqual([]);
+    await expect(updateRoutine(theirs.phone, mine.id, hijack)).rejects.toBeTruthy();
+    await expect(updateRoutine(theirWall, mine.id, hijack)).rejects.toBeTruthy();
+    await expect(createRoutine(theirs.phone, ours.householdId, ours.profile.id, { ...hijack, title: 'Planted' }, 1)).rejects.toBeTruthy();
+    expect(await loadRoutines(ours.phone)).toEqual([mine]);
+  });
+
+  it("a Device reads a Routine's picture but can neither create a Routine with one nor set or clear one", async () => {
+    const { arranged, phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, picture: 'medicine' }, 0);
+    const wall = await device(arranged);
+
+    expect((await loadRoutines(wall)).map((r) => r.picture)).toEqual(['medicine']);
+    expect(await loadRoutines(wall)).toEqual([pills]);
+
+    await expect(createRoutine(wall, householdId, profile.id, { title: 'Sneaky', days_of_week: 1, picture: 'bed' }, 1)).rejects.toMatchObject({ code: '42501' });
+    await expect(updateRoutine(wall, pills.id, { title: 'Vitamins', days_of_week: everyDay, time_of_day: null, picture: 'bed' })).rejects.toBeTruthy();
+    // Nor by writing the column on its own, or by clearing it.
+    for (const picture of ['bed', null]) {
+      const raw = await wall.from('routines').update({ picture }).eq('id', pills.id).select('id');
+      expect(raw.data ?? []).toEqual([]);
+    }
+    expect(await loadRoutines(phone)).toEqual([pills]);
+  });
+
+  it("an unpaired tablet reads no Routine's picture and can neither create a Routine with one nor set one", async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, picture: 'medicine' }, 0);
+    // An anonymous session that was never paired runs as `authenticated` and holds the column grants, picture
+    // included, so only row-level security keeps it out.
+    const tablet = await asTablet();
+    tablets.push(tablet);
+
+    expect(await loadRoutines(tablet.client)).toEqual([]);
+    await expect(createRoutine(tablet.client, householdId, profile.id, { title: 'Planted', days_of_week: 1, picture: 'bed' }, 1)).rejects.toBeTruthy();
+    await expect(updateRoutine(tablet.client, pills.id, { title: 'Hijacked', days_of_week: 1, time_of_day: null, picture: 'bed' })).rejects.toBeTruthy();
+    const raw = await tablet.client.from('routines').update({ picture: 'bed' }).eq('id', pills.id).select('id');
+    expect(raw.data ?? []).toEqual([]);
+    expect(await loadRoutines(phone)).toEqual([pills]);
+  });
+
+  it("a visitor with no session can neither read a Routine's picture nor create a Routine with one or set one", async () => {
+    const { phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay, picture: 'medicine' }, 0);
+
+    const visitor = asAnonymous();
+    expect((await visitor.from('routines').select('picture')).error).toBeTruthy();
+    await expect(createRoutine(visitor, householdId, profile.id, { title: 'Planted', days_of_week: 1, picture: 'bed' }, 1)).rejects.toBeTruthy();
+    await expect(updateRoutine(visitor, pills.id, { title: 'Hijacked', days_of_week: 1, time_of_day: null, picture: 'bed' })).rejects.toBeTruthy();
     expect(await loadRoutines(phone)).toEqual([pills]);
   });
 

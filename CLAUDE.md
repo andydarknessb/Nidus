@@ -4,11 +4,12 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 
 ## Read first
 
-- `CONTEXT.md` is the glossary. Use its terms (Household, Household Account, Profile, Device, Calendar Account, Mirrored Calendar, Synced Event, Native Event, Routine, Routine Completion, Shared List, Meal) in code, tests, issues and PRs.
+- `CONTEXT.md` is the glossary. Use its terms (Household, Household Account, Profile, Device, Appearance, Calendar Account, Mirrored Calendar, Synced Event, Native Event, Routine, Routine Completion, Shared List, Meal) in code, tests, issues and PRs.
 - `docs/PLAN.md` holds every settled decision, the table list and the milestone order.
 - `docs/adr/` holds the two load-bearing decisions: Supabase over a custom backend, and a read-only calendar mirror. Do not reopen them in a ticket.
 - `docs/specs/0001-nidus-v1.md` is the v1 spec; GitHub issue #1 is its tracker copy, and its sub-issues are the tickets.
 - `docs/specs/0002-skylight-gaps.md` is the v2 spec, cut from the comparison in `docs/skylight-comparison.md`; its tracker copy and tickets are named in its opening paragraph.
+- `docs/specs/0003-the-look.md` is the v3 spec: the look, in a light and a dark mode. `docs/look.md` is the source for every colour, type size and shared part; read it before touching anything a person sees.
 
 ## Conventions
 
@@ -16,7 +17,9 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - Tests run through one seam: the Supabase JS client against the local stack, acting as a real principal (Household Account, Device, anonymous). Google's HTTP API is the only fake, injected into the Edge Function. Never mock the database.
 - Row-level security on every table; `current_household_id()` is the one helper policies use. A Device may write only Native Events, Routine Completions, list items, Meals and its own heartbeat.
 - All date logic uses the Household Timezone. Never use the machine's local zone.
-- Dark theme only, WCAG AAA contrast, 48 px minimum touch targets, landscape 16:10.
+- Two modes, light and dark, from one set of tokens (`docs/look.md`). The mode is the document's `data-mode`; no component branches on it for colour. WCAG AAA contrast in both, 48 px minimum touch targets, landscape 16:10 on the Wall.
+- The chrome is neutral and colour belongs to people. Nothing is told by colour alone: a person is a disc with their initial.
+- Words the family reads are plain (people, tablets, lists, time zone); the glossary's terms are for code, tests, issues and PRs.
 - No em-dashes in user-facing copy.
 
 ## Agent skills

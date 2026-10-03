@@ -1,4 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
+import type { Appearance } from './mode';
+import { keepIfSame } from './same-data';
 import { supabase } from './supabase';
 import { browserTimezone } from './timezones';
 import { capPlace, type TemperatureUnit, type WeatherPlace } from './weather';
@@ -12,11 +14,13 @@ export type Household = {
   latitude: number | null;
   longitude: number | null;
   temperature_unit: TemperatureUnit;
+  // How the Household wants the Wall to look; the database refuses any other value.
+  appearance: Appearance;
 };
 
 // What every read of a Household asks for: one name wrong here and the Wall reads nothing at all.
 // Exported so a test can read with exactly this list.
-export const householdColumns = 'id, name, timezone, weather_place, latitude, longitude, temperature_unit';
+export const householdColumns = 'id, name, timezone, weather_place, latitude, longitude, temperature_unit, appearance';
 
 export function displayNameOf(session: Session): string {
   const meta = session.user.user_metadata as { full_name?: string; name?: string };
@@ -47,12 +51,17 @@ export type HouseholdView = { household: Household | null; failed: boolean };
 
 // The wall re-reads the Household on a timer. A failed read never discards a
 // Household already read; a successful one replaces it (a changed timezone included).
+// A read that finds nothing new gives back the view it was given, and keeps the Household it holds when only a failure ended: every
+// read is a new object, and a new view is a new render of the whole Wall, one every 30 seconds for nothing.
 export function householdViewAfter(prev: HouseholdView, read: { household: Household } | { failed: true }): HouseholdView {
-  if ('failed' in read) return { household: prev.household, failed: true };
-  return { household: read.household, failed: false };
+  if ('failed' in read) return prev.failed ? prev : { household: prev.household, failed: true };
+  const household = keepIfSame(prev.household, read.household);
+  return !prev.failed && household === prev.household ? prev : { household, failed: false };
 }
 
-export async function updateHousehold(id: string, changes: { name: string; timezone: string }): Promise<Household> {
+// Household Account only: a Device reads the Household and the database refuses its write. The Appearance is saved on
+// its own, from its own section of the phone's settings.
+export async function updateHousehold(id: string, changes: { name: string; timezone: string } | { appearance: Appearance }): Promise<Household> {
   const { data, error } = await supabase
     .from('households')
     .update(changes)

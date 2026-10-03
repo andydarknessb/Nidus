@@ -214,6 +214,11 @@ describe('wall routes', () => {
     expect(parseWallRoute('/routines', '?date=2026-09-30')).toEqual({ view: 'routines' });
   });
 
+  it('reads the Lists screen, which has no date to keep', () => {
+    expect(parseWallRoute('/lists', '')).toEqual({ view: 'lists' });
+    expect(parseWallRoute('/lists', '?date=2026-09-30')).toEqual({ view: 'lists' });
+  });
+
   it('falls back to today for a missing or bad date', () => {
     expect(parseWallRoute('/week', '')).toEqual({ view: 'week', date: null });
     expect(parseWallRoute('/day', '?date=tomorrow')).toEqual({ view: 'day', date: null });
@@ -238,7 +243,11 @@ describe('wall routes', () => {
   it('keeps every other address on the home screen', () => {
     expect(parseWallRoute('/meal', '?date=2026-10-04')).toEqual({ view: 'home' });
     expect(parseWallRoute('/meals/', '')).toEqual({ view: 'home' });
+    expect(parseWallRoute('/list', '')).toEqual({ view: 'home' });
+    expect(parseWallRoute('/lists/', '')).toEqual({ view: 'home' });
     expect(parseWallRoute('/settings', '')).toEqual({ view: 'home' });
+    // The phone's Lists page is under /settings and is not a view of the Wall.
+    expect(parseWallRoute('/settings/lists', '')).toEqual({ view: 'home' });
   });
 
   it('writes the address back', () => {
@@ -395,6 +404,10 @@ describe('holdsToday', () => {
   it('is true for a screen that is not a calendar view, such as the Routines chart', () => {
     expect(holdsToday({ view: 'routines' }, TODAY)).toBe(true);
   });
+
+  it('is true for the Lists screen', () => {
+    expect(holdsToday({ view: 'lists' }, TODAY)).toBe(true);
+  });
 });
 
 describe('wallDate', () => {
@@ -470,6 +483,10 @@ describe('wallDate', () => {
   it('is today on a screen that is not a calendar view, such as the Routines chart', () => {
     expect(wallDate({ view: 'routines' }, TODAY)).toBe('2026-10-01');
   });
+
+  it('is today on the Lists screen, so Add event opens on today there', () => {
+    expect(wallDate({ view: 'lists' }, TODAY)).toBe('2026-10-01');
+  });
 });
 
 describe('navigationRailDate', () => {
@@ -537,6 +554,12 @@ describe('navigationRailDate', () => {
   it('leaving the Routines chart, which has no calendar date to keep, opens today\'s page', () => {
     expect(navigationRailDate('day', { view: 'routines' }, TODAY)).toBe('2026-10-01');
     expect(navigationRailDate('week', { view: 'routines' }, TODAY)).toBe('2026-09-27');
+  });
+
+  it('leaving the Lists screen opens today\'s page in every view, however long the Wall was left on it', () => {
+    expect(navigationRailDate('day', { view: 'lists' }, TODAY)).toBe('2026-10-01');
+    expect(navigationRailDate('week', { view: 'lists' }, TODAY)).toBe('2026-09-27');
+    expect(navigationRailDate('month', { view: 'lists' }, MID_MONTH)).toBe('2026-10-01');
   });
 
   it('week to week and day to day are the same address, so a tap adds no step for Back', () => {

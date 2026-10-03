@@ -1,16 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  PROFILE_BACKGROUND,
   PROFILE_PALETTE,
   byPosition,
-  cleanAvatarUrl,
   contrastRatio,
   createProfile,
   deleteProfile,
+  initialOf,
   loadProfiles,
   movedIds,
   nextSortOrder,
-  paletteColorName,
   reorderProfiles,
   updateProfile,
 } from '../src/lib/profiles';
@@ -29,17 +27,12 @@ import {
 const red = PROFILE_PALETTE[0].hex;
 const blue = PROFILE_PALETTE[7].hex;
 
+// What the palette's colours must clear, in both modes, is held in tests/look.test.ts.
 describe('the Profile palette', () => {
-  it('meets WCAG AAA (7:1) on a Zinc-950 background, every colour', () => {
-    for (const color of PROFILE_PALETTE) {
-      expect(contrastRatio(color.hex, PROFILE_BACKGROUND), color.name).toBeGreaterThanOrEqual(7);
-    }
-  });
-
   it('has distinct colours with names', () => {
     expect(new Set(PROFILE_PALETTE.map((color) => color.hex)).size).toBe(PROFILE_PALETTE.length);
-    expect(paletteColorName(red)).toBe('Red');
-    expect(paletteColorName('#000000')).toBeUndefined();
+    expect(new Set(PROFILE_PALETTE.map((color) => color.name)).size).toBe(PROFILE_PALETTE.length);
+    expect(PROFILE_PALETTE[0].name).toBe('Red');
   });
 
   it('computes contrast the WCAG way', () => {
@@ -63,9 +56,12 @@ describe('profile helpers', () => {
     expect(movedIds(['a', 'b'], 'zzz', 1)).toEqual(['a', 'b']);
   });
 
-  it('treats a blank avatar as none', () => {
-    expect(cleanAvatarUrl('  ')).toBeNull();
-    expect(cleanAvatarUrl(' https://example.com/a.png ')).toBe('https://example.com/a.png');
+  it("takes the first letter of a name, in capitals, for a person's disc", () => {
+    expect(initialOf('ava')).toBe('A');
+    expect(initialOf('  Ben ')).toBe('B');
+    expect(initialOf('élise')).toBe('É');
+    expect(initialOf('🐶 Rex')).toBe('🐶');
+    expect(initialOf('   ')).toBe('');
   });
 });
 
@@ -111,6 +107,25 @@ describe('profiles', () => {
 
     await deleteProfile(phone, mom.id);
     expect((await loadProfiles(phone)).map((p) => p.name)).toEqual(['Samuel']);
+  });
+
+  it('editing a Profile the way the phone does leaves its stored picture address alone', async () => {
+    const { arranged, phone } = await household('The Andersons');
+    const id = arranged.household.id;
+    // The picture address left the form in v3 and its column stays: one stored before is still there, and a write that names
+    // only a name and a colour never touches it.
+    const kid = await createProfile(phone, id, { name: 'Sam', color: blue, avatar_url: 'https://example.com/sam.png' }, 0);
+
+    await updateProfile(phone, kid.id, { name: 'Samuel', color: red });
+    expect((await loadProfiles(phone)).find((p) => p.id === kid.id)).toMatchObject({
+      name: 'Samuel',
+      color: red,
+      avatar_url: 'https://example.com/sam.png',
+    });
+
+    // And a person made the way the form makes one has none.
+    const made = await createProfile(phone, id, { name: 'Ava', color: blue }, 1);
+    expect(made.avatar_url).toBeNull();
   });
 
   it('rejects an empty name, a malformed colour and a non-web avatar', async () => {

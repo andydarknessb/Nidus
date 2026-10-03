@@ -1,0 +1,537 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it } from 'vitest';
+import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from '../src/components/OverflowButton';
+import { createPressGate, overflowState, overflowWords, PAGE_STEP, PRESS_HOLD_MS, type Axis, type Scroll } from '../src/lib/overflow';
+import type { OverflowControl } from '../src/lib/use-overflow';
+
+// Where the Wall scrolls it says so, with a button (docs/look.md, The parts). A tablet in a kiosk browser draws no scrollbars,
+// so a fifth person's column, a fourth list and the tiles past the fold would otherwise be hidden with no sign. What the
+// button does is decided here from four measurements and so is tested without a screen: whether the box overflows, whether
+// it is at its end, and where one press takes it. The words and the markup are asserted below; where a screen puts the
+// button, and that it can be tapped, is looked at in the browser.
+
+// A box as the browser measures it: what its contents need (scrollWidth), what it shows (clientWidth), how far it is scrolled
+// (scrollLeft) and what the button holds back while it is shown. A row and a column are one rule on one axis, so these are rows.
+const box = (scrollSize: number, more: Partial<Scroll> = {}): Scroll => ({ scrollSize, clientSize: 1000, scrollOffset: 0, buttonSize: 0, ...more });
+
+describe('whether a box overflows', () => {
+  it('does not when what it holds fits, or is exactly what it shows', () => {
+    for (const size of [0, 1, 500, 999, 1000]) expect(overflowState(box(size)).overflowing, `${size} in 1000`).toBe(false);
+  });
+
+  it('does not for the pixel that rounding adds (the browser rounds what is 0.4 px too wide up to 1 px)', () => {
+    expect(overflowState(box(1001)).overflowing).toBe(false);
+    expect(overflowState(box(1002)).overflowing).toBe(true);
+  });
+
+  it('does when it holds more than it shows', () => {
+    expect(overflowState(box(1200)).overflowing).toBe(true);
+    expect(overflowState(box(5000)).overflowing).toBe(true);
+  });
+
+  it('is nothing at all for a box with no size, and not NaN', () => {
+    expect(overflowState({ scrollSize: 0, clientSize: 0, scrollOffset: 0, buttonSize: 0 })).toEqual({ overflowing: false, atEnd: true, next: 0 });
+  });
+
+  describe('with the button beside the box, which takes room from it while it is shown', () => {
+    // The row has ROOM without the button and ROOM less the button (and its 8 px gap) with it: what the browser reports as the
+    // row's width is the second while the button is shown. The button is therefore held to the room the row has without it.
+    const ROOM = 1000;
+    const BUTTON = 128;
+    const beside = (content: number, shown: boolean): Scroll => ({ scrollSize: content, clientSize: shown ? ROOM - BUTTON : ROOM, scrollOffset: 0, buttonSize: shown ? BUTTON : 0 });
+
+    it('asks for the button only for what does not fit in the room the row has without it', () => {
+      expect(overflowState(beside(990, false)).overflowing).toBe(false);
+      expect(overflowState(beside(1001, false)).overflowing).toBe(false);
+      expect(overflowState(beside(1002, false)).overflowing).toBe(true);
+      expect(overflowState(beside(1500, false)).overflowing).toBe(true);
+      expect(overflowState(beside(990, true)).overflowing).toBe(false);
+      expect(overflowState(beside(1500, true)).overflowing).toBe(true);
+    });
+
+    it('keeps the button, once drawn, until the row clearly fits: it may fit by a pixel on one measure and not on the other', () => {
+      // Needed at 1002 without the button; with it, the same row measures a pixel or two less over. Still drawn, then.
+      expect(overflowState(beside(1002, true)).overflowing).toBe(true);
+      expect(overflowState(beside(1001, true)).overflowing).toBe(true);
+      expect(overflowState(beside(1000, true)).overflowing).toBe(true);
+      expect(overflowState(beside(999, true)).overflowing).toBe(false);
+    });
+
+    it('never comes and goes: drawing the button never decides whether it is needed', () => {
+      // Whatever the row holds, a button that is asked for without it is kept with it, so there is always an answer that stands.
+      for (let content = 0; content <= 2400; content += 1) {
+        const asked = overflowState(beside(content, false)).overflowing;
+        const kept = overflowState(beside(content, true)).overflowing;
+        expect(asked && !kept, `${content}`).toBe(false);
+      }
+    });
+
+    it('never comes and goes for a row whose sizes are not whole pixels, which the browser rounds', () => {
+      // A button 136.7 px wide is reported as 137 and the room it leaves as 662 when it is 661.7: the same row measured with and
+      // without the button can differ by a pixel. At 965 px the strip once asked for the button, lost it and asked again for ever
+      // ("Maximum update depth exceeded").
+      const BUTTON_PX = 136.7;
+      const GAP_PX = 8;
+      let tested = 0;
+      for (let room = 700; room <= 1200; room += 0.37) {
+        for (const content of [808, 1000.4, 1100]) {
+          const left = room - BUTTON_PX - GAP_PX;
+          const without: Scroll = { scrollSize: Math.round(Math.max(content, room)), clientSize: Math.round(room), scrollOffset: 0, buttonSize: 0 };
+          const withIt: Scroll = { scrollSize: Math.round(Math.max(content, left)), clientSize: Math.round(left), scrollOffset: 0, buttonSize: Math.round(BUTTON_PX) + GAP_PX };
+          const asked = overflowState(without).overflowing;
+          const kept = overflowState(withIt).overflowing;
+          expect(asked && !kept, `${content} in ${room}`).toBe(false);
+          // And the answer is right where it is not a pixel's difference: a row that fits is never asked to carry a button, and a row
+          // that is 3 px too small for its content always is.
+          if (content <= room) expect(asked, `${content} fits in ${room}`).toBe(false);
+          if (content >= room + 3) expect(asked, `${content} does not fit in ${room}`).toBe(true);
+          tested += 1;
+        }
+      }
+      expect(tested).toBeGreaterThan(3000);
+    });
+  });
+
+  describe('with the button over the end of the box, which the box pads by what it covers while it is shown', () => {
+    // A column's foot is the last child of its list, so while it is shown the list holds its own height more. Unlike a button beside the
+    // box it never changes what the box shows, and what it adds is exactly its own height, so overflow is tested plainly: the same list
+    // gives the same answer with the foot and without it, and the foot goes the moment the list fits (nothing is kept).
+    const BOX = 400;
+    const FOOT = 64;
+    const over = (content: number, shown: boolean): Scroll => ({ scrollSize: content + (shown ? FOOT : 0), clientSize: BOX, scrollOffset: 0, buttonSize: shown ? FOOT : 0, over: true });
+
+    it('asks for the button only for content that does not fit in the box', () => {
+      expect(overflowState(over(399, false)).overflowing).toBe(false);
+      expect(overflowState(over(401, false)).overflowing).toBe(false);
+      expect(overflowState(over(402, false)).overflowing).toBe(true);
+      expect(overflowState(over(399, true)).overflowing).toBe(false);
+      expect(overflowState(over(500, true)).overflowing).toBe(true);
+    });
+
+    it('does not keep a foot on a list that fits: it goes when the content fits, or is a pixel over, drawn or not', () => {
+      // Nine items, "Clear crossed off", seven that exactly fit: the foot stayed, the list stayed scrolled and the first item was out of view.
+      for (const content of [0, 300, 399, 400, 401]) {
+        expect(overflowState(over(content, true)).overflowing, `${content} with the foot`).toBe(false);
+        expect(overflowState(over(content, false)).overflowing, `${content} without it`).toBe(false);
+      }
+      expect(overflowState(over(402, true)).overflowing).toBe(true);
+    });
+
+    it('says the same drawn or not, for every list: the foot never decides whether it is needed', () => {
+      for (let content = 0; content <= 1200; content += 1) {
+        expect(overflowState(over(content, true)).overflowing, `${content}`).toBe(overflowState(over(content, false)).overflowing);
+      }
+    });
+
+    it('never comes and goes for a foot that is not a whole number of pixels tall, which a root font size can make it', () => {
+      // The foot's own height is measured exactly (a fraction), the list's sizes are whole pixels the browser rounds: the same list measured
+      // with and without the foot can differ by less than a pixel, and a foot that is asked for must be kept.
+      const FOOT_PX = 64.4;
+      let tested = 0;
+      for (let content = 300; content <= 700; content += 0.37) {
+        for (let box = 380; box <= 420; box += 0.41) {
+          const without: Scroll = { scrollSize: Math.round(content), clientSize: Math.round(box), scrollOffset: 0, buttonSize: 0, over: true };
+          const withIt: Scroll = { scrollSize: Math.round(content + FOOT_PX), clientSize: Math.round(box), scrollOffset: 0, buttonSize: FOOT_PX, over: true };
+          const asked = overflowState(without).overflowing;
+          const kept = overflowState(withIt).overflowing;
+          expect(asked && !kept, `${content} in ${box}`).toBe(false);
+          // A list that fits is never asked for a foot, and one that is 3 px too tall always is.
+          if (content <= box) expect(asked, `${content} fits in ${box}`).toBe(false);
+          if (content >= box + 3) expect(asked, `${content} does not fit in ${box}`).toBe(true);
+          tested += 1;
+        }
+      }
+      expect(tested).toBeGreaterThan(30000);
+    });
+  });
+});
+
+describe('whether a box is at its end', () => {
+  it('is not at the start of a box that overflows', () => {
+    expect(overflowState(box(1500)).atEnd).toBe(false);
+  });
+
+  it('is when it is scrolled as far as it goes', () => {
+    expect(overflowState(box(1500, { scrollOffset: 500 })).atEnd).toBe(true);
+    expect(overflowState(box(1500, { scrollOffset: 499 })).atEnd).toBe(true);
+    expect(overflowState(box(1500, { scrollOffset: 498 })).atEnd).toBe(false);
+  });
+
+  it('is at the end of a row whose button takes room from it, by the room it has now', () => {
+    // 1500 of content in a row that shows 872 while the button is there: the row scrolls 628 px.
+    const row = { scrollSize: 1500, clientSize: 872, buttonSize: 128 };
+    expect(overflowState({ ...row, scrollOffset: 627 }).atEnd).toBe(true);
+    expect(overflowState({ ...row, scrollOffset: 626 }).atEnd).toBe(false);
+  });
+
+  it('is never at the end at the start of a box that needs its button, whatever the button is', () => {
+    for (const buttonSize of [0, 64, 128]) {
+      for (let size = 1002 + buttonSize; size <= 3000; size += 7) {
+        const state = overflowState({ scrollSize: size, clientSize: 1000, scrollOffset: 0, buttonSize });
+        expect(state.overflowing, `${size} with ${buttonSize}`).toBe(true);
+        expect(state.atEnd, `${size} with ${buttonSize}`).toBe(false);
+      }
+    }
+  });
+});
+
+describe('where one press goes', () => {
+  it('is most of a page on: four fifths of what the box shows', () => {
+    expect(PAGE_STEP).toBe(0.8);
+    expect(overflowState(box(3000)).next).toBe(800);
+    expect(overflowState(box(3000, { scrollOffset: 800 })).next).toBe(1600);
+  });
+
+  it('stops at the end and never goes past it', () => {
+    // 2000 of content in 1000 scrolls 1000 px: from 700 a page would reach 1500.
+    expect(overflowState(box(2000, { scrollOffset: 700 })).next).toBe(1000);
+    expect(overflowState(box(1500, { scrollOffset: 0 })).next).toBe(500);
+  });
+
+  it('goes all the way when only a sliver would be left beyond it, so no press is spent on a few pixels', () => {
+    // A press keeps the last fifth of a page in view. 1950 of content in 1000 scrolls 950: a page on would leave 150, less than that
+    // fifth, so the press goes to the end; with 200 left, exactly the fifth, it goes by its page and the next is a real one.
+    expect(overflowState(box(1950)).next).toBe(950);
+    expect(overflowState(box(1951)).next).toBe(951);
+    expect(overflowState(box(1999)).next).toBe(999);
+    expect(overflowState(box(2000)).next).toBe(800);
+    expect(overflowState(box(2001)).next).toBe(800);
+    // The same in a column whose foot covers 74 px of 476: a page is the 402 that is clear, a press 321.6 of it, and a fifth 80.4.
+    const column = { scrollSize: 1126, clientSize: 476, buttonSize: 74, over: true };
+    expect(overflowState({ ...column, scrollOffset: 0 }).next).toBeCloseTo(321.6, 6);
+    expect(overflowState({ ...column, scrollOffset: 322 }).next).toBe(650);
+  });
+
+  it('goes back to the start from the end', () => {
+    expect(overflowState(box(1500, { scrollOffset: 500 })).next).toBe(0);
+    expect(overflowState(box(1500, { scrollOffset: 500, buttonSize: 64, over: true })).next).toBe(0);
+  });
+
+  it('goes by most of the part of a column that the button leaves clear, so nothing slips under the button', () => {
+    // A 400 px list with a 64 px foot over its end shows 336 clear of it: a press moves it on by four fifths of that.
+    const column = { scrollSize: 1064, clientSize: 400, buttonSize: 64, over: true };
+    expect(overflowState({ ...column, scrollOffset: 0 }).next).toBeCloseTo(0.8 * 336, 6);
+    for (let offset = 0; offset < 600; offset += 13) {
+      const state = overflowState({ ...column, scrollOffset: offset });
+      if (!state.atEnd) expect(state.next - offset, `from ${offset}`).toBeLessThanOrEqual(400 - 64);
+    }
+  });
+
+  it('goes by a page of the room that is left to a row whose button takes room from it, which is what the row shows', () => {
+    // The row shows 872 with the button beside it: the button is not over any of it, so the page is the 872.
+    expect(overflowState({ scrollSize: 3000, clientSize: 872, scrollOffset: 0, buttonSize: 128 }).next).toBeCloseTo(0.8 * 872, 6);
+  });
+
+  it('moves on every press until the end, which a press then leaves for the start', () => {
+    function presses(measured: Omit<Scroll, 'scrollOffset'>) {
+      let offset = 0;
+      const visited = [0];
+      for (let press = 0; press <= 200; press += 1) {
+        const state = overflowState({ ...measured, scrollOffset: offset });
+        if (state.atEnd) return { visited, back: state.next };
+        expect(state.next, `press ${press + 1} from ${offset}`).toBeGreaterThan(offset);
+        offset = state.next;
+        visited.push(offset);
+      }
+      throw new Error('a press never reached the end');
+    }
+    // Three screens of content: 800, 1600, then the end at 2000, and Back.
+    expect(presses({ scrollSize: 3000, clientSize: 1000, buttonSize: 0 })).toEqual({ visited: [0, 800, 1600, 2000], back: 0 });
+    // Just over one screen: one press reaches the end.
+    expect(presses({ scrollSize: 1100, clientSize: 1000, buttonSize: 0 })).toEqual({ visited: [0, 100], back: 0 });
+    // Eight columns of 272 px with 12 px between them in a 1136 px row, as the chart's, and fourteen tiles in a column.
+    const chart = presses({ scrollSize: 8 * 272 + 7 * 12, clientSize: 1136, buttonSize: 0 });
+    expect(chart.visited.at(-1)).toBe(8 * 272 + 7 * 12 - 1136);
+    expect(chart.back).toBe(0);
+    const column = presses({ scrollSize: 14 * 90 + 64, clientSize: 440, buttonSize: 64, over: true });
+    expect(column.visited.at(-1)).toBe(14 * 90 + 64 - 440);
+  });
+
+  it('is always forward of where it is until the end, and never past it, for any box and any place in it', () => {
+    for (const buttonSize of [0, 64, 136]) {
+      for (const over of [false, true]) {
+        for (let size = 1002 + buttonSize; size <= 4000; size += 97) {
+          for (let offset = 0; offset <= size - 1000; offset += 41) {
+            const state = overflowState({ scrollSize: size, clientSize: 1000, scrollOffset: offset, buttonSize, over });
+            const where = `${size} at ${offset} with ${buttonSize}${over ? ' over' : ''}`;
+            if (state.atEnd) expect(state.next, where).toBe(0);
+            else {
+              expect(state.next, where).toBeGreaterThan(offset);
+              expect(state.next, where).toBeLessThanOrEqual(size - 1000);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('still moves on in a box too short for its button, a pixel at a time at least, rather than stand still', () => {
+    const state = overflowState({ scrollSize: 300, clientSize: 40, scrollOffset: 0, buttonSize: 64, over: true });
+    expect(state.next).toBeGreaterThan(0);
+  });
+});
+
+describe('a press while the box is still moving', () => {
+  // A smooth scroll takes most of a second. A second press that reads the box mid-scroll takes it from where it is and not from where
+  // it is going: "Back" pressed twice, 60 ms apart, left the box at its end (the second read the offset in the middle, and the sliver
+  // rule sent it on). So a press is taken only when the scroll the last one began has ended; the gate is told when it has (`end`, from
+  // scrollend, or from a scroll that has stopped coming in a browser with no scrollend), and `now` is the clock, so this runs without one.
+  it('takes the first press', () => {
+    expect(createPressGate().take(0)).toBe(true);
+  });
+
+  it('takes none until the scroll the first began has ended', () => {
+    const gate = createPressGate();
+    expect(gate.take(1000)).toBe(true);
+    expect(gate.take(1060)).toBe(false);
+    expect(gate.take(1300)).toBe(false);
+    gate.end();
+    expect(gate.take(1301)).toBe(true);
+  });
+
+  it('takes the next once the scroll has ended, and then holds that one in turn', () => {
+    const gate = createPressGate();
+    expect(gate.take(0)).toBe(true);
+    gate.end();
+    expect(gate.take(10)).toBe(true);
+    expect(gate.take(20)).toBe(false);
+    gate.end();
+    expect(gate.take(30)).toBe(true);
+  });
+
+  it('lets go of a scroll that never ends, so a press that moved nothing, or a browser that says nothing, never leaves the button dead', () => {
+    const gate = createPressGate();
+    expect(gate.take(0)).toBe(true);
+    expect(gate.take(PRESS_HOLD_MS - 1)).toBe(false);
+    expect(gate.take(PRESS_HOLD_MS)).toBe(true);
+    // And holds the one it took then for as long.
+    expect(gate.take(PRESS_HOLD_MS + 1)).toBe(false);
+    expect(gate.take(2 * PRESS_HOLD_MS)).toBe(true);
+  });
+
+  it('holds for a second, which is longer than any scroll the Wall starts', () => {
+    expect(PRESS_HOLD_MS).toBe(1000);
+  });
+
+  it('is not troubled by an end with nothing held, which scrollend says after any scroll, a swipe included', () => {
+    const gate = createPressGate();
+    gate.end();
+    gate.end();
+    expect(gate.take(5)).toBe(true);
+    expect(gate.take(6)).toBe(false);
+  });
+
+  it('is its own for each box: one list being scrolled does not hold another', () => {
+    const one = createPressGate();
+    const other = createPressGate();
+    expect(one.take(0)).toBe(true);
+    expect(other.take(1)).toBe(true);
+    expect(one.take(2)).toBe(false);
+    expect(other.take(3)).toBe(false);
+    one.end();
+    expect(one.take(4)).toBe(true);
+    expect(other.take(5)).toBe(false);
+  });
+});
+
+describe('the words', () => {
+  it('say what moves, for a row', () => {
+    expect(overflowWords('x', 'people')).toEqual({
+      more: { text: 'More people', name: 'More people' },
+      back: { text: 'Back', name: 'Back to the first people' },
+    });
+    expect(overflowWords('x', 'lists')).toEqual({
+      more: { text: 'More lists', name: 'More lists' },
+      back: { text: 'Back', name: 'Back to the first lists' },
+    });
+  });
+
+  it('say what moves, for a column', () => {
+    expect(overflowWords('y', "Ava's routines")).toEqual({
+      more: { text: 'More', name: "More of Ava's routines" },
+      back: { text: 'Back', name: "Back to the top of Ava's routines" },
+    });
+    expect(overflowWords('y', 'Groceries')).toEqual({
+      more: { text: 'More', name: 'More of Groceries' },
+      back: { text: 'Back', name: 'Back to the top of Groceries' },
+    });
+  });
+
+  it('say what moves, for a row that is marked with its own word already: "More" alone, and the name says which', () => {
+    // The Day view's two rows are marked "Earlier" and "Later" at their left end, so the button beside each reads just "More".
+    expect(overflowWords('x', 'earlier events', true)).toEqual({
+      more: { text: 'More', name: 'More earlier events' },
+      back: { text: 'Back', name: 'Back to the first earlier events' },
+    });
+    expect(overflowWords('x', 'later events', true)).toEqual({
+      more: { text: 'More', name: 'More later events' },
+      back: { text: 'Back', name: 'Back to the first later events' },
+    });
+  });
+
+  it('have every visible word in the accessible name, so a name spoken from the screen finds the button', () => {
+    for (const [axis, of, short] of [['x', 'people', false], ['x', 'lists', false], ['y', "Ava's routines", false], ['y', 'Groceries', false], ['x', 'earlier events', true], ['x', 'later events', true]] as const) {
+      const { more, back } = overflowWords(axis, of, short);
+      expect(more.name, `${axis} ${of}`).toContain(more.text);
+      expect(back.name, `${axis} ${of}`).toContain(back.text);
+    }
+  });
+
+  it('use no dash of any length', () => {
+    for (const axis of ['x', 'y'] as const) {
+      const { more, back } = overflowWords(axis, 'people');
+      expect([more.text, more.name, back.text, back.name].join(' ')).not.toMatch(/[‒-―-]/);
+    }
+  });
+});
+
+describe('the button', () => {
+  // The control a hook would hand over, in the state a test needs: markup is made without the browser's measuring.
+  const control = (axis: Axis, atEnd: boolean, overflowing = true): OverflowControl => ({ axis, overflowing, atEnd, scroller: () => undefined, piece: () => undefined, step: () => undefined });
+  const render = (axis: Axis, atEnd: boolean, of: string, surface?: 'card' | 'person') => renderToStaticMarkup(createElement(OverflowButton, { control: control(axis, atEnd), of, ...(surface ? { surface } : {}) }));
+  // The label a person sees: the one that is not hidden. (The other is drawn invisible in the same place, so the button is as wide
+  // as the wider of the two and never changes size.) Each label is one span in the button's one grid cell.
+  const labels = (html: string) => [...html.matchAll(/<span([^>]*col-start-1[^>]*)>(.*?)<\/span>/g)].map(([, attributes, inner]) => ({ hidden: attributes!.includes('aria-hidden'), inner: inner! }));
+  const visible = (html: string) => labels(html).filter((label) => !label.hidden).map((label) => label.inner).join('');
+  const hidden = (html: string) => labels(html).filter((label) => label.hidden).map((label) => label.inner).join('');
+
+  it('is nothing at all for a box that does not overflow', () => {
+    expect(renderToStaticMarkup(createElement(OverflowButton, { control: control('x', false, false), of: 'people' }))).toBe('');
+    expect(renderToStaticMarkup(createElement(OverflowButton, { control: control('y', false, false), of: 'Groceries' }))).toBe('');
+  });
+
+  it('reads "More people" with a chevron pointing on, in a row, and "Back" with one pointing back at the end', () => {
+    const more = render('x', false, 'people');
+    expect(more).toContain('aria-label="More people"');
+    expect(visible(more)).toContain('More people');
+    expect(visible(more)).toContain('lucide-chevron-right');
+    const back = render('x', true, 'people');
+    expect(back).toContain('aria-label="Back to the first people"');
+    expect(visible(back)).toContain('Back');
+    expect(visible(back)).toContain('lucide-chevron-left');
+    expect(visible(back)).not.toContain('More people');
+  });
+
+  it('reads "More" with a chevron down, in a column, and "Back" with one up at the end', () => {
+    const more = render('y', false, "Ava's routines", 'person');
+    expect(more).toContain('aria-label="More of Ava&#x27;s routines"');
+    expect(visible(more)).toContain('More');
+    expect(visible(more)).toContain('lucide-chevron-down');
+    const back = render('y', true, "Ava's routines", 'person');
+    expect(back).toContain('aria-label="Back to the top of Ava&#x27;s routines"');
+    expect(visible(back)).toContain('Back');
+    expect(visible(back)).toContain('lucide-chevron-up');
+  });
+
+  it('reads "More" alone beside a row that is marked with its own word, named for what moves, and "Back" at the end', () => {
+    // The Day view's "Earlier" and "Later" rows: the word is at the row's left end, so the button does not say it again, and the two
+    // buttons are the same size, whichever row they are beside.
+    const short = (atEnd: boolean, of: string) => renderToStaticMarkup(createElement(OverflowButton, { control: control('x', atEnd), of, short: true }));
+    for (const of of ['earlier events', 'later events']) {
+      const more = short(false, of);
+      expect(more).toContain(`aria-label="More ${of}"`);
+      expect(visible(more)).toContain('More');
+      expect(visible(more)).not.toContain(of);
+      expect(visible(more)).toContain('lucide-chevron-right');
+      const back = short(true, of);
+      expect(back).toContain(`aria-label="Back to the first ${of}"`);
+      expect(visible(back)).toContain('Back');
+      expect(visible(back)).toContain('lucide-chevron-left');
+      // The label that is not showing is "More" too, not "More earlier events": the button is as wide as "More" or "Back" needs.
+      expect(hidden(back)).toContain('More');
+      expect(hidden(back)).not.toContain(of);
+    }
+  });
+
+  it('draws both labels in one place, the other invisible and out of the accessibility tree, so its width is the wider of the two', () => {
+    for (const atEnd of [false, true]) {
+      const html = render('x', atEnd, 'people');
+      expect(html).toContain('More people');
+      expect(html).toContain('Back');
+      expect(html.split('invisible').length - 1, `atEnd ${atEnd}`).toBe(1);
+      expect(hidden(html)).toContain(atEnd ? 'More people' : 'Back');
+    }
+  });
+
+  it('is never switched off: at the end it takes the keyboard back to the start, so it is neither disabled nor aria-disabled', () => {
+    for (const axis of ['x', 'y'] as const) {
+      for (const atEnd of [false, true]) {
+        const html = render(axis, atEnd, 'people');
+        // (The button's own classes say `disabled:` and `aria-disabled:` for a button that is switched off; this one never
+        // is, so it is the attributes that must be absent.)
+        expect(html, `${axis} atEnd ${atEnd}`).not.toMatch(/ disabled[ =>"]/);
+        expect(html, `${axis} atEnd ${atEnd}`).not.toMatch(/ aria-disabled=/);
+      }
+    }
+  });
+
+  it('is a secondary button, never the primary one, on the colour it sits on, and at least 48 px tall', () => {
+    const row = render('x', false, 'lists');
+    const onCard = render('y', false, 'Groceries', 'card');
+    const onPerson = render('y', false, "Ava's routines", 'person');
+    // A row's button is a card on the page, as the strip's was; a foot is a card on a person's column and a row's colour on a card.
+    expect(row).toContain('bg-card');
+    expect(onPerson).toContain('bg-card');
+    expect(onCard).toContain('bg-secondary');
+    for (const html of [row, onCard, onPerson]) expect(html).not.toContain('bg-primary');
+    expect(row).toMatch(/\bh-1[34]\b/);
+    expect(onCard).toMatch(/\bh-12\b/);
+    expect(onPerson).toMatch(/\bh-12\b/);
+  });
+
+  // The opening tags of a column's foot (the box over the list's end) and of its button.
+  const tags = (html: string) => ({ foot: /^<div[^>]*>/.exec(html)?.[0] ?? '', button: /<button[^>]*>/.exec(html)?.[0] ?? '' });
+
+  it('is, in a column, a foot over a fade in the colour it sits on', () => {
+    const card = tags(render('y', false, 'Groceries', 'card'));
+    const person = tags(render('y', false, "Ava's routines", 'person'));
+    expect(card.foot).toContain('from-card');
+    expect(person.foot).toContain('from-person-soft');
+    for (const { foot } of [card, person]) expect(foot).toContain('sticky');
+  });
+
+  it('has a fade that is a dead band: it takes a tap and does nothing with it, so a tap just above the button never ticks a tile under it', () => {
+    // A tile sits half under the foot at rest, and a click 8 px into a fade that let taps through ticked it. The foot is the whole 64 px:
+    // the button's 48 and the 16 px fade above it, and nothing in it lets a tap through (a standalone pointer-events utility, on the foot
+    // or on the button, would). A touch that starts on it still scrolls the list: the browser scrolls the nearest scrolling ancestor, which
+    // is the list, whatever it is that is touched. Every tile is still reached, by pressing More.
+    const alone = /[\s"]pointer-events-(none|auto)[\s"]/;
+    for (const html of [render('y', false, 'Groceries', 'card'), render('y', false, "Ava's routines", 'person'), render('y', true, 'Groceries', 'card')]) {
+      const { foot, button } = tags(html);
+      expect(foot).not.toMatch(alone);
+      expect(button).not.toMatch(alone);
+      expect(foot).toMatch(/\bh-16\b/);
+      expect(button).toMatch(/\bh-12\b/);
+    }
+  });
+
+  it('is kept clear of by the items of its list: they scroll to stop short of the foot by more than its height', () => {
+    // The foot is h-16 (64 px): the button's 48 and a 16 px fade above it. The scroll margin is on the list's items (the li, which a
+    // new item is scrolled to, and its button, which the keyboard's focus is) and never on the list itself: padding on the list would
+    // make the browser scroll it whenever the foot's own button took the focus, as Tab does, and the button would turn itself into
+    // "Back".
+    expect(tags(render('y', false, 'Groceries')).foot).toMatch(/\bh-16\b/);
+    expect(Number(/scroll-mb-(\d+)/.exec(FOOT_CLEARANCE)?.[1]) * 4).toBeGreaterThan(64);
+    expect(FOOT_CLEARANCE).toContain('[&_li]:scroll-mb-');
+    expect(FOOT_CLEARANCE).toContain('[&_li_button]:scroll-mb-');
+    expect(FOOT_CLEARANCE).not.toMatch(/(^| )scroll-p/);
+  });
+
+  it('is kept clear of by everything in a body that is not a list, too: every element in it stops short of the foot by more than its height', () => {
+    // A sheet's body holds fields, pills and notes, not `li` items. The same rule: the margin is on what is in the body (the wrapper
+    // the content is in, which the foot is not in) and never on the body, which would move it whenever the foot took the focus.
+    expect(Number(/scroll-mb-(\d+)/.exec(BODY_CLEARANCE)?.[1]) * 4).toBeGreaterThan(64);
+    expect(BODY_CLEARANCE).toContain('[&_*]:scroll-mb-');
+    expect(BODY_CLEARANCE).not.toMatch(/(^| )scroll-p/);
+    // The same distance as a list's items keep.
+    expect(/scroll-mb-(\d+)/.exec(BODY_CLEARANCE)?.[1]).toBe(/scroll-mb-(\d+)/.exec(FOOT_CLEARANCE)?.[1]);
+  });
+
+  it('is a row\'s button as it was in the people strip: a button of its own, with no foot or fade', () => {
+    const html = render('x', false, 'people');
+    expect(html).not.toContain('sticky');
+    expect(html).not.toContain('from-');
+    expect(html.startsWith('<button')).toBe(true);
+  });
+});

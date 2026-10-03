@@ -1,65 +1,118 @@
-import { useState, type FormEvent } from 'react';
-import { CalendarAccountsSection } from '@/CalendarAccountsSection';
+import { LogOut } from 'lucide-react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { AppearanceSection } from '@/AppearanceSection';
 import { DevicesSection } from '@/DevicesSection';
 import { ProfilesSection } from '@/ProfilesSection';
 import { WeatherSection } from '@/WeatherSection';
+import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass } from '@/components/phone';
+import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import { timezoneOptions } from '@/lib/timezones';
-
-const field = 'min-h-12 w-full rounded-lg border border-input bg-background px-3 text-base text-foreground';
-const action = 'min-h-12 rounded-lg px-4 text-base font-medium';
+import { useWriteProblem } from '@/lib/use-write-problem';
 
 type Props = { household: Household; onSaved: (household: Household) => void; onSignOut: () => void };
 
+// The phone's Household page (/settings): the Household's name and time zone, how the Wall looks, the weather, the people and the
+// Wall tablets, then Sign out. The Calendar Accounts and the events added in Nidus are on the Calendars page.
 export function SettingsPage({ household, onSaved, onSignOut }: Props) {
   const [name, setName] = useState(household.name);
   const [timezone, setTimezone] = useState(household.timezone);
-  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const [saved, setSaved] = useState(false);
+  // What a save that did not go through says (the Wall's two sentences; "Check the name" only when the database refused the name), at
+  // once, under the button. One save at a time: while it is on its way Save is `aria-disabled` and does nothing, never `disabled`,
+  // which would drop the focus to the page.
+  const problems = useWriteProblem();
+  const working = useRef(false);
+  const [busy, setBusy] = useState(false);
+  // About four hundred zones, each named: drawn once for a zone and not again at every key typed in the name.
+  const zones = useMemo(() => timezoneOptions(household.timezone), [household.timezone]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    setStatus('saving');
+    if (working.current) return;
+    working.current = true;
+    setBusy(true);
+    setSaved(false);
     try {
       onSaved(await updateHousehold(household.id, { name: name.trim(), timezone }));
-      setStatus('saved');
-    } catch {
-      setStatus('failed');
+      problems.clear('household');
+      setSaved(true);
+    } catch (error) {
+      problems.fail('household', error, { refusal: 'Could not save. Check the name and try again.' });
+    } finally {
+      working.current = false;
+      setBusy(false);
     }
   }
 
+  const problem = problems.at('household');
+  // What was said is old once either field changes.
+  const edited = () => {
+    setSaved(false);
+    problems.clear();
+  };
+
   return (
-    <main className="mx-auto flex min-h-svh max-w-md flex-col gap-6 p-4">
-      <h1 className="text-2xl font-semibold">Household settings</h1>
-      <form onSubmit={(event) => void save(event)} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-2 text-base">
-          Household name
-          <input className={field} value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
-        </label>
-        <label className="flex flex-col gap-2 text-base">
-          Household Timezone
-          <select className={field} value={timezone} onChange={(e) => setTimezone(e.target.value)}>
-            {timezoneOptions(household.timezone).map((zone) => (
-              <option key={zone} value={zone}>
-                {zone}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" className={`${action} bg-primary text-primary-foreground`} disabled={status === 'saving'}>
-          Save
-        </button>
-        <p role="status" className="min-h-6 text-base">
-          {status === 'saved' && 'Saved.'}
-          {status === 'failed' && 'Could not save. Check the name and try again.'}
-        </p>
-      </form>
+    <PhonePage title="Household settings">
+      <Card title="Household">
+        <form onSubmit={(event) => void save(event)} className="flex flex-col gap-4">
+          <Field label="Name">
+            <input
+              className={fieldClass}
+              autoComplete="off"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                edited();
+              }}
+              maxLength={100}
+              required
+              aria-invalid={problem?.refused || undefined}
+              aria-describedby={problem?.refused ? 'problem-household' : undefined}
+            />
+          </Field>
+          <div className="flex flex-col gap-2">
+            <Field label="Time zone">
+              <select
+                className={fieldClass}
+                value={timezone}
+                onChange={(e) => {
+                  setTimezone(e.target.value);
+                  edited();
+                }}
+              >
+                {zones.map((zone) => (
+                  <option key={zone.id} value={zone.id}>
+                    {zone.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <p className={helpClass}>Every date and the midnight reset follow this time zone.</p>
+          </div>
+          {/* The line for what the save did is there from the start, so a screen reader has it before it speaks, and is one line
+              tall whichever it says, so nothing below moves. */}
+          <div className="flex flex-col gap-2">
+            <Button type="submit" variant="primary" size="phone" aria-disabled={busy || undefined}>
+              Save
+            </Button>
+            <div className="min-h-6 text-base">
+              <p role="status">{saved && 'Saved.'}</p>
+              <Problem id="problem-household" problem={problem} />
+            </div>
+          </div>
+        </form>
+      </Card>
+      <div className={cardClass}>
+        <AppearanceSection household={household} onSaved={onSaved} />
+      </div>
       <WeatherSection household={household} onSaved={onSaved} />
       <ProfilesSection householdId={household.id} />
-      <CalendarAccountsSection />
       <DevicesSection />
-      <button type="button" className={`${action} border border-border`} onClick={onSignOut}>
+      <Button variant="quiet" className="h-12 w-full" onClick={onSignOut}>
+        <LogOut aria-hidden className="size-[22px]" />
         Sign out
-      </button>
-    </main>
+      </Button>
+    </PhonePage>
   );
 }

@@ -135,6 +135,20 @@ describe('Realtime change feed', () => {
     await seen;
   });
 
+  // The Wall reads the Household again on this change, so a new Appearance reaches it from the feed and not on its 30 second timer.
+  it("reaches a Device when the phone changes the Household's Appearance", async () => {
+    const { account, phone, kitchen } = await setUp();
+    const feed = await openFeed(kitchen.client);
+
+    const seen = changed(feed, 'households');
+    const { error } = await phone.from('households').update({ appearance: 'dark' }).eq('id', account.household.id);
+    expect(error).toBeNull();
+    await seen;
+
+    const { data } = await kitchen.client.from('households').select('appearance').eq('id', account.household.id).single();
+    expect(data).toEqual({ appearance: 'dark' });
+  });
+
   // Inserts and updates only: a delete carries no Household and is delivered to every subscriber (see the migration).
   it('never delivers another Household\'s inserts or updates', async () => {
     const mine = await setUp();

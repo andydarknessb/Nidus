@@ -7,9 +7,9 @@ export { dayStartMs };
 // Occurrences on the wall (CONTEXT.md: Synced Event, Native Event). The `calendar_occurrences`
 // view unions every source with the Profile and colour it inherits; everything below is what the
 // wall's calendar does with them: the five days of the home screen, the week, day and month views
-// and the routes between them, where each one sits in the time grid or in a month's cell, and the
-// words that say when. All date logic uses the Household Timezone, never the machine's zone, and is
-// pure so it is tested without a screen.
+// and the routes between them, which events are on a day and where the Day view's grid puts them
+// (day-view.ts), and the words that say when. All date logic uses the Household Timezone, never the
+// machine's zone, and is pure so it is tested without a screen.
 
 export type Occurrence = {
   source: 'synced' | 'native';
@@ -46,7 +46,7 @@ export async function loadOccurrences(client: SupabaseClient, from: Date, to: Da
     .from('calendar_occurrences')
     .select(occurrenceColumns)
     .lt('starts_at', to.toISOString())
-    // Inclusive so an event of no length at `from` is kept; placement is the exact overlap test.
+    // Inclusive so an event of no length at `from` is kept; dayOccurrences is the exact overlap test.
     .gte('ends_at', from.toISOString())
     .order('starts_at')
     .order('id');
@@ -56,10 +56,7 @@ export async function loadOccurrences(client: SupabaseClient, from: Date, to: Da
 
 // ---- Household Timezone arithmetic ------------------------------------------------
 
-const MINUTE_MS = 60 * 1000;
-const HOUR_MS = 60 * MINUTE_MS;
-// An event of no length still needs something to tap.
-export const MIN_EVENT_MINUTES = 15;
+const HOUR_MS = 60 * 60 * 1000;
 
 // `date` ('YYYY-MM-DD') moved by whole days. A calendar date does not depend on any zone.
 export function addDays(date: string, days: number): string {
@@ -80,8 +77,8 @@ export type WallDay = {
 // An instant as hours on the day's wall clock (0 to 24): what the hour lines and labels show. On a
 // 23 or 25 hour day this is not the share of the day that has passed, so positions never use the
 // latter. Measured from the wall clock's own midnight, so a day that skips midnight (Santiago)
-// starts at hour 1. On a 25 hour day the repeated hour maps to the same place twice; placeTimed
-// keeps such blocks from disappearing or overlapping.
+// starts at hour 1. On a 25 hour day the repeated hour maps to the same place twice; planDay
+// (day-view.ts) keeps such blocks from disappearing or overlapping.
 export function wallHour(ms: number, day: WallDay): number {
   const [year, month, date] = day.date.split('-').map(Number) as [number, number, number];
   const hour = (ms + offsetMs(ms, day.timezone) - Date.UTC(year, month - 1, date)) / HOUR_MS;
@@ -219,14 +216,20 @@ export function describeMonth(date: string): string {
 }
 
 // The wall's routes: "/" is the home screen, "/week", "/day" and "/month" the secondary views, "/meals"
-// the Meals screen and "/routines" the Routines chart. The calendar views and Meals are anchored by
-// "?date=YYYY-MM-DD" (today's page, or for Meals this week, when it is missing or not a date); the
-// Routines chart is always today's. Only the calendar views keep a date; any other screen (the home
-// screen, Meals, the Routines chart) is today's page when it is left.
-export type WallRoute = { view: 'home' } | { view: 'routines' } | { view: CalendarView; date: string | null } | { view: 'meals'; date: string | null };
+// the Meals screen, "/routines" the Routines chart and "/lists" the Lists screen. The calendar views and
+// Meals are anchored by "?date=YYYY-MM-DD" (today's page, or for Meals this week, when it is missing or
+// not a date); the Routines chart and the Lists screen are always today's. Only the calendar views keep a
+// date; any other screen (the home screen, Meals, the Routines chart, Lists) is today's page when it is left.
+export type WallRoute =
+  | { view: 'home' }
+  | { view: 'routines' }
+  | { view: 'lists' }
+  | { view: CalendarView; date: string | null }
+  | { view: 'meals'; date: string | null };
 
 export function parseWallRoute(pathname: string, search: string): WallRoute {
   if (pathname === '/routines') return { view: 'routines' };
+  if (pathname === '/lists') return { view: 'lists' };
   const view = (['day', 'week', 'month', 'meals'] as const).find((candidate) => pathname === `/${candidate}`);
   if (!view) return { view: 'home' };
   const date = new URLSearchParams(search).get('date');
@@ -236,6 +239,12 @@ export function parseWallRoute(pathname: string, search: string): WallRoute {
 
 export function wallPath(view: CalendarView, date: string): string {
   return `/${view}?date=${date}`;
+}
+
+// Whether `view` shows the calendar's events: Home, Day, Week and Month. The people strip is on these and on no other screen, and so
+// is what the Profile filter says (profile-filter.ts): Meals, Routines and Lists have no events for it to hide.
+export function onCalendarScreen(view: WallRoute['view']): boolean {
+  return view === 'home' || view === 'day' || view === 'week' || view === 'month';
 }
 
 // The Meals screen's address: no date for this week, which the screen then follows as the weeks turn
@@ -287,39 +296,10 @@ export function navigationRailDate(view: CalendarView, route: WallRoute, today: 
   return pageStart(view, shownDate(wallDate(route, today), today));
 }
 
-// ---- Placement ----------------------------------------------------------------------
-
-// An all-day event across the band: which columns it covers and which row it sits in.
-export type AllDayBar = {
-  occurrence: Occurrence;
-  startColumn: number;
-  span: number;
-  continuesBefore: boolean;
-  continuesAfter: boolean;
-  row: number;
-};
-
-// A timed event in one day's column. topHour and bottomHour are wall-clock hours (0 to 24);
-// lane and lanes place events that overlap side by side.
-export type TimedBlock = {
-  occurrence: Occurrence;
-  topHour: number;
-  bottomHour: number;
-  lane: number;
-  lanes: number;
-  continuesBefore: boolean;
-  continuesAfter: boolean;
-};
-
-export type Placement = { allDay: AllDayBar[]; columns: TimedBlock[][] };
+// ---- Where an event is on a day ----------------------------------------------------
 
 function startOf(occurrence: Occurrence): number {
   return Date.parse(occurrence.starts_at);
-}
-
-function endOf(occurrence: Occurrence): number {
-  const end = Date.parse(occurrence.ends_at);
-  return occurrence.is_all_day ? end : Math.max(end, startOf(occurrence) + MIN_EVENT_MINUTES * MINUTE_MS);
 }
 
 // Whether the span from `start` to `end` is on `day`: it starts before the day ends and ends after the day
@@ -330,129 +310,7 @@ function spanIsOn(start: number, end: number, day: WallDay): boolean {
   return start < day.endMs && end > day.startMs;
 }
 
-// Whether `occurrence` is on `day` as the time grid draws it, an event of no length being given
-// MIN_EVENT_MINUTES (endOf) so that it has something to tap.
-function occursOn(occurrence: Occurrence, day: WallDay): boolean {
-  return spanIsOn(startOf(occurrence), endOf(occurrence), day);
-}
-
-function placeAllDay(occurrences: Occurrence[], days: WallDay[]): AllDayBar[] {
-  const bars: AllDayBar[] = [];
-  for (const occurrence of occurrences) {
-    const covered = days.flatMap((day, index) => (occursOn(occurrence, day) ? [index] : []));
-    if (covered.length === 0) continue;
-    const first = covered[0]!;
-    const last = covered[covered.length - 1]!;
-    bars.push({
-      occurrence,
-      startColumn: first,
-      span: last - first + 1,
-      continuesBefore: startOf(occurrence) < days[first]!.startMs,
-      continuesAfter: endOf(occurrence) > days[last]!.endMs,
-      row: 0,
-    });
-  }
-  bars.sort((a, b) => a.startColumn - b.startColumn || b.span - a.span || a.occurrence.title.localeCompare(b.occurrence.title));
-  const rows: AllDayBar[][] = [];
-  for (const bar of bars) {
-    let row = rows.findIndex((taken) => taken.every((other) => other.startColumn + other.span <= bar.startColumn || bar.startColumn + bar.span <= other.startColumn));
-    if (row < 0) row = rows.length;
-    (rows[row] ??= []).push(bar);
-    bar.row = row;
-  }
-  return bars;
-}
-
-// Side-by-side lanes for the overlapping events of one day: a run of events that touch
-// shares the day's width equally.
-function assignLanes(blocks: TimedBlock[], startsMs: Map<TimedBlock, [number, number]>): void {
-  const ordered = [...blocks].sort((a, b) => {
-    const [aStart, aEnd] = startsMs.get(a)!;
-    const [bStart, bEnd] = startsMs.get(b)!;
-    return aStart - bStart || bEnd - aEnd;
-  });
-  let cluster: TimedBlock[] = [];
-  let laneEnds: number[] = [];
-  let clusterEnd = -Infinity;
-  const close = () => {
-    for (const block of cluster) block.lanes = laneEnds.length;
-    cluster = [];
-    laneEnds = [];
-  };
-  for (const block of ordered) {
-    const [start, end] = startsMs.get(block)!;
-    if (start >= clusterEnd) {
-      close();
-      clusterEnd = -Infinity;
-    }
-    let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
-    if (lane < 0) lane = laneEnds.length;
-    laneEnds[lane] = end;
-    block.lane = lane;
-    cluster.push(block);
-    clusterEnd = Math.max(clusterEnd, end);
-  }
-  close();
-}
-
-function placeTimed(occurrences: Occurrence[], day: WallDay, minMinutes: number): TimedBlock[] {
-  const blocks: TimedBlock[] = [];
-  const spans = new Map<TimedBlock, [number, number]>();
-  for (const occurrence of occurrences) {
-    if (!occursOn(occurrence, day)) continue;
-    const start = startOf(occurrence);
-    const end = endOf(occurrence);
-    const shownStart = Math.max(start, day.startMs);
-    const shownEnd = Math.min(end, day.endMs);
-    const topHour = wallHour(shownStart, day);
-    // Across the repeated hour of a 25 hour day the wall clock runs backwards: never end above the start.
-    const bottomHour = Math.max(wallHour(shownEnd, day), topHour);
-    const block: TimedBlock = {
-      occurrence,
-      topHour,
-      bottomHour,
-      lane: 0,
-      lanes: 1,
-      continuesBefore: start < day.startMs,
-      continuesAfter: end > day.endMs,
-    };
-    blocks.push(block);
-    // Lanes are given in the grid's own hours, for the room a block takes on screen (at least
-    // minMinutes), so a short event drawn tall enough to tap never sits on top of the one that
-    // follows it, and two events the wall clock draws on the same spot never share a lane.
-    spans.set(block, [topHour, Math.max(bottomHour, topHour + minMinutes / 60)]);
-  }
-  assignLanes(blocks, spans);
-  return blocks;
-}
-
-// Puts every occurrence where it belongs on the five columns: all-day events in the band
-// (a multi-day one spanning its columns), timed events in each day they touch. minMinutes is
-// how long an event must be to fill a 48 px target on the current grid: events closer together
-// than that go side by side rather than under one another.
-export function place(occurrences: Occurrence[], days: WallDay[], minMinutes = 0): Placement {
-  const allDay = occurrences.filter((occurrence) => occurrence.is_all_day);
-  const timed = occurrences.filter((occurrence) => !occurrence.is_all_day);
-  return { allDay: placeAllDay(allDay, days), columns: days.map((day) => placeTimed(timed, day, minMinutes)) };
-}
-
-export type HourRange = { startHour: number; endHour: number };
-
-// The hours the grid shows: 6 am to 10 pm, widened only when an event (or the current
-// time) falls outside, so nothing the wall should show is ever off the grid.
-export function visibleHours(columnBlocks: TimedBlock[][], nowAt: number | null): HourRange {
-  let startHour = 6;
-  let endHour = 22;
-  const consider = (top: number, bottom: number) => {
-    startHour = Math.min(startHour, Math.floor(top));
-    endHour = Math.max(endHour, Math.ceil(bottom));
-  };
-  for (const column of columnBlocks) for (const block of column) consider(block.topHour, block.bottomHour);
-  if (nowAt !== null) consider(nowAt, nowAt);
-  return { startHour: Math.max(0, startHour), endHour: Math.min(24, endHour) };
-}
-
-// Where the current time falls in today's column, as a wall-clock hour; null if `now` is not
+// Where the current time falls in `day`'s hour grid, as a wall-clock hour; null if `now` is not
 // within the day.
 export function nowHour(day: WallDay, now: Date): number | null {
   const at = now.getTime();
@@ -461,10 +319,10 @@ export function nowHour(day: WallDay, now: Date): number | null {
 
 // ---- Month cells --------------------------------------------------------------------
 
-// The occurrences on `day` in the order a month cell lists them: all-day first, then by start, then by
-// title. A multi-day event is on every day it covers, by the overlap test place uses but on what the event
-// really lasts: the padding that gives a short event something to tap in the time grid must not carry one
-// in a day's last quarter hour onto the next day.
+// The occurrences on `day` in the order a month cell, a schedule column and the Day view list them: all-day first,
+// then by start, then by title. A multi-day event is on every day it covers, by what the event really lasts
+// (spanIsOn): nothing is added to a short event to give it something to tap, so none is carried from a day's last
+// minutes onto the next day.
 export function dayOccurrences(occurrences: Occurrence[], day: WallDay): Occurrence[] {
   return occurrences
     .filter((occurrence) => spanIsOn(startOf(occurrence), Date.parse(occurrence.ends_at), day))

@@ -6,8 +6,12 @@
 export type TemperatureUnit = 'fahrenheit' | 'celsius';
 
 // One day of the forecast. `date` is a Household date, because the request names the Household
-// Timezone; `code` is a WMO weather code.
-export type ForecastDay = { date: string; high: number; low: number; code: number };
+// Timezone; `code` is a WMO weather code. `sunrise` and `sunset` are instants (epoch milliseconds):
+// see instantOf for how Open-Meteo's wall-clock text becomes one.
+export type ForecastDay = { date: string; high: number; low: number; code: number; sunrise: number; sunset: number };
+
+// The part of a day the Wall's mode goes on: its date and its sun.
+export type SunDay = Pick<ForecastDay, 'date' | 'sunrise' | 'sunset'>;
 
 // What the Wall shows: the reading now and each day's high and low, in whole degrees of the unit
 // asked for. `current` is null once the reading is too old to call current (see forecastToShow).
@@ -36,13 +40,15 @@ export type WeatherIcon = 'sun' | 'moon' | 'cloud-sun' | 'cloud-moon' | 'cloud' 
 // ---- Requests -----------------------------------------------------------------------
 
 // The reading now and a week of days, in the unit asked for. The Household Timezone makes the
-// daily dates Household dates, so a day lines up with the wall's own day columns.
+// daily dates Household dates, so a day lines up with the wall's own day columns. Sunrise and sunset
+// come as wall-clock text, which parseForecast reads with the offset the answer gives; the request
+// leaves timeformat alone, as unixtime would turn the days' dates into numbers too.
 export function forecastUrl(latitude: number, longitude: number, unit: TemperatureUnit, timezone: string): string {
   const query = new URLSearchParams({
     latitude: String(latitude),
     longitude: String(longitude),
     current: 'temperature_2m,weather_code,is_day',
-    daily: 'weather_code,temperature_2m_max,temperature_2m_min',
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset',
     temperature_unit: unit,
     timezone,
     forecast_days: '7',
@@ -90,17 +96,31 @@ function dateOf(value: unknown): string {
   return value;
 }
 
-// Open-Meteo's forecast JSON as a Forecast, temperatures rounded to whole degrees.
+// A time as Open-Meteo sends it ('2026-10-02T07:05', nothing after the minute), as the instant it is. It is wall-clock
+// time at ONE offset for the whole answer, `utc_offset_seconds`, even when the days cross a daylight saving change: for
+// Austin on 2025-10-31 to 2025-11-04 the offset is -18000 for all five days, so "2025-11-02T07:46" is 12:46 UTC, which is
+// 6:46 AM on the clock of a Household that went back to standard time that morning. So the text is read as UTC, with a zone
+// named so that nothing guesses the machine's, and the offset is taken off. Not the Household Timezone's rules for the day.
+function instantOf(value: unknown, offsetMs: number): number {
+  const utc = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? Date.parse(`${value}:00Z`) : Number.NaN;
+  if (!Number.isFinite(utc)) throw new Error('Open-Meteo sent something that is not a wall-clock time');
+  return utc - offsetMs;
+}
+
+// Open-Meteo's forecast JSON as a Forecast, temperatures rounded to whole degrees and sunrise and sunset as instants.
 export function parseForecast(json: unknown): Forecast {
   const body = objectOf(json);
   const current = objectOf(body['current']);
   const daily = objectOf(body['daily']);
+  const offsetMs = numberOf(body['utc_offset_seconds']) * 1000;
   const dates = listOf(daily['time']);
   const codes = listOf(daily['weather_code']);
   const highs = listOf(daily['temperature_2m_max']);
   const lows = listOf(daily['temperature_2m_min']);
+  const sunrises = listOf(daily['sunrise']);
+  const sunsets = listOf(daily['sunset']);
   // One entry per day in every list: a short one would pair a date with another day's number.
-  if (dates.length === 0 || [codes, highs, lows].some((list) => list.length !== dates.length)) {
+  if (dates.length === 0 || [codes, highs, lows, sunrises, sunsets].some((list) => list.length !== dates.length)) {
     throw new Error('Open-Meteo sent daily lists that do not line up');
   }
   return {
@@ -114,6 +134,8 @@ export function parseForecast(json: unknown): Forecast {
       high: Math.round(numberOf(highs[index])),
       low: Math.round(numberOf(lows[index])),
       code: numberOf(codes[index]),
+      sunrise: instantOf(sunrises[index], offsetMs),
+      sunset: instantOf(sunsets[index], offsetMs),
     })),
   };
 }
