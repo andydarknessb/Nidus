@@ -252,8 +252,7 @@ function HomeShell({ owner }: { owner: boolean }) {
   const pressed = useSyncExternalStore(filter.subscribe, filter.pressed);
   const filterView = useMemo(() => ({ pressed, clear: filter.clear, touch: filter.touch }), [pressed, filter]);
   // The Household's Profiles, read here (and again when they change) for the people strip and for the colour of every event, and handed
-  // to every calendar view. They are read by two other readers as well: the Routines reader below, with the Routines every 30 seconds,
-  // and the Add event sheet when it opens.
+  // to every calendar view, the Routines reader below and the Add event sheet: the Wall has no other reader of them.
   const profiles = useProfiles(filter);
   useEffect(() => () => filter.dispose(), [filter]);
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
@@ -296,7 +295,7 @@ function HomeShell({ owner }: { owner: boolean }) {
   const toggleMode = useWallMode({ timezone, appearance: view.household?.appearance, sun });
   // Today's Routines, read once for as long as the shell lives and handed to Up next on Home and to
   // the Routines chart, so going from one to the other reads nothing again and a tick in flight is not dropped.
-  const routines = useRoutinesToday(timezone);
+  const routines = useRoutinesToday(timezone, profiles);
   // How many days and Up next tiles Home holds at this screen's size.
   const home = useHomeLayout();
 
@@ -367,6 +366,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         {adding && timezone && today && (
           <NativeEventSheet
             timezone={timezone}
+            profiles={profiles ?? []}
             // The day the wall is on: today when the page shown holds it, else that page's first day.
             date={wallDate(route, today)}
             onClose={() => setAdding(false)}

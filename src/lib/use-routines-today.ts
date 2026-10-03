@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { useConnection, useRefetchOn } from './change-feed';
 import { watchMinute } from './household-day';
-import { loadProfiles, type Profile } from './profiles';
+import type { Profile } from './profiles';
 import {
   ROUTINE_TABLES,
   afterTick,
@@ -36,7 +36,7 @@ import { useHouseholdDay } from './wall-hooks';
 // backstop for a change that was missed while the connection was down.
 const REFRESH_MS = 30_000;
 
-type Today = { date: string; routines: Routine[]; profiles: Profile[]; done: Set<string> };
+type Today = { date: string; routines: Routine[]; done: Set<string> };
 
 // Today's Routines as the Wall hands them to the screens that show them: Up next on Home and the Routines chart.
 export type RoutinesToday = {
@@ -83,7 +83,7 @@ function usePartOfDay(timezone: string): TimeOfDay {
 // Home to the chart and back reads nothing again, and a tap still in flight keeps the read that follows it.
 // "Checked" is derived from the completions of today's Household date: nothing resets at midnight,
 // yesterday's just stop matching.
-export function useRoutinesToday(timezone: string | null): RoutinesToday {
+export function useRoutinesToday(timezone: string | null, profiles: Profile[] | null): RoutinesToday {
   // Nothing is read until the Household Timezone is: it names the day. ('UTC' only keeps the hooks in
   // order until then; nothing is read from it.)
   const day = useHouseholdDay(timezone ?? 'UTC');
@@ -106,11 +106,8 @@ export function useRoutinesToday(timezone: string | null): RoutinesToday {
     const date = day.date;
     const next = createSyncedReader(
       async () => {
-        // ponytail: the Profiles are read again here with every Routines read, though the shell has them (useProfiles): two more reads a
-        // minute, and one for each change heard, which is nothing for a table of a handful of rows. The way out: hand this reader the
-        // shell's Profiles and read only the Routines and the ticks.
-        const [profiles, routines, completed] = await Promise.all([loadProfiles(supabase), loadRoutines(supabase), loadCompletions(supabase, date)]);
-        return { date, profiles, routines, done: new Set(completed) };
+        const [routines, completed] = await Promise.all([loadRoutines(supabase), loadCompletions(supabase, date)]);
+        return { date, routines, done: new Set(completed) };
       },
       (today) => {
         // A read that finds what the Wall already shows keeps the object it has: a new one is a new render of the whole shell.
@@ -133,8 +130,9 @@ export function useRoutinesToday(timezone: string | null): RoutinesToday {
   // Loaded for another day (midnight just passed): everything reads unchecked until the new day arrives.
   const settled = loaded !== null && loaded.date === day.date;
   const done = loaded && settled ? loaded.done : new Set<string>();
-  const groups = loaded ? groupByProfile(loaded.profiles, todaysRoutines(loaded.routines, day.weekday)) : [];
-  const columns = loaded ? columnsOf(loaded.profiles, loaded.routines, day.weekday) : [];
+  // Empty until both the Routines and the Profiles are read, as the people strip is.
+  const groups = loaded && profiles ? groupByProfile(profiles, todaysRoutines(loaded.routines, day.weekday)) : [];
+  const columns = loaded && profiles ? columnsOf(profiles, loaded.routines, day.weekday) : [];
 
   async function toggle(routine: Routine): Promise<boolean> {
     const date = day.date;

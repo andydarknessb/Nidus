@@ -23,7 +23,7 @@ import {
   type EventForm,
 } from '../lib/native-events';
 import { ProfileFilterContext } from '../lib/profile-filter';
-import { loadProfiles, type Profile } from '../lib/profiles';
+import type { Profile } from '../lib/profiles';
 import { householdDay } from '../lib/routines';
 import { useStatusLine } from '../lib/status-line';
 import { supabase } from '../lib/supabase';
@@ -139,12 +139,15 @@ function Stepper({ id, words, noun, time, earlierStuck, laterStuck, onStep }: { 
 // in the body, outside what is made inert).
 function EventSheetForm({
   timezone,
+  profiles,
   date,
   occurrence,
   onSaved,
   onClose,
 }: {
   timezone: string;
+  // The Household's Profiles, from whichever screen opened the sheet: "Who is it for?" offers them. None yet is only Everyone.
+  profiles: readonly Profile[];
   // The Household date a new event starts on.
   date: string;
   // Present when editing.
@@ -172,7 +175,6 @@ function EventSheetForm({
   // "Another day" is a choice of its own, not what the date happens to be: a date picked in its field that is also today
   // or one of the next two must not take the field away from under the finger.
   const [another, setAnother] = useState(() => !days.some((day) => day.date === opened.date));
-  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -214,17 +216,6 @@ function EventSheetForm({
   useEffect(() => {
     if (!dialog.current?.contains(document.activeElement)) dialog.current?.focus();
   }, [confirming, busy]);
-
-  useEffect(() => {
-    let live = true;
-    loadProfiles(supabase)
-      .then((found) => live && setProfiles(found))
-      // The event can still be saved for the whole Household.
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, []);
 
   async function run(work: () => Promise<void>, said: string) {
     setBusy(true);

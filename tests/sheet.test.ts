@@ -6,6 +6,7 @@ import type { NativeEventSheet as NativeEventSheetType } from '../src/components
 import { BODY_CLEARANCE } from '../src/components/OverflowButton';
 import { Sheet, SheetBody } from '../src/components/Sheet';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
+import type { Profile } from '../src/lib/profiles';
 import { pillPeople } from '../src/lib/schedule';
 import type { OverflowControl } from '../src/lib/use-overflow';
 import { elementAt, scrollers } from './support/markup';
@@ -148,7 +149,17 @@ describe('the Add event sheet, as it is first drawn', () => {
     vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
     ({ NativeEventSheet } = await import('../src/components/NativeEventSheet'));
   });
-  const draw = () => renderToStaticMarkup(createElement(NativeEventSheet, { timezone: 'America/Chicago', date: '2026-10-02', onSaved: () => undefined, onClose: () => undefined }));
+  const draw = (profiles: Profile[] = []) =>
+    renderToStaticMarkup(createElement(NativeEventSheet, { timezone: 'America/Chicago', profiles, date: '2026-10-02', onSaved: () => undefined, onClose: () => undefined }));
+
+  it('offers a chip for each Profile it is handed, on the first draw, and only Everyone when it is handed none', () => {
+    const profile = (id: string, name: string, sort: number): Profile => ({ id, name, color: '#93c5fd', avatar_url: null, sort_order: sort });
+    const html = draw([profile('p-cory', 'Cory', 0), profile('p-sam', 'Sam', 1)]);
+    expect(html).toContain('Cory');
+    expect(html).toContain('Sam');
+    expect(draw()).not.toContain('Cory');
+    expect(draw()).toContain('Everyone');
+  });
 
   it('keeps its title row above the box that scrolls and its footer below it, with its fields, whoever they are for, between', () => {
     const html = draw();
