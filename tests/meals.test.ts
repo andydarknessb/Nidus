@@ -196,6 +196,24 @@ describe('meals', () => {
     expect(await stored(account)).toHaveLength(2);
   });
 
+  it('refuses an unknown or null slot even when the title is blank, never a quiet no-op', async () => {
+    const account = await arrange();
+    const phone = await asHouseholdAccount(account);
+    const device = await arrangeDevice(account);
+    await setMeal(phone, DAY, 'dinner', 'Tacos');
+
+    for (const client of [phone, device.client]) {
+      for (const slot of ['brunch', null]) {
+        for (const title of ['', '   ', null]) {
+          const { error } = await client.rpc('set_meal', { p_meal_date: DAY, p_slot: slot, p_title: title });
+          expect(error).toMatchObject({ code: '23514' });
+        }
+      }
+    }
+
+    expect(await stored(account)).toEqual([{ meal_date: DAY, slot: 'dinner', title: 'Tacos' }]);
+  });
+
   it('lets a principal retitle a Meal directly but never move it', async () => {
     const account = await arrange();
     const other = await arrange();
