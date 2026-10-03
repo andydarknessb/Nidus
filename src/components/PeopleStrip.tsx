@@ -15,8 +15,8 @@ import { Button } from './ui/button';
 // to that person and the whole Household's events; Everyone clears it. A pill that is pressed shows a tick in its disc.
 //
 // The pills share the room equally. When a pill is too narrow for the count and the pips it shrinks to its disc and
-// name (a container query on the pill itself, which measures what is inside its padding: 10 rem there is a pill of about
-// 182 px, the least the pips and a short name's count ("All done" included) need, so five people still show their progress), and when even
+// name (a container query on the pill itself, which measures what is inside its padding: 9.6 rem there is a pill of about
+// 176 px, the least the pips and a short name's count need, "All done" too, so five people still show their progress), and when even
 // those, each with its whole name, cannot share the room the row scrolls sideways (a name is cut only at the widest a
 // pill goes, never to fit the row), with a button, "More people", that says so and moves it on; at the
 // end of the row it reads "Back" and returns to the first people (OverflowButton).
@@ -32,13 +32,13 @@ function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
         <span className="flex h-5 flex-wrap items-baseline justify-between gap-x-2 overflow-hidden">
           <span className="min-w-0 truncate text-base leading-5 font-semibold">{profile.name}</span>
           {words && (
-            <span aria-hidden className={cn('hidden shrink-0 text-sm leading-[18px] @min-[10rem]:flex', words === 'All done' ? 'font-semibold' : 'text-muted-foreground')}>
+            <span aria-hidden className={cn('hidden shrink-0 text-sm leading-[18px] @min-[9.6rem]:flex', words === 'All done' ? 'font-semibold' : 'text-muted-foreground')}>
               {words}
             </span>
           )}
         </span>
         {total > 0 && total <= MAX_PIPS && (
-          <span className="hidden @min-[10rem]:block">
+          <span className="hidden @min-[9.6rem]:block">
             <Pips done={done} total={total} label={person.label} color={profile.color} />
           </span>
         )}
