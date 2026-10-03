@@ -103,6 +103,24 @@ describe('the people strip', () => {
       expect(html).toContain('3 of 5');
       expect(html).toContain('role="progressbar"');
     });
+
+    it('says the progress once to a screen reader: by the pips\' label up to eight Routines', () => {
+      expect(html.match(/routines done/g)).toHaveLength(1);
+    });
+
+    describe('past eight Routines, where the pips give way to the count', () => {
+      const nine = strip([AVA], [group(AVA, 9)], ticked(AVA, 3));
+
+      it('says the progress in words a screen reader reads, since the count is hidden from it', () => {
+        expect(nine).toContain('3 of 9 routines done');
+        expect(nine).toContain('sr-only');
+      });
+
+      it('is still no button and no pips', () => {
+        expect(nine).not.toContain('<button');
+        expect(nine).not.toContain('role="progressbar"');
+      });
+    });
   });
 });
 

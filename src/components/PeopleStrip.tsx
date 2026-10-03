@@ -76,6 +76,8 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
           alone ? (
             <div key={person.profile.id} style={pillStyle(person.profile)} className={cn(PILL, 'flex items-center gap-2.5 py-0 pr-3.5 pl-2')}>
               <PersonPill person={person} on={false} />
+              {/* Past the pips the progress is the hidden count alone, and this pill has no button label to carry it. */}
+              {person.total > MAX_PIPS && <span className="sr-only">{`${person.done} of ${person.total} routines done`}</span>}
             </div>
           ) : (
             <Button
