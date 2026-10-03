@@ -78,6 +78,15 @@ describe('the people strip', () => {
     expect(pillOf(html, 'Ava')).toContain('--person-300:#FCD34D');
   });
 
+  it('lets a pill keep its name\'s width, so a long name scrolls the row instead of being cut to its first letters', () => {
+    const pill = pillOf(strip(FAMILY), 'Ava');
+    expect(pill).toContain('shrink-0');
+    expect(pill).toContain('basis-auto');
+    expect(pill).not.toContain('basis-0');
+    // A container query on the pill would make its width ignore what is in it.
+    expect(pill).not.toContain('@container');
+  });
+
   describe('with one Profile', () => {
     const html = strip([AVA], [group(AVA, 5)], ticked(AVA, 3));
 

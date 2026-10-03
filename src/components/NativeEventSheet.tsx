@@ -292,7 +292,7 @@ function EventSheetForm({
             the foot of the box says so. */}
         <SheetBody title={title} control={body}>
           <div className="grid grid-cols-1 gap-[18px] min-[960px]:grid-cols-2 min-[960px]:gap-x-6">
-            <div className="@container flex min-w-0 flex-col justify-between gap-[18px]">
+            <div className="@container flex min-w-0 flex-col justify-start gap-[18px]">
               <label className="flex flex-col gap-2">
                 <span className={caption}>What is it?</span>
                 <input className="h-15 px-4 text-[19px]" value={form.title} onChange={(e) => set({ title: e.target.value })} maxLength={200} required />
