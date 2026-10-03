@@ -20,9 +20,7 @@ function occurrence(id: string, profileIds: string[]): Occurrence {
     ends_at: '2026-10-05T18:00:00Z',
     is_all_day: false,
     profile_id: profileIds[0] ?? null,
-    color: null,
     profile_ids: profileIds,
-    colors: [],
   };
 }
 

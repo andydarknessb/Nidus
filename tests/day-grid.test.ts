@@ -48,9 +48,7 @@ function event(title: string, date: string, from: string, to: string, ids: strin
     is_all_day: false,
     profile_id: ids[0] ?? null,
     // The Mirrored Calendar's colours, which a block never draws.
-    color: '#ff0000',
     profile_ids: ids,
-    colors: ['#ff0000'],
     ...more,
   };
 }

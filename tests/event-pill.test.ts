@@ -40,9 +40,7 @@ function event(title: string, profileIds: string[], more: Partial<Occurrence> = 
     is_all_day: false,
     profile_id: profileIds[0] ?? null,
     // The Mirrored Calendar's colours, which a pill never draws.
-    color: '#ff0000',
     profile_ids: profileIds,
-    colors: ['#ff0000', '#00ff00'],
     ...more,
   };
 }

@@ -5,7 +5,7 @@ import { householdDay } from './routines';
 export { dayStartMs };
 
 // Occurrences on the wall (CONTEXT.md: Synced Event, Native Event). The `calendar_occurrences`
-// view unions every source with the Profile and colour it inherits; everything below is what the
+// view unions every source with the Profile it is attributed to; everything below is what the
 // wall's calendar does with them: the five days of the home screen, the week, day and month views
 // and the routes between them, which events are on a day and where the Day view's grid puts them
 // (day-view.ts), and the words that say when. All date logic uses the Household Timezone, never the
@@ -28,17 +28,12 @@ export type Occurrence = {
   is_all_day: boolean;
   // The first of profile_ids, which is all a Synced Event has; null for the whole Household.
   profile_id: string | null;
-  // The calendar's colour, else its Profile's; null for a whole-Household calendar with neither.
-  // For a Native Event, its first Profile's colour.
-  color: string | null;
-  // Every Profile the occurrence is attributed to, in the Profiles' own order, and their colours;
-  // empty for the whole Household.
+  // Every Profile the occurrence is attributed to, in the Profiles' own order; empty for the whole Household.
   profile_ids: string[];
-  colors: string[];
 };
 
 export const occurrenceColumns =
-  'source, id, calendar_id, calendar_name, title, description, location, starts_at, ends_at, is_all_day, profile_id, color, profile_ids, colors';
+  'source, id, calendar_id, calendar_name, title, description, location, starts_at, ends_at, is_all_day, profile_id, profile_ids';
 
 // Household Account or Device. Everything that overlaps [from, to), in start order.
 export async function loadOccurrences(client: SupabaseClient, from: Date, to: Date): Promise<Occurrence[]> {

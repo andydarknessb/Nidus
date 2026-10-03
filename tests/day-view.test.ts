@@ -38,9 +38,7 @@ function make(title: string, startsAt: number, endsAt: number, more: Partial<Occ
     ends_at: new Date(endsAt).toISOString(),
     is_all_day: false,
     profile_id: null,
-    color: null,
     profile_ids: [],
-    colors: [],
     ...more,
   };
 }

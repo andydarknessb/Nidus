@@ -40,9 +40,7 @@ function event(title: string, profileIds: string[], more: Partial<Occurrence> = 
     ends_at: '2026-10-01T15:00:00Z',
     is_all_day: false,
     profile_id: profileIds[0] ?? null,
-    color: '#ff0000',
     profile_ids: profileIds,
-    colors: ['#ff0000', '#00ff00'],
     ...more,
   };
 }
