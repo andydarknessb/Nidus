@@ -211,6 +211,14 @@ describe('meals', () => {
       }
     }
 
+    // A session with no Household is still refused first (42501), whatever the slot.
+    const unpaired = await asTablet();
+    tablets.push(unpaired);
+    for (const slot of ['brunch', null]) {
+      const { error } = await unpaired.client.rpc('set_meal', { p_meal_date: DAY, p_slot: slot, p_title: '' });
+      expect(error).toMatchObject({ code: '42501' });
+    }
+
     expect(await stored(account)).toEqual([{ meal_date: DAY, slot: 'dinner', title: 'Tacos' }]);
   });
 
