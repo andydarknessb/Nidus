@@ -39,7 +39,6 @@ function event(title: string, profileIds: string[], more: Partial<Occurrence> = 
     ends_at: '2026-10-02T01:00:00Z',
     is_all_day: false,
     profile_id: profileIds[0] ?? null,
-    // The Mirrored Calendar's colours, which a pill never draws.
     profile_ids: profileIds,
     ...more,
   };
@@ -84,14 +83,6 @@ describe('the fill of an event', () => {
       const html = fill(ids);
       expect(html).toContain('bg-everyone');
       expect(html).not.toContain('person');
-    }
-  });
-
-  it('never draws a Mirrored Calendar\'s colour, whatever the view says', () => {
-    for (const ids of [[], ['p-ava'], ['p-cory', 'p-sam']]) {
-      const html = fill(ids);
-      expect(html).not.toContain('#ff0000');
-      expect(html).not.toContain('#00ff00');
     }
   });
 

@@ -189,7 +189,7 @@ describe('calendar_occurrences attribution of Native Events', () => {
     expect(occurrence).toMatchObject<Partial<Occurrence>>({ source: 'native', profile_id: null, profile_ids: [] });
   });
 
-  it('attributes an event with one Profile to it', async () => {
+  it('attributes an event to its one Profile', async () => {
     const account = await arrange();
     const [ada] = await profiles(account, 'Ada');
     const device = await arrangeDevice(account);
