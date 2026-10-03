@@ -1,5 +1,6 @@
 import { cn } from 'cn';
 import { Star } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import { personStyle } from '../lib/look';
 import type { ProfileFilter } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
@@ -17,7 +18,8 @@ import { Button } from './ui/button';
 // The pills share the room equally. When a pill is too narrow for the count and the pips it shrinks to its disc and
 // name (a container query on the pill itself, which measures what is inside its padding: 9 rem there is a pill of about
 // 166 px, the least the pips and a short name's count need, so five people still show their progress), and when even
-// those cannot share the room the row scrolls sideways, with a button, "More people", that says so and moves it on; at the
+// those, each with its whole name, cannot share the room the row scrolls sideways (a name is cut only at the widest a
+// pill goes, never to fit the row), with a button, "More people", that says so and moves it on; at the
 // end of the row it reads "Back" and returns to the first people (OverflowButton).
 
 // The disc, the name and, in a pill wide enough, the count and the pips. The count is what gives way first when the name
@@ -49,6 +51,11 @@ function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
 
 const PILL = 'person @container h-14 min-w-32 max-w-76 flex-1 basis-0 rounded-[18px] bg-person-soft text-base text-foreground';
 
+// The least a pill is: the disc, its gaps and padding (4.5 rem) and the name's letters (one ch each, a little over what a
+// name needs), never under the 8 rem of min-w-32 and never over the 19 rem of max-w-76, where the name is cut. A pill
+// is a container, whose width ignores what is inside it, so the name's width has to be given to it.
+const pillStyle = (profile: Profile): CSSProperties => ({ ...personStyle(profile.color), minWidth: `max(8rem, min(19rem, calc(${profile.name.length}ch + 4.5rem)))` });
+
 // The row of pills and, past it, "More people". `people` has at least one.
 function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: ProfileFilter; pressed: readonly string[] }) {
   // With one Profile there is nobody to pick between: no Everyone, and its pill shows progress and does not filter.
@@ -69,7 +76,7 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
       <div ref={more.scroller} className="flex min-w-0 flex-1 gap-2 overflow-x-auto [scrollbar-width:none]">
         {people.map((person) =>
           alone ? (
-            <div key={person.profile.id} style={personStyle(person.profile.color)} className={cn(PILL, 'flex items-center gap-2.5 py-0 pr-3.5 pl-2')}>
+            <div key={person.profile.id} style={pillStyle(person.profile)} className={cn(PILL, 'flex items-center gap-2.5 py-0 pr-3.5 pl-2')}>
               <PersonPill person={person} on={false} />
             </div>
           ) : (
@@ -79,7 +86,7 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
               aria-pressed={pressed.includes(person.profile.id)}
               aria-label={person.label}
               onClick={() => filter.toggle(person.profile.id)}
-              style={personStyle(person.profile.color)}
+              style={pillStyle(person.profile)}
               className={cn(PILL, 'justify-start gap-2.5 px-0 pr-3.5 pl-2 text-left selected:bg-person-soft focus-visible:-outline-offset-2')}
             >
               <PersonPill person={person} on={pressed.includes(person.profile.id)} />

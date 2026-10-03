@@ -78,6 +78,14 @@ describe('the people strip', () => {
     expect(pillOf(html, 'Ava')).toContain('--person-300:#FCD34D');
   });
 
+  it('gives a pill the width of its name as its least, so a long name scrolls the row instead of being cut to its first letters', () => {
+    const html = strip([CORY, profile('p-bart', 'Bartholomew', 1, '#f9a8d4'), profile('p-x', 'Maximilian-Alexander-Wellington', 2, '#fcd34d')]);
+    expect(pillOf(html, 'Cory')).toContain('min-width:max(8rem, min(19rem, calc(4ch + 4.5rem)))');
+    expect(pillOf(html, 'Bartholomew')).toContain('calc(11ch + 4.5rem)');
+    // The widest a pill goes is where a name is cut, however long.
+    expect(pillOf(html, 'Maximilian')).toContain('min(19rem, calc(31ch + 4.5rem))');
+  });
+
   describe('with one Profile', () => {
     const html = strip([AVA], [group(AVA, 5)], ticked(AVA, 3));
 
