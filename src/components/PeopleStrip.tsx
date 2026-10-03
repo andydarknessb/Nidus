@@ -1,5 +1,6 @@
 import { cn } from 'cn';
 import { Star } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import { personStyle } from '../lib/look';
 import type { ProfileFilter } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
@@ -14,14 +15,15 @@ import { Button } from './ui/button';
 // for each Profile on its soft colour: the disc, the name, "3 of 5" and the pips. Pressing a pill filters the calendar
 // to that person and the whole Household's events; Everyone clears it. A pill that is pressed shows a tick in its disc.
 //
-// A pill is as wide as its name, count and pips need and never narrower than that, and the pills grow to share any room
-// left over equally. When they do not all fit the row scrolls sideways, with a button, "More people", that says so and
-// moves it on; at the end of the row it reads "Back" and returns to the first people (OverflowButton). A name is cut only
-// at a pill's widest (max-w-76), never to make the pills fit. No container query sits on the pill: it would make the
-// pill's width ignore what is inside it, and every pill would be its minimum.
+// The pills share the room equally. When a pill is too narrow for the count and the pips it shrinks to its disc and
+// name (a container query on the pill itself, which measures what is inside its padding: 9 rem there is a pill of about
+// 166 px, the least the pips and a short name's count need, so five people still show their progress), and when even
+// those, each with its whole name, cannot share the room the row scrolls sideways (a name is cut only at the widest a
+// pill goes, never to fit the row), with a button, "More people", that says so and moves it on; at the
+// end of the row it reads "Back" and returns to the first people (OverflowButton).
 
-// The disc, the name and the count and the pips. At a pill's widest a long name keeps its width and the count drops to a
-// line of its own that is not shown, so the name is never cut short for it.
+// The disc, the name and, in a pill wide enough, the count and the pips. The count is what gives way first when the name
+// is long: it drops to a line of its own that is not shown, so the name is never cut short for it.
 function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
   const { profile, words, done, total } = person;
   return (
@@ -31,14 +33,14 @@ function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
         <span className="flex h-5 flex-wrap items-baseline justify-between gap-x-2 overflow-hidden">
           <span className="min-w-0 truncate text-base leading-5 font-semibold">{profile.name}</span>
           {words && (
-            <span aria-hidden className={cn('flex shrink-0 items-center gap-1 text-sm leading-[18px]', words === 'All done' ? 'font-semibold' : 'text-muted-foreground')}>
+            <span aria-hidden className={cn('hidden shrink-0 items-center gap-1 text-sm leading-[18px] @min-[9rem]:flex', words === 'All done' ? 'font-semibold' : 'text-muted-foreground')}>
               {words === 'All done' && <Star className="size-3.5" />}
               {words}
             </span>
           )}
         </span>
         {total > 0 && total <= MAX_PIPS && (
-          <span>
+          <span className="hidden @min-[9rem]:block">
             <Pips done={done} total={total} label={person.label} color={profile.color} />
           </span>
         )}
@@ -47,7 +49,12 @@ function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
   );
 }
 
-const PILL = 'person h-14 min-w-32 max-w-76 shrink-0 grow basis-auto rounded-[18px] bg-person-soft text-base text-foreground';
+const PILL = 'person @container h-14 min-w-32 max-w-76 flex-1 basis-0 rounded-[18px] bg-person-soft text-base text-foreground';
+
+// The least a pill is: the disc, its gaps and padding (4.5 rem) and the name's letters (one ch each, a little over what a
+// name needs), never under the 8 rem of min-w-32 and never over the 19 rem of max-w-76, where the name is cut. A pill
+// is a container, whose width ignores what is inside it, so the name's width has to be given to it.
+const pillStyle = (profile: Profile): CSSProperties => ({ ...personStyle(profile.color), minWidth: `max(8rem, min(19rem, calc(${profile.name.length}ch + 4.5rem)))` });
 
 // The row of pills and, past it, "More people". `people` has at least one.
 function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: ProfileFilter; pressed: readonly string[] }) {
@@ -69,7 +76,7 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
       <div ref={more.scroller} className="flex min-w-0 flex-1 gap-2 overflow-x-auto [scrollbar-width:none]">
         {people.map((person) =>
           alone ? (
-            <div key={person.profile.id} style={personStyle(person.profile.color)} className={cn(PILL, 'flex items-center gap-2.5 py-0 pr-3.5 pl-2')}>
+            <div key={person.profile.id} style={pillStyle(person.profile)} className={cn(PILL, 'flex items-center gap-2.5 py-0 pr-3.5 pl-2')}>
               <PersonPill person={person} on={false} />
             </div>
           ) : (
@@ -79,7 +86,7 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
               aria-pressed={pressed.includes(person.profile.id)}
               aria-label={person.label}
               onClick={() => filter.toggle(person.profile.id)}
-              style={personStyle(person.profile.color)}
+              style={pillStyle(person.profile)}
               className={cn(PILL, 'justify-start gap-2.5 px-0 pr-3.5 pl-2 text-left selected:bg-person-soft focus-visible:-outline-offset-2')}
             >
               <PersonPill person={person} on={pressed.includes(person.profile.id)} />
