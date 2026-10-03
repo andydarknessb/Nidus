@@ -230,7 +230,7 @@ export function BeforeHousehold({ label, failed, words }: { label: string; faile
 const VIEW_TITLES: Record<WallRoute['view'], string> = { home: 'Home', day: 'Day', week: 'Week', month: 'Month', routines: 'Routines', meals: 'Meals', lists: 'Lists' };
 
 // The landscape wall: a navigation rail down the left, then the header over the screen. The home
-// screen is the schedule of five days on the left and, on its right rail, Up next above the pinned
+// screen is the schedule of five days (four on a narrow screen) on the left and, on its right rail, Up next above the pinned
 // Shared List; every list is on the Lists screen, opened from the navigation rail. The header carries
 // the next meal, on every screen but Meals.
 function HomeShell({ owner }: { owner: boolean }) {

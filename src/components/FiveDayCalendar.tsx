@@ -28,7 +28,7 @@ import { Schedule } from './Schedule';
 import { Button } from './ui/button';
 import { DayWeather } from './Weather';
 
-// The wall's calendar views. Home (today and the next four days) and Week (Sunday to Saturday) draw the schedule: a
+// The wall's calendar views. Home (today and the next four days, or three) and Week (Sunday to Saturday) draw the schedule: a
 // column for each day with its events stacked as pills (Schedule.tsx). The Day view keeps the hour grid, at 3 rem an hour:
 // one row above it for the all-day events and what ended before its hours, one below for what starts after them, and a
 // line at the current time behind the blocks. In all of them, tapping an event opens its details. An event is filled from

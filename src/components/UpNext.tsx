@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Profile } from '../lib/profiles';
-import { holdEndsAt, tapFinishesProfile, upNext, upNextLink, type Routine, type TickedHere } from '../lib/routines';
+import { holdEndsAt, tapFinishesProfile, UP_NEXT_TILES, upNext, upNextLink, type Routine, type TickedHere } from '../lib/routines';
 import { useStatusLine } from '../lib/status-line';
 import { useCelebration, type RoutinesToday } from '../lib/use-routines-today';
 import { Confetti, RoutineTile } from '../RoutinesPage';
@@ -15,7 +15,8 @@ import { Button } from './ui/button';
 // cannot tick the Routine that comes next, and a tap inside that time takes the tick back. Then the tile gives way to what that
 // person has next, or goes when nothing is left. At the right of the heading, a link to the Routines chart that reads "All
 // routines", or how many of today's Routines left the tiles do not show. When nobody has anything left it says so, and
-// keeps the link. The card takes the height it needs (336 px with three tiles); the Pinned List takes the rest of the rail.
+// keeps the link. The card takes the height it needs (336 px with three tiles, 248 with two); the Pinned
+// List takes the rest of the rail.
 //
 // A tap that finishes a person's day plays the celebration over this card, starting where the tile was; none under
 // reduced motion. Once it is saved the status line says it, once, in the chart's words ("Ben: All done"). A tick that did not
@@ -23,7 +24,7 @@ import { Button } from './ui/button';
 //
 // `failed` says the Household read has failed, which is why nothing has been read: the Routines are read once the
 // Household Timezone is known.
-export function UpNext({ routines, failed, onOpenRoutines, tiles: limit }: { routines: RoutinesToday; failed: boolean; onOpenRoutines: () => void; tiles?: number }) {
+export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEXT_TILES }: { routines: RoutinesToday; failed: boolean; onOpenRoutines: () => void; tiles?: number }) {
   const { loaded, part, problems, groups, done, toggle } = routines;
   const celebration = useCelebration(routines);
   const say = useStatusLine();
@@ -87,10 +88,10 @@ export function UpNext({ routines, failed, onOpenRoutines, tiles: limit }: { rou
           <ChevronRight aria-hidden className="size-5" />
         </Button>
       </div>
-      {/* Until the first read lands the card keeps the room of three tiles (3 x 80 and two gaps of 8: 16 rem), so the list card under it does
-          not jump 232 px when they arrive. Once read, it takes the height it needs. */}
+      {/* Until the first read lands the card keeps the room of the tiles it will show (80 each and 8 between: 16 rem for three, 10.5 rem
+          for two), so the list card under it does not jump when they arrive. Once read, it takes the height it needs. */}
       {!loaded && (
-        <div className="min-h-64">
+        <div style={{ minHeight: `${limit * 5 + (limit - 1) * 0.5}rem` }}>
           {!failed && !routines.failed && <EmptyWords className="px-1">Loading</EmptyWords>}
           {(failed || routines.failed) && (
             <p role="alert" className="px-1 text-base">

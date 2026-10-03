@@ -11,7 +11,7 @@ import { EventSheets, type OpenEvent } from './EventSheets';
 import { Button } from './ui/button';
 import { DayWeather } from './Weather';
 
-// The schedule (docs/look.md, The parts): Home draws today and the next four days, Week Sunday to Saturday, each as a
+// The schedule (docs/look.md, The parts): Home draws today and the next four days (three on a narrow screen), Week Sunday to Saturday, each as a
 // column. A column is a heading that opens the day, the day's forecast under it (outside the button), and the day's
 // events as pills, all-day first, then by start, then by title. A column that cannot hold its pills draws as many as
 // fit and a "+N more" button that opens the day: nothing is ever clipped.

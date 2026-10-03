@@ -485,6 +485,13 @@ describe('Up next', () => {
     expect(shown(upNextPlain(four, new Set(['a']), 'evening'))).toEqual([['sam', 'b'], ['ava', 'c'], ['ben', 'd']]);
   });
 
+  it('stops at the limit it is given, and counts the Routines of the people left out', () => {
+    const three = [group(cory, [routine('a', 'evening')]), group(sam, [routine('b', 'evening')]), group(ava, [routine('c', 'evening'), routine('d', null, 1)])];
+    const result = upNext(three, NONE, 'evening', {}, 0, 2);
+    expect(shown(result)).toEqual([['cory', 'a'], ['sam', 'b']]);
+    expect(result.more).toBe(2);
+  });
+
   it("counts today's Routines not ticked and not shown", () => {
     // Left and not shown: Sam's plants, Ava's read.
     expect(upNextPlain(drawing, drawingDone, 'evening').more).toBe(2);

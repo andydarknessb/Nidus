@@ -46,7 +46,8 @@ function routinesToday(more: Partial<RoutinesToday> = {}, profiles: Profile[] = 
     ...more,
   };
 }
-const card = (today: RoutinesToday, failed = false) => renderToStaticMarkup(createElement(UpNext, { routines: today, failed, onOpenRoutines: () => undefined }));
+const card = (today: RoutinesToday, failed = false, tiles?: number) =>
+  renderToStaticMarkup(createElement(UpNext, { routines: today, failed, onOpenRoutines: () => undefined, ...(tiles === undefined ? {} : { tiles }) }));
 // One tile: the button named for it, whole.
 const tile = (html: string, name: string) => new RegExp(`<button[^>]*aria-label="${name}"[^>]*>[\\s\\S]*?</button>`).exec(html)?.[0] ?? '';
 const words = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -127,14 +128,19 @@ describe('when Up next has nothing to show', () => {
 });
 
 describe('Up next while it loads', () => {
-  // The height of three tiles: 3 x 80 and two gaps of 8, 256 px (16 rem). Home's list card under it would otherwise jump 232 px when the
-  // read lands: the card is 104 px with "Loading" and 336 with three tiles.
-  const reserved = (html: string) => /<div class="([^"]*\bmin-h-64\b[^"]*)">/.exec(html)?.[1];
+  // The height of the tiles it will show: 80 each and 8 between, 256 px (16 rem) for three and 168 px (10.5 rem) for two. Home's list
+  // card under it would otherwise jump when the read lands.
+  const reserved = (html: string) => /min-height:([0-9.]+)rem/.exec(html)?.[1];
 
   it('holds the height of three tiles until the first read has landed', () => {
-    expect(reserved(card(routinesToday({ loaded: false })))).toBeDefined();
+    expect(reserved(card(routinesToday({ loaded: false })))).toBe('16');
     // Also when the read failed and nothing has been read: the card does not give the room up and take it back.
-    expect(reserved(card(routinesToday({ loaded: false, failed: true }), true))).toBeDefined();
+    expect(reserved(card(routinesToday({ loaded: false, failed: true }), true))).toBe('16');
+  });
+
+  it('holds the height of two tiles when the screen shows two', () => {
+    expect(reserved(card(routinesToday({ loaded: false }), false, 2))).toBe('10.5');
+    expect(reserved(card(routinesToday({ loaded: false, failed: true }), true, 2))).toBe('10.5');
   });
 
   it('takes the height it needs once it has: the tiles, or a line of words', () => {
@@ -144,6 +150,6 @@ describe('Up next while it loads', () => {
 
   it('keeps its heading row where it was, above the reserved room', () => {
     const html = card(routinesToday({ loaded: false }));
-    expect(html.indexOf('Up next</h2>')).toBeLessThan(html.indexOf('min-h-64'));
+    expect(html.indexOf('Up next</h2>')).toBeLessThan(html.indexOf('min-height'));
   });
 });

@@ -256,7 +256,7 @@ export function columnsOf(profiles: Profile[], routines: Routine[], weekday: num
 // ---- Up next -------------------------------------------------------------------------------------
 
 // Up next on Home shows a tile for this many people at most, unless the screen is too short for that many (home-layout.ts).
-const UP_NEXT_TILES = 3;
+export const UP_NEXT_TILES = 3;
 
 // How long Up next keeps a Routine that was ticked on it where it is, in the done look, before it gives way to what that
 // person has next: long enough for a second tap to take the tick back, so a double tap never ticks the one that follows, and
@@ -272,7 +272,7 @@ type UpNextTile = { profile: Profile; routine: Routine; done: boolean };
 // `tiles`: one for each of the first Profiles in order that have a tile to show, each showing the Routine of theirs that was
 // ticked on Up next less than HOME_HOLD_MS ago and still is (the latest, held in the done look), else their first Routine not
 // ticked among the part's own, what is left from earlier, and Any time. So a person's last Routine goes only once its hold
-// has ended, and keeps its place among the three until then. `more`: today's Routines not ticked that no tile shows, which
+// has ended, and keeps its place among the tiles until then. `more`: today's Routines not ticked that no tile shows, which
 // include a later part's. `groups` are the Profiles' Routines today; `ticked` is what was ticked on Up next and when, and `now`
 // is the time, in the same milliseconds.
 export function upNext(
