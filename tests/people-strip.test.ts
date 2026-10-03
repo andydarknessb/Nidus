@@ -122,6 +122,17 @@ describe('the Routines on a person\'s pill', () => {
     expect(pillOf(html, 'Cory')).not.toContain('>1 of 1<');
   });
 
+  it('draws "All done" in words alone: no star to widen it past what the pill\'s room holds', () => {
+    expect(pillOf(html, 'Cory')).not.toContain('lucide-star');
+  });
+
+  it('shows the count and the pips from the one container width, so a pill never shows one without room for the other', () => {
+    const ava = pillOf(html, 'Ava');
+    const widths = ava.match(/@min-\[[^\]]+\]/g) ?? [];
+    expect(widths).toHaveLength(2);
+    expect(widths[0]).toBe(widths[1]);
+  });
+
   it('is nothing at all, not even "0 of 0", for a person with none today', () => {
     const sam = pillOf(html, 'Sam');
     expect(sam).not.toContain(' of ');
