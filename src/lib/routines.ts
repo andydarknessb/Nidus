@@ -59,8 +59,12 @@ export const TIME_OF_DAY_GROUPS: readonly { value: TimeOfDay | null; label: stri
 
 const columns = 'id, profile_id, title, days_of_week, time_of_day, picture, sort_order, archived_at';
 
-// What every screen that shows Routines listens to: a change to any of these tables reads them again.
-export const ROUTINE_TABLES = ['routines', 'routine_completions', 'profiles'] as const;
+// What the Wall's Routines reader listens to: a change to either reads them again. Profiles are not here: the shell reads them
+// once and hands them to the reader.
+export const WALL_ROUTINE_TABLES = ['routines', 'routine_completions'] as const;
+
+// What the Routines page listens to: the same two, and Profiles too, because the page reads Profiles for itself.
+export const ROUTINE_TABLES = [...WALL_ROUTINE_TABLES, 'profiles'] as const;
 
 // ---- Pure helpers -------------------------------------------------------------
 
