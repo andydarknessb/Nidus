@@ -106,9 +106,7 @@ describe('event details with a long note', () => {
     ends_at: '2026-10-01T21:45:00Z',
     is_all_day: false,
     profile_id: null,
-    color: null,
     profile_ids: [],
-    colors: [],
     ...more,
   });
   // An invite: forty lines.

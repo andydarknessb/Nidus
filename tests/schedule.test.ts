@@ -29,9 +29,7 @@ function event(title: string, startsAt: string, endsAt: string, more: Partial<Oc
     ends_at: endsAt,
     is_all_day: false,
     profile_id: null,
-    color: null,
     profile_ids: [],
-    colors: [],
     ...more,
   };
 }
@@ -509,12 +507,11 @@ describe('who a pill is for', () => {
     expect(pillPeople(meeting(['p-gone']), FAMILY)).toEqual({ kind: 'everyone' });
   });
 
-  it('is the Profiles\' own colours, never the colour of the Mirrored Calendar the event came from', () => {
-    const fromACalendar = meeting(['p-ava'], { color: '#ff0000', colors: ['#ff0000'] });
-    const people = pillPeople(fromACalendar, FAMILY);
+  it('is the Profiles\' own colours', () => {
+    const people = pillPeople(meeting(['p-ava']), FAMILY);
     expect(people.kind === 'people' && people.bands.map((band) => band.color)).toEqual([AVA.color]);
-    // Synced here with several Profiles, as the preview's fixture does: the Profiles still decide, not the colours.
-    const several = pillPeople(meeting(['p-cory', 'p-sam'], { color: '#ff0000', colors: ['#ff0000', '#00ff00'] }), FAMILY);
+    // Several Profiles, as the preview's fixture has.
+    const several = pillPeople(meeting(['p-cory', 'p-sam']), FAMILY);
     expect(several.kind === 'people' && several.bands.map((band) => band.color)).toEqual([CORY.color, SAM.color]);
   });
 

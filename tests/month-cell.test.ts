@@ -25,7 +25,7 @@ const BEN = profile('p-ben', 'Ben', 3, '#6ee7b7');
 const FAMILY = [CORY, SAM, AVA, BEN];
 
 let counter = 0;
-// 9:00 to 10:00 AM on Thu Oct 1, Chicago (CDT, UTC-5). A Mirrored Calendar's colours are on it, which a line never draws.
+// 9:00 to 10:00 AM on Thu Oct 1, Chicago (CDT, UTC-5).
 function event(title: string, profileIds: string[], more: Partial<Occurrence> = {}): Occurrence {
   counter += 1;
   return {
@@ -40,9 +40,7 @@ function event(title: string, profileIds: string[], more: Partial<Occurrence> = 
     ends_at: '2026-10-01T15:00:00Z',
     is_all_day: false,
     profile_id: profileIds[0] ?? null,
-    color: '#ff0000',
     profile_ids: profileIds,
-    colors: ['#ff0000', '#00ff00'],
     ...more,
   };
 }
@@ -182,11 +180,9 @@ describe('an event line', () => {
     expect(lineFor([], [CORY])).toContain('bg-everyone');
   });
 
-  it("never draws a Mirrored Calendar's colour, whatever the view says, and has no coloured edge", () => {
+  it('has no coloured edge and no gradient', () => {
     for (const ids of [[], ['p-ava'], ['p-cory', 'p-sam']]) {
       const html = lineFor(ids);
-      expect(html).not.toContain('#ff0000');
-      expect(html).not.toContain('#00ff00');
       expect(html).not.toContain('border-l');
       expect(html).not.toContain('gradient');
     }

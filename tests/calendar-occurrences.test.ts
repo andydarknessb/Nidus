@@ -129,7 +129,7 @@ describe('synced_events', () => {
 });
 
 describe('calendar_occurrences', () => {
-  it('attributes an event to its Mirrored Calendar’s Profile and colour', async () => {
+  it('attributes an event to its Mirrored Calendar’s Profile', async () => {
     const account = await arrange();
     const phone = await asHouseholdAccount(account);
     const profile = await createProfile(phone, account.household.id, { name: 'Ada', color: PROFILE_PALETTE[0].hex, avatar_url: null }, 0);
@@ -145,29 +145,17 @@ describe('calendar_occurrences', () => {
       location: 'Cafe',
       calendar_name: 'Ada’s work',
       profile_id: profile.id,
-      color: profile.color,
       is_all_day: false,
     });
   });
 
-  it('prefers the calendar’s own colour over its Profile’s', async () => {
-    const account = await arrange();
-    const phone = await asHouseholdAccount(account);
-    const profile = await createProfile(phone, account.household.id, { name: 'Ada', color: PROFILE_PALETTE[0].hex, avatar_url: null }, 0);
-    const { calendarId } = await arrangeCalendar(account, { profileId: profile.id, color: '#abcdef' });
-    await arrangeEvents(calendarId, [lunch]);
-
-    const [occurrence] = await loadOccurrences(phone, WINDOW.from, WINDOW.to);
-    expect(occurrence).toMatchObject({ profile_id: profile.id, color: '#abcdef' });
-  });
-
-  it('shows a whole-Household calendar with no Profile and no colour', async () => {
+  it('shows a whole-Household calendar with no Profile', async () => {
     const account = await arrange();
     const { calendarId } = await arrangeCalendar(account);
     await arrangeEvents(calendarId, [lunch]);
 
     const [occurrence] = await loadOccurrences(await asHouseholdAccount(account), WINDOW.from, WINDOW.to);
-    expect(occurrence).toMatchObject({ profile_id: null, color: null });
+    expect(occurrence).toMatchObject({ profile_id: null });
   });
 
   it('leaves out a calendar that is not selected', async () => {

@@ -12,7 +12,7 @@ import { scrollers } from './support/markup';
 
 // What the Day view draws, rendered to markup (as tests/event-pill.test.ts does for the pill), so what is asserted is what the
 // browser is given: an hour is 3 rem, a block is never under one, the now line is drawn under the blocks, only the event that is on
-// now has the ring, a block is filled from its people and never from the Mirrored Calendar's colour, two lanes with a "+N" for the
+// now has the ring, a block is filled from its people, two lanes with a "+N" for the
 // rest, and both rows keep their height whether they hold pills or not, and say when they scroll.
 
 const CHICAGO = 'America/Chicago';
@@ -47,10 +47,7 @@ function event(title: string, date: string, from: string, to: string, ids: strin
     ends_at: new Date(wall(date, to)).toISOString(),
     is_all_day: false,
     profile_id: ids[0] ?? null,
-    // The Mirrored Calendar's colours, which a block never draws.
-    color: '#ff0000',
     profile_ids: ids,
-    colors: ['#ff0000'],
     ...more,
   };
 }
@@ -114,12 +111,10 @@ describe('the grid', () => {
     expect(count(inner(html, 'Piano'), 'top-0 bottom-0.5')).toBe(1);
   });
 
-  it('fills a block from its people and never from the calendar it came from', () => {
+  it('fills a block from its people', () => {
     const html = grid(plan([event('Piano', OCT1, '16:00', '17:00', ['p-ava']), event('Dinner', OCT1, '18:00', '19:00'), event('Swim', OCT1, '20:00', '21:00', ['p-cory', 'p-sam'])]));
     expect(count(html, 'bg-person-fill')).toBe(3);
     expect(count(html, 'bg-everyone')).toBe(1);
-    expect(html).not.toContain('#ff0000');
-    expect(html).not.toContain('255, 0, 0');
   });
 
   it('says what each block is: its title, its time, and who it is for', () => {

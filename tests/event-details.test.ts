@@ -27,9 +27,7 @@ function event(more: Partial<Occurrence> = {}): Occurrence {
     ends_at: '2026-10-01T21:45:00Z',
     is_all_day: false,
     profile_id: null,
-    color: null,
     profile_ids: [],
-    colors: [],
     ...more,
   };
 }
@@ -72,11 +70,6 @@ describe('who an event is for', () => {
       expect(html).toContain('bg-everyone');
       expect(html).not.toContain('bg-person-fill');
     }
-  });
-
-  it('never takes the Mirrored Calendar\'s colour', () => {
-    const html = render(event({ profile_ids: ['p-ava'], color: '#ff0000', colors: ['#ff0000'] }));
-    expect(html).not.toContain('#ff0000');
   });
 });
 

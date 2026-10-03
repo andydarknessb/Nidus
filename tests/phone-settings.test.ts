@@ -762,9 +762,7 @@ describe("the phone's list of events", () => {
     ends_at: '2026-10-02T20:00:00Z',
     is_all_day: false,
     profile_id: profileIds[0] ?? null,
-    color: null,
     profile_ids: profileIds,
-    colors: [],
   });
   const row = (profileIds: string[], profiles = family) => renderToStaticMarkup(createElement(EventRow, { event: event(profileIds), profiles, timezone: 'America/Chicago', onOpen: () => undefined }));
   const forWords = (markup: string) => /<span class="sr-only">([^<]*)<\/span>/.exec(markup)?.[1]?.replace(/<!-- -->/g, '');

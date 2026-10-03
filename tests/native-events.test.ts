@@ -180,23 +180,23 @@ describe('synced events stay untouchable', () => {
 });
 
 describe('calendar_occurrences attribution of Native Events', () => {
-  it('attributes an event with no Profiles to the whole Household, with no colour', async () => {
+  it('attributes an event with no Profiles to the whole Household', async () => {
     const account = await arrange();
     const phone = await asHouseholdAccount(account);
     await saveNativeEvent(phone, plumber);
 
     const [occurrence] = await loadOccurrences(phone, WINDOW.from, WINDOW.to);
-    expect(occurrence).toMatchObject<Partial<Occurrence>>({ source: 'native', profile_id: null, profile_ids: [], color: null, colors: [] });
+    expect(occurrence).toMatchObject<Partial<Occurrence>>({ source: 'native', profile_id: null, profile_ids: [] });
   });
 
-  it('attributes an event with one Profile to its colour', async () => {
+  it('attributes an event to its one Profile', async () => {
     const account = await arrange();
     const [ada] = await profiles(account, 'Ada');
     const device = await arrangeDevice(account);
     await saveNativeEvent(device.client, { ...plumber, profile_ids: [ada!.id] });
 
     const [occurrence] = await loadOccurrences(device.client, WINDOW.from, WINDOW.to);
-    expect(occurrence).toMatchObject<Partial<Occurrence>>({ profile_id: ada!.id, profile_ids: [ada!.id], color: ada!.color, colors: [ada!.color] });
+    expect(occurrence).toMatchObject<Partial<Occurrence>>({ profile_id: ada!.id, profile_ids: [ada!.id] });
   });
 
   it('attributes an event with two Profiles to both, in Profile order, led by the first', async () => {
@@ -210,8 +210,6 @@ describe('calendar_occurrences attribution of Native Events', () => {
     expect(occurrence).toMatchObject<Partial<Occurrence>>({
       profile_id: ada!.id,
       profile_ids: [ada!.id, ben!.id],
-      color: ada!.color,
-      colors: [ada!.color, ben!.color],
     });
   });
 
@@ -225,7 +223,7 @@ describe('calendar_occurrences attribution of Native Events', () => {
     expect((await loadOccurrences(phone, WINDOW.from, WINDOW.to))[0]?.profile_ids).toEqual([ben!.id]);
 
     await saveNativeEvent(phone, { ...plumber, profile_ids: [] }, id);
-    expect((await loadOccurrences(phone, WINDOW.from, WINDOW.to))[0]).toMatchObject({ profile_ids: [], color: null });
+    expect((await loadOccurrences(phone, WINDOW.from, WINDOW.to))[0]).toMatchObject({ profile_ids: [] });
   });
 
   it('removes a deleted Profile’s attribution and keeps the event, household-attributed', async () => {
@@ -237,7 +235,7 @@ describe('calendar_occurrences attribution of Native Events', () => {
     await deleteProfile(phone, ada!.id);
 
     const [occurrence] = await loadOccurrences(phone, WINDOW.from, WINDOW.to);
-    expect(occurrence).toMatchObject({ id, title: 'Plumber', profile_id: null, profile_ids: [], color: null });
+    expect(occurrence).toMatchObject({ id, title: 'Plumber', profile_id: null, profile_ids: [] });
     const { data } = await asServiceRole().from('native_event_profiles').select('profile_id').eq('native_event_id', id);
     expect(data).toEqual([]);
   });
@@ -350,9 +348,7 @@ describe('the Native Event form', () => {
       ends_at: '2026-10-08T20:30:00+00:00',
       is_all_day: false,
       profile_id: 'a',
-      color: '#fff',
       profile_ids: ['a', 'b'],
-      colors: ['#fff', '#000'],
     } satisfies Occurrence;
     const filled = eventFormFromOccurrence(occurrence, CHICAGO);
     expect(filled).toEqual({
