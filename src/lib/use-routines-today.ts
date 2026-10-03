@@ -3,7 +3,7 @@ import { useConnection, useRefetchOn } from './change-feed';
 import { watchMinute } from './household-day';
 import type { Profile } from './profiles';
 import {
-  ROUTINE_TABLES,
+  WALL_ROUTINE_TABLES,
   afterTick,
   celebrate,
   columnsOf,
@@ -125,7 +125,7 @@ export function useRoutinesToday(timezone: string | null, profiles: Profile[] | 
       reader.current = null;
     };
   }, [timezone, day.date]);
-  useRefetchOn(ROUTINE_TABLES, () => reader.current?.refresh());
+  useRefetchOn(WALL_ROUTINE_TABLES,() => reader.current?.refresh());
 
   // Loaded for another day (midnight just passed): everything reads unchecked until the new day arrives.
   const settled = loaded !== null && loaded.date === day.date;

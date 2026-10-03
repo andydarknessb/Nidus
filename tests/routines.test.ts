@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { PROFILE_PALETTE, createProfile, deleteProfile, movedIds, type Profile } from '../src/lib/profiles';
 import {
+  ROUTINE_TABLES,
   TIME_OF_DAY_GROUPS,
+  WALL_ROUTINE_TABLES,
   WEEKDAYS,
   archiveRoutine,
   celebrate,
@@ -62,6 +64,16 @@ function addDays(date: string, days: number): string {
   moved.setUTCDate(moved.getUTCDate() + days);
   return moved.toISOString().slice(0, 10);
 }
+
+describe('the tables Routine screens listen to', () => {
+  it("the Wall's reader hears Routines and completions only: it is handed the shell's Profiles", () => {
+    expect([...WALL_ROUTINE_TABLES]).toEqual(['routines', 'routine_completions']);
+  });
+
+  it('the Routines page also hears Profiles, which it reads for itself', () => {
+    expect([...ROUTINE_TABLES]).toEqual(['routines', 'routine_completions', 'profiles']);
+  });
+});
 
 describe('weekday schedule', () => {
   it('packs weekdays into a bitmask, Sunday as bit 0', () => {

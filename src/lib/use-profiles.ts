@@ -10,9 +10,9 @@ const PROFILE_TABLES = ['profiles'] as const;
 const RETRY_MS = 5_000;
 
 // The Household's Profiles in their own order, read by the shell (and again when they change) for everything that draws a person:
-// the people strip and the fill and discs of every event pill. The Routines reader and the Add event sheet read them for themselves
-// too. null until the first read lands; a failed read keeps what the Wall has and looks again soon. A Profile that was deleted
-// leaves the filter as soon as it is gone.
+// the people strip and the fill and discs of every event pill. The Routines reader and the Add event sheet are handed them, not
+// reading them again. null until the first read lands; a failed read keeps what the Wall has and looks again soon. A Profile that
+// was deleted leaves the filter as soon as it is gone.
 export function useProfiles(filter: ProfileFilter): Profile[] | null {
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const changes = useChangeTick(PROFILE_TABLES);
