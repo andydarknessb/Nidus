@@ -3,7 +3,7 @@ import { PinnedListCard } from '../SharedListsPage';
 import { UpNext } from './UpNext';
 
 // The Home screen's right-hand column: Up next above the pinned Shared List. `failed` says the Household's read
-// has failed, so Up next can say so. `onOpenRoutines` opens the chart, from Up next's link, and `onOpenLists` the
+// has failed, so Up next can say so. `tiles` is how many tiles Up next may show. `onOpenRoutines` opens the chart, from Up next's link, and `onOpenLists` the
 // Lists screen, from the pinned list's.
 //
 // Up next takes the height it needs and the pinned list takes the rest of the rail. Neither may be wider than the
@@ -11,17 +11,19 @@ import { UpNext } from './UpNext';
 export function HomeRail({
   routines,
   failed,
+  tiles,
   onOpenRoutines,
   onOpenLists,
 }: {
   routines: RoutinesToday;
   failed: boolean;
+  tiles: number;
   onOpenRoutines: () => void;
   onOpenLists: () => void;
 }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-col gap-4">
-      <UpNext routines={routines} failed={failed} onOpenRoutines={onOpenRoutines} />
+      <UpNext routines={routines} failed={failed} onOpenRoutines={onOpenRoutines} tiles={tiles} />
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
         <PinnedListCard onOpenLists={onOpenLists} />
       </div>
