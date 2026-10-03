@@ -94,6 +94,7 @@ export function EventsSection({ household }: { household: Household }) {
       {sheet && (
         <NativeEventSheet
           timezone={household.timezone}
+          profiles={profiles}
           date={householdDay(household.timezone).date}
           {...(sheet.occurrence ? { occurrence: sheet.occurrence } : {})}
           onClose={() => setSheet(null)}

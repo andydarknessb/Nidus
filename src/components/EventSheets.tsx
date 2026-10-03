@@ -78,6 +78,7 @@ export function EventSheets({
   ) : (
     <NativeEventSheet
       timezone={timezone}
+      profiles={profiles}
       date={date}
       occurrence={occurrence}
       onClose={() => onChange(null)}
