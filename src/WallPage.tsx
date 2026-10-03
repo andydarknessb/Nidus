@@ -20,6 +20,7 @@ import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/
 import { supabase } from './lib/supabase';
 import { useStatusLine } from './lib/status-line';
 import { localStore, writeLastMode } from './lib/mode';
+import { useHomeLayout } from './lib/home-layout';
 import { useForecast } from './lib/use-forecast';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useLightMode, useWallMode } from './lib/use-mode';
@@ -296,6 +297,8 @@ function HomeShell({ owner }: { owner: boolean }) {
   // Today's Routines, read once for as long as the shell lives and handed to Up next on Home and to
   // the Routines chart, so going from one to the other reads nothing again and a tick in flight is not dropped.
   const routines = useRoutinesToday(timezone);
+  // How many days and Up next tiles Home holds at this screen's size.
+  const home = useHomeLayout();
 
   const today = timezone ? householdDay(timezone).date : null;
   // The people strip is for the calendar screens (Home, Day, Week and Month), and for no other.
@@ -354,11 +357,11 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : (
         <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_20rem] gap-4">
           {timezone ? (
-            <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
+            <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
           ) : (
             <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
           )}
-          <HomeRail routines={routines} failed={view.failed} onOpenRoutines={openRoutines} onOpenLists={openLists} />
+          <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} onOpenRoutines={openRoutines} onOpenLists={openLists} />
         </div>
         )}
         {adding && timezone && today && (

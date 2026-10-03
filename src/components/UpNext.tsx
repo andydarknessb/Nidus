@@ -8,7 +8,8 @@ import { Confetti, RoutineTile } from '../RoutinesPage';
 import { EmptyWords } from './EmptyWords';
 import { Button } from './ui/button';
 
-// Up next, at the top of Home's right rail (docs/look.md, spec 0003): a tile for each of the first three people with
+// Up next, at the top of Home's right rail (docs/look.md, spec 0003): a tile for each of the first three people (two on a
+// screen under 760 px tall, so the Pinned List keeps a row; home-layout.ts) with
 // something left to do now, each showing that person's first Routine left among the part of the day's, what is left
 // from earlier, and Any time. A tap ticks it, and the tile stays where it is, in the done look, for HOME_HOLD_MS: a double tap
 // cannot tick the Routine that comes next, and a tap inside that time takes the tick back. Then the tile gives way to what that
@@ -22,7 +23,7 @@ import { Button } from './ui/button';
 //
 // `failed` says the Household read has failed, which is why nothing has been read: the Routines are read once the
 // Household Timezone is known.
-export function UpNext({ routines, failed, onOpenRoutines }: { routines: RoutinesToday; failed: boolean; onOpenRoutines: () => void }) {
+export function UpNext({ routines, failed, onOpenRoutines, tiles: limit }: { routines: RoutinesToday; failed: boolean; onOpenRoutines: () => void; tiles?: number }) {
   const { loaded, part, problems, groups, done, toggle } = routines;
   const celebration = useCelebration(routines);
   const say = useStatusLine();
@@ -32,7 +33,7 @@ export function UpNext({ routines, failed, onOpenRoutines }: { routines: Routine
   // on when a hold ends, and nothing else does, so the card is drawn again then and not before.
   const [ticked, setTicked] = useState<TickedHere>({});
   const [now, setNow] = useState(() => Date.now());
-  const { tiles, more } = upNext(groups, done, part, ticked, now);
+  const { tiles, more } = upNext(groups, done, part, ticked, now, limit);
   const words = upNextLink(more);
 
   useEffect(() => {

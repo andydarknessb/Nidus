@@ -255,7 +255,7 @@ export function columnsOf(profiles: Profile[], routines: Routine[], weekday: num
 
 // ---- Up next -------------------------------------------------------------------------------------
 
-// Up next on Home shows a tile for this many people at most.
+// Up next on Home shows a tile for this many people at most, unless the screen is too short for that many (home-layout.ts).
 const UP_NEXT_TILES = 3;
 
 // How long Up next keeps a Routine that was ticked on it where it is, in the done look, before it gives way to what that
@@ -275,7 +275,14 @@ type UpNextTile = { profile: Profile; routine: Routine; done: boolean };
 // has ended, and keeps its place among the three until then. `more`: today's Routines not ticked that no tile shows, which
 // include a later part's. `groups` are the Profiles' Routines today; `ticked` is what was ticked on Up next and when, and `now`
 // is the time, in the same milliseconds.
-export function upNext(groups: readonly ProfileRoutines[], done: ReadonlySet<string>, part: TimeOfDay, ticked: TickedHere, now: number): { tiles: UpNextTile[]; more: number } {
+export function upNext(
+  groups: readonly ProfileRoutines[],
+  done: ReadonlySet<string>,
+  part: TimeOfDay,
+  ticked: TickedHere,
+  now: number,
+  limit = UP_NEXT_TILES,
+): { tiles: UpNextTile[]; more: number } {
   const tiles = groups
     .flatMap(({ profile, routines }): UpNextTile[] => {
       const held = routines.reduce<Routine | undefined>((latest, candidate) => {
@@ -288,7 +295,7 @@ export function upNext(groups: readonly ProfileRoutines[], done: ReadonlySet<str
       const routine = held ?? next;
       return routine ? [{ profile, routine, done: held !== undefined }] : [];
     })
-    .slice(0, UP_NEXT_TILES);
+    .slice(0, limit);
   const left = groups.reduce((count, { routines }) => count + routines.filter((routine) => !done.has(routine.id)).length, 0);
   return { tiles, more: left - tiles.filter((tile) => !tile.done).length };
 }

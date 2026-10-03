@@ -34,7 +34,7 @@ import { DayWeather } from './Weather';
 // line at the current time behind the blocks. In all of them, tapping an event opens its details. An event is filled from
 // its Profiles' own colours, never from the Mirrored Calendar it came from.
 
-// The home screen: today and the next four days. `version` changes when the screen around the calendar has written an
+// The home screen: today and the next four days, or `days` of them (four on a screen under 1200 px wide, home-layout.ts). `version` changes when the screen around the calendar has written an
 // event, so the calendar reads again at once. `forecast` is the Household's weather, read once by the screen around the
 // calendar; `weatherOn` says the Household has a place, so each day heading keeps a line for it (empty while there is no
 // forecast, or none for that day). `profiles` are the Household's, read by that screen and handed down: they colour the events, and
@@ -46,6 +46,7 @@ export function FiveDayCalendar({
   forecast = null,
   weatherOn = false,
   profiles,
+  days = 5,
 }: {
   timezone: string;
   version?: number;
@@ -53,6 +54,7 @@ export function FiveDayCalendar({
   forecast?: Forecast | null;
   weatherOn?: boolean;
   profiles: Profile[] | null;
+  days?: number;
 }) {
   const now = useNow(timezone);
   const { touch } = useContext(ProfileFilterContext);
@@ -61,7 +63,7 @@ export function FiveDayCalendar({
       <Schedule
         timezone={timezone}
         now={now}
-        days={fiveDays(timezone, now)}
+        days={fiveDays(timezone, now).slice(0, days)}
         version={version}
         onOpenDay={(date) => onNavigate('day', date)}
         forecast={forecast}
