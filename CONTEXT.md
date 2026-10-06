@@ -11,8 +11,8 @@ The tenant. One family, one shared wall display, one timezone. Every record belo
 _Avoid_: Family, tenant, nest, account
 
 **Household Account**:
-The single sign-in identity (Google sign-in) that owns a Household and administers it. Not a person to attribute things to.
-_Avoid_: User, login, admin
+A sign-in identity (Google sign-in) that administers a Household. A Household has one or more, all with the same rights; the first makes the Household, and others join only by a Household Invite. A Google account is a Household Account of at most one Household. Not a person to attribute things to.
+_Avoid_: User, login, admin, owner, member
 
 **Profile**:
 A person in the Household, used for attribution and colour-coding. Has no credentials.
@@ -25,6 +25,10 @@ _Avoid_: Kiosk profile, terminal
 **Pairing Code**:
 The six-character code an unpaired tablet shows so a Household Account can claim it and turn it into a Device. Expires after 10 minutes; single use.
 _Avoid_: PIN, token, invite
+
+**Household Invite**:
+The single-use link a Household Account makes so another grown-up can sign in with their own Google account and become a Household Account of the same Household. Lasts 7 days; one at a time per Household, so making a new one ends the old.
+_Avoid_: Pairing Code, share code, membership
 
 **Household Timezone**:
 The one timezone stored on the Household. All display, rollover and reset logic uses it; source calendar timezones are converted on ingest.

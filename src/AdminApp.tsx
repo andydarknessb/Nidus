@@ -148,6 +148,7 @@ export function AdminApp() {
         ) : (
           <SettingsPage
             household={household}
+            userId={session.user.id}
             onSaved={setHousehold}
             onSignOut={() => {
               setHousehold(null);
