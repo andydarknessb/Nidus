@@ -1,12 +1,24 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { monthWeeks, type Occurrence } from '../src/lib/calendar-occurrences';
 import type { Profile } from '../src/lib/profiles';
-import { MonthDay } from '../src/phone/PhoneMonth';
+import type { MonthDay as MonthDayType } from '../src/phone/PhoneMonth';
 
 // A Month cell on the phone rendered to markup: its name (the full date and how many events), its marks and the sizes the look gives it.
 // Who the dots are for is tested without a screen in phone-calendar.test.ts; how the grid sits in a 390 px column is looked at in a browser.
+
+// MonthDay's module imports the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to
+// load it (as tests/phone-home.test.ts does), so CI, which has no .env.local, loads it the same way.
+let MonthDay: typeof MonthDayType;
+beforeAll(async () => {
+  vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+  vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+  ({ MonthDay } = await import('../src/phone/PhoneMonth'));
+});
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 const noop = () => undefined;
 const [WEEK] = monthWeeks('2026-10-01', 'America/New_York', '2026-10-02');
@@ -31,7 +43,7 @@ const event = (profile_ids: string[]): Occurrence => ({
   profile_ids,
 });
 
-function cell(date: string, props: Partial<Parameters<typeof MonthDay>[0]> = {}) {
+function cell(date: string, props: Partial<Parameters<typeof MonthDayType>[0]> = {}) {
   return renderToStaticMarkup(
     createElement(MonthDay, { day: dayOf(date), inMonth: true, beyond: false, picked: false, occurrences: [], profiles: [AVA, BEN], pressed: [], onPick: noop, ...props }),
   );

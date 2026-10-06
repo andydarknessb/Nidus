@@ -4,20 +4,39 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { pageDays } from '../src/lib/calendar-occurrences';
 import { mealsPickedDay, slotRowName, type Meal } from '../src/lib/meals';
 import { householdDay } from '../src/lib/routines';
-import { sheetFor } from '../src/lib/use-meals';
 import { leftToGet, listChipName, pickedList, type SharedList } from '../src/lib/shared-lists';
-import { ListChip, PhoneLists } from '../src/phone/PhoneLists';
-import { PhoneMeals, SlotRow } from '../src/phone/PhoneMeals';
+import type { ListChip as ListChipType, PhoneLists as PhoneListsType } from '../src/phone/PhoneLists';
+import type { PhoneMeals as PhoneMealsType, SlotRow as SlotRowType } from '../src/phone/PhoneMeals';
 import type { PhoneScreenProps } from '../src/PhoneWall';
+import type { sheetFor as sheetForType } from '../src/lib/use-meals';
 
 // The phone's Meals and Lists tabs: the picked day and the picked list as pure rules, and a slot row and a list chip as markup. How they
 // sit in a 390 px column is looked at in a browser. Colours are tokens only, so the 7:1 pairs are look.test.ts's.
+
+// These components import the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to
+// load them (as tests/phone-home.test.ts does), so CI, which has no .env.local, loads them the same way.
+let ListChip: typeof ListChipType;
+let PhoneLists: typeof PhoneListsType;
+let PhoneMeals: typeof PhoneMealsType;
+let SlotRow: typeof SlotRowType;
+let sheetFor: typeof sheetForType;
+let thursday: ReturnType<typeof pageDays>[number];
+beforeAll(async () => {
+  vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+  vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+  ({ ListChip, PhoneLists } = await import('../src/phone/PhoneLists'));
+  ({ PhoneMeals, SlotRow } = await import('../src/phone/PhoneMeals'));
+  ({ sheetFor } = await import('../src/lib/use-meals'));
+  thursday = pageDays('week', '2026-10-01', LA, new Date('2026-10-01T12:00:00Z'))[4]!;
+});
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 const noop = () => undefined;
 const LA = 'America/Los_Angeles';
 const WEEK = ['2026-09-27', '2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03'];
 const oatmeal: Meal = { id: 'm1', meal_date: '2026-10-01', slot: 'breakfast', title: 'Oatmeal' };
-const thursday = pageDays('week', '2026-10-01', LA, new Date('2026-10-01T12:00:00Z'))[4]!;
 
 describe('mealsPickedDay', () => {
   // The Household's today at an instant, as the screen has it (useHouseholdDay).
