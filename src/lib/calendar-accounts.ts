@@ -146,9 +146,10 @@ export function lastSyncedText(lastSyncedAt: string | null, nowMs: number): stri
 export const UPDATE_FAILED_WORDS = 'Connected, but the last update failed. Nidus tries again every 5 minutes.';
 
 // How the settings screen says an account is doing. `last_error` is whatever the sync wrote when it failed, which is for the
-// logs: it is never shown.
-export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error'>): string {
-  if (account.status === 'needs_reauth') return 'Needs to be connected again';
+// logs: it is never shown. The one exception is an iPhone calendar whose link broke: the sync writes that sentence itself, in the
+// family's words (spec 0005), and it is what tells them what to do.
+export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error'> & Partial<Pick<CalendarAccount, 'provider'>>): string {
+  if (account.status === 'needs_reauth') return account.provider === 'icloud' && account.last_error ? account.last_error : 'Needs to be connected again';
   return account.last_error ? UPDATE_FAILED_WORDS : 'Connected';
 }
 

@@ -594,6 +594,17 @@ describe('how fresh the mirror is', () => {
     ).toBe('Last synced 1 day ago');
   });
 
+  it('counts an iPhone calendar as it counts a Google account, by when it last synced', () => {
+    // The badge reads last_synced_at and created_at and nothing of the provider (loadSyncFreshness selects only those two).
+    const icloud = { provider: 'icloud', google_email: null, last_synced_at: ago(2 * HOUR + 5 * MINUTE), created_at: ago(30 * 24 * HOUR) };
+    const google = { provider: 'google', google_email: 'a@example.com', last_synced_at: ago(2 * MINUTE), created_at: ago(30 * 24 * HOUR) };
+    expect(staleSyncBadge([icloud], NOW)).toBe('Last synced 2 hours ago');
+    expect(staleSyncBadge([google, icloud], NOW)).toBe('Last synced 2 hours ago');
+    expect(staleSyncShort([google, icloud], NOW)).toBe('2 h');
+    expect(staleSyncBadge([{ ...icloud, last_synced_at: ago(5 * MINUTE) }, google], NOW)).toBeNull();
+    expect(staleSyncBadge([{ ...icloud, last_synced_at: null, created_at: ago(2 * HOUR) }], NOW)).toBe('Not synced yet');
+  });
+
   it('counts an account that has never synced from when it was connected', () => {
     expect(staleSyncBadge([{ last_synced_at: null, created_at: ago(10 * MINUTE) }], NOW)).toBeNull();
     expect(staleSyncBadge([{ last_synced_at: null, created_at: ago(2 * HOUR) }], NOW)).toBe('Not synced yet');

@@ -1,7 +1,8 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { handleCalendarConnect, type ConnectDeps } from '../supabase/functions/calendar-connect/handler';
-import { addIphoneCalendar, loadCalendarAccounts, loadMirroredCalendars } from '../src/lib/calendar-accounts';
+import { addIphoneCalendar, calendarsOfAccount, loadCalendarAccounts, loadMirroredCalendars, removeCalendarAccount, updateMirroredCalendar } from '../src/lib/calendar-accounts';
+import { PROFILE_PALETTE, createProfile } from '../src/lib/profiles';
 import { arrangeEvents } from './support/calendar';
 import {
   asAnonymous,
@@ -292,5 +293,38 @@ describe('addIphoneCalendar', () => {
     await expect(addIphoneCalendar(client({ data: null, error: new Error('network') }), LINK)).rejects.toThrow(
       'Could not add that calendar. Try again.',
     );
+  });
+});
+
+// What the Settings page does with them (CalendarAccountsSection): the page lists what the Household Account's client reads, sets
+// whose an iPhone calendar is, and removes it, through the same functions the page calls.
+describe('the Settings page’s code path', () => {
+  it('lists an added link as an iPhone calendar with its name, then lets the owner say whose it is, and remove it', async () => {
+    const account = await arrange();
+    expect((await addLink(account, WEBCAL, fakeFeed(new Response(feedText('Sam’s iPhone'))))).status).toBe(200);
+    const phone = await asHouseholdAccount(account);
+
+    const [listed] = await loadCalendarAccounts(phone);
+    expect(listed).toMatchObject({ provider: 'icloud', google_email: null, status: 'active', last_synced_at: null, last_error: null });
+    const [calendar] = calendarsOfAccount(await loadMirroredCalendars(phone), listed!.id);
+    expect(calendar).toMatchObject({ name: 'Sam’s iPhone', selected: true, profile_id: null });
+
+    const sam = await createProfile(phone, account.household.id, { name: 'Sam', color: PROFILE_PALETTE[1].hex, avatar_url: null }, 0);
+    await updateMirroredCalendar(phone, calendar!.id, { profile_id: sam.id });
+    expect((await loadMirroredCalendars(phone))[0]).toMatchObject({ id: calendar!.id, profile_id: sam.id, selected: true });
+    await updateMirroredCalendar(phone, calendar!.id, { profile_id: null });
+    expect((await loadMirroredCalendars(phone))[0]).toMatchObject({ profile_id: null });
+
+    await removeCalendarAccount(phone, listed!.id);
+    expect(await loadCalendarAccounts(phone)).toEqual([]);
+    expect(await loadMirroredCalendars(phone)).toEqual([]);
+  });
+
+  it('lists an iPhone calendar and a Google account side by side, each with its own provider', async () => {
+    const account = await arrange();
+    await asServiceRole().rpc('store_calendar_account', { p_household_id: account.household.id, p_google_email: 'parent@example.com', p_refresh_token: 'r' });
+    await addLink(account, LINK, fakeFeed(new Response(feedText())));
+    const listed = await loadCalendarAccounts(await asHouseholdAccount(account));
+    expect(listed.map(({ provider }) => provider).sort()).toEqual(['google', 'icloud']);
   });
 });
