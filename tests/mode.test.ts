@@ -651,6 +651,41 @@ describe('modeOnLayoutChange: a Wall that stops being a phone', () => {
     expect(modeOnLayoutChange(true, false, spyStore(ended).store, NOW)).toEqual({ override: null, mode: 'light' });
   });
 
+  describe('with the Household to go on: the first frame is what the settings resolve to, not what storage holds', () => {
+    const sunKnown = true;
+    const flip = (store: ModeStore | null, settings: Parameters<typeof modeOnLayoutChange>[4], when = NOW, held: Parameters<typeof modeOnLayoutChange>[5] = null) =>
+      modeOnLayoutChange(true, false, store, when, settings, held);
+
+    it('is dark for a dark Appearance with nothing stored (the phone never wrote a last mode), and light for a light one', () => {
+      expect(flip(spyStore().store, { appearance: 'dark', timezone: CHICAGO, sunKnown })).toEqual({ override: null, mode: 'dark' });
+      expect(flip(spyStore({ [MODE_KEY]: 'dark' }).store, { appearance: 'light', timezone: CHICAGO, sunKnown })).toEqual({ override: null, mode: 'light' });
+    });
+
+    it('is dark for Auto after sunset and light for Auto by day, with nothing stored', () => {
+      // Chicago on daylight time: 18:00 UTC is 13:00 by day; 02:00 UTC the next day is 21:00, after the 19:00 sunset.
+      const auto = { appearance: 'auto' as const, timezone: CHICAGO, sunKnown };
+      expect(flip(spyStore().store, auto, at('2026-10-01T18:00:00'))).toEqual({ override: null, mode: 'light' });
+      expect(flip(spyStore().store, auto, at('2026-10-02T02:00:00'))).toEqual({ override: null, mode: 'dark' });
+    });
+
+    it('lets the stored override that is still running rule over the Appearance', () => {
+      const { store } = spyStore({ [OVERRIDE_KEY]: JSON.stringify(running) });
+      expect(flip(store, { appearance: 'light', timezone: CHICAGO, sunKnown })).toEqual({ override: running, mode: 'dark' });
+    });
+
+    it('keeps an in-memory override that is still running when storage is blocked, and drops one that has ended', () => {
+      expect(flip(null, { appearance: 'light', timezone: CHICAGO, sunKnown }, NOW, running)).toEqual({ override: running, mode: 'dark' });
+      expect(flip(null, { appearance: 'light', timezone: CHICAGO, sunKnown }, NOW, { mode: 'dark', until: NOW - 1 })).toEqual({ override: null, mode: 'light' });
+    });
+
+    it('falls back to the stored last mode only when the inputs cannot resolve: the Household not read, or Auto waiting for the sun', () => {
+      const dark = spyStore({ [MODE_KEY]: 'dark' }).store;
+      expect(flip(dark, { appearance: 'light', timezone: null, sunKnown })).toEqual({ override: null, mode: 'dark' });
+      expect(flip(dark, { appearance: 'auto', timezone: CHICAGO, sunKnown: false })).toEqual({ override: null, mode: 'dark' });
+      expect(flip(spyStore().store, { appearance: 'auto', timezone: CHICAGO, sunKnown: false })).toEqual({ override: null, mode: 'light' });
+    });
+  });
+
   it('changes nothing in any other move: staying a phone, staying a tablet, or becoming a phone', () => {
     const { store, uses } = spyStore({ [MODE_KEY]: 'dark', [OVERRIDE_KEY]: JSON.stringify(running) });
     expect(modeOnLayoutChange(true, true, store, NOW)).toBeNull();

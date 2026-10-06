@@ -41,12 +41,15 @@ export function useWallMode({ timezone, appearance, sun, system = false }: WallM
   const prefersDark = usePrefersDark();
 
   // A Wall that stops being a phone (the window grew past 768 px) takes up where the tablet's storage left it. That is worked out while
-  // this draws (React draws again at once, before anything is painted or any effect has run), so the first frame back is the stored
-  // override's mode, and the resolving below starts from that override and not from the nothing the phone held.
+  // this draws (React draws again at once, before anything is painted or any effect has run), so the first frame back is what the
+  // Household's settings resolve to (the phone never wrote a last mode), and the resolving below starts from the stored override, or the
+  // in-memory one when storage is blocked, and not from the nothing the phone held.
   const [wasSystem, setWasSystem] = useState(system);
   if (wasSystem !== system) {
     setWasSystem(system);
-    const back = modeOnLayoutChange(wasSystem, system, store, Date.now());
+    const now = Date.now();
+    const settings = { appearance, timezone, sunKnown: sun !== null, ...(timezone !== null ? sunAt(sun ?? [], timezone, now) : {}) };
+    const back = modeOnLayoutChange(wasSystem, system, store, now, settings, override);
     if (back) {
       setOverride(back.override);
       setMode(back.mode);
