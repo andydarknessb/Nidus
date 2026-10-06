@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
 
 // Calendar Accounts and Mirrored Calendars (CONTEXT.md). Every function takes the
 // client so the same code runs in the app and in tests against the local stack.
@@ -7,10 +7,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // reaches a client, and neither does the column that names its Vault secret.
 
 export type CalendarAccountStatus = 'active' | 'needs_reauth';
+export type CalendarProvider = 'google' | 'icloud';
 
 export type CalendarAccount = {
   id: string;
-  google_email: string;
+  provider: CalendarProvider;
+  // Null for an iPhone (iCloud) calendar, which has no Google email.
+  google_email: string | null;
   status: CalendarAccountStatus;
   last_synced_at: string | null;
   last_error: string | null;
@@ -35,7 +38,7 @@ export type MirroredCalendarChoice = { selected?: boolean; profile_id?: string |
 
 // Explicit column lists: `select *` on these tables is refused, because vault_secret_id
 // and sync_token are not granted to clients.
-const accountColumns = 'id, google_email, status, last_synced_at, last_error';
+const accountColumns = 'id, provider, google_email, status, last_synced_at, last_error';
 const calendarColumns = 'id, calendar_account_id, google_calendar_id, name, color, profile_id, selected';
 
 export async function loadCalendarAccounts(client: SupabaseClient): Promise<CalendarAccount[]> {
@@ -59,6 +62,54 @@ export async function startCalendarConnect(client: SupabaseClient, kind: 'settin
   });
   if (error || !data?.url) throw error ?? new Error('calendar-connect returned no url');
   return data.url;
+}
+
+export const IPHONE_ADD_FAILED = 'Could not add that calendar. Try again.';
+export const IPHONE_ADDED = 'Added. First sync within 5 minutes.';
+
+// The route's own refusal, in words for the family: a link that is not an iPhone calendar link (400), one already added (409), one
+// that could not be read (502). Nothing else the route says (a missing session, a Device, a crash) is for the family to read.
+export class AddRefused extends Error {}
+const FAMILY_STATUSES: ReadonlySet<number> = new Set([400, 409, 502]);
+
+// Adds an iPhone calendar from its public link; the link itself is never kept here. A refusal in the route's family words throws
+// AddRefused; any other answer from the route throws AddRefused with the plain fallback. A request that got no answer throws what
+// supabase-js threw, so that the page words it as it words every write that did not reach the server (offline, or not).
+export async function addIphoneCalendar(client: SupabaseClient, url: string): Promise<void> {
+  const { error } = await client.functions.invoke<{ id: string; name: string }>('calendar-connect/icloud', { body: { url } });
+  if (!error) return;
+  if (!(error instanceof FunctionsHttpError)) throw error;
+  const words = FAMILY_STATUSES.has(error.context.status) ? ((await error.context.json().catch(() => null)) as { error?: unknown } | null)?.error : null;
+  throw new AddRefused(typeof words === 'string' ? words : IPHONE_ADD_FAILED);
+}
+
+// What the Add button's press came to, for the card to show.
+export type PressAddResult =
+  | { kind: 'ignored' }
+  | { kind: 'added'; clear: boolean; say: string }
+  | { kind: 'refused'; words: string }
+  | { kind: 'failed'; error: unknown };
+
+// One press of Add. `state.adding` is the guard: a press while a link is being added is ignored, and the flag is down again when
+// the answer is. The field is cleared on success only if it still holds the link that was sent, so what was typed meanwhile is kept.
+export async function pressAdd(options: {
+  link: string;
+  state: { adding: boolean };
+  current: () => string;
+  add: (url: string) => Promise<void>;
+}): Promise<PressAddResult> {
+  const { state } = options;
+  if (state.adding) return { kind: 'ignored' };
+  state.adding = true;
+  const sent = options.link.trim();
+  try {
+    await options.add(sent);
+    return { kind: 'added', clear: options.current().trim() === sent, say: IPHONE_ADDED };
+  } catch (error) {
+    return error instanceof AddRefused ? { kind: 'refused', words: error.message } : { kind: 'failed', error };
+  } finally {
+    state.adding = false;
+  }
 }
 
 export async function updateMirroredCalendar(
@@ -133,10 +184,17 @@ export function lastSyncedText(lastSyncedAt: string | null, nowMs: number): stri
 // (docs/calendar-sync.md), so a failure mends itself unless the sign-in itself has gone.
 export const UPDATE_FAILED_WORDS = 'Connected, but the last update failed. Nidus tries again every 5 minutes.';
 
+// The note the sync writes on an iPhone calendar it read but could not expand in full (the same sentence as
+// FEED_TRUNCATED_MESSAGE in the calendar-sync function; a test holds the two together), and what the screen says of it.
+export const ICLOUD_TRUNCATED_NOTE = 'Some repeating events in this calendar cannot be shown in full.';
+export const ICLOUD_TRUNCATED_WORDS = 'Connected. Some repeating events cannot be shown in full.';
+
 // How the settings screen says an account is doing. `last_error` is whatever the sync wrote when it failed, which is for the
-// logs: it is never shown.
-export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error'>): string {
-  if (account.status === 'needs_reauth') return 'Needs to be connected again';
+// logs: it is never shown. The exceptions are the two sentences the sync writes itself, in the family's words (spec 0005): an
+// iPhone calendar whose link broke, which tells them what to do, and an active one whose repeating events were cut short.
+export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error'> & Partial<Pick<CalendarAccount, 'provider'>>): string {
+  if (account.status === 'needs_reauth') return account.provider === 'icloud' && account.last_error ? account.last_error : 'Needs to be connected again';
+  if (account.provider === 'icloud' && account.last_error === ICLOUD_TRUNCATED_NOTE) return ICLOUD_TRUNCATED_WORDS;
   return account.last_error ? UPDATE_FAILED_WORDS : 'Connected';
 }
 

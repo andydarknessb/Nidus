@@ -1,22 +1,23 @@
 # Nidus
 
-A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for everything server-side. One household, an Android tablet in Fully Kiosk Browser, Google Calendar mirrored read-only.
+A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for everything server-side. One household, an Android tablet in Fully Kiosk Browser, Google and iPhone (iCloud) calendars mirrored read-only.
 
 ## Read first
 
 - `CONTEXT.md` is the glossary. Use its terms (Household, Household Account, Profile, Device, Appearance, Calendar Account, Mirrored Calendar, Synced Event, Native Event, Routine, Routine Completion, Shared List, Meal) in code, tests, issues and PRs.
 - `docs/PLAN.md` holds every settled decision, the table list and the milestone order.
-- `docs/adr/` holds the two load-bearing decisions: Supabase over a custom backend, and a read-only calendar mirror. Do not reopen them in a ticket.
+- `docs/adr/` holds the load-bearing decisions: Supabase over a custom backend, a read-only calendar mirror, and iCloud calendars by their public link. Do not reopen them in a ticket.
 - `docs/specs/0001-nidus-v1.md` is the v1 spec; GitHub issue #1 is its tracker copy, and its sub-issues are the tickets.
 - `docs/specs/0002-skylight-gaps.md` is the v2 spec, cut from the comparison in `docs/skylight-comparison.md`; its tracker copy and tickets are named in its opening paragraph.
 - `docs/specs/0003-the-look.md` is the v3 spec: the look, in a light and a dark mode. `docs/look.md` is the source for every colour, type size and shared part; read it before touching anything a person sees.
 - `docs/specs/0004-the-wall-on-a-phone.md` is the v4 spec: the Wall below 768 px wide, with five tabs at the foot.
+- `docs/specs/0005-iphone-calendars.md` is the v5 spec: iPhone (iCloud) calendars mirrored from their public link.
 - `docs/specs/0006-household-invites.md` is the v6 spec: more than one Household Account, joined by a Household Invite link.
 
 ## Conventions
 
 - pnpm, TypeScript strict, Vitest. Supabase CLI with the local Docker stack; every schema change is a committed migration under `supabase/migrations/`.
-- Tests run through one seam: the Supabase JS client against the local stack, acting as a real principal (Household Account, Device, anonymous). Google's HTTP API is the only fake, injected into the Edge Function. Never mock the database.
+- Tests run through one seam: the Supabase JS client against the local stack, acting as a real principal (Household Account, Device, anonymous). The outside HTTP the Edge Functions make (Google's API, an iCloud calendar's feed) is the only fake, injected into the function. Never mock the database.
 - Row-level security on every table; `current_household_id()` is the one helper policies use. A Device may write only Native Events, Routine Completions, list items, Meals and its own heartbeat.
 - All date logic uses the Household Timezone. Never use the machine's local zone.
 - Two modes, light and dark, from one set of tokens (`docs/look.md`). The mode is the document's `data-mode`; no component branches on it for colour. WCAG AAA contrast in both, 48 px minimum touch targets, landscape 16:10 on the Wall, and a phone layout below 768 px wide (`docs/specs/0004-the-wall-on-a-phone.md`, `docs/look.md` "The phone").

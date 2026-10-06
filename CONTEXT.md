@@ -40,7 +40,7 @@ _Avoid_: Theme, skin, dark mode
 ### Calendar
 
 **Calendar Account**:
-An external calendar provider connection (v1: Google only) belonging to the Household, from which events are mirrored.
+An external calendar source belonging to the Household, from which events are mirrored: a Google account (by its consent), or one iCloud calendar (by its public link). Its `provider` says which.
 _Avoid_: Integration, connection, OAuth account
 
 **Mirrored Calendar**:
@@ -48,7 +48,7 @@ One selected calendar within a Calendar Account that Nidus mirrors. Carries the 
 _Avoid_: Sub-calendar, feed, source
 
 **Synced Event**:
-One occurrence of an event mirrored read-only from a Mirrored Calendar. Recurring events arrive already expanded into occurrences. Nidus never edits or writes it back.
+One occurrence of an event mirrored read-only from a Mirrored Calendar. Recurring events are stored as expanded occurrences (Google expands them; an iCloud feed's rules are expanded by the sync). Nidus never edits or writes it back.
 _Avoid_: External event, imported event
 
 **Native Event**:

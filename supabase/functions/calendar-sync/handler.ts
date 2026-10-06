@@ -17,7 +17,15 @@
 // wall never shows a partly emptied calendar. One calendar or account failing never stops the
 // others; an account Google no longer honours is marked needs_reauth and left alone until the
 // parent reconnects it.
+//
+// An iPhone (iCloud) calendar account (spec 0005) is read from its public link instead: the whole
+// feed, skipped when the server says it has not changed, its repeats expanded into the same
+// window (_shared/ics-expand.ts) and stored with the same replace_synced_events. It never
+// touches Google's token endpoint, and one account's failure never stops another's.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { type EventRow, MAX_DESCRIPTION, MAX_LOCATION, MAX_TITLE } from '../_shared/event-row.ts';
+import { expandFeed, FeedTooLargeError, MAX_EXPANSION_MS, MAX_STEPS_PER_RUN, type StepBudget } from '../_shared/ics-expand.ts';
+import { fetchFeed } from '../_shared/feed.ts';
 import { dayStartMs } from '../_shared/zoned-time.ts';
 
 export type SyncEnv = {
@@ -34,6 +42,9 @@ export type SyncDeps = {
   fetch: typeof fetch;
   // Epoch milliseconds; injectable so the window and last_synced_at are testable.
   now?: () => number;
+  // Milliseconds for the run's time limit on expanding feeds (performance.now by default);
+  // injectable so the limit is testable.
+  clock?: () => number;
   // Sync only this Household's accounts. The scheduled run leaves it unset (every Household);
   // the tests set it so they never touch another run's accounts on a shared local stack.
   householdId?: string;
@@ -44,9 +55,6 @@ export type SyncSummary = { accounts: number; calendars: number; events: number;
 export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export const GOOGLE_EVENTS_BASE = 'https://www.googleapis.com/calendar/v3/calendars';
 
-const MAX_TITLE = 500;
-const MAX_LOCATION = 500;
-const MAX_DESCRIPTION = 8000;
 // How long a calendar may go on being read incrementally before it is read in full again.
 export const FULL_SYNC_EVERY_MS = 24 * 60 * 60 * 1000;
 
@@ -76,16 +84,6 @@ type GoogleEvent = {
   location?: string;
   start?: { date?: string; dateTime?: string };
   end?: { date?: string; dateTime?: string };
-};
-
-type EventRow = {
-  google_event_id: string;
-  title: string;
-  description: string | null;
-  location: string | null;
-  starts_at: string;
-  ends_at: string;
-  is_all_day: boolean;
 };
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -124,7 +122,7 @@ export function toRow(event: GoogleEvent, timezone: string): EventRow | null {
   };
 }
 
-type Account = { id: string; household_id: string; vault_secret_id: string };
+type Account = { id: string; household_id: string; vault_secret_id: string; provider: 'google' | 'icloud'; last_attempted_at: string | null; last_error: string | null };
 type Calendar = {
   id: string;
   google_calendar_id: string;
@@ -287,15 +285,130 @@ async function syncCalendar(deps: SyncDeps, accessToken: string, calendar: Calen
   return rows.length;
 }
 
-// Syncs one Calendar Account. Never throws: its outcome is on the account row and in `summary`.
-async function syncAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary): Promise<void> {
-  const fail = async (message: string, status?: 'needs_reauth') => {
-    summary.errors.push(`${account.id}: ${message}`);
+async function failAccount(deps: SyncDeps, account: Account, summary: SyncSummary, message: string, status?: 'needs_reauth'): Promise<void> {
+  summary.errors.push(`${account.id}: ${message}`);
+  await deps.admin
+    .from('calendar_accounts')
+    .update({ last_error: message, ...(status ? { status } : {}) })
+    .eq('id', account.id);
+}
+
+// The run had no time for this calendar: nothing was stored, and it is read first next time.
+export const FEED_TOO_LARGE_MESSAGE = 'This calendar was not read this time; it will be tried again.';
+// Read and stored, but some repeating events were cut short by the work limits.
+export const FEED_TRUNCATED_MESSAGE = 'Some repeating events in this calendar cannot be shown in full.';
+export const FEED_GONE_MESSAGE = 'This link no longer works. Turn on Public Calendar again and paste the new link.';
+
+// An iPhone calendar's validator, kept in its Mirrored Calendar's sync_token (no client can read
+// it) as JSON: {"etag": "...", "lastModified": "..."}, either null, and `"truncated": true` when
+// that read left some repeating events short, so that a 304 (the stored events are still the
+// truth) keeps saying so. Anything else reads as none, so the feed is read in full.
+export function encodeFeedValidators(etag: string | null, lastModified: string | null, truncated = false): string | null {
+  return etag || lastModified ? JSON.stringify({ etag, lastModified, ...(truncated ? { truncated: true } : {}) }) : null;
+}
+
+function decodeFeedValidators(token: string | null): { etag: string | null; lastModified: string | null; truncated: boolean } {
+  try {
+    const parsed = JSON.parse(token ?? 'null') as { etag?: unknown; lastModified?: unknown; truncated?: unknown } | null;
+    return {
+      etag: typeof parsed?.etag === 'string' ? parsed.etag : null,
+      lastModified: typeof parsed?.lastModified === 'string' ? parsed.lastModified : null,
+      truncated: parsed?.truncated === true,
+    };
+  } catch {
+    return { etag: null, lastModified: null, truncated: false };
+  }
+}
+
+// Syncs one iPhone calendar account: read its link from Vault, ask the feed whether it changed,
+// and on a change expand it into the window and replace the Mirrored Calendar's events. Never
+// throws, and never puts the link (or anything the feed said) in an error.
+async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary, run: StepBudget): Promise<void> {
+  const fail = (message: string, status?: 'needs_reauth') => failAccount(deps, account, summary, message, status);
+
+  // Before anything that can take long or kill the run: a feed that does so goes to the back of the
+  // line next time. Whether this write lands is not the sync's business.
+  await deps.admin.from('calendar_accounts').update({ last_attempted_at: new Date(nowMs).toISOString() }).eq('id', account.id);
+
+  const { data: link, error: secretError } = await deps.admin.rpc('read_calendar_secret', { p_secret_id: account.vault_secret_id });
+  if (secretError) return fail('Could not read the stored link.');
+  if (typeof link !== 'string') return fail(FEED_GONE_MESSAGE, 'needs_reauth');
+
+  const { data: calendars, error: listError } = await deps.admin
+    .from('mirrored_calendars')
+    .select('id, google_calendar_id, name, selected, sync_token, last_full_sync_at')
+    .eq('calendar_account_id', account.id)
+    .eq('selected', true)
+    .returns<Calendar[]>();
+  if (listError || !calendars) return fail('Could not read the account’s calendars.');
+
+  const markSynced = (note: string | null = null) =>
+    deps.admin.from('calendar_accounts').update({ last_synced_at: new Date(nowMs).toISOString(), last_error: note }).eq('id', account.id);
+  // Deselected: it has no events and no business with the feed.
+  const calendar = calendars[0];
+  if (!calendar) {
+    await markSynced();
+    return;
+  }
+
+  // As Google's incremental sync is dropped every FULL_SYNC_EVERY_MS, so is a validator: a feed
+  // that keeps answering 304 would otherwise never be expanded past the window it was last read in.
+  const validators = canReadIncrementally(calendar, nowMs) ? decodeFeedValidators(calendar.sync_token) : { etag: null, lastModified: null, truncated: false };
+  // Decided before the feed starts: a run with no steps or time left cannot read this feed at all, not
+  // even to parse it. It was not really tried, so it keeps its place in line; a feed that does start and
+  // does not fit has been tried, and goes to the back.
+  if (run.remaining <= 0 || (run.spentMs ?? 0) >= MAX_EXPANSION_MS) {
+    summary.errors.push(`${account.id}: ${FEED_TOO_LARGE_MESSAGE}`);
     await deps.admin
       .from('calendar_accounts')
-      .update({ last_error: message, ...(status ? { status } : {}) })
+      .update({ last_attempted_at: account.last_attempted_at, ...(account.last_error ? {} : { last_error: FEED_TOO_LARGE_MESSAGE }) })
       .eq('id', account.id);
-  };
+    return;
+  }
+  const feed = await fetchFeed(link, validators, deps.fetch);
+  if (feed.kind === 'gone') return fail(FEED_GONE_MESSAGE, 'needs_reauth');
+  if (feed.kind === 'error') return fail(`Could not read the iPhone calendar (${feed.message}).`);
+  if (feed.kind === 'calendar') {
+    const window = syncWindow(nowMs);
+    let truncated: boolean;
+    let rows: EventRow[];
+    // Whether this feed had the whole run to itself: only then does failing to fit say it is too big.
+    const fresh = run.remaining === MAX_STEPS_PER_RUN && !run.spentMs;
+    try {
+      ({ rows, truncated } = expandFeed(feed.text, timezone, Date.parse(window.timeMin), Date.parse(window.timeMax), run));
+    } catch (error) {
+      // Not stored: replacing would delete the events the walk never reached. The old events and
+      // validator stay, so the feed is read again next run.
+      if (error instanceof FeedTooLargeError) {
+        // It had the whole run and did not fit: it keeps its new stamp and goes to the back of the
+        // line. One that had less than a whole run (feeds before it took the rest) has not shown it is
+        // too big: it gets its old place back, and a whole run next time.
+        if (!fresh) await deps.admin.from('calendar_accounts').update({ last_attempted_at: account.last_attempted_at }).eq('id', account.id);
+        return fail(FEED_TOO_LARGE_MESSAGE);
+      }
+      return fail('Could not read the iPhone calendar (it is not a calendar the Wall can read).');
+    }
+    try {
+      await replace(deps, calendar.id, rows, encodeFeedValidators(feed.etag, feed.lastModified, truncated), nowMs);
+    } catch {
+      return fail('Could not store the iPhone calendar’s events.');
+    }
+    summary.events += rows.length;
+    // It did sync: the account stays active and last_synced_at moves; the note says what was cut.
+    summary.calendars += 1;
+    await markSynced(truncated ? FEED_TRUNCATED_MESSAGE : null);
+    return;
+  }
+  summary.calendars += 1;
+  // Not changed: the stored events are still the truth, so a note about them is too.
+  await markSynced(validators.truncated ? FEED_TRUNCATED_MESSAGE : null);
+}
+
+// Syncs one Calendar Account. Never throws: its outcome is on the account row and in `summary`.
+async function syncAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary, run: StepBudget): Promise<void> {
+  // An iPhone calendar has no Google sign-in: it never reaches the token minting below.
+  if (account.provider === 'icloud') return syncIcloudAccount(deps, account, timezone, nowMs, summary, run);
+  const fail = (message: string, status?: 'needs_reauth') => failAccount(deps, account, summary, message, status);
 
   const { data: refreshToken, error: secretError } = await deps.admin.rpc('read_calendar_secret', { p_secret_id: account.vault_secret_id });
   if (secretError) return fail('Could not read the stored Google sign-in.');
@@ -334,7 +447,7 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
   const nowMs = (deps.now ?? Date.now)();
   const summary: SyncSummary = { accounts: 0, calendars: 0, events: 0, errors: [] };
 
-  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id').eq('status', 'active');
+  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id, provider, last_attempted_at, last_error').eq('status', 'active');
   if (deps.householdId) query = query.eq('household_id', deps.householdId);
   const { data: accounts, error } = await query.returns<Account[]>();
   if (error || !accounts) {
@@ -350,6 +463,24 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
     .returns<{ id: string; timezone: string }[]>();
   const timezones = new Map((households ?? []).map((household) => [household.id, household.timezone]));
 
+  // Google first, then the iPhone calendars: a feed that is slow or runs the function out of time
+  // can then never keep a Google account from syncing in the same run.
+  // One step budget and one time limit for every feed of the run: the hosted function has a 2 s CPU
+  // limit in all.
+  const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0, ...(deps.clock ? { now: deps.clock } : {}) };
+  // Among the feeds, the one tried longest ago (or never) goes first, then by id, so the same feeds
+  // cannot always take the run and starve a later one. Tried, not read: a feed that kills the run
+  // has still been tried, and goes to the back.
+  const attemptedAt = (account: Account) => (account.last_attempted_at ? Date.parse(account.last_attempted_at) : -Infinity);
+  const byId = (a: Account, b: Account) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  accounts.sort((a, b) => {
+    if (a.provider !== b.provider) return a.provider === 'icloud' ? 1 : -1;
+    if (a.provider === 'icloud') {
+      const [x, y] = [attemptedAt(a), attemptedAt(b)];
+      if (x !== y) return x < y ? -1 : 1;
+    }
+    return byId(a, b);
+  });
   for (const account of accounts) {
     const timezone = timezones.get(account.household_id);
     if (!timezone) {
@@ -357,7 +488,7 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
       continue;
     }
     summary.accounts += 1;
-    await syncAccount(deps, account, timezone, nowMs, summary);
+    await syncAccount(deps, account, timezone, nowMs, summary, run);
   }
   return summary;
 }

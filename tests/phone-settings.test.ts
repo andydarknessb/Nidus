@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Fragment, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import type { AccountSummary as AccountSummaryType, CalendarRow as CalendarRowType } from '../src/CalendarAccountsSection';
+import type { AccountBlock as AccountBlockType, AccountSummary as AccountSummaryType, CalendarRow as CalendarRowType, IphoneCalendarForm as IphoneCalendarFormType } from '../src/CalendarAccountsSection';
 import type { CalendarsPage as CalendarsPageType } from '../src/CalendarsPage';
 import type { EventRow as EventRowType } from '../src/EventsSection';
 import type { RoutineForm as RoutineFormType, RoutinesPage as RoutinesPageType } from '../src/RoutinesPage';
@@ -12,7 +12,7 @@ import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '..
 import { Confirm } from '../src/components/phone';
 import { Button } from '../src/components/ui/button';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
-import { UPDATE_FAILED_WORDS, accountStatusText, shownCalendar, stillPending } from '../src/lib/calendar-accounts';
+import { ICLOUD_TRUNCATED_WORDS, UPDATE_FAILED_WORDS, accountStatusText, shownCalendar, stillPending, type CalendarAccount, type MirroredCalendar } from '../src/lib/calendar-accounts';
 import { seenWords } from '../src/lib/device-format';
 import type { Household } from '../src/lib/household';
 import { TOKENS } from '../src/lib/look';
@@ -172,6 +172,28 @@ describe('what a Calendar Account says of itself', () => {
     expect(words).toBe('Connected, but the last update failed. Nidus tries again every 5 minutes.');
     expect(words).toBe(UPDATE_FAILED_WORDS);
     expect(words).not.toMatch(/Google|500|Family|Sam/);
+  });
+
+  it('says of an iPhone calendar whose link broke the sentence the sync wrote, which is Nidus’s own, and Connected otherwise', () => {
+    const broken = 'This link no longer works. Turn on Public Calendar again and paste the new link.';
+    expect(accountStatusText({ provider: 'icloud', status: 'needs_reauth', last_error: broken })).toBe(broken);
+    expect(accountStatusText({ provider: 'icloud', status: 'needs_reauth', last_error: null })).toBe('Needs to be connected again');
+    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: null })).toBe('Connected');
+    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: 'Feed answered 500' })).toBe(UPDATE_FAILED_WORDS);
+    // A Google account is as it was: its last_error is never shown.
+    expect(accountStatusText({ provider: 'google', status: 'needs_reauth', last_error: broken })).toBe('Needs to be connected again');
+  });
+
+  it('says of an active iPhone calendar whose repeating events were cut short that it is connected, and what was cut, in the family’s words', () => {
+    const words = 'Connected. Some repeating events cannot be shown in full.';
+    const note = 'Some repeating events in this calendar cannot be shown in full.';
+    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: note })).toBe(words);
+    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: note })).toBe(ICLOUD_TRUNCATED_WORDS);
+    expect(words).not.toContain('\u2014');
+    // Only an iPhone calendar's own sentence: any other error keeps the failed words, and Google never shows it.
+    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: 'This calendar was not read this time; it will be tried again.' })).toBe(UPDATE_FAILED_WORDS);
+    expect(accountStatusText({ provider: 'google', status: 'active', last_error: note })).toBe(UPDATE_FAILED_WORDS);
+    expect(accountStatusText({ status: 'active', last_error: note })).toBe(UPDATE_FAILED_WORDS);
   });
 
   it('says it has to be connected again when Google no longer trusts it, whatever went wrong before', () => {
@@ -425,7 +447,7 @@ describe("the phone's pages, as they are first drawn", () => {
 
   it('put the Google calendars and the events added in Nidus on the Calendars page', () => {
     const markup = calendarsPage();
-    expect(headings(markup)).toEqual(['Google calendars', 'Events added in Nidus']);
+    expect(headings(markup)).toEqual(['Google calendars', 'iPhone calendars', 'Events added in Nidus']);
     expect(words(markup)).toContain('Connect a Google calendar');
     expect(words(markup)).toContain('Add event');
   });
@@ -494,12 +516,148 @@ describe('a Calendar Account and its calendars', () => {
 
   it('says of an account whose last update failed what Nidus says, and none of what the sync wrote', () => {
     const now = Date.parse('2026-10-01T19:21:00Z');
-    const account = { id: 'a1', google_email: 'sam.work@example.com', status: 'active' as const, last_synced_at: '2026-10-01T16:21:00Z', last_error: 'Work: Google answered 500 (backendError)' };
+    const account = { id: 'a1', provider: 'google' as const, google_email: 'sam.work@example.com', status: 'active' as const, last_synced_at: '2026-10-01T16:21:00Z', last_error: 'Work: Google answered 500 (backendError)' };
     const shown = words(renderToStaticMarkup(createElement(AccountSummary, { account, now })));
     expect(shown).toContain('sam.work@example.com');
     expect(shown).toContain('Connected, but the last update failed. Nidus tries again every 5 minutes.');
     expect(shown).toContain('Last synced 3 hours ago');
     expect(shown).not.toMatch(/answered|500|backendError|Work/);
+  });
+});
+
+
+// An iPhone calendar in Settings (spec 0005, Settings): the form that adds one, and the account that lists one.
+describe('iPhone calendars in Settings', () => {
+  let AccountBlock: typeof AccountBlockType;
+  let IphoneCalendarForm: typeof IphoneCalendarFormType;
+  beforeAll(async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+    ({ AccountBlock, IphoneCalendarForm } = await import('../src/CalendarAccountsSection'));
+  });
+
+  const noop = () => undefined;
+  const members = [
+    { id: 'p-cory', name: 'Cory', color: hex(7), avatar_url: null, sort_order: 0 },
+    { id: 'p-sam', name: 'Sam', color: hex(9), avatar_url: null, sort_order: 1 },
+  ];
+  const now = Date.parse('2026-10-01T19:21:00Z');
+  const form = (props: Partial<Parameters<typeof IphoneCalendarFormType>[0]> = {}) =>
+    renderToStaticMarkup(createElement(IphoneCalendarForm, { value: '', adding: false, onChange: noop, onAdd: noop, ...props }));
+
+  it('says the steps in plain words, then a field labelled Link, then Add', () => {
+    expect(words(form())).toBe(
+      'On your iPhone, open Calendar, tap Calendars, tap the i next to a calendar, turn on Public Calendar, tap Share Link, then Copy Link. Paste it here. Link Add',
+    );
+  });
+
+  it('makes the field a link field a phone does not correct, tied to the steps', () => {
+    const markup = form();
+    const input = /<input[^>]*>/.exec(markup)![0];
+    expect(input).toContain('type="url"');
+    expect(input).toContain('inputMode="url"');
+    expect(input).toContain('autoCapitalize="off"');
+    expect(input).toContain('autoCorrect="off"');
+    expect(input).toContain('spellCheck="false"');
+    // The label is the field's parent, so a tap on "Link" reaches it, and the field is the 56 tall one.
+    expect(markup).toMatch(/<label[^>]*><span[^>]*>Link<\/span><input/);
+    expect(input).toMatch(/class="[^"]*\bh-14\b[^"]*\bw-full\b/);
+    const steps = /<p id="([^"]+)"/.exec(markup)![1];
+    expect(input).toContain(`aria-describedby="${steps}"`);
+  });
+
+  it('marks the field invalid while a problem shows, and not otherwise', () => {
+    const input = (markup: string) => /<input[^>]*>/.exec(markup)![0];
+    expect(input(form({ problem: { words: 'That is not an iPhone calendar link.', n: 1 } }))).toContain('aria-invalid="true"');
+    expect(input(form())).not.toContain('aria-invalid');
+  });
+
+  it('says "Adding" while it adds, and does nothing then', () => {
+    expect(form({ adding: true })).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Adding<\/button>/);
+    expect(form()).toMatch(/<button[^>]*type="submit"[^>]*>Add<\/button>/);
+    expect(form()).not.toContain('aria-disabled=');
+  });
+
+  it('says what the route said under the field, as an alert the field points to', () => {
+    const markup = form({ problem: { words: 'That is not an iPhone calendar link.', n: 1 } });
+    const alert = /<p id="([^"]+)" role="alert"[^>]*>That is not an iPhone calendar link\.<\/p>/.exec(markup);
+    expect(alert).not.toBeNull();
+    expect(/<input[^>]*>/.exec(markup)![0]).toContain(alert![1]!);
+    expect(form()).not.toContain('role="alert"');
+  });
+
+  const google: CalendarAccount = { id: 'a1', provider: 'google', google_email: 'sam.work@example.com', status: 'needs_reauth', last_synced_at: '2026-10-01T16:21:00Z', last_error: null };
+  const iphone: CalendarAccount = { id: 'a2', provider: 'icloud', google_email: null, status: 'active', last_synced_at: '2026-10-01T19:16:00Z', last_error: null };
+  const gcal: MirroredCalendar = { id: 'c1', calendar_account_id: 'a1', google_calendar_id: 'g1', name: 'Family', color: null, profile_id: null, selected: true };
+  const ical: MirroredCalendar = { id: 'c2', calendar_account_id: 'a2', google_calendar_id: 'ics', name: 'Sam’s iPhone', color: null, profile_id: 'p-sam', selected: true };
+  const block = (account: CalendarAccount, calendars: MirroredCalendar[], extra: Partial<Parameters<typeof AccountBlockType>[0]> = {}) =>
+    renderToStaticMarkup(
+      createElement(AccountBlock, {
+        account,
+        calendars,
+        profiles: members,
+        now,
+        confirming: false,
+        removing: false,
+        problems: { at: () => null },
+        onReconnect: noop,
+        onChoose: noop,
+        onAskRemove: noop,
+        onCancelRemove: noop,
+        onRemove: noop,
+        ...extra,
+      }),
+    );
+
+  it('lists an iPhone calendar by its name, "iPhone calendar", status, last sync, whose it is, and Remove', () => {
+    const markup = block(iphone, [ical]);
+    expect(words(markup)).toBe('Sam’s iPhone iPhone calendar Connected Last synced 5 minutes ago Whose calendar is Sam’s iPhone? Everyone Cory Sam Remove Sam’s iPhone');
+    expect(markup).toMatch(/<option value="p-sam" selected="">Sam<\/option>/);
+    expect(/<button[^>]*id="remove-a2"/.test(markup)).toBe(true);
+  });
+
+  it('does not say "iPhone calendar" twice when the calendar has no name of its own', () => {
+    const markup = block(iphone, [{ ...ical, name: 'iPhone calendar' }]);
+    expect(markup.match(/>iPhone calendar</g)).toHaveLength(1);
+    expect(words(markup)).toContain('iPhone calendar Connected');
+    expect(block(iphone, [ical]).match(/>iPhone calendar</g)).toHaveLength(1);
+  });
+
+  it('shows none of Google’s controls for an iPhone calendar, even when its link broke', () => {
+    const markup = block({ ...iphone, status: 'needs_reauth', last_error: 'This link no longer works. Turn on Public Calendar again and paste the new link.' }, [ical]);
+    expect(words(markup)).toContain('This link no longer works. Turn on Public Calendar again and paste the new link.');
+    expect(markup).not.toMatch(/Connect |Connecting again|Choose the calendars|type="checkbox"|Google|google_email|consent/i);
+    expect(markup.match(/<button/g)).toHaveLength(1);
+  });
+
+  it('keeps a Google account as it was: reconnect, the choice of its calendars, and Remove', () => {
+    const markup = block(google, [gcal]);
+    expect(words(markup)).toContain('sam.work@example.com');
+    expect(words(markup)).toContain('Connect sam.work@example.com again');
+    expect(words(markup)).toContain('Choose the calendars to show');
+    expect(markup).toContain('type="checkbox"');
+    expect(words(markup)).toContain('Remove sam.work@example.com');
+    expect(words(markup)).not.toContain('iPhone calendar');
+  });
+
+  it('asks before removing an iPhone calendar, in its own words, naming it', () => {
+    const shown = words(block(iphone, [ical], { confirming: true }));
+    expect(shown).toContain('Remove Sam’s iPhone?');
+    expect(shown).toContain('Its events leave the Wall and Nidus forgets its link.');
+    expect(shown).toContain('Keep it');
+    expect(shown).toContain('Yes, remove it');
+  });
+
+  it('says what a write of its person said, under it', () => {
+    const markup = block(iphone, [ical], { problems: { at: (place) => (place === 'calendar-c2' ? { words: 'That did not save. Try again.' } : null) } });
+    expect(markup).toContain('role="alert"');
+    expect(words(markup)).toContain('That did not save. Try again.');
+  });
+
+  it('has no em-dash or en-dash, and no word the glossary keeps for code', () => {
+    const markup = form() + block(iphone, [ical]) + block(iphone, [ical], { confirming: true });
+    expect(markup).not.toMatch(/[–—]/);
+    expect(words(markup)).not.toMatch(/\b(Profiles?|Devices?|Calendar Accounts?|Mirrored Calendars?|Native Events?)\b|iCloud/);
   });
 });
 
