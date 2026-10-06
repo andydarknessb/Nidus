@@ -32,7 +32,10 @@ function Glyph({ icon, className }: { icon: WeatherIcon; className: string }) {
 // condition in words, rather than a picture and bare numbers. It is kept compact (the icon, the
 // temperature, and the high and low stacked small) and never shrinks, because the header also has to
 // hold the Household's name, the clock and date and the badges.
-export function WeatherNow({ forecast, unit, today }: { forecast: Forecast | null; unit: TemperatureUnit; today: string }) {
+// On the phone (`phone`) it is the icon and the temperature alone, in Young Serif 22, and it gives way to the pills (Offline, stale sync)
+// in the phone's header below 420 px wide, where the date, the pills and the gear are all there is room for: today's high and low are in the Home screen's
+// Today card, and the header has the room for little more than the date.
+export function WeatherNow({ forecast, unit, today, phone = false }: { forecast: Forecast | null; unit: TemperatureUnit; today: string; phone?: boolean }) {
   const day = forecastDay(forecast, today);
   const reading = forecast?.current ? { ...describeWeather(forecast.current.code, forecast.current.isDay), temperature: forecast.current.temperature } : null;
   if (!reading && !day) return null;
@@ -43,14 +46,14 @@ export function WeatherNow({ forecast, unit, today }: { forecast: Forecast | nul
     .filter(Boolean)
     .join(', ');
   return (
-    <div role="img" aria-label={heard} className="flex shrink-0 items-center gap-2.5 whitespace-nowrap">
+    <div role="img" aria-label={heard} className={phone ? 'flex shrink-0 items-center gap-2.5 whitespace-nowrap max-[420px]:group-has-[[data-pill]]/header:hidden' : 'flex shrink-0 items-center gap-2.5 whitespace-nowrap'}>
       {reading && (
         <>
-          <Glyph icon={reading.icon} className="size-[30px] shrink-0" />
-          <span className="font-display text-[32px] leading-9">{reading.temperature}°</span>
+          <Glyph icon={reading.icon} className={phone ? 'size-6 shrink-0' : 'size-[30px] shrink-0'} />
+          <span className={phone ? 'font-display text-[22px] leading-7' : 'font-display text-[32px] leading-9'}>{reading.temperature}°</span>
         </>
       )}
-      {day && (
+      {day && (!phone || !reading) && (
         <span className="flex flex-col text-sm leading-[18px] text-muted-foreground">
           <span>High {day.high}°</span>
           <span>Low {day.low}°</span>

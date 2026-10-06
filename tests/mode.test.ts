@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { TOKENS } from '../src/lib/look';
-import { MAX_OVERRIDE_MS, MODE_KEY, OVERRIDE_KEY, canResolve, nextBoundary, readLastMode, readOverride, resolveMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeStore } from '../src/lib/mode';
+import { MAX_OVERRIDE_MS, MODE_KEY, OVERRIDE_KEY, canResolve, nextBoundary, readLastMode, readOverride, resolveMode, stepMode, storedMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeStore } from '../src/lib/mode';
 import type { SunDay } from '../src/lib/weather';
 
 // Every instant is written in UTC and every Household Timezone is named, so no test reads the machine's zone.
@@ -586,6 +586,55 @@ describe('the override a screen keeps', () => {
   });
 });
 
+// ---- The phone layout: it follows the phone and neither reads nor writes what the Wall stored ------------------------
+
+// A store that says every use of it.
+function spyStore(initial: Record<string, string> = {}) {
+  const store = fakeStore(initial);
+  const uses: string[] = [];
+  return {
+    uses,
+    store: {
+      getItem: (key: string) => (uses.push(`get ${key}`), store.getItem(key)),
+      setItem: (key: string, value: string) => (uses.push(`set ${key}`), store.setItem(key, value)),
+      removeItem: (key: string) => (uses.push(`remove ${key}`), store.removeItem(key)),
+    } satisfies ModeStore,
+    items: store.items,
+  };
+}
+
+describe('useWallMode with system: true (the phone layout)', () => {
+  const NOW = at('2026-10-01T18:00:00');
+  const stored = { [MODE_KEY]: 'dark', [OVERRIDE_KEY]: JSON.stringify({ mode: 'dark', until: NOW + 3_600_000 }) };
+
+  it('starts from nothing and reads nothing from storage', () => {
+    const { store, uses } = spyStore(stored);
+    expect(storedMode(store, true, NOW)).toEqual({ override: null, mode: 'light' });
+    expect(uses).toEqual([]);
+  });
+
+  it('never steps: it resolves, drops and writes nothing, even with an override that has run out and a mode it could resolve', () => {
+    const { store, uses, items } = spyStore(stored);
+    const before = new Map(items);
+    const ended = { mode: 'dark' as const, until: NOW - 1 };
+    expect(stepMode(store, true, ended, { now: NOW, timezone: CHICAGO })).toBeNull();
+    expect(stepMode(store, true, null, { now: NOW, timezone: CHICAGO, appearance: 'dark' })).toBeNull();
+    expect(uses).toEqual([]);
+    expect(items).toEqual(before);
+  });
+
+  it('is the usual behaviour of the Wall when it is false: it reads what was stored, drops an ended override and keeps what it resolved', () => {
+    const { store, items } = spyStore(stored);
+    expect(storedMode(store, false, NOW)).toEqual({ override: { mode: 'dark', until: NOW + 3_600_000 }, mode: 'dark' });
+    expect(stepMode(store, false, { mode: 'dark', until: NOW - 1 }, { now: NOW, timezone: CHICAGO })).toBe('drop');
+    expect(items.has(OVERRIDE_KEY)).toBe(false);
+    expect(stepMode(store, false, null, { now: NOW, timezone: CHICAGO, appearance: 'light' })).toEqual({ mode: 'light' });
+    expect(items.get(MODE_KEY)).toBe('light');
+    // While it cannot resolve (the Household is not read yet) it changes nothing and keeps nothing new.
+    expect(stepMode(store, false, null, { now: NOW, timezone: null })).toBeNull();
+  });
+});
+
 // ---- The script in index.html, which paints the mode before React does ---------------------------
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -600,9 +649,12 @@ function paint({
   prefersDark = false,
   storage = 'works',
   metas = 'present',
+  width,
 }: {
   path: string;
   stored?: string;
+  // The window's width; a page that has none (a test that never says) is a tablet.
+  width?: number;
   prefersDark?: boolean;
   storage?: 'works' | 'blocked';
   metas?: 'present' | 'missing';
@@ -610,6 +662,7 @@ function paint({
   const page: { mode?: string; metas: Record<string, string> } = { metas: {} };
   const sandbox: Record<string, unknown> = {
     location: { pathname: path },
+    ...(width === undefined ? {} : { innerWidth: width }),
     matchMedia: (query: string) => ({ matches: query === '(prefers-color-scheme: dark)' && prefersDark }),
     document: {
       documentElement: { setAttribute: (name: string, value: string) => void (name === 'data-mode' && (page.mode = value)) },
@@ -667,7 +720,7 @@ describe('the inline script in index.html', () => {
   });
 
   it('keeps its variables to itself: it leaves no globals behind, whichever way it ends', () => {
-    for (const options of [{ path: '/', stored: 'dark' }, { path: '/settings', prefersDark: true }, { path: '/', storage: 'blocked' as const }]) {
+    for (const options of [{ path: '/', stored: 'dark' }, { path: '/settings', prefersDark: true }, { path: '/', storage: 'blocked' as const }, { path: '/', width: 390, prefersDark: true }]) {
       expect(paint(options).leaked, JSON.stringify(options)).toEqual([]);
     }
   });
@@ -682,6 +735,31 @@ describe('the inline script in index.html', () => {
 
   it("takes a path that only starts with the word settings for the Wall's", () => {
     expect(paint({ path: '/settingsx', stored: 'dark', prefersDark: false }).mode).toBe('dark');
+  });
+
+  // The Wall's phone layout (docs/specs/0004): below 768 px wide the Wall follows the phone as /settings does, so a reload on a
+  // dark phone never paints light first, and what a tablet stored never paints a phone.
+  it('paints the Wall from prefers-color-scheme below 768 px wide, never from what it stored', () => {
+    for (const path of ['/', '/week', '/routines', '/meals', '/lists']) {
+      expect(paint({ path, width: 390, stored: 'light', prefersDark: true }).mode, path).toBe('dark');
+      expect(paint({ path, width: 390, stored: 'dark', prefersDark: false }).mode, path).toBe('light');
+      expect(paint({ path, width: 767, prefersDark: true }).metas, path).toEqual({ 'color-scheme': 'dark', 'theme-color': TOKENS.dark.background });
+    }
+  });
+
+  it('paints the Wall from what it stored from 768 px wide, as it always has', () => {
+    expect(paint({ path: '/', width: 768, stored: 'dark', prefersDark: false }).mode).toBe('dark');
+    expect(paint({ path: '/', width: 768, stored: 'light', prefersDark: true }).mode).toBe('light');
+    expect(paint({ path: '/', width: 1280, stored: 'dark', prefersDark: false }).mode).toBe('dark');
+  });
+
+  it('does not take a window of no width for a phone', () => {
+    expect(paint({ path: '/', width: 0, stored: 'dark', prefersDark: false }).mode).toBe('dark');
+    expect(paint({ path: '/', width: 1, stored: 'dark', prefersDark: false }).mode).toBe('light');
+  });
+
+  it('follows the phone below 768 px wide even when localStorage is blocked', () => {
+    expect(paint({ path: '/', width: 390, storage: 'blocked', prefersDark: true }).mode).toBe('dark');
   });
 
   it('leaves the page light, without throwing, when the browser will not give it localStorage', () => {

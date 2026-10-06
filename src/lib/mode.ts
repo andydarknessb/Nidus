@@ -166,6 +166,30 @@ export function writeOverride(store: ModeStore | null, override: ModeOverride | 
   }
 }
 
+// What a Wall starts from, or goes back to when it stops being a phone: the switch's override that is still running and the mode it
+// last resolved. The phone layout (`system`) follows the phone and neither reads nor writes either, so it starts from nothing.
+export function storedMode(store: ModeStore | null, system: boolean, now: number): { override: ModeOverride | null; mode: Mode } {
+  return system ? { override: null, mode: 'light' } : { override: readOverride(store, now), mode: readLastMode(store) };
+}
+
+// One step of keeping the Wall's mode right: what the screen does at the start of a minute. `drop` says the override has run out (and
+// is gone from storage); a mode is what resolved (and is kept for the next load); null is nothing to change. The phone layout
+// (`system`) never steps: it neither reads nor writes what the Wall stored.
+export function stepMode(store: ModeStore | null, system: boolean, override: ModeOverride | null, inputs: ModeInputs): 'drop' | { mode: Mode } | null {
+  if (system) return null;
+  // An override that has run out is dropped from storage as well as ignored.
+  if (override && inputs.now >= override.until) {
+    writeOverride(store, null);
+    return 'drop';
+  }
+  // While the inputs cannot resolve a mode the screen keeps the one it has and keeps nothing new for its next load: what it keeps
+  // is only what it really resolved.
+  if (!canResolve(inputs)) return null;
+  const mode = resolveMode(inputs);
+  writeLastMode(store, mode);
+  return { mode };
+}
+
 // Sets the document's mode, and keeps the browser's own idea of it in step: `color-scheme` (form controls,
 // scrollbars) and the `theme-color` of the page.
 export function applyMode(mode: Mode, doc: Document = document): void {
