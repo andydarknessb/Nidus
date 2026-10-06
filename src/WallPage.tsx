@@ -277,6 +277,8 @@ function HomeShell({ owner }: { owner: boolean }) {
   // How many days and Up next tiles Home holds at this screen's size, and whether the screen is a phone (below 768 px wide), which
   // swaps the chrome below and follows the phone's own light or dark setting.
   const home = useHomeLayout();
+  // The Add event sheet is the layout's, so it closes when the layout swaps (a window resized across 768 px).
+  useEffect(() => setAdding(false), [home.phone]);
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
   // `sun` is what the mode goes on besides the Household: the forecast's sunrise and sunset.

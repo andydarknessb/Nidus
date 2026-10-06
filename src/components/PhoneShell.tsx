@@ -76,13 +76,14 @@ export function PhoneTabs({
 }
 
 // The Household's name over the date, in the Household Timezone: useNow redraws it at Household midnight, so the date turns with
-// no reload. No clock: the phone has one. The name gives way first, then the date, each to one line ending in an ellipsis.
+// no reload. No clock: the phone has one. The date never shrinks: the block is never narrower than it, and the name, which has no
+// width of its own (size containment keeps it out of the block's least width), is what ends in an ellipsis when the row is short.
 function NameAndDate({ name, timezone }: { name: string; timezone: string }) {
   const now = useNow(timezone).getTime();
   return (
-    <div className="flex min-w-0 flex-col">
-      <h1 className="truncate text-[13px] leading-4 font-medium text-muted-foreground">{name}</h1>
-      <p className="truncate font-display text-[26px] leading-8">{formatDate(now, timezone)}</p>
+    <div className="flex min-w-min flex-1 flex-col">
+      <h1 className="truncate text-[13px] leading-4 font-medium text-muted-foreground [contain:inline-size]">{name}</h1>
+      <p className="font-display text-[26px] leading-8 whitespace-nowrap">{formatDate(now, timezone)}</p>
     </div>
   );
 }
@@ -90,14 +91,28 @@ function NameAndDate({ name, timezone }: { name: string; timezone: string }) {
 // The phone's header: one row 56 tall. The Household's name over the date, the weather now, Offline and stale sync as the tablet's
 // small pills, and for the Household Account only a 48 px round gear that goes where the navigation rail's Settings link goes, the
 // same way. A Device is never offered a way into administration, and there is no clock and no next meal (Meals is a tab).
-export function PhoneHeader({ household, today, forecast, owner }: { household: Household | null; today: string | null; forecast: Forecast | null; owner: boolean }) {
+//
+// `sync` is what the stale-sync mark holds before its first read lands, which only a test gives it.
+export function PhoneHeader({
+  household,
+  today,
+  forecast,
+  owner,
+  sync,
+}: {
+  household: Household | null;
+  today: string | null;
+  forecast: Forecast | null;
+  owner: boolean;
+  sync?: ComponentProps<typeof SyncBadge>['initial'];
+}) {
   const timezone = household?.timezone ?? null;
   return (
-    <header className="flex h-14 items-center gap-3 px-4">
-      <div className="min-w-0 flex-1">{timezone && <NameAndDate name={household?.name ?? ''} timezone={timezone} />}</div>
+    <header className="group/header flex h-14 items-center gap-2 px-4">
+      {timezone ? <NameAndDate name={household?.name ?? ''} timezone={timezone} /> : <div className="flex-1" />}
       {household && today && <WeatherNow forecast={forecast} unit={household.temperature_unit} today={today} phone />}
-      <ConnectionBadge compact />
-      <SyncBadge />
+      <ConnectionBadge phone />
+      <SyncBadge compact initial={sync} />
       {owner && (
         <Button asChild variant="quiet" className="size-12 rounded-full bg-card p-0">
           <a href="/settings" aria-label="Settings">
