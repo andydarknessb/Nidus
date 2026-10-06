@@ -22,6 +22,12 @@ describe('homeLayout, the phone', () => {
     expect(homeLayout({ width: 768, height: 800 }).phone).toBe(false);
   });
 
+  it('is not a phone at a width of 0, a window that has not been laid out yet', () => {
+    expect(homeLayout({ width: 0, height: 0 }).phone).toBe(false);
+    expect(homeLayout({ width: 0, height: 800 }).phone).toBe(false);
+    expect(homeLayout({ width: 1, height: 800 }).phone).toBe(true);
+  });
+
   it('is decided by the width alone, never the height', () => {
     expect(homeLayout({ width: 390, height: 844 }).phone).toBe(true);
     expect(homeLayout({ width: 390, height: 2000 }).phone).toBe(true);

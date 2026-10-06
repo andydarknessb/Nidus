@@ -16,7 +16,7 @@
       (function () {
         try {
           var path = location.pathname;
-          var phone = path === '/settings' || path.indexOf('/settings/') === 0 || (typeof innerWidth === 'number' && innerWidth < 768);
+          var phone = path === '/settings' || path.indexOf('/settings/') === 0 || (typeof innerWidth === 'number' && innerWidth > 0 && innerWidth < 768);
           var dark = phone ? matchMedia('(prefers-color-scheme: dark)').matches : localStorage.getItem('nidus:mode') === 'dark';
           document.documentElement.setAttribute('data-mode', dark ? 'dark' : 'light');
           var scheme = document.querySelector('meta[name="color-scheme"]');
