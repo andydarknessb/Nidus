@@ -64,13 +64,52 @@ export async function startCalendarConnect(client: SupabaseClient, kind: 'settin
   return data.url;
 }
 
-// Adds an iPhone calendar from its public link. The route answers in the words the Settings card shows, and those are what is
-// thrown; the link itself is never kept here.
+export const IPHONE_ADD_FAILED = 'Could not add that calendar. Try again.';
+export const IPHONE_ADDED = 'Added. First sync within 5 minutes.';
+
+// The route's own refusal, in words for the family: a link that is not an iPhone calendar link (400), one already added (409), one
+// that could not be read (502). Nothing else the route says (a missing session, a Device, a crash) is for the family to read.
+export class AddRefused extends Error {}
+const FAMILY_STATUSES: ReadonlySet<number> = new Set([400, 409, 502]);
+
+// Adds an iPhone calendar from its public link; the link itself is never kept here. A refusal in the route's family words throws
+// AddRefused; any other answer from the route throws AddRefused with the plain fallback. A request that got no answer throws what
+// supabase-js threw, so that the page words it as it words every write that did not reach the server (offline, or not).
 export async function addIphoneCalendar(client: SupabaseClient, url: string): Promise<void> {
   const { error } = await client.functions.invoke<{ id: string; name: string }>('calendar-connect/icloud', { body: { url } });
   if (!error) return;
-  const words = error instanceof FunctionsHttpError ? ((await error.context.json().catch(() => null)) as { error?: unknown } | null)?.error : null;
-  throw new Error(typeof words === 'string' ? words : 'Could not add that calendar. Try again.');
+  if (!(error instanceof FunctionsHttpError)) throw error;
+  const words = FAMILY_STATUSES.has(error.context.status) ? ((await error.context.json().catch(() => null)) as { error?: unknown } | null)?.error : null;
+  throw new AddRefused(typeof words === 'string' ? words : IPHONE_ADD_FAILED);
+}
+
+// What the Add button's press came to, for the card to show.
+export type PressAddResult =
+  | { kind: 'ignored' }
+  | { kind: 'added'; clear: boolean; say: string }
+  | { kind: 'refused'; words: string }
+  | { kind: 'failed'; error: unknown };
+
+// One press of Add. `state.adding` is the guard: a press while a link is being added is ignored, and the flag is down again when
+// the answer is. The field is cleared on success only if it still holds the link that was sent, so what was typed meanwhile is kept.
+export async function pressAdd(options: {
+  link: string;
+  state: { adding: boolean };
+  current: () => string;
+  add: (url: string) => Promise<void>;
+}): Promise<PressAddResult> {
+  const { state } = options;
+  if (state.adding) return { kind: 'ignored' };
+  state.adding = true;
+  const sent = options.link.trim();
+  try {
+    await options.add(sent);
+    return { kind: 'added', clear: options.current().trim() === sent, say: IPHONE_ADDED };
+  } catch (error) {
+    return error instanceof AddRefused ? { kind: 'refused', words: error.message } : { kind: 'failed', error };
+  } finally {
+    state.adding = false;
+  }
 }
 
 export async function updateMirroredCalendar(
@@ -146,9 +185,10 @@ export function lastSyncedText(lastSyncedAt: string | null, nowMs: number): stri
 export const UPDATE_FAILED_WORDS = 'Connected, but the last update failed. Nidus tries again every 5 minutes.';
 
 // How the settings screen says an account is doing. `last_error` is whatever the sync wrote when it failed, which is for the
-// logs: it is never shown.
-export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error'>): string {
-  if (account.status === 'needs_reauth') return 'Needs to be connected again';
+// logs: it is never shown. The one exception is an iPhone calendar whose link broke: the sync writes that sentence itself, in the
+// family's words (spec 0005), and it is what tells them what to do.
+export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error'> & Partial<Pick<CalendarAccount, 'provider'>>): string {
+  if (account.status === 'needs_reauth') return account.provider === 'icloud' && account.last_error ? account.last_error : 'Needs to be connected again';
   return account.last_error ? UPDATE_FAILED_WORDS : 'Connected';
 }
 
