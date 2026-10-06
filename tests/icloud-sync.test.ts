@@ -60,6 +60,9 @@ function deps(account: HouseholdAccount, world: { fetch: typeof fetch }): SyncDe
     admin: asServiceRole(),
     fetch: world.fetch,
     now: () => NOW,
+    // A clock that never moves, so that no test here depends on how fast the machine is; the one
+    // test of the time limit sets its own.
+    clock: () => 0,
     householdId: account.household.id,
   };
 }
@@ -353,9 +356,11 @@ describe('when the feed says no', () => {
 });
 
 describe('a run with more feed than it can read', () => {
-  const runaway = (uid: string, year = 1970) => vevent(uid, 'Runaway', `DTSTART:${year}0101T000000\nRRULE:FREQ=SECONDLY`);
-  // Four rules are more than a feed's steps (100,000 at 30,000 each), and fit the run only once.
-  const heavy = (...extra: string[]) => feedOf(...extra, runaway('a'), runaway('b', 1971), runaway('c', 1972), runaway('d', 1973));
+  // A daily rule from the year 1700 reaches the window only after 119,000 steps: more than any cap.
+  const runaway = (uid: string, year = 1700) => vevent(uid, 'Runaway', `DTSTART:${year}0101T000000\nRRULE:FREQ=DAILY`);
+  // Four rules are more than a feed's steps (60,000 at 30,000 each), and fit the run only once.
+  const heavy = (...extra: string[]) => feedOf(...extra, runaway('a'), runaway('b', 1701), runaway('c', 1702), runaway('d', 1703));
+  const MINUTE = 60_000;
 
   async function arrangeFeeds(account: HouseholdAccount, count: number, text: string) {
     const feeds = new Map<string, Reply>();
@@ -365,7 +370,8 @@ describe('a run with more feed than it can read', () => {
       feeds.set(link, { text });
       calendars.push({ ...(await arrangeIcloud(account, link)), link });
     }
-    return { feeds, calendars };
+    // Taken in the order the run takes accounts that have never been tried: by id.
+    return { feeds, calendars: calendars.sort((a, b) => (a.accountId < b.accountId ? -1 : 1)) };
   }
 
   const stateOf = async (c: { accountId: string; calendarId: string }) => ({
@@ -373,6 +379,10 @@ describe('a run with more feed than it can read', () => {
     rows: (await rowsOf(c.calendarId)).map((row) => row.title),
     token: await tokenOf(c.calendarId),
   });
+  const attemptedOf = async (accountId: string) => {
+    const { data } = await asServiceRole().from('calendar_accounts').select('last_attempted_at').eq('id', accountId).single<{ last_attempted_at: string | null }>();
+    return data!.last_attempted_at === null ? null : Date.parse(data!.last_attempted_at);
+  };
 
   it('shares one step budget across the feeds: the first is read as far as its cap, the others are left as they were and say so', async () => {
     const account = await arrange();
@@ -398,35 +408,38 @@ describe('a run with more feed than it can read', () => {
       expect(JSON.parse(state.token!)).toEqual({ etag: '"v1"', lastModified: null });
     }
     expect(read[0]!.rows).toEqual(['Changed']);
+    expect(JSON.parse(read[0]!.token!)).toEqual({ etag: '"v2"', lastModified: null, truncated: true });
   }, 60_000);
 
-  it('reads the feed that was starved last run first, so the same feeds cannot always take the run', async () => {
+  it('goes to the feeds the run had no steps for first next time, and the one that used them goes last', async () => {
     const account = await arrange();
     const { feeds, calendars } = await arrangeFeeds(account, 3, heavy());
-    const [x, y, z] = calendars as [(typeof calendars)[number], (typeof calendars)[number], (typeof calendars)[number]];
-    // Read at different times, so the order of the run is only the one the handler gives it.
-    const hours = (ago: number) => new Date(NOW - ago * 3_600_000).toISOString();
-    for (const [c, ago] of [[x, 3], [y, 2], [z, 1]] as const) await asServiceRole().from('calendar_accounts').update({ last_synced_at: hours(ago) }).eq('id', c.accountId);
+    const [p, q, r] = calendars as [(typeof calendars)[number], (typeof calendars)[number], (typeof calendars)[number]];
     const world = fakeWorld(feeds);
+    const at = (run: number) => ({ ...deps(account, world), now: () => NOW + run * 5 * MINUTE });
 
-    // Run 1: X, the one read longest ago, takes the run; Y and Z are not read.
-    await syncOk(deps(account, world));
-    expect((await accountOf(x.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
-    for (const [c, ago] of [[y, 2], [z, 1]] as const) {
-      const state = await accountOf(c.accountId);
-      expect(state.last_error).toBe(FEED_TOO_LARGE_MESSAGE);
-      expect(Date.parse(state.last_synced_at!)).toBe(Date.parse(hours(ago)));
-    }
+    // Run 0: none has been tried, so by id. P takes the run's steps; Q takes what is left and is not
+    // stored, so it has been tried; R found nothing left, was not really tried, and is as new as it was.
+    await syncOk(at(0));
+    expect((await accountOf(p.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    for (const c of [q, r]) expect((await accountOf(c.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(await attemptedOf(p.accountId)).toBe(NOW);
+    expect(await attemptedOf(q.accountId)).toBe(NOW);
+    expect(await attemptedOf(r.accountId)).toBeNull();
+    // Nothing was read of Q or R: their last_synced_at is not moved.
+    for (const c of [q, r]) expect((await accountOf(c.accountId)).last_synced_at).toBeNull();
 
-    // Run 2: Y, starved last time, goes first. X is read again last, and is not.
-    await syncOk(deps(account, world));
-    expect((await accountOf(y.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
-    expect((await accountOf(z.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    // Run 1: R, never tried, goes first.
+    await syncOk(at(1));
+    expect((await accountOf(r.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect((await accountOf(p.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(await attemptedOf(r.accountId)).toBe(NOW + 5 * MINUTE);
+    expect(await attemptedOf(q.accountId)).toBe(NOW);
 
-    // Run 3: Z, starved twice, goes first.
-    await syncOk(deps(account, world));
-    expect((await accountOf(z.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
-  }, 60_000);
+    // Run 2: Q, tried longest ago, goes first. P, the first of the two tried last, is last.
+    await syncOk(at(2));
+    expect((await accountOf(q.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+  }, 120_000);
 
   it('does not cut a feed of single events when the run has nothing left', async () => {
     const account = await arrange();
@@ -434,9 +447,9 @@ describe('a run with more feed than it can read', () => {
     const plain = newLink();
     const last = await arrangeIcloud(account, plain);
     feeds.set(plain, { text: feedOf(dentist) });
-    // The plain feed has been read least recently, but the heavy ones are made to come first.
-    for (const c of calendars) await asServiceRole().from('calendar_accounts').update({ last_synced_at: new Date(NOW - 3_600_000).toISOString() }).eq('id', c.accountId);
-    await asServiceRole().from('calendar_accounts').update({ last_synced_at: new Date(NOW - 60_000).toISOString() }).eq('id', last.accountId);
+    // The plain feed was tried last, so the heavy ones come first.
+    for (const c of calendars) await asServiceRole().from('calendar_accounts').update({ last_attempted_at: new Date(NOW - 3_600_000).toISOString() }).eq('id', c.accountId);
+    await asServiceRole().from('calendar_accounts').update({ last_attempted_at: new Date(NOW - 60_000).toISOString() }).eq('id', last.accountId);
 
     await syncOk(deps(account, fakeWorld(feeds)));
 
@@ -444,9 +457,27 @@ describe('a run with more feed than it can read', () => {
     expect(await accountOf(last.accountId)).toMatchObject({ status: 'active', last_error: null });
   }, 60_000);
 
+  it('stops reading feeds once the run has spent its 800 ms, as it does when it has no steps left', async () => {
+    const account = await arrange();
+    const { feeds, calendars } = await arrangeFeeds(account, 2, feedOf(dentist, runaway('a')));
+    // A clock that moves a millisecond each time it is read: one feed's walk is the run's whole time.
+    let t = 0;
+    const world = fakeWorld(feeds);
+    const summary = await syncOk({ ...deps(account, world), clock: () => (t += 1) });
+
+    const [first, second] = await Promise.all(calendars.map(stateOf)) as [Awaited<ReturnType<typeof stateOf>>, Awaited<ReturnType<typeof stateOf>>];
+    expect(first.account.last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(first.rows).toEqual([]);
+    expect(second.account.last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(summary.errors).toHaveLength(2);
+    // The first walked until the time was up, so it was tried; the second found no time left at all, and was not.
+    expect(await attemptedOf(calendars[0]!.accountId)).toBe(NOW);
+    expect(await attemptedOf(calendars[1]!.accountId)).toBeNull();
+  }, 60_000);
+
   it('keeps a single event next to a runaway rule, stores what the rule reached, and says some repeating events were cut', async () => {
     const account = await arrange();
-    for (const text of [feedOf(runaway('a'), dentist), feedOf(dentist, runaway('a')), feedOf(runaway('a'), dentist, runaway('b', 1971))]) {
+    for (const text of [feedOf(runaway('a'), dentist), feedOf(dentist, runaway('a')), feedOf(runaway('a'), dentist, runaway('b', 1701))]) {
       const link = newLink();
       const { accountId, calendarId } = await arrangeIcloud(account, link);
       const world = fakeWorld(new Map<string, Reply>([[link, { text, etag: '"v1"' }]]));
@@ -456,8 +487,25 @@ describe('a run with more feed than it can read', () => {
       expect((await rowsOf(calendarId)).map((row) => row.title)).toEqual(['Dentist']);
       expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: FEED_TRUNCATED_MESSAGE });
       expect(Date.parse((await accountOf(accountId)).last_synced_at!)).toBe(NOW);
-      expect(JSON.parse((await tokenOf(calendarId))!)).toEqual({ etag: '"v1"', lastModified: null });
+      expect(JSON.parse((await tokenOf(calendarId))!)).toEqual({ etag: '"v1"', lastModified: null, truncated: true });
     }
+  }, 60_000);
+
+  it('does not expand a rule the iPhone cannot make, so a feed with one still syncs at once, keeping the rest and saying so', async () => {
+    const account = await arrange();
+    const link = newLink();
+    const { accountId, calendarId } = await arrangeIcloud(account, link);
+    const hostile = ['FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30', 'FREQ=SECONDLY;BYMONTH=1', 'FREQ=MINUTELY;BYMONTH=1'].map((rule, index) =>
+      vevent(`h${index}`, 'Hostile', `DTSTART:20260201T000000Z\nRRULE:${rule}\nRDATE:20261010T150000Z`),
+    );
+    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(...hostile, dentist), etag: '"v1"' }]]));
+    const began = Date.now();
+
+    await syncOk({ ...deps(account, world), clock: () => performance.now() });
+
+    expect(Date.now() - began).toBeLessThan(10_000);
+    expect((await rowsOf(calendarId)).map((row) => row.title)).toEqual(['Dentist', 'Hostile', 'Hostile', 'Hostile']);
+    expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: FEED_TRUNCATED_MESSAGE });
   }, 60_000);
 
   it('clears the note when a later read of the feed is whole', async () => {
@@ -471,6 +519,34 @@ describe('a run with more feed than it can read', () => {
 
     feeds.set(link, { text: feedOf(dentist) });
     await syncOk(deps(account, world));
+    expect((await accountOf(accountId)).last_error).toBeNull();
+  }, 60_000);
+
+  it('keeps the note on a 304, because what is stored is still what was cut, and drops it when a later read is whole', async () => {
+    const account = await arrange();
+    const link = newLink();
+    const { accountId, calendarId } = await arrangeIcloud(account, link);
+    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist, runaway('a')), etag: '"v1"' }]]);
+    const world = fakeWorld(feeds);
+    await syncOk(deps(account, world));
+    expect((await accountOf(accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect(JSON.parse((await tokenOf(calendarId))!)).toEqual({ etag: '"v1"', lastModified: null, truncated: true });
+
+    const later = { ...deps(account, world), now: () => NOW + 5 * MINUTE };
+    await syncOk(later);
+    expect(world.calls.at(-1)!.headers.get('If-None-Match')).toBe('"v1"');
+    expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: FEED_TRUNCATED_MESSAGE });
+    expect(Date.parse((await accountOf(accountId)).last_synced_at!)).toBe(NOW + 5 * MINUTE);
+    expect((await rowsOf(calendarId)).map((row) => row.title)).toEqual(['Dentist']);
+
+    feeds.set(link, { text: feedOf(dentist), etag: '"v2"' });
+    await syncOk({ ...later, now: () => NOW + 10 * MINUTE });
+    expect((await accountOf(accountId)).last_error).toBeNull();
+    expect(JSON.parse((await tokenOf(calendarId))!)).toEqual({ etag: '"v2"', lastModified: null });
+
+    // And a 304 after a whole read has no note to keep.
+    await syncOk({ ...later, now: () => NOW + 15 * MINUTE });
+    expect(world.calls.at(-1)!.headers.get('If-None-Match')).toBe('"v2"');
     expect((await accountOf(accountId)).last_error).toBeNull();
   }, 60_000);
 });
@@ -490,5 +566,59 @@ describe('the order of a run', () => {
     expect(urls.at(-1)).toBe(link);
     expect(urls.indexOf(GOOGLE_TOKEN_URL)).toBeLessThan(urls.indexOf(link));
     expect(urls.filter((url) => url === link)).toHaveLength(1);
+  });
+
+  it('takes the iPhone calendars by when they were last tried, never-tried first, then by id, whatever was last read', async () => {
+    const account = await arrange();
+    const made: { accountId: string; link: string }[] = [];
+    const feeds = new Map<string, Reply>();
+    for (let index = 0; index < 4; index += 1) {
+      const link = newLink();
+      feeds.set(link, { text: feedOf() });
+      made.push({ ...(await arrangeIcloud(account, link)), link });
+    }
+    const [a, b, c, d] = made.sort((x, y) => (x.accountId < y.accountId ? -1 : 1)) as [(typeof made)[number], (typeof made)[number], (typeof made)[number], (typeof made)[number]];
+    const admin = asServiceRole();
+    const HOUR = 3_600_000;
+    // C was tried longest ago but read a minute ago; D was tried more recently but read days ago.
+    await admin.from('calendar_accounts').update({ last_attempted_at: new Date(NOW - 3 * HOUR).toISOString(), last_synced_at: new Date(NOW - 60_000).toISOString() }).eq('id', c.accountId);
+    await admin.from('calendar_accounts').update({ last_attempted_at: new Date(NOW - HOUR).toISOString(), last_synced_at: new Date(NOW - 72 * HOUR).toISOString() }).eq('id', d.accountId);
+    const world = fakeWorld(feeds);
+
+    await syncOk(deps(account, world));
+
+    // A and B were never tried: by id. Then C, then D.
+    expect(world.calls.map((call) => call.url)).toEqual([a.link, b.link, c.link, d.link]);
+  });
+
+  it('writes when an iPhone calendar was tried before it asks the feed, and never for a Google account', async () => {
+    const account = await arrange();
+    const link = newLink();
+    const { accountId } = await arrangeIcloud(account, link);
+    const google = await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'refresh-A' });
+    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist) }]]));
+    const seen: (string | null)[] = [];
+    const spy = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input) === link) {
+        const { data } = await asServiceRole().from('calendar_accounts').select('last_attempted_at').eq('id', accountId).single<{ last_attempted_at: string | null }>();
+        seen.push(data!.last_attempted_at);
+      }
+      return world.fetch(input, init);
+    }) as typeof fetch;
+
+    await syncOk(deps(account, { fetch: spy }));
+
+    expect(seen).toHaveLength(1);
+    expect(Date.parse(seen[0]!)).toBe(NOW);
+    const { data } = await asServiceRole().from('calendar_accounts').select('last_attempted_at').eq('id', google.accountId).single<{ last_attempted_at: string | null }>();
+    expect(data!.last_attempted_at).toBeNull();
+  });
+
+  it('keeps last_attempted_at out of a client’s reach', async () => {
+    const account = await arrange();
+    await arrangeIcloud(account, newLink());
+    const phone = await asHouseholdAccount(account);
+    const { error } = await phone.from('calendar_accounts').select('last_attempted_at');
+    expect(error).not.toBeNull();
   });
 });

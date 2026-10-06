@@ -42,6 +42,9 @@ export type SyncDeps = {
   fetch: typeof fetch;
   // Epoch milliseconds; injectable so the window and last_synced_at are testable.
   now?: () => number;
+  // Milliseconds for the run's time limit on expanding feeds (performance.now by default);
+  // injectable so the limit is testable.
+  clock?: () => number;
   // Sync only this Household's accounts. The scheduled run leaves it unset (every Household);
   // the tests set it so they never touch another run's accounts on a shared local stack.
   householdId?: string;
@@ -119,7 +122,7 @@ export function toRow(event: GoogleEvent, timezone: string): EventRow | null {
   };
 }
 
-type Account = { id: string; household_id: string; vault_secret_id: string; provider: 'google' | 'icloud'; last_synced_at: string | null };
+type Account = { id: string; household_id: string; vault_secret_id: string; provider: 'google' | 'icloud'; last_attempted_at: string | null };
 type Calendar = {
   id: string;
   google_calendar_id: string;
@@ -297,21 +300,23 @@ export const FEED_TRUNCATED_MESSAGE = 'Some repeating events in this calendar st
 export const FEED_GONE_MESSAGE = 'This link no longer works. Turn on Public Calendar again and paste the new link.';
 
 // An iPhone calendar's validator, kept in its Mirrored Calendar's sync_token (no client can read
-// it) as JSON: {"etag": "...", "lastModified": "..."}, either null. Anything else reads as none,
-// so the feed is read in full.
-export function encodeFeedValidators(etag: string | null, lastModified: string | null): string | null {
-  return etag || lastModified ? JSON.stringify({ etag, lastModified }) : null;
+// it) as JSON: {"etag": "...", "lastModified": "..."}, either null, and `"truncated": true` when
+// that read left some repeating events short, so that a 304 (the stored events are still the
+// truth) keeps saying so. Anything else reads as none, so the feed is read in full.
+export function encodeFeedValidators(etag: string | null, lastModified: string | null, truncated = false): string | null {
+  return etag || lastModified ? JSON.stringify({ etag, lastModified, ...(truncated ? { truncated: true } : {}) }) : null;
 }
 
-function decodeFeedValidators(token: string | null): { etag: string | null; lastModified: string | null } {
+function decodeFeedValidators(token: string | null): { etag: string | null; lastModified: string | null; truncated: boolean } {
   try {
-    const parsed = JSON.parse(token ?? 'null') as { etag?: unknown; lastModified?: unknown } | null;
+    const parsed = JSON.parse(token ?? 'null') as { etag?: unknown; lastModified?: unknown; truncated?: unknown } | null;
     return {
       etag: typeof parsed?.etag === 'string' ? parsed.etag : null,
       lastModified: typeof parsed?.lastModified === 'string' ? parsed.lastModified : null,
+      truncated: parsed?.truncated === true,
     };
   } catch {
-    return { etag: null, lastModified: null };
+    return { etag: null, lastModified: null, truncated: false };
   }
 }
 
@@ -320,6 +325,10 @@ function decodeFeedValidators(token: string | null): { etag: string | null; last
 // throws, and never puts the link (or anything the feed said) in an error.
 async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary, run: StepBudget): Promise<void> {
   const fail = (message: string, status?: 'needs_reauth') => failAccount(deps, account, summary, message, status);
+
+  // Before anything that can take long or kill the run: a feed that does so goes to the back of the
+  // line next time. Whether this write lands is not the sync's business.
+  await deps.admin.from('calendar_accounts').update({ last_attempted_at: new Date(nowMs).toISOString() }).eq('id', account.id);
 
   const { data: link, error: secretError } = await deps.admin.rpc('read_calendar_secret', { p_secret_id: account.vault_secret_id });
   if (secretError) return fail('Could not read the stored link.');
@@ -344,7 +353,7 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
 
   // As Google's incremental sync is dropped every FULL_SYNC_EVERY_MS, so is a validator: a feed
   // that keeps answering 304 would otherwise never be expanded past the window it was last read in.
-  const validators = canReadIncrementally(calendar, nowMs) ? decodeFeedValidators(calendar.sync_token) : { etag: null, lastModified: null };
+  const validators = canReadIncrementally(calendar, nowMs) ? decodeFeedValidators(calendar.sync_token) : { etag: null, lastModified: null, truncated: false };
   const feed = await fetchFeed(link, validators, deps.fetch);
   if (feed.kind === 'gone') return fail(FEED_GONE_MESSAGE, 'needs_reauth');
   if (feed.kind === 'error') return fail(`Could not read the iPhone calendar (${feed.message}).`);
@@ -352,16 +361,22 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
     const window = syncWindow(nowMs);
     let truncated: boolean;
     let rows: EventRow[];
+    const stepsBefore = run.remaining;
     try {
       ({ rows, truncated } = expandFeed(feed.text, timezone, Date.parse(window.timeMin), Date.parse(window.timeMax), run));
     } catch (error) {
       // Not stored: replacing would delete the events the walk never reached. The old events and
       // validator stay, so the feed is read again next run.
-      if (error instanceof FeedTooLargeError) return fail(FEED_TOO_LARGE_MESSAGE);
+      if (error instanceof FeedTooLargeError) {
+        // A feed that walked nothing because the run had nothing left was not really tried: it keeps
+        // its place in line. One that spent steps and still did not fit goes to the back.
+        if (run.remaining === stepsBefore) await deps.admin.from('calendar_accounts').update({ last_attempted_at: account.last_attempted_at }).eq('id', account.id);
+        return fail(FEED_TOO_LARGE_MESSAGE);
+      }
       return fail('Could not read the iPhone calendar (it is not a calendar the Wall can read).');
     }
     try {
-      await replace(deps, calendar.id, rows, encodeFeedValidators(feed.etag, feed.lastModified), nowMs);
+      await replace(deps, calendar.id, rows, encodeFeedValidators(feed.etag, feed.lastModified, truncated), nowMs);
     } catch {
       return fail('Could not store the iPhone calendar’s events.');
     }
@@ -372,7 +387,8 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
     return;
   }
   summary.calendars += 1;
-  await markSynced();
+  // Not changed: the stored events are still the truth, so a note about them is too.
+  await markSynced(validators.truncated ? FEED_TRUNCATED_MESSAGE : null);
 }
 
 // Syncs one Calendar Account. Never throws: its outcome is on the account row and in `summary`.
@@ -418,7 +434,7 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
   const nowMs = (deps.now ?? Date.now)();
   const summary: SyncSummary = { accounts: 0, calendars: 0, events: 0, errors: [] };
 
-  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id, provider, last_synced_at').eq('status', 'active');
+  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id, provider, last_attempted_at').eq('status', 'active');
   if (deps.householdId) query = query.eq('household_id', deps.householdId);
   const { data: accounts, error } = await query.returns<Account[]>();
   if (error || !accounts) {
@@ -436,13 +452,22 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
 
   // Google first, then the iPhone calendars: a feed that is slow or runs the function out of time
   // can then never keep a Google account from syncing in the same run.
-  // One step budget for every feed of the run: the hosted function has a 2 s CPU limit in all.
-  const run: StepBudget = { remaining: MAX_STEPS_PER_RUN };
-  // Among the feeds, the one read longest ago (or never) goes first, so the same feeds cannot
-  // always take the run's steps and starve a later one: a feed the run had no time for keeps its
-  // old last_synced_at and is first next time.
-  const readAt = (account: Account) => (account.last_synced_at ? Date.parse(account.last_synced_at) : -Infinity);
-  accounts.sort((a, b) => Number(a.provider === 'icloud') - Number(b.provider === 'icloud') || (a.provider === 'icloud' ? readAt(a) - readAt(b) || 0 : 0));
+  // One step budget and one time limit for every feed of the run: the hosted function has a 2 s CPU
+  // limit in all.
+  const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0, ...(deps.clock ? { now: deps.clock } : {}) };
+  // Among the feeds, the one tried longest ago (or never) goes first, then by id, so the same feeds
+  // cannot always take the run and starve a later one. Tried, not read: a feed that kills the run
+  // has still been tried, and goes to the back.
+  const attemptedAt = (account: Account) => (account.last_attempted_at ? Date.parse(account.last_attempted_at) : -Infinity);
+  const byId = (a: Account, b: Account) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  accounts.sort((a, b) => {
+    if (a.provider !== b.provider) return a.provider === 'icloud' ? 1 : -1;
+    if (a.provider === 'icloud') {
+      const [x, y] = [attemptedAt(a), attemptedAt(b)];
+      if (x !== y) return x < y ? -1 : 1;
+    }
+    return byId(a, b);
+  });
   for (const account of accounts) {
     const timezone = timezones.get(account.household_id);
     if (!timezone) {

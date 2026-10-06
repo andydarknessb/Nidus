@@ -24,15 +24,22 @@ alter table public.calendar_accounts add column feed_key text check (feed_key ~ 
 alter table public.calendar_accounts
   add constraint calendar_accounts_household_feed_key_key unique (household_id, feed_key);
 
+-- When the sync last tried this account, whether or not it got anywhere (last_synced_at is only
+-- when it succeeded). The iCloud accounts of a run are taken oldest attempt first, so a feed that
+-- kills the run goes to the back of the line next time. Written before the feed is read. Not
+-- granted to any client, like feed_key: the select grant is a list, and this is not on it.
+alter table public.calendar_accounts add column last_attempted_at timestamptz;
+
 grant select (provider) on public.calendar_accounts to authenticated;
 
 comment on table public.calendar_accounts is 'An external calendar provider connection (Calendar Account): Google (a refresh token) or iCloud (a public feed link). The secret is a Vault secret.';
 comment on column public.calendar_accounts.provider is 'google or icloud. Existing rows are google.';
 comment on column public.calendar_accounts.vault_secret_id is 'The Vault secret: a Google refresh token, or an iCloud account''s normalised feed link. No client may read this column.';
+comment on column public.calendar_accounts.last_attempted_at is 'icloud: when the sync last began on this account, successful or not. Orders the iCloud accounts of a run, oldest first, never-attempted first. No client may read this column.';
 comment on column public.calendar_accounts.feed_key is 'icloud only: SHA-256 hex of the normalised feed link, unique per Household. No client may read this column.';
 
 comment on column public.mirrored_calendars.google_calendar_id is 'google: the Google calendar id. icloud: the literal ics (an iCloud account has exactly one Mirrored Calendar). The column keeps its name.';
-comment on column public.mirrored_calendars.sync_token is 'google: the Google sync token. icloud: the feed''s validators as JSON, {"etag": ..., "lastModified": ...}, either null (null when the server sent neither). No client may read this column.';
+comment on column public.mirrored_calendars.sync_token is 'google: the Google sync token. icloud: the feed''s validators as JSON, {"etag": ..., "lastModified": ..., "truncated": true}, the validators either null (null when the server sent neither) and truncated only when the work limits cut a repeating event short in that read. No client may read this column.';
 comment on column public.synced_events.google_event_id is 'google: the Google event id. icloud: the event''s UID, a separator and the occurrence''s original start as a UTC instant (its RECURRENCE-ID for a moved occurrence). The column keeps its name.';
 
 -- ---- Service-role only: storing an iCloud calendar -----------------------------------------

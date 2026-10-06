@@ -184,11 +184,17 @@ export function lastSyncedText(lastSyncedAt: string | null, nowMs: number): stri
 // (docs/calendar-sync.md), so a failure mends itself unless the sign-in itself has gone.
 export const UPDATE_FAILED_WORDS = 'Connected, but the last update failed. Nidus tries again every 5 minutes.';
 
+// The note the sync writes on an iPhone calendar it read but could not expand in full (the same sentence as
+// FEED_TRUNCATED_MESSAGE in the calendar-sync function; a test holds the two together), and what the screen says of it.
+export const ICLOUD_TRUNCATED_NOTE = 'Some repeating events in this calendar start too long ago to show in full.';
+export const ICLOUD_TRUNCATED_WORDS = 'Connected. Some repeating events start too long ago to show in full.';
+
 // How the settings screen says an account is doing. `last_error` is whatever the sync wrote when it failed, which is for the
-// logs: it is never shown. The one exception is an iPhone calendar whose link broke: the sync writes that sentence itself, in the
-// family's words (spec 0005), and it is what tells them what to do.
+// logs: it is never shown. The exceptions are the two sentences the sync writes itself, in the family's words (spec 0005): an
+// iPhone calendar whose link broke, which tells them what to do, and an active one whose repeating events were cut short.
 export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error'> & Partial<Pick<CalendarAccount, 'provider'>>): string {
   if (account.status === 'needs_reauth') return account.provider === 'icloud' && account.last_error ? account.last_error : 'Needs to be connected again';
+  if (account.provider === 'icloud' && account.last_error === ICLOUD_TRUNCATED_NOTE) return ICLOUD_TRUNCATED_WORDS;
   return account.last_error ? UPDATE_FAILED_WORDS : 'Connected';
 }
 

@@ -12,7 +12,7 @@ import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '..
 import { Confirm } from '../src/components/phone';
 import { Button } from '../src/components/ui/button';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
-import { UPDATE_FAILED_WORDS, accountStatusText, shownCalendar, stillPending, type CalendarAccount, type MirroredCalendar } from '../src/lib/calendar-accounts';
+import { ICLOUD_TRUNCATED_WORDS, UPDATE_FAILED_WORDS, accountStatusText, shownCalendar, stillPending, type CalendarAccount, type MirroredCalendar } from '../src/lib/calendar-accounts';
 import { seenWords } from '../src/lib/device-format';
 import type { Household } from '../src/lib/household';
 import { TOKENS } from '../src/lib/look';
@@ -182,6 +182,18 @@ describe('what a Calendar Account says of itself', () => {
     expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: 'Feed answered 500' })).toBe(UPDATE_FAILED_WORDS);
     // A Google account is as it was: its last_error is never shown.
     expect(accountStatusText({ provider: 'google', status: 'needs_reauth', last_error: broken })).toBe('Needs to be connected again');
+  });
+
+  it('says of an active iPhone calendar whose repeating events were cut short that it is connected, and what was cut, in the family’s words', () => {
+    const words = 'Connected. Some repeating events start too long ago to show in full.';
+    const note = 'Some repeating events in this calendar start too long ago to show in full.';
+    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: note })).toBe(words);
+    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: note })).toBe(ICLOUD_TRUNCATED_WORDS);
+    expect(words).not.toContain('\u2014');
+    // Only an iPhone calendar's own sentence: any other error keeps the failed words, and Google never shows it.
+    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: 'This calendar was not read this time; it will be tried again.' })).toBe(UPDATE_FAILED_WORDS);
+    expect(accountStatusText({ provider: 'google', status: 'active', last_error: note })).toBe(UPDATE_FAILED_WORDS);
+    expect(accountStatusText({ status: 'active', last_error: note })).toBe(UPDATE_FAILED_WORDS);
   });
 
   it('says it has to be connected again when Google no longer trusts it, whatever went wrong before', () => {

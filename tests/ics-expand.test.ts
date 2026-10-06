@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expandFeed, FeedParseError, FeedTooLargeError, MAX_PER_FEED, MAX_STEPS_PER_RUN } from '../supabase/functions/_shared/ics-expand';
+import { expandFeed, FeedParseError, FeedTooLargeError, MAX_EXPANSION_MS, MAX_PER_FEED, MAX_STEPS_PER_RUN, type StepBudget } from '../supabase/functions/_shared/ics-expand';
 
 // Pure: feed text in, rows out. The fixtures are iCloud-style feeds (CRLF line endings,
 // VTIMEZONE blocks, X-WR-CALNAME, folded lines), not objects built to suit the code. Run once
@@ -220,14 +220,6 @@ describe('expandFeed: which occurrences', () => {
       '2027-02-05T14:00:00.000Z',
     ]);
   });
-
-  it('caps an endless rule at 1000 occurrences, and a feed at 20000', () => {
-    const endless = (uid: string) => event('DTSTART:20260902T000000Z\nRRULE:FREQ=HOURLY', uid);
-    expect(expand(feed(endless('a')))).toHaveLength(1000);
-    const rows = expand(feed(...Array.from({ length: 25 }, (_, index) => endless(`e${index}`))));
-    expect(rows).toHaveLength(20000);
-    expect(new Set(rows.map((row) => row.google_event_id)).size).toBe(20000);
-  });
 });
 
 describe('expandFeed: text', () => {
@@ -317,6 +309,15 @@ describe('expandFeed: lengths', () => {
   });
 });
 
+// A run's work with a clock that never moves, so that no test here depends on how fast the machine is:
+// only the step caps and the time limit the test itself sets can cut a read.
+const budget = (remaining = MAX_STEPS_PER_RUN): StepBudget => ({ remaining, spentMs: 0, now: () => 0 });
+const read = (text: string, run: StepBudget = budget()) => expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+const ids = (rows: { google_event_id: string }[]) => rows.map((row) => row.google_event_id.split('|')[0]!);
+// A daily rule from the year 1700 reaches the window only after 119,000 steps: more than any cap.
+const runaway = (uid: string, year = 1700) => event(`DTSTART:${year}0101T000000\nRRULE:FREQ=DAILY`, uid);
+const dentist = event('DTSTART:20261014T140000Z', 'dentist', 'Dentist');
+
 describe('expandFeed: work', () => {
   // The bounds are generous: they catch a quadratic or runaway walk, not a slow machine.
   const quickly = (work: () => void) => {
@@ -330,122 +331,319 @@ describe('expandFeed: work', () => {
     quickly(() => expect(expand(feed(...events))).toHaveLength(4000));
   });
 
-  it('gives up on a rule that started in 1970 and fires every second, without throwing', () => {
-    quickly(() => expect(expand(feed(event('DTSTART:19700101T000000\nRRULE:FREQ=SECONDLY')))).toEqual([]));
+  it('gives up on a daily rule from the year 1700, without throwing, and says so', () => {
+    quickly(() => {
+      const { rows, truncated } = read(feed(event('DTSTART;VALUE=DATE:17000101\nRRULE:FREQ=DAILY')));
+      expect(rows).toEqual([]);
+      expect(truncated).toBe(true);
+    });
   });
-
-  it('gives up on a daily rule from the year 1700, without throwing', () => {
-    quickly(() => expect(expand(feed(event('DTSTART;VALUE=DATE:17000101\nRRULE:FREQ=DAILY')))).toEqual([]));
-  });
-
-  const runaway = (uid: string, start = '19700101T000000') => event(`DTSTART:${start}\nRRULE:FREQ=SECONDLY`, uid);
-  const ids = (rows: { google_event_id: string }[]) => rows.map((row) => row.google_event_id.split('|')[0]);
-  const dentist = event('DTSTART:20261014T140000Z', 'dentist', 'Dentist');
 
   it('always keeps a single event, before or after a runaway rule, and says the rule was cut', () => {
     for (const events of [[runaway('a'), dentist], [dentist, runaway('a')], [runaway('a'), dentist, runaway('b')]]) {
-      const { rows, truncated } = expandFeed(feed(...events), HOUSEHOLD, WINDOW_START, WINDOW_END);
+      const { rows, truncated } = read(feed(...events));
       expect(ids(rows)).toEqual(['dentist']);
       expect(truncated).toBe(true);
     }
   });
 
   it('keeps a single event after more runaway rules than a feed has steps for', () => {
-    const many = Array.from({ length: 6 }, (_, index) => runaway(`r${index}`, `19${70 + index}0101T000000`));
-    quickly(() => expect(ids(expand(feed(...many, dentist)))).toEqual(['dentist']));
+    const many = Array.from({ length: 6 }, (_, index) => runaway(`r${index}`, 1700 + index));
+    quickly(() => expect(ids(read(feed(...many, dentist)).rows)).toEqual(['dentist']));
   });
 
   it('keeps a single event when the run has no steps left, and costs no steps', () => {
-    const run = { remaining: 0 };
-    const { rows, truncated } = expandFeed(feed(dentist), HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+    const run = budget(0);
+    const { rows, truncated } = read(feed(dentist), run);
     expect(ids(rows)).toEqual(['dentist']);
     expect(truncated).toBe(false);
     expect(run.remaining).toBe(0);
   });
 
   it('does not say anything was cut when nothing was', () => {
-    const { truncated } = expandFeed(feed(dentist, event('DTSTART:20261015T140000Z\nRRULE:FREQ=DAILY;COUNT=3', 'few')), HOUSEHOLD, WINDOW_START, WINDOW_END);
-    expect(truncated).toBe(false);
+    expect(read(feed(dentist, event('DTSTART:20261015T140000Z\nRRULE:FREQ=DAILY;COUNT=3', 'few'))).truncated).toBe(false);
   });
 
   it('walks the newest series first, so the old expensive rules are the ones cut', () => {
     // Feed order puts the newest last: four ancient rules would spend the feed's steps before it.
-    const ancient = Array.from({ length: 4 }, (_, index) => runaway(`ancient${index}`, `19${70 + index}0101T000000`));
+    const ancient = Array.from({ length: 4 }, (_, index) => runaway(`ancient${index}`, 1700 + index));
     const recent = event('DTSTART:20261015T140000Z\nRRULE:FREQ=DAILY;COUNT=2', 'recent');
-    const { rows, truncated } = expandFeed(feed(...ancient, recent), HOUSEHOLD, WINDOW_START, WINDOW_END);
+    const { rows, truncated } = read(feed(...ancient, recent));
     expect(ids(rows)).toEqual(['recent', 'recent']);
     expect(truncated).toBe(true);
   });
 
-  it('stops only the series that reaches the per-event cap, and spends no more than it walked', () => {
-    const run = { remaining: MAX_STEPS_PER_RUN };
+  it('stops only the series that reaches the per-event cap, and spends no more than the feed may', () => {
+    const run = budget();
     const weekly = event('DTSTART:20261014T140000Z\nRRULE:FREQ=WEEKLY;COUNT=3', 'weekly');
-    const { rows, truncated } = expandFeed(feed(runaway('a'), runaway('b', '19710101T000000'), weekly), HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+    const { rows, truncated } = read(feed(runaway('a'), runaway('b', 1701), weekly), run);
     expect(ids(rows)).toEqual(['weekly', 'weekly', 'weekly']);
     expect(truncated).toBe(true);
-    // Two series at 30,000 steps each, and the three weeks: neither runaway took the other's share.
-    const spent = MAX_STEPS_PER_RUN - run.remaining;
-    expect(spent).toBeGreaterThanOrEqual(60_000);
-    expect(spent).toBeLessThan(60_100);
+    // The three weeks, a runaway to its 30,000, and the second to what the feed has left of 60,000.
+    expect(MAX_STEPS_PER_RUN - run.remaining).toBe(60_000);
   });
 });
 
 describe('expandFeed: the step budget of a run', () => {
-  const runaway = (uid: string, start = '19700101T000000') => event(`DTSTART:${start}\nRRULE:FREQ=SECONDLY`, uid);
-  // Four rules are more than a feed's steps (100,000 at 30,000 each).
-  const heavy = (prefix: string) => Array.from({ length: 4 }, (_, index) => runaway(`${prefix}${index}`, `19${70 + index}0101T000000`));
-  const expandIn = (text: string, run: { remaining: number }) => expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+  // Four rules are more than a feed's steps (60,000 at 30,000 each).
+  const heavy = (prefix: string) => Array.from({ length: 4 }, (_, index) => runaway(`${prefix}${index}`, 1700 + index));
 
-  it('lets one feed take at most 100,000 steps of the run, keeping what it reached', () => {
-    const run = { remaining: MAX_STEPS_PER_RUN };
-    const { rows, truncated } = expandIn(feed(event('DTSTART:20261014T140000Z', 'first'), ...heavy('a')), run);
-    expect(rows.map((row) => row.google_event_id.split('|')[0])).toEqual(['first']);
+  it('lets one feed take at most 60,000 steps of the run, keeping what it reached', () => {
+    const run = budget();
+    const { rows, truncated } = read(feed(event('DTSTART:20261014T140000Z', 'first'), ...heavy('a')), run);
+    expect(ids(rows)).toEqual(['first']);
     expect(truncated).toBe(true);
-    expect(run.remaining).toBe(MAX_STEPS_PER_RUN - 100_000);
+    expect(run.remaining).toBe(MAX_STEPS_PER_RUN - 60_000);
   });
 
   it('shares what is left between feeds: a second bad feed that needs more than the run has is not stored', () => {
-    const run = { remaining: MAX_STEPS_PER_RUN };
-    expect(expandIn(feed(...heavy('a')), run).truncated).toBe(true);
-    expect(() => expandIn(feed(...heavy('b')), run)).toThrow(FeedTooLargeError);
+    const run = budget();
+    expect(read(feed(...heavy('a')), run).truncated).toBe(true);
+    expect(() => read(feed(...heavy('b')), run)).toThrow(FeedTooLargeError);
     expect(run.remaining).toBe(0);
   });
 
   it('throws, rather than return half a feed, when the run ran out in the middle of a series', () => {
-    const run = { remaining: 20_000 };
-    expect(() => expandIn(feed(event('DTSTART:20261014T140000Z', 'first'), runaway('a')), run)).toThrow(FeedTooLargeError);
+    const run = budget(20_000);
+    expect(() => read(feed(event('DTSTART:20261014T140000Z', 'first'), runaway('a')), run)).toThrow(FeedTooLargeError);
     expect(run.remaining).toBe(0);
   });
 
   it('throws when the run ran out exactly as one series ended, with a later repeating series unread', () => {
     const few = event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY;COUNT=5', 'few');
-    const measured = { remaining: 1000 };
-    expandIn(feed(few), measured);
-    const run = { remaining: 1000 - measured.remaining };
-    expect(() => expandIn(feed(few, event('DTSTART:20261013T140000Z\nRRULE:FREQ=DAILY;COUNT=5', 'later')), run)).toThrow(FeedTooLargeError);
+    const measured = budget(1000);
+    read(feed(few), measured);
+    const run = budget(1000 - measured.remaining);
+    expect(() => read(feed(few, event('DTSTART:20261013T140000Z\nRRULE:FREQ=DAILY;COUNT=5', 'later')), run)).toThrow(FeedTooLargeError);
   });
 
   it('is not cut by the run when what is left is single events, or a rule that starts after the window', () => {
-    const run = { remaining: 0 };
     const later = event('DTSTART:20270601T140000Z\nRRULE:FREQ=DAILY', 'later');
-    const rows = expandIn(feed(event('DTSTART:20261014T140000Z', 'plain'), later, event('DTSTART:20261015T140000Z', 'plain2')), run).rows;
-    expect(rows.map((row) => row.google_event_id.split('|')[0])).toEqual(['plain', 'plain2']);
+    const rows = read(feed(event('DTSTART:20261014T140000Z', 'plain'), later, event('DTSTART:20261015T140000Z', 'plain2')), budget(0)).rows;
+    expect(ids(rows)).toEqual(['plain', 'plain2']);
   });
 
   it('is not cut by the run when the feed hit its row cap before the repeating events', () => {
-    const run = { remaining: 0 };
     const events = Array.from({ length: MAX_PER_FEED }, (_, index) => event('DTSTART:20261014T140000Z', `bulk-${index}`));
-    const { rows } = expandIn(feed(...events, event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY;COUNT=5', 'few')), run);
+    const { rows } = read(feed(...events, event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY;COUNT=5', 'few')), budget(0));
     expect(rows).toHaveLength(MAX_PER_FEED);
   });
 
   it('reads a feed that fits whole, and spends only what it walked', () => {
-    const run = { remaining: 1000 };
-    const { rows, truncated } = expandIn(feed(event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY;COUNT=5', 'few')), run);
+    const run = budget(1000);
+    const { rows, truncated } = read(feed(event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY;COUNT=5', 'few')), run);
     expect(rows).toHaveLength(5);
     expect(truncated).toBe(false);
     expect(run.remaining).toBeGreaterThan(900);
     expect(run.remaining).toBeLessThan(1000);
+  });
+});
+
+describe('expandFeed: the time limit of a run', () => {
+  // A clock that moves a millisecond each time it is read, which the step loop does once a step.
+  const ticking = (): StepBudget => {
+    let t = 0;
+    return { remaining: MAX_STEPS_PER_RUN, spentMs: 0, now: () => (t += 1) };
+  };
+
+  it('stops a walk once 800 ms of the run have passed, as if the run had no steps left', () => {
+    const run = ticking();
+    expect(() => read(feed(runaway('a')), run)).toThrow(FeedTooLargeError);
+    const walked = MAX_STEPS_PER_RUN - run.remaining;
+    expect(walked).toBeGreaterThan(700);
+    expect(walked).toBeLessThanOrEqual(MAX_EXPANSION_MS);
+    expect(run.spentMs).toBeGreaterThanOrEqual(MAX_EXPANSION_MS - 1);
+  });
+
+  it('keeps single events, RDATEs and moved occurrences when the time is spent, and is not cut when nothing needs walking', () => {
+    const run = { ...budget(), spentMs: MAX_EXPANSION_MS };
+    const { rows, truncated } = read(feed(dentist, event('DTSTART:20270601T140000Z\nRRULE:FREQ=DAILY', 'later')), run);
+    expect(ids(rows)).toEqual(['dentist']);
+    expect(truncated).toBe(false);
+  });
+
+  it('counts the time of every feed of the run: what the first spent, the second does not have', () => {
+    const run = ticking();
+    // Daily since mid-2025: about 640 steps to the end of the window.
+    read(feed(event('DTSTART:20250601T140000Z\nRRULE:FREQ=DAILY', 'first')), run);
+    expect(run.spentMs).toBeGreaterThan(600);
+    expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+    // The second feed's walk needs about as much again, and the run has a fifth of that left.
+    expect(() => read(feed(event('DTSTART:20250601T140000Z\nRRULE:FREQ=DAILY', 'second')), run)).toThrow(FeedTooLargeError);
+    expect(run.spentMs).toBeGreaterThanOrEqual(MAX_EXPANSION_MS - 1);
+  });
+
+  it('does not stop a walk while the time is within the limit', () => {
+    const run = budget();
+    // Daily since mid-2025, to the end of the window: the 181 days of it are rows.
+    expect(read(feed(event('DTSTART:20250601T140000Z\nRRULE:FREQ=DAILY', 'long')), run).rows).toHaveLength(181);
+    expect(run.spentMs).toBe(0);
+  });
+});
+
+describe('expandFeed: rules the iPhone cannot make', () => {
+  // Each of these makes ical.js search without end, or step a second at a time; the first two took
+  // 19 s and forever in the review. None is walked.
+  const hostile = [
+    'FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30',
+    'FREQ=SECONDLY;BYMONTH=1',
+    'FREQ=MINUTELY;BYMONTH=1',
+    'FREQ=SECONDLY;BYDAY=MO,TU,WE,TH,FR',
+    'FREQ=SECONDLY',
+    'FREQ=MINUTELY',
+    'FREQ=HOURLY',
+    'FREQ=DAILY;BYMONTH=1',
+    'FREQ=DAILY;BYYEARDAY=60',
+    'FREQ=DAILY;BYWEEKNO=5',
+    'FREQ=DAILY;BYSETPOS=1',
+    'FREQ=DAILY;BYHOUR=9',
+    'FREQ=DAILY;BYMINUTE=30',
+    'FREQ=DAILY;BYSECOND=30',
+    'FREQ=WEEKLY;BYMONTHDAY=13;BYDAY=FR',
+    'FREQ=WEEKLY;BYMONTH=2',
+    'FREQ=WEEKLY;BYHOUR=9',
+    'FREQ=MONTHLY;BYHOUR=9',
+    'FREQ=MONTHLY;BYMINUTE=30',
+    'FREQ=MONTHLY;BYSECOND=30',
+    'FREQ=MONTHLY;BYWEEKNO=5',
+    'FREQ=MONTHLY;BYYEARDAY=60',
+    'FREQ=YEARLY;BYHOUR=9',
+    'FREQ=YEARLY;BYWEEKNO=20;BYDAY=MO',
+    'FREQ=YEARLY;BYYEARDAY=60',
+    'FREQ=DAILY;INTERVAL=100000000',
+    'FREQ=WEEKLY;INTERVAL=1000000;BYDAY=MO',
+  ];
+
+  it.each(hostile)('does not expand %s: only its DTSTART, said so, and at once', (rule) => {
+    const run = budget();
+    const began = Date.now();
+    const { rows, truncated } = read(feed(event(`DTSTART:20261014T140000Z\nRRULE:${rule}`, 'h')), run);
+    expect(Date.now() - began).toBeLessThan(2000);
+    expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-14T14:00:00.000Z']);
+    expect(truncated).toBe(true);
+    expect(run.remaining).toBe(MAX_STEPS_PER_RUN);
+  });
+
+  it('finishes the whole hostile list, started long ago, in well under a second', () => {
+    const began = Date.now();
+    const { rows, truncated } = read(feed(...hostile.map((rule, index) => event(`DTSTART:19700101T000000Z\nRRULE:${rule}`, `h${index}`))));
+    expect(Date.now() - began).toBeLessThan(1000);
+    expect(rows).toEqual([]);
+    expect(truncated).toBe(true);
+  });
+
+  it('does not say anything was cut by a rule that starts after the window', () => {
+    expect(read(feed(event('DTSTART:20270601T140000Z\nRRULE:FREQ=SECONDLY', 'later'))).truncated).toBe(false);
+  });
+
+  it('still reads the RDATEs and the moved occurrences of a series it does not expand', () => {
+    const series = event('DTSTART:20000101T000000Z\nRRULE:FREQ=SECONDLY\nRDATE:20261010T150000Z', 'u');
+    const moved = event('RECURRENCE-ID:20000101T000500Z\nDTSTART:20261011T150000Z\nDTEND:20261011T160000Z', 'u');
+    const { rows, truncated } = read(feed(series, moved));
+    expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-10T15:00:00.000Z', '2026-10-11T15:00:00.000Z']);
+    expect(truncated).toBe(true);
+  });
+
+  it.each([
+    'FREQ=WEEKLY;BYDAY=MO,WE',
+    'FREQ=MONTHLY;BYDAY=2TU',
+    'FREQ=MONTHLY;BYMONTHDAY=-1',
+    'FREQ=MONTHLY;BYSETPOS=-1;BYDAY=MO,TU,WE,TH,FR',
+    'FREQ=YEARLY;BYMONTH=10;BYMONTHDAY=14',
+    'FREQ=YEARLY;BYMONTH=10;BYDAY=2WE',
+    'FREQ=DAILY;INTERVAL=2',
+    'FREQ=WEEKLY;INTERVAL=999;BYDAY=MO',
+  ])('still expands %s', (rule) => {
+    const { rows, truncated } = read(feed(event(`DTSTART:20261001T140000Z\nRRULE:${rule}`, 'ok')));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(truncated).toBe(false);
+  });
+
+  it('does not walk a series whose UNTIL is before the window, and does not say it was cut', () => {
+    // Walked, twelve of these are 130,000 steps.
+    const ended = Array.from({ length: 12 }, (_, index) => event(`DTSTART:19${80 + index}0101T090000Z\nRRULE:FREQ=DAILY;UNTIL=20100101T000000Z`, `ended${index}`));
+    const run = budget();
+    const { rows, truncated } = read(feed(...ended, event('DTSTART:20261014T140000Z\nRRULE:FREQ=WEEKLY;COUNT=2', 'live')), run);
+    expect(ids(rows)).toEqual(['live', 'live']);
+    expect(truncated).toBe(false);
+    expect(MAX_STEPS_PER_RUN - run.remaining).toBeLessThan(10);
+  });
+
+  it('still reads the last occurrence of a series that ends just inside the window, and the RDATEs of one that ended', () => {
+    const straddles = event('DTSTART:20260101T230000Z\nDTEND:20260102T010000Z\nRRULE:FREQ=DAILY;UNTIL=20260831T235959Z', 'straddles');
+    const ended = event('DTSTART:20100101T090000Z\nRRULE:FREQ=DAILY;UNTIL=20100201T000000Z\nRDATE:20261010T150000Z', 'ended');
+    const rows = read(feed(straddles, ended)).rows;
+    expect(rows.map((row) => row.google_event_id)).toEqual(['straddles|2026-08-31T23:00:00.000Z', 'ended|2026-10-10T15:00:00.000Z']);
+  });
+});
+
+describe('expandFeed: what the caps cut', () => {
+  const FIVE_YEARS = Date.parse('2031-09-01T00:00:00Z');
+  const wide = (text: string, run: StepBudget = budget()) => expandFeed(text, HOUSEHOLD, WINDOW_START, FIVE_YEARS, run);
+  // 1,826 occurrences in five years, so 1,000 each.
+  const daily = (uid: string, start = '20260902T000000Z') => event(`DTSTART:${start}\nRRULE:FREQ=DAILY`, uid);
+  const count = (rows: { google_event_id: string }[]) => {
+    const counts = new Map<string, number>();
+    for (const id of ids(rows)) counts.set(id, (counts.get(id) ?? 0) + 1);
+    return counts;
+  };
+
+  it('caps an endless rule at 1000 occurrences, and a feed at 20000, and says so', () => {
+    const one = wide(feed(daily('a')));
+    expect(one.rows).toHaveLength(1000);
+    const { rows, truncated } = wide(feed(...Array.from({ length: 25 }, (_, index) => daily(`e${index}`))));
+    expect(rows).toHaveLength(20000);
+    expect(new Set(rows.map((row) => row.google_event_id)).size).toBe(20000);
+    expect(truncated).toBe(true);
+  });
+
+  it('keeps a single event, an RDATE and a moved occurrence when repeating series fill the feed', () => {
+    const late = event('DTSTART:20310301T150000Z', 'lateSingle');
+    const rdate = event('DTSTART:20260902T000000Z\nRRULE:FREQ=DAILY;COUNT=1\nRDATE:20310301T160000Z', 'withRdate');
+    const moved = event('RECURRENCE-ID:20260902T000000Z\nDTSTART:20310301T170000Z\nDTEND:20310301T180000Z', 'withRdate');
+    // 21 series of 1000 are 21,000 rows: the feed has room for 20,000.
+    const series = Array.from({ length: 21 }, (_, index) => daily(`d${index}`));
+    const { rows, truncated } = wide(feed(...series, late, rdate, moved));
+    expect(rows).toHaveLength(MAX_PER_FEED);
+    expect(truncated).toBe(true);
+    const counts = count(rows);
+    expect(counts.get('lateSingle')).toBe(1);
+    // The RDATE and the moved occurrence of one UID; the series' own DTSTART was replaced by the move.
+    expect(counts.get('withRdate')).toBe(2);
+    // The slice took only repeating rows: every row of the series that is left is theirs.
+    expect([...counts].filter(([id]) => id.startsWith('d')).reduce((sum, [, n]) => sum + n, 0)).toBe(MAX_PER_FEED - 3);
+  });
+
+  it('cuts the same series whatever order the feed is in: newest start first, then by UID', () => {
+    // Twenty-one series with the same start: one of them does not fit.
+    const series = Array.from({ length: 21 }, (_, index) => daily(`u${String(index).padStart(2, '0')}`));
+    const forward = wide(feed(...series));
+    const backward = wide(feed(...[...series].reverse()));
+    expect(forward.rows).toEqual(backward.rows);
+    const counts = count(forward.rows);
+    expect(counts.get('u19')).toBe(1000);
+    expect(counts.get('u20')).toBeUndefined();
+    // And a series that starts later is walked before them all.
+    const newer = wide(feed(...series, daily('newest', '20260903T000000Z')));
+    expect(count(newer.rows).get('newest')).toBe(1000);
+    expect(count(newer.rows).get('u19')).toBeUndefined();
+  });
+
+  it('keeps the RDATEs and moved occurrences of a series that a cap cut', () => {
+    const cut = event('DTSTART:17000101T000000\nRRULE:FREQ=DAILY\nRDATE:20261010T150000Z\nRDATE;VALUE=PERIOD:20261012T150000Z/PT1H', 'cut');
+    const moved = event('RECURRENCE-ID:17000105T000000\nDTSTART:20261011T150000Z\nDTEND:20261011T160000Z', 'cut');
+    const { rows, truncated } = read(feed(cut, moved));
+    expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-10T15:00:00.000Z', '2026-10-11T15:00:00.000Z', '2026-10-12T15:00:00.000Z']);
+    expect(truncated).toBe(true);
+    // Also when the feed has no steps left to give it.
+    const spent = read(feed(runaway('a', 1701), runaway('b', 1702), cut, moved));
+    expect(spent.rows.map((row) => row.starts_at)).toEqual(['2026-10-10T15:00:00.000Z', '2026-10-11T15:00:00.000Z', '2026-10-12T15:00:00.000Z']);
+  });
+
+  it('does not read an RDATE that an EXDATE names, nor one whose occurrence was moved', () => {
+    const series = event('DTSTART:20261001T150000Z\nRRULE:FREQ=WEEKLY;COUNT=1\nRDATE:20261010T150000Z\nRDATE:20261011T150000Z\nEXDATE:20261010T150000Z', 'x');
+    const moved = event('RECURRENCE-ID:20261011T150000Z\nDTSTART:20261012T150000Z', 'x');
+    expect(read(feed(series, moved)).rows.map((row) => row.starts_at)).toEqual(['2026-10-01T15:00:00.000Z', '2026-10-12T15:00:00.000Z']);
   });
 });
 
