@@ -786,7 +786,7 @@ describe('the inline script in index.html', () => {
   });
 
   it("paints the phone's pages from prefers-color-scheme, never from what the Wall stored", () => {
-    for (const path of ['/settings', '/settings/', '/settings/routines', '/settings/events']) {
+    for (const path of ['/settings', '/settings/', '/settings/routines', '/settings/events', '/join', '/join/', `/join/${'ab'.repeat(32)}`]) {
       expect(paint({ path, stored: 'light', prefersDark: true }).mode, path).toBe('dark');
       expect(paint({ path, stored: 'dark', prefersDark: false }).mode, path).toBe('light');
       expect(paint({ path, prefersDark: false }).mode, path).toBe('light');
@@ -795,6 +795,7 @@ describe('the inline script in index.html', () => {
 
   it("takes a path that only starts with the word settings for the Wall's", () => {
     expect(paint({ path: '/settingsx', stored: 'dark', prefersDark: false }).mode).toBe('dark');
+    expect(paint({ path: '/joined', stored: 'dark', prefersDark: false }).mode).toBe('dark');
   });
 
   // The Wall's phone layout (docs/specs/0004): below 768 px wide the Wall follows the phone as /settings does, so a reload on a
