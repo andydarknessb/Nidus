@@ -2,6 +2,8 @@ import { createElement, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { HouseholdAccountsView as HouseholdAccountsViewType } from '../src/HouseholdAccountsSection';
+import { CANCEL_SAID, MAKE_SAID, SHARE_TEXT, inviteViewOf, sharePayload } from '../src/lib/household-accounts';
+import { writeFailureWords } from '../src/lib/write-failure';
 
 // The "Who can sign in" card of the phone's settings (src/HouseholdAccountsSection.tsx), rendered to markup so that what is
 // asserted is what the browser is given. The section's container reads and writes through src/lib/household-invites.ts; what it
@@ -77,10 +79,10 @@ describe('Who can sign in: the list', () => {
   });
 
   it('says since when, in the Household Timezone and not the machine one', () => {
-    // 03:30 UTC on Oct 2 is the evening of Oct 1 in Chicago, and already Oct 2 in Sydney.
-    expect(words(render())).toContain('Since Thu, Oct 1');
-    expect(words(render({ timezone: 'Australia/Sydney' }))).toContain('Since Fri, Oct 2');
-    expect(words(render())).toContain('Since Tue, Sep 1');
+    // 03:30 UTC on Oct 2 is the evening of Oct 1 in Chicago, and already Oct 2 in Sydney. The year is there: an account can be old.
+    expect(words(render())).toContain('Since Oct 1, 2026');
+    expect(words(render({ timezone: 'Australia/Sydney' }))).toContain('Since Oct 2, 2026');
+    expect(words(render())).toContain('Since Sep 1, 2026');
   });
 
   it('draws the other account as a closed 56 px row that opens to Remove, and the Remove button only when it is open', () => {
@@ -95,8 +97,7 @@ describe('Who can sign in: the list', () => {
   it('asks before removing, in the spec words, with Remove and Cancel', () => {
     const markup = render({ open: { id: OTHER, confirming: true } });
     expect(words(markup)).toContain('Remove other@example.com? They will no longer be able to open Settings or the calendar with this Google account.');
-    expect(names(markup).slice(-5)).toContain('Cancel');
-    expect(names(markup)).toContain('Remove');
+    expect(names(markup).filter((name) => name === 'Cancel' || name === 'Remove')).toEqual(['Cancel', 'Remove']);
     expect(names(markup)).not.toContain('Remove other@example.com');
   });
 
@@ -125,7 +126,7 @@ describe('Who can sign in: the list', () => {
 describe('Who can sign in: the invite', () => {
   it('with none waiting is one full width Invite someone button, and nothing else about invites', () => {
     const markup = render();
-    expect(names(markup)).toEqual(['other@example.com Since Thu, Oct 1', 'Invite someone']);
+    expect(names(markup)).toEqual(['other@example.com Since Oct 1, 2026', 'Invite someone']);
     expect(buttons(markup).find(({ name }) => name === 'Invite someone')?.attributes).toMatch(/class="[^"]*\bw-full\b/);
     expect(words(markup)).not.toContain('Invite link');
     expect(words(markup)).not.toContain('An invite is waiting');
@@ -206,11 +207,43 @@ describe('Who can sign in: its words', () => {
     for (const state of STATES) expect(render(state), JSON.stringify(state)).not.toMatch(/[–—]/);
   });
 
-  it('keep every button 52 px tall or more and every colour to the tokens', () => {
+  it('keep every button at least 48 px tall (52 or 56 in the button sizes) and every colour to the tokens', () => {
     for (const state of STATES) {
       const markup = render(state);
       expect(markup, JSON.stringify(state)).not.toMatch(/#[0-9a-fA-F]{3,8}\b|\brgb\(|style="[^"]*color/);
       for (const { attributes, name } of buttons(markup)) expect(attributes, name).toMatch(/\b(h-14|min-h-14|h-12|size-12)\b|class="[^"]*\bh-\[?(1[2-9]|[2-9]\d)/);
     }
+  });
+});
+
+describe('Who can sign in: what it decides', () => {
+  const stored = { createdAt: new Date('2026-10-06T12:00:00Z'), expiresAt: new Date('2026-10-13T12:00:00Z') };
+  const made = { link: LINK, expiresAt: new Date('2026-10-13T13:00:00Z') };
+
+  it('shows the link just made over anything stored, the stored invite as waiting, and nothing before the first read', () => {
+    expect(inviteViewOf(made, stored)).toEqual({ kind: 'made', ...made });
+    expect(inviteViewOf(made, undefined)).toEqual({ kind: 'made', ...made });
+    expect(inviteViewOf(null, stored)).toEqual({ kind: 'waiting', expiresAt: stored.expiresAt });
+    expect(inviteViewOf(null, null)).toEqual({ kind: 'none' });
+    expect(inviteViewOf(null, undefined)).toBeNull();
+  });
+
+  it('draws none once a removal has cleared the link and the stored invite, which the database cancels with it', () => {
+    expect(inviteViewOf(null, null)).toEqual({ kind: 'none' });
+    expect(inviteViewOf(made, stored)).not.toEqual({ kind: 'none' });
+  });
+
+  it('says its own words for a link that was not made and an invite that was not cancelled, online or off', () => {
+    expect(MAKE_SAID).toEqual({ failed: 'Could not make the link. Try again.', offline: 'No internet, so the link was not made. Try again soon.' });
+    expect(CANCEL_SAID).toEqual({ failed: 'Could not cancel the invite. Try again.', offline: 'No internet, so the invite was not cancelled. Try again soon.' });
+    const answered = Object.assign(new Error('server'), { code: 'XX000' });
+    expect(writeFailureWords(answered, { offline: false, said: MAKE_SAID })).toBe(MAKE_SAID.failed);
+    expect(writeFailureWords(new Error('no answer'), { offline: true, said: CANCEL_SAID })).toBe(CANCEL_SAID.offline);
+    expect(writeFailureWords(new TypeError('Failed to fetch'), { offline: false, said: MAKE_SAID })).toBe(MAKE_SAID.offline);
+  });
+
+  it('shares the link with the line that goes with it', () => {
+    expect(SHARE_TEXT).toBe('Join our household on Nidus');
+    expect(sharePayload(LINK)).toEqual({ url: LINK, text: 'Join our household on Nidus' });
   });
 });
