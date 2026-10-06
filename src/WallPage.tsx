@@ -3,12 +3,14 @@ import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
 import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
+import { BeforeHousehold } from './components/BeforeHousehold';
 import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { EmptyWords } from './components/EmptyWords';
 import { HomeRail } from './components/HomeRail';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { NavigationRail } from './components/NavigationRail';
 import { PeopleStrip } from './components/PeopleStrip';
+import { PhoneShell } from './components/PhoneShell';
 import { StatusLineProvider } from './components/StatusLine';
 import { WallHeader, WallTime } from './components/WallHeader';
 import { useChangeTick } from './lib/change-feed';
@@ -27,6 +29,7 @@ import { useLightMode, useWallMode } from './lib/use-mode';
 import { useProfiles } from './lib/use-profiles';
 import { useRoutinesToday } from './lib/use-routines-today';
 import { MealsScreen } from './MealsPage';
+import { PhoneWall } from './PhoneWall';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
 
@@ -209,22 +212,9 @@ function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void,
   return [route, (view, date) => go(wallPath(view, date)), () => go('/'), (date) => go(mealsPath(date)), () => go('/routines'), () => go('/lists')];
 }
 
-// What stands in for a screen until the Household has been read (its Timezone says which day every screen
-// shows): a frame that says "Loading" while the read is on its way and, once it has failed, the words that say so, in
-// the screen's own wording, so a Wall that cannot reach its server does not pass for a blank one, nor a slow one for a broken one.
-export function BeforeHousehold({ label, failed, words }: { label: string; failed: boolean; words: string }) {
-  return (
-    <section aria-label={label} className="rounded-3xl bg-card">
-      {failed ? (
-        <p role="alert" className="p-4 text-xl">
-          {words}
-        </p>
-      ) : (
-        <EmptyWords className="p-4">Loading</EmptyWords>
-      )}
-    </section>
-  );
-}
+// The frame that stands in for a screen until the Household has been read; it lives in its own file so the phone's screens can
+// draw it too, and is still this page's to import.
+export { BeforeHousehold };
 
 // What each view of the Wall is called in the document's title.
 const VIEW_TITLES: Record<WallRoute['view'], string> = { home: 'Home', day: 'Day', week: 'Week', month: 'Month', routines: 'Routines', meals: 'Meals', lists: 'Lists' };
@@ -284,6 +274,9 @@ function HomeShell({ owner }: { owner: boolean }) {
     };
   }, [householdChanges]);
   const timezone = view.household?.timezone ?? null;
+  // How many days and Up next tiles Home holds at this screen's size, and whether the screen is a phone (below 768 px wide), which
+  // swaps the chrome below and follows the phone's own light or dark setting.
+  const home = useHomeLayout();
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
   // `sun` is what the mode goes on besides the Household: the forecast's sunrise and sunset.
@@ -292,16 +285,70 @@ function HomeShell({ owner }: { owner: boolean }) {
   // The mode of the screen: the Household's Appearance (Auto is light from sunrise to sunset, or from 7:00 to 19:00 in the
   // Household Timezone with no forecast), or what the screen last had while it cannot say: the Household not read yet, or
   // Auto waiting for the forecast's first read. The switch works as soon as the Household is read.
-  const toggleMode = useWallMode({ timezone, appearance: view.household?.appearance, sun });
+  // On the phone layout it is the phone's own setting instead, which reads and writes nothing the Wall stored, and has no switch.
+  const toggleMode = useWallMode({ timezone, appearance: view.household?.appearance, sun, system: home.phone });
   // Today's Routines, read once for as long as the shell lives and handed to Up next on Home and to
   // the Routines chart, so going from one to the other reads nothing again and a tick in flight is not dropped.
   const routines = useRoutinesToday(timezone, profiles);
-  // How many days and Up next tiles Home holds at this screen's size.
-  const home = useHomeLayout();
 
   const today = timezone ? householdDay(timezone).date : null;
   // The people strip is for the calendar screens (Home, Day, Week and Month), and for no other.
   const onCalendar = onCalendarScreen(route.view);
+  const strip = onCalendar && <PeopleStrip profiles={profiles} routines={routines} filter={filter} pressed={pressed} />;
+  // The Add event sheet, the same on both layouts.
+  const sheet = adding && timezone && today && (
+    <NativeEventSheet
+      timezone={timezone}
+      profiles={profiles ?? []}
+      // The day the wall is on: today when the page shown holds it, else that page's first day.
+      date={wallDate(route, today)}
+      onClose={() => setAdding(false)}
+      onSaved={() => {
+        setAdding(false);
+        setAdded((count) => count + 1);
+      }}
+    />
+  );
+
+  // The phone: a header, one column and five tabs. Everything above is shared with the tablet, so a resize across 768 px keeps the
+  // route, the Profile filter and what has been read; only the chrome is drawn differently.
+  if (home.phone) {
+    return (
+      <ProfileFilterContext.Provider value={filterView}>
+        <PhoneShell
+          owner={owner}
+          route={route}
+          household={view.household}
+          today={today}
+          forecast={forecast}
+          strip={strip}
+          onOpen={openView}
+          onHome={openHome}
+          onRoutines={openRoutines}
+          onMeals={() => openMeals(null)}
+          onLists={openLists}
+          onAdd={() => setAdding(true)}
+        >
+          <PhoneWall
+            route={route}
+            timezone={timezone}
+            view={view}
+            added={added}
+            forecast={forecast}
+            weatherOn={weatherOn}
+            profiles={profiles}
+            routines={routines}
+            tiles={home.tiles}
+            openView={openView}
+            openRoutines={openRoutines}
+            openLists={openLists}
+            openMeals={openMeals}
+          />
+        </PhoneShell>
+        {sheet}
+      </ProfileFilterContext.Provider>
+    );
+  }
 
   return (
     <main className="grid h-svh grid-cols-[6rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
@@ -319,7 +366,7 @@ function HomeShell({ owner }: { owner: boolean }) {
       />
       <div className="flex min-w-0 flex-col gap-3">
         <WallHeader household={view.household} today={today} forecast={forecast} onMeals={route.view === 'meals' ? null : () => openMeals(null)} />
-        {onCalendar && <PeopleStrip profiles={profiles} routines={routines} filter={filter} pressed={pressed} />}
+        {strip}
       </div>
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
@@ -363,19 +410,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} onOpenRoutines={openRoutines} onOpenLists={openLists} />
         </div>
         )}
-        {adding && timezone && today && (
-          <NativeEventSheet
-            timezone={timezone}
-            profiles={profiles ?? []}
-            // The day the wall is on: today when the page shown holds it, else that page's first day.
-            date={wallDate(route, today)}
-            onClose={() => setAdding(false)}
-            onSaved={() => {
-              setAdding(false);
-              setAdded((count) => count + 1);
-            }}
-          />
-        )}
+        {sheet}
       </ProfileFilterContext.Provider>
     </main>
   );

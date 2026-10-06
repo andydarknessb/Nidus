@@ -43,7 +43,7 @@ export function WallTime({ name, timezone }: { name: string; timezone: string })
 
 // The "last synced N hours ago" mark: nothing while every Calendar Account is within an hour, so a healthy wall
 // stays clean. A failed read keeps what the wall last knew.
-function SyncBadge() {
+export function SyncBadge() {
   const [accounts, setAccounts] = useState<SyncFreshness[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const changes = useChangeTick(SYNC_TABLES);

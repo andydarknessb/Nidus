@@ -18,6 +18,11 @@ export type WallModeSettings = {
   // null while the Household has a weather place and the first read of its forecast has not finished or failed: the sun is
   // not known yet, and Auto waits for it. Light, Dark and the switch do not.
   sun: readonly SunDay[] | null;
+  // The phone layout (below 768 px wide, src/lib/home-layout.ts): the mode is the phone's own, as useSystemMode makes it, and
+  // the Household's Appearance, the switch's override and what the Wall last resolved play no part: none is read and none is
+  // written. Hooks cannot be conditional, so a Wall that crosses 768 px by resizing keeps this one and flips this input;
+  // false (or left out) is the tablet's behaviour exactly.
+  system?: boolean | undefined;
 };
 
 // Keeps the document's mode right on the Wall: the switch's override while it lasts, else the Household's Appearance, which
@@ -27,13 +32,16 @@ export type WallModeSettings = {
 // resolved for the next load to paint. The sun is read from the forecast at each minute and not once, so the Household date
 // moving on at midnight needs no new render. Returns the switch: it sets an override for the opposite mode that lasts until
 // the next sunrise or sunset, on this screen only. It works as soon as the Household is read.
-export function useWallMode({ timezone, appearance, sun }: WallModeSettings): () => void {
+export function useWallMode({ timezone, appearance, sun, system = false }: WallModeSettings): () => void {
   const [store] = useState(localStore);
-  const [override, setOverride] = useState(() => readOverride(store, Date.now()));
+  const [override, setOverride] = useState(() => (system ? null : readOverride(store, Date.now())));
   // What the screen shows is the mode it last resolved, until it resolves another.
-  const [mode, setMode] = useState<Mode>(() => readLastMode(store));
+  const [mode, setMode] = useState<Mode>(() => (system ? 'light' : readLastMode(store)));
+  const prefersDark = usePrefersDark();
 
   useEffect(() => {
+    // The phone's mode is the effect below's, and this one reads and writes nothing.
+    if (system) return;
     const resolve = () => {
       const now = Date.now();
       // An override that has run out is dropped from storage as well as ignored.
@@ -52,26 +60,29 @@ export function useWallMode({ timezone, appearance, sun }: WallModeSettings): ()
     };
     resolve();
     return watchMinute(resolve);
-  }, [store, appearance, override, timezone, sun]);
+  }, [store, appearance, override, timezone, sun, system]);
 
-  useEffect(() => applyMode(mode), [mode]);
+  const shown: Mode = system ? (prefersDark ? 'dark' : 'light') : mode;
+  useEffect(() => applyMode(shown), [shown]);
 
   return useCallback(() => {
-    if (timezone === null) return;
+    // The phone has no switch.
+    if (system || timezone === null) return;
     // The override ends at the next boundary from what the screen has now: the forecast's sun when it is known, else 7:00 and 19:00.
     const now = Date.now();
     const next: ModeOverride = { mode: mode === 'dark' ? 'light' : 'dark', until: nextBoundary({ now, timezone, ...sunAt(sun ?? [], timezone, now) }) };
     writeOverride(store, next);
     setOverride(next);
-  }, [store, mode, timezone, sun]);
+  }, [store, mode, timezone, sun, system]);
 }
 
 // The phone's pages follow the phone: prefers-color-scheme, and light when it says nothing. They change when it
 // does, and they neither read nor write what the Wall stored.
 const PREFERS_DARK = '(prefers-color-scheme: dark)';
 
-export function useSystemMode(): void {
-  const dark = useSyncExternalStore(
+// Whether the phone prefers dark now, and drawn again when it changes.
+function usePrefersDark(): boolean {
+  return useSyncExternalStore(
     (notify) => {
       const query = window.matchMedia(PREFERS_DARK);
       query.addEventListener('change', notify);
@@ -79,6 +90,10 @@ export function useSystemMode(): void {
     },
     () => window.matchMedia(PREFERS_DARK).matches,
   );
+}
+
+export function useSystemMode(): void {
+  const dark = usePrefersDark();
   useEffect(() => applyMode(dark ? 'dark' : 'light'), [dark]);
 }
 

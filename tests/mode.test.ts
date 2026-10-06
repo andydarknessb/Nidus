@@ -600,9 +600,12 @@ function paint({
   prefersDark = false,
   storage = 'works',
   metas = 'present',
+  width,
 }: {
   path: string;
   stored?: string;
+  // The window's width; a page that has none (a test that never says) is a tablet.
+  width?: number;
   prefersDark?: boolean;
   storage?: 'works' | 'blocked';
   metas?: 'present' | 'missing';
@@ -610,6 +613,7 @@ function paint({
   const page: { mode?: string; metas: Record<string, string> } = { metas: {} };
   const sandbox: Record<string, unknown> = {
     location: { pathname: path },
+    ...(width === undefined ? {} : { innerWidth: width }),
     matchMedia: (query: string) => ({ matches: query === '(prefers-color-scheme: dark)' && prefersDark }),
     document: {
       documentElement: { setAttribute: (name: string, value: string) => void (name === 'data-mode' && (page.mode = value)) },
@@ -667,7 +671,7 @@ describe('the inline script in index.html', () => {
   });
 
   it('keeps its variables to itself: it leaves no globals behind, whichever way it ends', () => {
-    for (const options of [{ path: '/', stored: 'dark' }, { path: '/settings', prefersDark: true }, { path: '/', storage: 'blocked' as const }]) {
+    for (const options of [{ path: '/', stored: 'dark' }, { path: '/settings', prefersDark: true }, { path: '/', storage: 'blocked' as const }, { path: '/', width: 390, prefersDark: true }]) {
       expect(paint(options).leaked, JSON.stringify(options)).toEqual([]);
     }
   });
@@ -682,6 +686,26 @@ describe('the inline script in index.html', () => {
 
   it("takes a path that only starts with the word settings for the Wall's", () => {
     expect(paint({ path: '/settingsx', stored: 'dark', prefersDark: false }).mode).toBe('dark');
+  });
+
+  // The Wall's phone layout (docs/specs/0004): below 768 px wide the Wall follows the phone as /settings does, so a reload on a
+  // dark phone never paints light first, and what a tablet stored never paints a phone.
+  it('paints the Wall from prefers-color-scheme below 768 px wide, never from what it stored', () => {
+    for (const path of ['/', '/week', '/routines', '/meals', '/lists']) {
+      expect(paint({ path, width: 390, stored: 'light', prefersDark: true }).mode, path).toBe('dark');
+      expect(paint({ path, width: 390, stored: 'dark', prefersDark: false }).mode, path).toBe('light');
+      expect(paint({ path, width: 767, prefersDark: true }).metas, path).toEqual({ 'color-scheme': 'dark', 'theme-color': TOKENS.dark.background });
+    }
+  });
+
+  it('paints the Wall from what it stored from 768 px wide, as it always has', () => {
+    expect(paint({ path: '/', width: 768, stored: 'dark', prefersDark: false }).mode).toBe('dark');
+    expect(paint({ path: '/', width: 768, stored: 'light', prefersDark: true }).mode).toBe('light');
+    expect(paint({ path: '/', width: 1280, stored: 'dark', prefersDark: false }).mode).toBe('dark');
+  });
+
+  it('follows the phone below 768 px wide even when localStorage is blocked', () => {
+    expect(paint({ path: '/', width: 390, storage: 'blocked', prefersDark: true }).mode).toBe('dark');
   });
 
   it('leaves the page light, without throwing, when the browser will not give it localStorage', () => {
