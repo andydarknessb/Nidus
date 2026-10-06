@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Cookie, Moon, Plus, Sun, Sunrise, X, type LucideIcon } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { InBody } from './components/InBody';
+import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
 import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
 import { useRefetchOn } from './lib/change-feed';
@@ -226,7 +227,7 @@ function DayHeading({ day }: { day: WallDay }) {
 // Focus moves onto the field on open, so the tablet's keyboard comes up at once, and back to the cell on close;
 // Close, Cancel and Escape close it without writing, and so does a tap on the scrim while the field still holds what
 // it opened with. A blank field is a clear.
-function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
+export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
   const dialog = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing.meal?.title ?? '');
@@ -283,7 +284,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
 
   return (
     <div
-      className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-4 sm:items-center sm:p-8"
+      className={`fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-4 sm:items-center sm:p-8 ${PHONE_SCRIM}`}
       // A press on the scrim must not take focus off the field: the browser would hand it to the page behind, and
       // Escape would then reach nothing.
       onMouseDown={(event) => {
@@ -302,8 +303,9 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
         noValidate
         onSubmit={submit}
         onKeyDown={(event) => dialogKeys(event, close)}
-        className="flex w-full max-w-lg flex-col gap-[18px] rounded-[28px] bg-card p-6 outline-none"
+        className={`flex w-full max-w-lg flex-col gap-[18px] rounded-[28px] bg-card p-6 outline-none ${PHONE_FRAME} max-[767px]:min-h-0`}
       >
+        <SheetHandle />
         <div className="flex h-12 items-center justify-between gap-4">
           <h2 id="meal-sheet-title" className="font-display text-[30px] leading-9">
             {editing.heading}
@@ -312,6 +314,9 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
             <X aria-hidden className="size-[26px]" strokeWidth={2.2} />
           </Button>
         </div>
+        {/* On a phone the field and what is said of it scroll between the title row and the buttons; on the Wall the box is not there
+            (display: contents), and the sheet is as it was. */}
+        <div className="flex min-h-0 flex-col gap-[18px] max-[767px]:overflow-y-auto min-[768px]:contents">
         <label className="flex flex-col gap-2">
           <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
           <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
@@ -319,7 +324,8 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
         <p role="alert" className="min-h-6 text-[15px] leading-5 font-medium empty:hidden">
           {problem}
         </p>
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        </div>
+        <div className="flex flex-none flex-wrap items-center justify-end gap-3">
           {editing.meal && (
             <Button className="mr-auto h-14 px-6 text-[17px]" disabled={busy} onClick={() => void write('')}>
               Clear
