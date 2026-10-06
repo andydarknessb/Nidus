@@ -442,7 +442,7 @@ describe('a run with more feed than it can read', () => {
     expect((await accountOf(q.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
   }, 120_000);
 
-  it('does not cut a feed of single events when the run has nothing left', async () => {
+  it('does not start a feed the run has nothing left for, even a plain one: it is not fetched, and keeps its place in line', async () => {
     const account = await arrange();
     const { feeds, calendars } = await arrangeFeeds(account, 3, heavy());
     const plain = newLink();
@@ -451,12 +451,75 @@ describe('a run with more feed than it can read', () => {
     // The plain feed was tried last, so the heavy ones come first.
     for (const c of calendars) await asServiceRole().from('calendar_accounts').update({ last_attempted_at: new Date(NOW - 3_600_000).toISOString() }).eq('id', c.accountId);
     await asServiceRole().from('calendar_accounts').update({ last_attempted_at: new Date(NOW - 60_000).toISOString() }).eq('id', last.accountId);
+    const world = fakeWorld(feeds);
 
-    await syncOk(deps(account, fakeWorld(feeds)));
+    await syncOk(deps(account, world));
 
+    expect(world.calls.map((call) => call.url)).not.toContain(plain);
+    expect(await rowsOf(last.calendarId)).toEqual([]);
+    expect(await accountOf(last.accountId)).toMatchObject({ status: 'active', last_error: FEED_TOO_LARGE_MESSAGE });
+    expect(await attemptedOf(last.accountId)).toBe(NOW - 60_000);
+
+    // The heavy feeds were tried: next time they are behind it, and it is read.
+    await syncOk({ ...deps(account, world), now: () => NOW + 5 * MINUTE });
     expect((await rowsOf(last.calendarId)).map((row) => row.title)).toEqual(['Dentist']);
     expect(await accountOf(last.accountId)).toMatchObject({ status: 'active', last_error: null });
   }, 60_000);
+
+  it('keeps a note a skipped feed already has, and says it was not read when it has none', async () => {
+    const account = await arrange();
+    const { feeds, calendars } = await arrangeFeeds(account, 3, feedOf(dentist, runaway('a')));
+    const [, noted, bare] = calendars as [(typeof calendars)[number], (typeof calendars)[number], (typeof calendars)[number]];
+    await asServiceRole().from('calendar_accounts').update({ last_error: FEED_TRUNCATED_MESSAGE }).eq('id', noted.accountId);
+    let t = 0;
+
+    // The first feed's walk is the run's whole time: the other two are skipped without being read.
+    await syncOk({ ...deps(account, fakeWorld(feeds)), clock: () => (t += 1) });
+
+    expect((await accountOf(noted.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect((await accountOf(bare.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+  }, 60_000);
+
+  it('rotates a feed whose parse and added dates spend the run’s time, without walking a step, to the back, so the feeds behind it store their repeating series on the next runs', async () => {
+    const account = await arrange();
+    // The shape of a feed with a hundred thousand RDATEs, scaled down: its time is spent before and
+    // apart from any step, so the run's steps are untouched when it fails.
+    const dates = Array.from({ length: 200 }, (_, index) => `202610${String(1 + (index % 28)).padStart(2, '0')}T${String(index % 24).padStart(2, '0')}0000Z`).join(',');
+    const rdates = vevent('rd', 'Dates', `DTSTART:20261001T000000Z
+RDATE:${dates}`);
+    const { feeds, calendars } = await arrangeFeeds(account, 3, feedOf(swim));
+    const [heavyOne, p, q] = calendars as [(typeof calendars)[number], (typeof calendars)[number], (typeof calendars)[number]];
+    feeds.set(heavyOne.link, { text: feedOf(rdates, swim) });
+    const world = fakeWorld(feeds);
+    // The clock jumps a second at every reading while the heavy feed is the one being read.
+    let reading = '';
+    let t = 0;
+    const fetchHeavy = (async (input: string | URL | Request, init?: RequestInit) => {
+      reading = String(input);
+      return world.fetch(input, init);
+    }) as typeof fetch;
+    const at = (run: number) => ({ ...deps(account, world), fetch: fetchHeavy, now: () => NOW + run * 5 * MINUTE, clock: () => (reading === heavyOne.link ? (t += 1000) : t) });
+
+    // Run 0: the heavy feed is first (by id), spends the run's time with no steps, and is not stored. The
+    // others find the time gone: not fetched, not tried, nothing stored.
+    await syncOk(at(0));
+    expect((await accountOf(heavyOne.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(await attemptedOf(heavyOne.accountId)).toBe(NOW);
+    for (const c of [p, q]) {
+      expect((await accountOf(c.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+      expect(await attemptedOf(c.accountId)).toBeNull();
+      expect(await rowsOf(c.calendarId)).toEqual([]);
+    }
+
+    // Run 1: the two never tried go first and store their repeating series; the heavy one is last.
+    await syncOk(at(1));
+    for (const c of [p, q]) {
+      expect((await rowsOf(c.calendarId)).map((row) => row.title)).toEqual(['Swim', 'Swim', 'Swim']);
+      expect(await accountOf(c.accountId)).toMatchObject({ status: 'active', last_error: null });
+    }
+    expect(await attemptedOf(heavyOne.accountId)).toBe(NOW + 5 * MINUTE);
+    expect(world.calls.map((call) => call.url).slice(-3)).toEqual([p.link, q.link, heavyOne.link]);
+  }, 120_000);
 
   it('stops reading feeds once the run has spent its 800 ms, as it does when it has no steps left', async () => {
     const account = await arrange();

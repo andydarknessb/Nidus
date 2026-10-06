@@ -186,8 +186,8 @@ export const UPDATE_FAILED_WORDS = 'Connected, but the last update failed. Nidus
 
 // The note the sync writes on an iPhone calendar it read but could not expand in full (the same sentence as
 // FEED_TRUNCATED_MESSAGE in the calendar-sync function; a test holds the two together), and what the screen says of it.
-export const ICLOUD_TRUNCATED_NOTE = 'Some repeating events in this calendar start too long ago to show in full.';
-export const ICLOUD_TRUNCATED_WORDS = 'Connected. Some repeating events start too long ago to show in full.';
+export const ICLOUD_TRUNCATED_NOTE = 'Some repeating events in this calendar cannot be shown in full.';
+export const ICLOUD_TRUNCATED_WORDS = 'Connected. Some repeating events cannot be shown in full.';
 
 // How the settings screen says an account is doing. `last_error` is whatever the sync wrote when it failed, which is for the
 // logs: it is never shown. The exceptions are the two sentences the sync writes itself, in the family's words (spec 0005): an

@@ -24,7 +24,7 @@
 // touches Google's token endpoint, and one account's failure never stops another's.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { type EventRow, MAX_DESCRIPTION, MAX_LOCATION, MAX_TITLE } from '../_shared/event-row.ts';
-import { expandFeed, FeedTooLargeError, MAX_STEPS_PER_RUN, type StepBudget } from '../_shared/ics-expand.ts';
+import { expandFeed, FeedTooLargeError, MAX_EXPANSION_MS, MAX_STEPS_PER_RUN, type StepBudget } from '../_shared/ics-expand.ts';
 import { fetchFeed } from '../_shared/feed.ts';
 import { dayStartMs } from '../_shared/zoned-time.ts';
 
@@ -122,7 +122,7 @@ export function toRow(event: GoogleEvent, timezone: string): EventRow | null {
   };
 }
 
-type Account = { id: string; household_id: string; vault_secret_id: string; provider: 'google' | 'icloud'; last_attempted_at: string | null };
+type Account = { id: string; household_id: string; vault_secret_id: string; provider: 'google' | 'icloud'; last_attempted_at: string | null; last_error: string | null };
 type Calendar = {
   id: string;
   google_calendar_id: string;
@@ -296,7 +296,7 @@ async function failAccount(deps: SyncDeps, account: Account, summary: SyncSummar
 // The run had no time for this calendar: nothing was stored, and it is read first next time.
 export const FEED_TOO_LARGE_MESSAGE = 'This calendar was not read this time; it will be tried again.';
 // Read and stored, but some repeating events were cut short by the work limits.
-export const FEED_TRUNCATED_MESSAGE = 'Some repeating events in this calendar start too long ago to show in full.';
+export const FEED_TRUNCATED_MESSAGE = 'Some repeating events in this calendar cannot be shown in full.';
 export const FEED_GONE_MESSAGE = 'This link no longer works. Turn on Public Calendar again and paste the new link.';
 
 // An iPhone calendar's validator, kept in its Mirrored Calendar's sync_token (no client can read
@@ -354,6 +354,17 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
   // As Google's incremental sync is dropped every FULL_SYNC_EVERY_MS, so is a validator: a feed
   // that keeps answering 304 would otherwise never be expanded past the window it was last read in.
   const validators = canReadIncrementally(calendar, nowMs) ? decodeFeedValidators(calendar.sync_token) : { etag: null, lastModified: null, truncated: false };
+  // Decided before the feed starts: a run with no steps or time left cannot read this feed at all, not
+  // even to parse it. It was not really tried, so it keeps its place in line; a feed that does start and
+  // does not fit has been tried, and goes to the back.
+  if (run.remaining <= 0 || (run.spentMs ?? 0) >= MAX_EXPANSION_MS) {
+    summary.errors.push(`${account.id}: ${FEED_TOO_LARGE_MESSAGE}`);
+    await deps.admin
+      .from('calendar_accounts')
+      .update({ last_attempted_at: account.last_attempted_at, ...(account.last_error ? {} : { last_error: FEED_TOO_LARGE_MESSAGE }) })
+      .eq('id', account.id);
+    return;
+  }
   const feed = await fetchFeed(link, validators, deps.fetch);
   if (feed.kind === 'gone') return fail(FEED_GONE_MESSAGE, 'needs_reauth');
   if (feed.kind === 'error') return fail(`Could not read the iPhone calendar (${feed.message}).`);
@@ -361,16 +372,13 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
     const window = syncWindow(nowMs);
     let truncated: boolean;
     let rows: EventRow[];
-    const stepsBefore = run.remaining;
     try {
       ({ rows, truncated } = expandFeed(feed.text, timezone, Date.parse(window.timeMin), Date.parse(window.timeMax), run));
     } catch (error) {
       // Not stored: replacing would delete the events the walk never reached. The old events and
       // validator stay, so the feed is read again next run.
       if (error instanceof FeedTooLargeError) {
-        // A feed that walked nothing because the run had nothing left was not really tried: it keeps
-        // its place in line. One that spent steps and still did not fit goes to the back.
-        if (run.remaining === stepsBefore) await deps.admin.from('calendar_accounts').update({ last_attempted_at: account.last_attempted_at }).eq('id', account.id);
+        // It started and did not fit: it keeps its new stamp and goes to the back of the line.
         return fail(FEED_TOO_LARGE_MESSAGE);
       }
       return fail('Could not read the iPhone calendar (it is not a calendar the Wall can read).');
@@ -434,7 +442,7 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
   const nowMs = (deps.now ?? Date.now)();
   const summary: SyncSummary = { accounts: 0, calendars: 0, events: 0, errors: [] };
 
-  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id, provider, last_attempted_at').eq('status', 'active');
+  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id, provider, last_attempted_at, last_error').eq('status', 'active');
   if (deps.householdId) query = query.eq('household_id', deps.householdId);
   const { data: accounts, error } = await query.returns<Account[]>();
   if (error || !accounts) {

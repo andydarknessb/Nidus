@@ -185,8 +185,8 @@ describe('what a Calendar Account says of itself', () => {
   });
 
   it('says of an active iPhone calendar whose repeating events were cut short that it is connected, and what was cut, in the family’s words', () => {
-    const words = 'Connected. Some repeating events start too long ago to show in full.';
-    const note = 'Some repeating events in this calendar start too long ago to show in full.';
+    const words = 'Connected. Some repeating events cannot be shown in full.';
+    const note = 'Some repeating events in this calendar cannot be shown in full.';
     expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: note })).toBe(words);
     expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: note })).toBe(ICLOUD_TRUNCATED_WORDS);
     expect(words).not.toContain('\u2014');
