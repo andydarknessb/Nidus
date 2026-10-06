@@ -119,7 +119,7 @@ export function toRow(event: GoogleEvent, timezone: string): EventRow | null {
   };
 }
 
-type Account = { id: string; household_id: string; vault_secret_id: string; provider: 'google' | 'icloud' };
+type Account = { id: string; household_id: string; vault_secret_id: string; provider: 'google' | 'icloud'; last_synced_at: string | null };
 type Calendar = {
   id: string;
   google_calendar_id: string;
@@ -290,7 +290,10 @@ async function failAccount(deps: SyncDeps, account: Account, summary: SyncSummar
     .eq('id', account.id);
 }
 
-export const FEED_TOO_LARGE_MESSAGE = 'This calendar is too large to read in full right now; it will be tried again.';
+// The run had no time for this calendar: nothing was stored, and it is read first next time.
+export const FEED_TOO_LARGE_MESSAGE = 'This calendar was not read this time; it will be tried again.';
+// Read and stored, but some repeating events were cut short by the work limits.
+export const FEED_TRUNCATED_MESSAGE = 'Some repeating events in this calendar start too long ago to show in full.';
 export const FEED_GONE_MESSAGE = 'This link no longer works. Turn on Public Calendar again and paste the new link.';
 
 // An iPhone calendar's validator, kept in its Mirrored Calendar's sync_token (no client can read
@@ -330,7 +333,8 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
     .returns<Calendar[]>();
   if (listError || !calendars) return fail('Could not read the account’s calendars.');
 
-  const markSynced = () => deps.admin.from('calendar_accounts').update({ last_synced_at: new Date(nowMs).toISOString(), last_error: null }).eq('id', account.id);
+  const markSynced = (note: string | null = null) =>
+    deps.admin.from('calendar_accounts').update({ last_synced_at: new Date(nowMs).toISOString(), last_error: note }).eq('id', account.id);
   // Deselected: it has no events and no business with the feed.
   const calendar = calendars[0];
   if (!calendar) {
@@ -346,9 +350,10 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
   if (feed.kind === 'error') return fail(`Could not read the iPhone calendar (${feed.message}).`);
   if (feed.kind === 'calendar') {
     const window = syncWindow(nowMs);
+    let truncated: boolean;
     let rows: EventRow[];
     try {
-      rows = expandFeed(feed.text, timezone, Date.parse(window.timeMin), Date.parse(window.timeMax), run);
+      ({ rows, truncated } = expandFeed(feed.text, timezone, Date.parse(window.timeMin), Date.parse(window.timeMax), run));
     } catch (error) {
       // Not stored: replacing would delete the events the walk never reached. The old events and
       // validator stay, so the feed is read again next run.
@@ -361,6 +366,10 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
       return fail('Could not store the iPhone calendar’s events.');
     }
     summary.events += rows.length;
+    // It did sync: the account stays active and last_synced_at moves; the note says what was cut.
+    summary.calendars += 1;
+    await markSynced(truncated ? FEED_TRUNCATED_MESSAGE : null);
+    return;
   }
   summary.calendars += 1;
   await markSynced();
@@ -409,7 +418,7 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
   const nowMs = (deps.now ?? Date.now)();
   const summary: SyncSummary = { accounts: 0, calendars: 0, events: 0, errors: [] };
 
-  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id, provider').eq('status', 'active');
+  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id, provider, last_synced_at').eq('status', 'active');
   if (deps.householdId) query = query.eq('household_id', deps.householdId);
   const { data: accounts, error } = await query.returns<Account[]>();
   if (error || !accounts) {
@@ -429,7 +438,11 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
   // can then never keep a Google account from syncing in the same run.
   // One step budget for every feed of the run: the hosted function has a 2 s CPU limit in all.
   const run: StepBudget = { remaining: MAX_STEPS_PER_RUN };
-  accounts.sort((a, b) => Number(a.provider === 'icloud') - Number(b.provider === 'icloud'));
+  // Among the feeds, the one read longest ago (or never) goes first, so the same feeds cannot
+  // always take the run's steps and starve a later one: a feed the run had no time for keeps its
+  // old last_synced_at and is first next time.
+  const readAt = (account: Account) => (account.last_synced_at ? Date.parse(account.last_synced_at) : -Infinity);
+  accounts.sort((a, b) => Number(a.provider === 'icloud') - Number(b.provider === 'icloud') || (a.provider === 'icloud' ? readAt(a) - readAt(b) || 0 : 0));
   for (const account of accounts) {
     const timezone = timezones.get(account.household_id);
     if (!timezone) {

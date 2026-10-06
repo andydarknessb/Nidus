@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { FEED_TOO_LARGE_MESSAGE, GOOGLE_TOKEN_URL, handleCalendarSync, type SyncDeps, type SyncSummary } from '../supabase/functions/calendar-sync/handler';
+import { FEED_TOO_LARGE_MESSAGE, FEED_TRUNCATED_MESSAGE, GOOGLE_TOKEN_URL, handleCalendarSync, type SyncDeps, type SyncSummary } from '../supabase/functions/calendar-sync/handler';
 import { arrangeCalendar } from './support/calendar';
 import { asHouseholdAccount, asServiceRole, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
@@ -353,50 +353,125 @@ describe('when the feed says no', () => {
 });
 
 describe('a run with more feed than it can read', () => {
-  const runaway = (uid: string) => vevent(uid, 'Runaway', 'DTSTART:19700101T000000\nRRULE:FREQ=SECONDLY');
+  const runaway = (uid: string, year = 1970) => vevent(uid, 'Runaway', `DTSTART:${year}0101T000000\nRRULE:FREQ=SECONDLY`);
+  // Four rules are more than a feed's steps (100,000 at 30,000 each), and fit the run only once.
+  const heavy = (...extra: string[]) => feedOf(...extra, runaway('a'), runaway('b', 1971), runaway('c', 1972), runaway('d', 1973));
 
-  it('shares one step budget across the feeds: two bad feeds are read as far as their caps, the third is left as it was and says so', async () => {
-    const account = await arrange();
+  async function arrangeFeeds(account: HouseholdAccount, count: number, text: string) {
     const feeds = new Map<string, Reply>();
     const calendars: { accountId: string; calendarId: string; link: string }[] = [];
-    for (let index = 0; index < 3; index += 1) {
+    for (let index = 0; index < count; index += 1) {
       const link = newLink();
-      feeds.set(link, { text: feedOf(dentist), etag: '"v1"' });
+      feeds.set(link, { text });
       calendars.push({ ...(await arrangeIcloud(account, link)), link });
     }
+    return { feeds, calendars };
+  }
+
+  const stateOf = async (c: { accountId: string; calendarId: string }) => ({
+    account: await accountOf(c.accountId),
+    rows: (await rowsOf(c.calendarId)).map((row) => row.title),
+    token: await tokenOf(c.calendarId),
+  });
+
+  it('shares one step budget across the feeds: the first is read as far as its cap, the others are left as they were and say so', async () => {
+    const account = await arrange();
+    const { feeds, calendars } = await arrangeFeeds(account, 3, feedOf(dentist));
+    for (const c of calendars) feeds.set(c.link, { text: feedOf(dentist), etag: '"v1"' });
     const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
     const changed = vevent('changed', 'Changed', 'DTSTART:20261009T150000Z\nDTEND:20261009T160000Z');
-    for (const { link } of calendars) feeds.set(link, { text: feedOf(changed, runaway('a')), etag: '"v2"' });
+    for (const c of calendars) feeds.set(c.link, { text: heavy(changed), etag: '"v2"' });
 
     const summary = await syncOk(deps(account, world));
 
-    const states = await Promise.all(
-      calendars.map(async (c) => ({ account: await accountOf(c.accountId), rows: await rowsOf(c.calendarId), token: await tokenOf(c.calendarId) })),
-    );
+    const states = await Promise.all(calendars.map(stateOf));
     const skipped = states.filter((state) => state.account.last_error === FEED_TOO_LARGE_MESSAGE);
-    const read = states.filter((state) => state.account.last_error === null);
-    expect(skipped).toHaveLength(1);
-    expect(read).toHaveLength(2);
-    expect(summary.errors).toHaveLength(1);
-    // The feed that was not read keeps its events and its validator, and stays active.
-    expect(skipped[0]!.account.status).toBe('active');
-    expect(skipped[0]!.rows.map((row) => row.title)).toEqual(['Dentist']);
-    expect(JSON.parse(skipped[0]!.token!)).toEqual({ etag: '"v1"', lastModified: null });
-    // The others keep what they reached of theirs.
-    for (const state of read) expect(state.rows.map((row) => row.title)).toEqual(['Changed']);
+    const read = states.filter((state) => state.account.last_error === FEED_TRUNCATED_MESSAGE);
+    expect(read).toHaveLength(1);
+    expect(skipped).toHaveLength(2);
+    expect(summary.errors).toHaveLength(2);
+    // A feed that was not read keeps its events and its validator, and stays active.
+    for (const state of skipped) {
+      expect(state.account.status).toBe('active');
+      expect(state.rows).toEqual(['Dentist']);
+      expect(JSON.parse(state.token!)).toEqual({ etag: '"v1"', lastModified: null });
+    }
+    expect(read[0]!.rows).toEqual(['Changed']);
   }, 60_000);
 
-  it('stops one feed at its own cap and keeps the events it reached, with no error', async () => {
+  it('reads the feed that was starved last run first, so the same feeds cannot always take the run', async () => {
+    const account = await arrange();
+    const { feeds, calendars } = await arrangeFeeds(account, 3, heavy());
+    const [x, y, z] = calendars as [(typeof calendars)[number], (typeof calendars)[number], (typeof calendars)[number]];
+    // Read at different times, so the order of the run is only the one the handler gives it.
+    const hours = (ago: number) => new Date(NOW - ago * 3_600_000).toISOString();
+    for (const [c, ago] of [[x, 3], [y, 2], [z, 1]] as const) await asServiceRole().from('calendar_accounts').update({ last_synced_at: hours(ago) }).eq('id', c.accountId);
+    const world = fakeWorld(feeds);
+
+    // Run 1: X, the one read longest ago, takes the run; Y and Z are not read.
+    await syncOk(deps(account, world));
+    expect((await accountOf(x.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    for (const [c, ago] of [[y, 2], [z, 1]] as const) {
+      const state = await accountOf(c.accountId);
+      expect(state.last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+      expect(Date.parse(state.last_synced_at!)).toBe(Date.parse(hours(ago)));
+    }
+
+    // Run 2: Y, starved last time, goes first. X is read again last, and is not.
+    await syncOk(deps(account, world));
+    expect((await accountOf(y.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect((await accountOf(z.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+
+    // Run 3: Z, starved twice, goes first.
+    await syncOk(deps(account, world));
+    expect((await accountOf(z.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+  }, 60_000);
+
+  it('does not cut a feed of single events when the run has nothing left', async () => {
+    const account = await arrange();
+    const { feeds, calendars } = await arrangeFeeds(account, 3, heavy());
+    const plain = newLink();
+    const last = await arrangeIcloud(account, plain);
+    feeds.set(plain, { text: feedOf(dentist) });
+    // The plain feed has been read least recently, but the heavy ones are made to come first.
+    for (const c of calendars) await asServiceRole().from('calendar_accounts').update({ last_synced_at: new Date(NOW - 3_600_000).toISOString() }).eq('id', c.accountId);
+    await asServiceRole().from('calendar_accounts').update({ last_synced_at: new Date(NOW - 60_000).toISOString() }).eq('id', last.accountId);
+
+    await syncOk(deps(account, fakeWorld(feeds)));
+
+    expect((await rowsOf(last.calendarId)).map((row) => row.title)).toEqual(['Dentist']);
+    expect(await accountOf(last.accountId)).toMatchObject({ status: 'active', last_error: null });
+  }, 60_000);
+
+  it('keeps a single event next to a runaway rule, stores what the rule reached, and says some repeating events were cut', async () => {
+    const account = await arrange();
+    for (const text of [feedOf(runaway('a'), dentist), feedOf(dentist, runaway('a')), feedOf(runaway('a'), dentist, runaway('b', 1971))]) {
+      const link = newLink();
+      const { accountId, calendarId } = await arrangeIcloud(account, link);
+      const world = fakeWorld(new Map<string, Reply>([[link, { text, etag: '"v1"' }]]));
+
+      await syncOk(deps(account, world));
+
+      expect((await rowsOf(calendarId)).map((row) => row.title)).toEqual(['Dentist']);
+      expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: FEED_TRUNCATED_MESSAGE });
+      expect(Date.parse((await accountOf(accountId)).last_synced_at!)).toBe(NOW);
+      expect(JSON.parse((await tokenOf(calendarId))!)).toEqual({ etag: '"v1"', lastModified: null });
+    }
+  }, 60_000);
+
+  it('clears the note when a later read of the feed is whole', async () => {
     const account = await arrange();
     const link = newLink();
-    const { accountId, calendarId } = await arrangeIcloud(account, link);
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist, runaway('a'), runaway('b')), etag: '"v1"' }]]));
-
+    const { accountId } = await arrangeIcloud(account, link);
+    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist, runaway('a')) }]]);
+    const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
+    expect((await accountOf(accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
 
-    expect((await rowsOf(calendarId)).map((row) => row.title)).toEqual(['Dentist']);
-    expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: null });
+    feeds.set(link, { text: feedOf(dentist) });
+    await syncOk(deps(account, world));
+    expect((await accountOf(accountId)).last_error).toBeNull();
   }, 60_000);
 });
 

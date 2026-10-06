@@ -10,15 +10,18 @@ import { dayStartMs, wallClockMs } from './zoned-time.ts';
 
 export const MAX_PER_EVENT = 1000;
 export const MAX_PER_FEED = 20000;
-// How far one rule is walked looking for the window, how many steps one feed may take, and how many
-// all the feeds of one run may take between them: a rule that started long ago and fires every few
-// seconds would otherwise take forever, and the hosted function has a 2 s CPU limit for the run.
-// ponytail: no fast-forward in ical.js's iterator; past the first two, the later occurrences of
-// such a rule (or the later events of the feed) are dropped. Past the run's, the feed is not
-// read at all this run (FeedTooLargeError): storing it would delete the rows it did not reach.
-const MAX_STEPS_PER_EVENT = 100_000;
+// How far one repeating series is walked looking for the window, how many steps one feed may take,
+// and how many all the feeds of one run may take between them: a rule that started long ago and
+// fires every few seconds would otherwise take forever, and the hosted function has a 2 s CPU
+// limit for the run (the run's cap leaves a margin under it). The caps only ever limit repeating
+// series: a single event is always read, costs no steps, and is kept whatever any budget says.
+// ponytail: no fast-forward in ical.js's iterator; series are walked newest start first, so the
+// ancient expensive rules are the ones a cap cuts. A series cut by the event's or feed's cap keeps
+// what it reached and the feed says so (`truncated`). Past the run's cap, the feed is not read at
+// all this run (FeedTooLargeError): storing it would delete the rows it did not reach.
+const MAX_STEPS_PER_EVENT = 30_000;
 const MAX_STEPS_PER_FEED = 100_000;
-export const MAX_STEPS_PER_RUN = 200_000;
+export const MAX_STEPS_PER_RUN = 150_000;
 
 // What is left of a run's steps, shared by every feed the run expands.
 export type StepBudget = { remaining: number };
@@ -30,7 +33,7 @@ const DAY_MS = 86_400_000;
 const KEY_SEPARATOR = '|';
 
 export class FeedParseError extends Error {}
-// The run's step budget ran out before this feed was read in full.
+// The run's step budget ran out while this feed still had repeating events to walk.
 export class FeedTooLargeError extends Error {}
 
 const pad = (n: number, width = 2) => String(n).padStart(width, '0');
@@ -107,10 +110,16 @@ function excludedStarts(ev: ICAL.Event, timezone: string): Set<number> {
 }
 
 // Every non-cancelled occurrence of the feed that overlaps [windowStartMs, windowEndMs), as rows
-// in start order. Throws FeedParseError when the text is not a calendar, and FeedTooLargeError
-// when `run` (the steps left for the whole run) runs out before the feed is read in full.
-export function expandFeed(text: string, timezone: string, windowStartMs: number, windowEndMs: number, run: StepBudget = { remaining: MAX_STEPS_PER_RUN }): EventRow[] {
-  if (run.remaining <= 0) throw new FeedTooLargeError();
+// in start order, and whether the event or feed step cap cut any repeating series short
+// (`truncated`). Throws FeedParseError when the text is not a calendar, and FeedTooLargeError when
+// `run` (the steps left for the whole run) runs out while a repeating event still needed walking.
+export function expandFeed(
+  text: string,
+  timezone: string,
+  windowStartMs: number,
+  windowEndMs: number,
+  run: StepBudget = { remaining: MAX_STEPS_PER_RUN },
+): { rows: EventRow[]; truncated: boolean } {
   let calendar: ICAL.Component;
   try {
     const parsed = ICAL.parse(text);
@@ -123,6 +132,7 @@ export function expandFeed(text: string, timezone: string, windowStartMs: number
   // ical.js keeps a registry of zones that is global to the process; this feed's zones are read
   // from its own tree, and anything an earlier feed left is cleared before and after.
   const rows = new Map<string, EventRow>();
+  let truncated = false;
   ICAL.TimezoneService.reset();
   try {
     // A series and its overrides share a UID. Overrides are rows of their own, keyed by the
@@ -169,62 +179,80 @@ export function expandFeed(text: string, timezone: string, windowStartMs: number
       }
     }
 
-    let budget = MAX_STEPS_PER_FEED;
-    // Set when the run's steps, not the feed's own, ran out with something left to read.
-    let cutByRun = false;
+    // The occurrences of one event that fall in the window go into `rows`; false once nothing
+    // later can be wanted.
+    const emitterFor = (uid: string, ev: ICAL.Event, l: Layout) => {
+      const excluded = excludedStarts(ev, timezone);
+      const lengthBound = l.isAllDay ? l.lengthDays * DAY_MS : l.lengthMs;
+      let emitted = 0;
+      return (occurrence: ICAL.Time): boolean => {
+        // Long before the window in any zone: no need to know which instant it is.
+        const wall = Date.UTC(occurrence.year, occurrence.month - 1, occurrence.day, occurrence.hour, occurrence.minute, occurrence.second);
+        if (wall + MAX_ZONE_OFFSET_MS + lengthBound < windowStartMs) return true;
+        const startMs = instantMs(occurrence, timezone);
+        if (startMs >= windowEndMs) return false;
+        if (excluded.has(startMs) || replaced.has(`${uid}${KEY_SEPARATOR}${startMs}`)) return true;
+        const endMs = endOf(l, occurrence, startMs);
+        const row = overlaps(startMs, endMs) ? build(ev, uid, startMs, startMs, endMs, l.isAllDay) : null;
+        if (row) {
+          // DTSTART comes round again from the iterator: it counts once.
+          if (!rows.has(row.google_event_id)) emitted += 1;
+          rows.set(row.google_event_id, row);
+        }
+        return emitted < MAX_PER_EVENT;
+      };
+    };
+
+    // Single events first: always read, no steps, whatever the budgets say. Repeating ones are
+    // gathered, newest start first.
+    const repeating: { uid: string; ev: ICAL.Event; layout: Layout; startMs: number }[] = [];
     for (const [uid, list] of series) {
       for (const { ev, layout: l } of list) {
         if (cancelled(ev)) continue;
-        if (budget <= 0 || run.remaining <= 0 || rows.size >= MAX_PER_FEED) {
-          if (budget > 0 && run.remaining <= 0) cutByRun = true;
-          break;
-        }
         try {
-          const excluded = excludedStarts(ev, timezone);
-          const lengthBound = l.isAllDay ? l.lengthDays * DAY_MS : l.lengthMs;
-          let emitted = 0;
-          // False once nothing later can be wanted.
-          const emit = (occurrence: ICAL.Time): boolean => {
-            // Long before the window in any zone: no need to know which instant it is.
-            const wall = Date.UTC(occurrence.year, occurrence.month - 1, occurrence.day, occurrence.hour, occurrence.minute, occurrence.second);
-            if (wall + MAX_ZONE_OFFSET_MS + lengthBound < windowStartMs) return true;
-            const startMs = instantMs(occurrence, timezone);
-            if (startMs >= windowEndMs) return false;
-            if (excluded.has(startMs) || replaced.has(`${uid}${KEY_SEPARATOR}${startMs}`)) return true;
-            const endMs = endOf(l, occurrence, startMs);
-            const row = overlaps(startMs, endMs) ? build(ev, uid, startMs, startMs, endMs, l.isAllDay) : null;
-            if (row) {
-              // DTSTART comes round again from the iterator: it counts once.
-              if (!rows.has(row.google_event_id)) emitted += 1;
-              rows.set(row.google_event_id, row);
-            }
-            return emitted < MAX_PER_EVENT;
-          };
-          // A rule's first occurrence is DTSTART; an RDATE-only event is not iterated from it.
-          if (!emit(l.start)) continue;
-          if (ev.isRecurring()) {
-            const steps = ev.iterator();
-            for (let n = 0, next = steps.next(); next && n < MAX_STEPS_PER_EVENT; n += 1, next = steps.next()) {
-              if (budget <= 0 || run.remaining <= 0) {
-                if (budget > 0) cutByRun = true;
-                break;
-              }
-              budget -= 1;
-              run.remaining -= 1;
-              if (!emit(next)) break;
-            }
-          }
+          if (ev.isRecurring()) repeating.push({ uid, ev, layout: l, startMs: instantMs(l.start, timezone) });
+          else emitterFor(uid, ev, l)(l.start);
         } catch {
           // A rule that cannot be fulfilled, or a time ical.js cannot read: this event only.
         }
       }
     }
-    if (cutByRun) throw new FeedTooLargeError();
+    repeating.sort((a, b) => (Number.isNaN(b.startMs) ? -Infinity : b.startMs) - (Number.isNaN(a.startMs) ? -Infinity : a.startMs));
+
+    let budget = MAX_STEPS_PER_FEED;
+    for (const { uid, ev, layout: l } of repeating) {
+      if (rows.size >= MAX_PER_FEED) break;
+      try {
+        const emit = emitterFor(uid, ev, l);
+        // A rule's first occurrence is DTSTART; an RDATE-only event is not iterated from it.
+        if (!emit(l.start)) continue;
+        const steps = ev.iterator();
+        let n = 0;
+        for (let next = steps.next(); next; next = steps.next()) {
+          if (n >= MAX_STEPS_PER_EVENT || budget <= 0) {
+            truncated = true;
+            break;
+          }
+          // The run's steps ran out with this series still to walk: the feed is not read this time.
+          if (run.remaining <= 0) throw new FeedTooLargeError();
+          n += 1;
+          budget -= 1;
+          run.remaining -= 1;
+          if (!emit(next)) break;
+        }
+      } catch (error) {
+        if (error instanceof FeedTooLargeError) throw error;
+        // A rule that cannot be fulfilled, or a time ical.js cannot read: this event only.
+      }
+    }
   } finally {
     ICAL.TimezoneService.reset();
   }
 
-  return [...rows.values()]
-    .sort((a, b) => a.starts_at.localeCompare(b.starts_at) || a.google_event_id.localeCompare(b.google_event_id))
-    .slice(0, MAX_PER_FEED);
+  return {
+    rows: [...rows.values()]
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at) || a.google_event_id.localeCompare(b.google_event_id))
+      .slice(0, MAX_PER_FEED),
+    truncated,
+  };
 }
