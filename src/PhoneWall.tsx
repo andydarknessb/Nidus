@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { BeforeHousehold } from './components/BeforeHousehold';
 import { EmptyWords } from './components/EmptyWords';
-import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
+import { FiveDayCalendar } from './components/FiveDayCalendar';
 import { HomeRail } from './components/HomeRail';
 import type { CalendarView, WallRoute } from './lib/calendar-occurrences';
 import type { HouseholdView } from './lib/household';
@@ -9,6 +9,7 @@ import type { Profile } from './lib/profiles';
 import type { RoutinesToday } from './lib/use-routines-today';
 import type { Forecast } from './lib/weather';
 import { MealsScreen } from './MealsPage';
+import { PhoneCalendar } from './phone/PhoneCalendar';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
 
@@ -43,9 +44,9 @@ export function PhoneWall(props: PhoneScreenProps) {
   const { route } = props;
   switch (route.view) {
     case 'home': return <TabletHome {...props} />;
-    case 'day': return <TabletCalendar {...props} route={route} />;
-    case 'week': return <TabletCalendar {...props} route={route} />;
-    case 'month': return <TabletCalendar {...props} route={route} />;
+    case 'day': return <PhoneCalendar {...props} route={route} />;
+    case 'week': return <PhoneCalendar {...props} route={route} />;
+    case 'month': return <PhoneCalendar {...props} route={route} />;
     case 'routines': return <TabletRoutines {...props} />;
     case 'meals': return <TabletMeals {...props} route={route} />;
     case 'lists': return <TabletLists />;
@@ -78,19 +79,6 @@ function TabletHome({ timezone, view, added, forecast, weatherOn, profiles, rout
         <HomeRail routines={routines} failed={view.failed} tiles={tiles} onOpenRoutines={openRoutines} onOpenLists={openLists} />
       </Boxed>
     </>
-  );
-}
-
-// Day, Week and Month: the tablet's paged calendar.
-function TabletCalendar({ route, timezone, view, added, forecast, weatherOn, profiles, openView }: PhoneScreenProps & { route: Extract<WallRoute, { view: CalendarView }> }) {
-  return (
-    <Boxed>
-      {timezone ? (
-        <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
-      ) : (
-        <BeforeHousehold label="Calendar" failed={view.failed} words={COULD_NOT_LOAD} />
-      )}
-    </Boxed>
   );
 }
 

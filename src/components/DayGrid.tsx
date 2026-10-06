@@ -24,7 +24,8 @@ const LANE_GAP_PX = 8;
 // kiosk browser draws no scrollbars, so a row that holds more than it shows says so with the shared button (OverflowButton) beside
 // it: "More", and "Back" at its end, named for what moves (`of`: "earlier events"). `control` is what the screen has measured of
 // the row's box (useOverflow); the button is as tall as the row, 52 px, so the row never grows, on the row's own card in the fill a
-// secondary button has on one, and 8 px from the pills, in the row's own gap.
+// secondary button has on one, and 8 px from the pills, in the row's own gap. Below 768 px (the phone, whose rows are moved by touch) the
+// button is not drawn: the row scrolls under the finger, as the phone's other rows do.
 export function PillRow({
   ref,
   label,
@@ -64,7 +65,7 @@ export function PillRow({
           ))
         )}
       </div>
-      <OverflowButton control={control} of={of} short className="h-13 bg-secondary" />
+      <OverflowButton control={control} of={of} short className="h-13 bg-secondary max-[768px]:hidden" />
     </div>
   );
 }

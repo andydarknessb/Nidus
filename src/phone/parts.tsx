@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { Button } from '../components/ui/button';
 import { WEEKDAYS } from '../lib/routines';
 
@@ -98,15 +98,18 @@ export function Segmented<Value extends string>({
 
 // A 48 tall row: a 48 px round Previous, the period's words in Young Serif 22 between them (a heading, so a screen reader finds
 // it), a 48 px round Next. The caller names the two buttons for what they move by ("Previous week") and passes null for one that
-// has nowhere to go, which is switched off.
+// has nowhere to go, which is switched off. With `headingRef` the heading can take the focus (not by Tab), so a screen can put it
+// there after a page is turned that switched off the button that was pressed.
 export function Pager({
   words,
+  headingRef,
   previousLabel,
   nextLabel,
   onPrevious,
   onNext,
 }: {
   words: string;
+  headingRef?: Ref<HTMLHeadingElement>;
   previousLabel: string;
   nextLabel: string;
   onPrevious: (() => void) | null;
@@ -117,7 +120,9 @@ export function Pager({
       <Button aria-label={previousLabel} disabled={!onPrevious} onClick={onPrevious ?? undefined} className="size-12 rounded-full bg-card p-0">
         <ChevronLeft aria-hidden className="size-6" />
       </Button>
-      <h2 className="min-w-0 flex-1 truncate text-center font-display text-[22px] leading-7">{words}</h2>
+      <h2 ref={headingRef} tabIndex={headingRef ? -1 : undefined} className={cn('min-w-0 flex-1 truncate text-center font-display text-[22px] leading-7', headingRef && 'outline-none')}>
+        {words}
+      </h2>
       <Button aria-label={nextLabel} disabled={!onNext} onClick={onNext ?? undefined} className="size-12 rounded-full bg-card p-0">
         <ChevronRight aria-hidden className="size-6" />
       </Button>

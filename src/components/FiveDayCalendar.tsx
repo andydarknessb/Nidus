@@ -202,7 +202,7 @@ const FIT_UNTIL_MEASURED = 8;
 // lane that opens a list of it. The blocks wait for the Profiles, as the schedule's pills do, and are filled from them. Tapping an
 // event opens its details; after an event is deleted from its sheet, or moved by an edit, focus goes to its new pill or block, or
 // to the page title (`focusHeading`) if it is not on the day any more, and never to the page (EventSheets).
-function DayView({
+export function DayView({
   timezone,
   now,
   day,

@@ -289,6 +289,15 @@ describe('the rows above and below the grid', () => {
       }
     });
 
+    it('hide the button below 768 px, where a finger moves the row, and keep it from 768 px', () => {
+      for (const html of [earlier(says(true)), later(says(true, true))]) {
+        const classes = button(html);
+        expect(classes).toContain('max-[768px]:hidden');
+        // The tablet side has no rule of its own that the phone's could lose to, or win against.
+        expect(classes).not.toMatch(/ (sm|md|lg):/);
+      }
+    });
+
     it('draw no button for a row that holds all it has, empty or full', () => {
       for (const html of [row(), earlier(says()), later(says())]) {
         expect(html).not.toMatch(/aria-label="(More|Back)/);

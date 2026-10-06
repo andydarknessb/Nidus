@@ -15,11 +15,11 @@ import { Button } from './ui/button';
 export const CELL_HEAD_REM = 2.625;
 export const CELL_LINE_REM = 1.5;
 
-const BEYOND_RANGE = "Beyond the calendar's range";
+export const BEYOND_RANGE = "Beyond the calendar's range";
 // The ground of a day beyond the range: thin diagonal lines in --input, so that "beyond the calendar's range" is told by a mark
 // and not by colour alone. --input holds 3:1 on the card in both modes (tests/look.test.ts). The date sits on a --card ground of
-// its own, so the lines never run under the digits. Used nowhere else.
-const HATCH = 'bg-[repeating-linear-gradient(135deg,transparent_0_6px,var(--input)_6px_8px)]';
+// its own, so the lines never run under the digits. Used by the tablet's grid and the phone's (src/phone/PhoneMonth.tsx).
+export const HATCH = 'bg-[repeating-linear-gradient(135deg,transparent_0_6px,var(--input)_6px_8px)]';
 
 // What the cell is called: the date drawn on it first, so a name spoken from the screen ("22") finds it, then "today" on today's
 // (which the disc says to the eye), then the day in full and how many events it holds. Until its week has been read there is no
