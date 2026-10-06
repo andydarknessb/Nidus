@@ -36,7 +36,7 @@ An iCloud calendar can be made a Public Calendar on the iPhone, which gives a lo
 ### The link
 
 - Accepted: `webcal://` or `https://`, on a host that is `icloud.com` or ends in `.icloud.com`, with a path. `webcal://` becomes `https://`. Anything else is refused with "That is not an iPhone calendar link." No other scheme, host, port, user info or IP address is ever fetched.
-- Fetching (one helper in `supabase/functions/_shared/`, used by both functions): redirects followed by hand, at most three, each target checked by the same host rule; 15 seconds at most; 5 MB at most; the response must parse as a calendar. Conditional requests with the stored `ETag` / `Last-Modified`; a 304 is "unchanged".
+- Fetching (one helper in `supabase/functions/_shared/`, used by both functions): redirects followed by hand, at most three, each target checked by the same host rule; 15 seconds at most; 2 MB at most (ruling from review: a 5 MB feed expands to more memory than an Edge Function has to spare); the response must parse as a calendar. Conditional requests with the stored `ETag` / `Last-Modified`; a 304 is "unchanged".
 
 ### Adding a link
 
@@ -48,7 +48,8 @@ An iCloud calendar can be made a Public Calendar on the iPhone, which gives a lo
 - `calendar-sync` reads every active account as now and branches on `provider`. An `icloud` account: read the link from Vault, fetch it conditionally, and on a change parse it and expand it into occurrences in the existing window (one month back, six ahead) and store them with the existing `replace_synced_events`, with the new `ETag` as the token. A 304 changes no event and still counts as a successful sync (`last_synced_at`).
 - Parsing and expanding use `ical.js` (Mozilla), added to `package.json` and to the function's import map: `RRULE`, `RDATE`, `EXDATE`, overrides by `RECURRENCE-ID`, `VTIMEZONE` and `TZID`. All-day events (`VALUE=DATE`) start at the Household's midnight and end at the midnight after their last day, as Google's do. A time with no zone is read in the Household Timezone. No `DTEND`: `DURATION`, else one day for a date and zero length for a time. `STATUS:CANCELLED` is skipped. At most 1000 occurrences per event and 20000 per feed, so a rule with no end cannot run away. Titles, places and notes are cut as Google's are.
 - A 401, 403, 404 or 410 means the link no longer works: the account becomes `needs_reauth` with "This link no longer works. Turn on Public Calendar again and paste the new link." Any other failure is a `last_error` and the next run tries again, as for Google.
-- One feed's failure never stops another account's sync.
+- One feed's failure never stops another account's sync. Google accounts are synced first in each run and iCloud feeds after them, so a feed that exhausts the function cannot cost Google its sync (ruling from review).
+- The expansion's work is capped per event and per feed (steps walked, not only occurrences kept), and an event the parser cannot read is skipped alone, never the whole feed.
 
 ### Settings
 

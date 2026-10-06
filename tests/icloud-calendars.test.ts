@@ -130,7 +130,8 @@ describe('POST /icloud', () => {
   it('refuses a link that is not an iPhone calendar link, in words, and fetches nothing', async () => {
     const account = await arrange();
     const feed = fakeFeed(new Response(feedText()));
-    for (const url of ['https://example.com/feed.ics', 'http://p12-caldav.icloud.com/x', 'https://10.0.0.1/x', '', 42, null]) {
+    const tooLong = `https://p12-caldav.icloud.com/published/2/${'a'.repeat(2048)}`;
+    for (const url of ['https://example.com/feed.ics', 'http://p12-caldav.icloud.com/x', 'https://10.0.0.1/x', '', 42, null, tooLong]) {
       const response = await addLink(account, url as string, feed);
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'That is not an iPhone calendar link.' });
@@ -159,6 +160,25 @@ describe('POST /icloud', () => {
       expect(response.status).toBe(409);
       expect(await response.json()).toEqual({ error: 'That calendar is already on the Wall.' });
     }
+    expect(await accountRows(account)).toHaveLength(1);
+    expect(await loadMirroredCalendars(await asHouseholdAccount(account))).toHaveLength(1);
+  });
+
+  it('refuses the same link with a query, a fragment or an escape, which are the same link', async () => {
+    const account = await arrange();
+    expect((await addLink(account, LINK, fakeFeed(new Response(feedText('Family'))))).status).toBe(200);
+    for (const spelling of [`${LINK}?`, `${LINK}?x=1`, `${LINK}#top`, LINK.replace('secret-feed', '%73ecret-feed')]) {
+      expect((await addLink(account, spelling, fakeFeed(new Response(feedText('Family'))))).status, spelling).toBe(409);
+    }
+    expect(await accountRows(account)).toHaveLength(1);
+  });
+
+  it('lets one of two adds of the same link at the same moment in, and refuses the other', async () => {
+    const account = await arrange();
+    const token = await tokenOf(await asHouseholdAccount(account));
+    const add = () => post(deps(fakeFeed(new Response(feedText('Family')))), { url: LINK }, token);
+    const statuses = (await Promise.all([add(), add()])).map((response) => response.status).sort();
+    expect(statuses).toEqual([200, 409]);
     expect(await accountRows(account)).toHaveLength(1);
     expect(await loadMirroredCalendars(await asHouseholdAccount(account))).toHaveLength(1);
   });

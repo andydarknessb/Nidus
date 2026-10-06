@@ -16,8 +16,19 @@ describe('normaliseFeedUrl', () => {
     expect(normaliseFeedUrl('WEBCAL://p12-caldav.icloud.com/published/2/abc123')).toBe(LINK);
   });
 
-  it('keeps the query and drops the fragment, so one link has one spelling', () => {
-    expect(normaliseFeedUrl(`${LINK}?x=1#top`)).toBe(`${LINK}?x=1`);
+  it.each([
+    ['a bare question mark', `${LINK}?`],
+    ['a query', `${LINK}?x=1`],
+    ['a fragment', `${LINK}#top`],
+    ['an escape of an unreserved character', 'https://p12-caldav.icloud.com/published/2/abc%31%32%33'],
+    ['an escape in lower case', 'https://p12-caldav.icloud.com/published/2/%61bc123'],
+    ['webcal, a query and an escape together', 'webcal://P12-caldav.iCloud.com/published/2/abc%31%32%33?x=1#y'],
+  ])('gives one spelling to a link with %s, so it is one feed_key', (_name, text) => {
+    expect(normaliseFeedUrl(text)).toBe(LINK);
+  });
+
+  it('keeps an escape of a reserved character, in one case', () => {
+    expect(normaliseFeedUrl('https://p12-caldav.icloud.com/published/2/a%2fb')).toBe('https://p12-caldav.icloud.com/published/2/a%2Fb');
   });
 
   it.each([
@@ -29,6 +40,14 @@ describe('normaliseFeedUrl', () => {
     ['an IPv6 address', 'https://[2620:149:af0::10]/published/2/abc'],
     ['a port', 'https://p12-caldav.icloud.com:8443/published/2/abc'],
     ['the default port spelled out', 'https://p12-caldav.icloud.com:443/published/2/abc'],
+    ['a port after extra slashes', 'https:///p12-caldav.icloud.com:8443/x'],
+    ['the default port after extra slashes', 'https:///p12-caldav.icloud.com:443/x'],
+    ['a port after backslashes', 'https:\\\\p12-caldav.icloud.com:8443/x'],
+    ['a port with no slashes after the scheme', 'https:p12-caldav.icloud.com:8443/x'],
+    ['an empty port', 'https://p12-caldav.icloud.com:/published/2/abc'],
+    ['a port on a webcal link', 'webcal://p12-caldav.icloud.com:8443/published/2/abc'],
+    ['a port on the bare domain', 'https://icloud.com:444/published/2/abc'],
+    ['a link over 2048 characters', `https://p12-caldav.icloud.com/${'a'.repeat(2048)}`],
     ['user info', 'https://user:pass@p12-caldav.icloud.com/published/2/abc'],
     ['user info that hides the real host', 'https://p12-caldav.icloud.com@evil.example/published/2/abc'],
     ['a backslash that hides the real host', 'https://evil.example\\@p12-caldav.icloud.com/published/2/abc'],
@@ -60,6 +79,17 @@ describe('feedCalendarName', () => {
 
   it('cuts a very long name to what a Mirrored Calendar can hold', () => {
     expect(feedCalendarName(`BEGIN:VCALENDAR\r\nX-WR-CALNAME:${'a'.repeat(600)}\r\nEND:VCALENDAR`)).toHaveLength(500);
+  });
+
+  it('cuts by characters, never through the middle of one', () => {
+    const name = feedCalendarName(`BEGIN:VCALENDAR\r\nX-WR-CALNAME:${'a'.repeat(499)}\u{1F600}\u{1F600}\r\nEND:VCALENDAR`);
+    expect(Array.from(name)).toHaveLength(500);
+    expect(name).toBe(`${'a'.repeat(499)}\u{1F600}`);
+  });
+
+  it('drops control characters, so the name is one a database will store', () => {
+    expect(feedCalendarName('BEGIN:VCALENDAR\r\nX-WR-CALNAME:Fam\u0000ily\u0007\r\nEND:VCALENDAR')).toBe('Family');
+    expect(feedCalendarName('BEGIN:VCALENDAR\r\nX-WR-CALNAME:\u0000\u0001\r\nEND:VCALENDAR')).toBe('iPhone calendar');
   });
 });
 
@@ -194,8 +224,8 @@ describe('fetchFeed', () => {
     expect((await fetchFeed(LINK, none, feed.fetch)).kind).toBe('error');
   });
 
-  it('refuses a body over 5 MB, announced or not', async () => {
-    const big = new TextEncoder().encode(`BEGIN:VCALENDAR\r\n${'x'.repeat(5 * 1024 * 1024)}\r\nEND:VCALENDAR`);
+  it('refuses a body over 2 MB, announced or not', async () => {
+    const big = new TextEncoder().encode(`BEGIN:VCALENDAR\r\n${'x'.repeat(2 * 1024 * 1024)}\r\nEND:VCALENDAR`);
     const stream = new ReadableStream({
       start(controller) {
         controller.enqueue(big);
@@ -205,12 +235,12 @@ describe('fetchFeed', () => {
     const unannounced = fakeFeed({ [LINK]: new Response(stream) });
     expect((await fetchFeed(LINK, none, unannounced.fetch)).kind).toBe('error');
 
-    const announced = fakeFeed({ [LINK]: new Response('BEGIN:VCALENDAR', { headers: { 'Content-Length': String(6 * 1024 * 1024) } }) });
+    const announced = fakeFeed({ [LINK]: new Response('BEGIN:VCALENDAR', { headers: { 'Content-Length': String(3 * 1024 * 1024) } }) });
     expect((await fetchFeed(LINK, none, announced.fetch)).kind).toBe('error');
   });
 
-  it('reads a body just under 5 MB', async () => {
-    const text = `BEGIN:VCALENDAR\r\n${'x'.repeat(5 * 1024 * 1024 - 100)}\r\nEND:VCALENDAR`;
+  it('reads a body just under 2 MB', async () => {
+    const text = `BEGIN:VCALENDAR\r\n${'x'.repeat(2 * 1024 * 1024 - 100)}\r\nEND:VCALENDAR`;
     const feed = fakeFeed({ [LINK]: new Response(text) });
     expect((await fetchFeed(LINK, none, feed.fetch)).kind).toBe('calendar');
   });
@@ -220,6 +250,20 @@ describe('fetchFeed', () => {
     const hang = ((_url: string, init: RequestInit) =>
       new Promise((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(init.signal!.reason)))) as unknown as typeof fetch;
     expect(await fetchFeed(LINK, none, hang, { timeoutMs: 30 })).toEqual({ kind: 'error', message: 'timed out' });
+  });
+
+  it('gives up on a body whose time ran out before it began to be read', async () => {
+    const late = (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('BEGIN:VCALENDAR\r\n'));
+          },
+        }),
+      );
+    }) as typeof fetch;
+    expect(await fetchFeed(LINK, none, late, { timeoutMs: 5 })).toEqual({ kind: 'error', message: 'timed out' });
   });
 
   it('gives up on a body that stalls too', async () => {
