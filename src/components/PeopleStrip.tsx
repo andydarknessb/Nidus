@@ -21,13 +21,20 @@ import { Button } from './ui/button';
 // pill goes, never to fit the row), with a button, "More people", that says so and moves it on; at the
 // end of the row it reads "Back" and returns to the first people (OverflowButton).
 
+// On a phone (below 768 px wide, spec 0004) the strip is one row that scrolls sideways under a finger: Everyone and then the pills,
+// each 132 px wide and 52 tall, a 36 px disc (the discs' own size is a style, so the class is important), the name and the pips,
+// the last one cut at the edge, and no "More people" button. The row's classes are the tablet's with `max-[768px]:` variants over
+// them (never the `sm:` or `md:` ones, which Tailwind emits after them), so from 768 px nothing changes. A pill's inline
+// minimum width, which is the name's, gives way to the 132 px with an important class.
+const PHONE_DISC = 'max-[768px]:size-9!';
+
 // The disc, the name and, in a pill wide enough, the count and the pips. The count is what gives way first when the name
 // is long: it drops to a line of its own that is not shown, so the name is never cut short for it.
 function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
   const { profile, words, done, total } = person;
   return (
     <>
-      {on ? <Tick size={40} color={profile.color} strong /> : <PersonDisc name={profile.name} color={profile.color} size={40} />}
+      {on ? <Tick size={40} color={profile.color} strong className={PHONE_DISC} /> : <PersonDisc name={profile.name} color={profile.color} size={40} className={PHONE_DISC} />}
       <span className="flex min-w-0 flex-1 flex-col gap-1.5">
         <span className="flex h-5 flex-wrap items-baseline justify-between gap-x-2 overflow-hidden">
           <span className="min-w-0 truncate text-base leading-5 font-semibold">{profile.name}</span>
@@ -38,7 +45,7 @@ function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
           )}
         </span>
         {total > 0 && total <= MAX_PIPS && (
-          <span className="hidden @min-[9.6rem]:block">
+          <span className="hidden @min-[9.6rem]:block max-[768px]:block">
             <Pips done={done} total={total} label={person.label} color={profile.color} />
           </span>
         )}
@@ -47,7 +54,8 @@ function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
   );
 }
 
-const PILL = 'person @container h-14 min-w-32 max-w-76 flex-1 basis-0 rounded-[18px] bg-person-soft text-base text-foreground';
+const PILL =
+  'person @container h-14 min-w-32 max-w-76 flex-1 basis-0 rounded-[18px] bg-person-soft text-base text-foreground max-[768px]:h-13 max-[768px]:w-[132px] max-[768px]:min-w-[132px]! max-[768px]:max-w-[132px] max-[768px]:flex-none max-[768px]:basis-auto';
 
 // The least a pill is: the disc, its gaps and padding (4.5 rem) and the name's letters (one ch each, a little over what a
 // name needs), never under the 8 rem of min-w-32 and never over the 19 rem of max-w-76, where the name is cut. A pill
@@ -64,14 +72,24 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
   const more = useOverflow('x', 'beside');
 
   return (
-    <div role="group" aria-label="Show events for" className="flex h-14 gap-2">
+    <div
+      role="group"
+      aria-label="Show events for"
+      className="flex h-14 gap-2 max-[768px]:h-13 max-[768px]:items-center max-[768px]:overflow-x-auto max-[768px]:overscroll-x-contain max-[768px]:[scrollbar-width:none] max-[768px]:[&::-webkit-scrollbar]:hidden max-[768px]:[&>*]:shrink-0"
+    >
       {!alone && (
-        <Button variant="quiet" aria-pressed={pressed.length === 0} onClick={filter.clear} className="h-14 gap-2.5 rounded-[18px] bg-card px-0 pr-4.5 pl-2 text-base text-foreground">
-          <HouseDisc size={40} />
+        <Button
+          variant="quiet"
+          aria-pressed={pressed.length === 0}
+          onClick={filter.clear}
+          className="h-14 gap-2.5 rounded-[18px] bg-card px-0 pr-4.5 pl-2 text-base text-foreground max-[768px]:h-13 max-[768px]:w-[132px] max-[768px]:gap-2 max-[768px]:pr-2 max-[768px]:focus-visible:-outline-offset-2"
+        >
+          <HouseDisc size={40} className={PHONE_DISC} />
           Everyone
         </Button>
       )}
-      <div ref={more.scroller} className="flex min-w-0 flex-1 gap-2 overflow-x-auto [scrollbar-width:none]">
+      {/* On a phone this box is `contents`, so the pills are the row's own items and the row is what scrolls. */}
+      <div ref={more.scroller} className="flex min-w-0 flex-1 gap-2 overflow-x-auto [scrollbar-width:none] max-[768px]:contents">
         {people.map((person) =>
           alone ? (
             <div key={person.profile.id} style={pillStyle(person.profile)} className={cn(PILL, 'flex items-center gap-2.5 py-0 pr-3.5 pl-2')}>
@@ -97,7 +115,7 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
       {/* At the end of the row there is nothing more, so the button reads "Back" and returns to the first people: it is never
           switched off, so nobody is left at the far end of the row with no way back but a swipe they cannot know about, and the
           keyboard's focus never has to leave it. */}
-      <OverflowButton control={more} of="people" />
+      <OverflowButton control={more} of="people" className="max-[768px]:hidden" />
     </div>
   );
 }

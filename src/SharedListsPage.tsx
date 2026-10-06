@@ -414,14 +414,18 @@ const HOME_ROW_PX = 48;
 const HOME_GAP_PX = 8;
 // min-w-0: the card is a grid item, whose width is otherwise at least that of its widest unwrapped words, so one long item or list
 // name would make the whole right rail, and the page, wider than the screen.
-const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3';
+// On a phone (below 768 px, spec 0004) the card is 22 round, like every card of its column.
+const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3 max-[768px]:rounded-[22px]';
 
 // The Pinned List's card, under Up next in Home's right column: it is as tall as that column leaves it. A heading row holds the list's
 // name and a link to the Lists screen that says how many items still to get the card has no room for ("3 more"), or "All lists" when it
 // shows them all. Then the field that adds an item, and the rows that fit under it (rowsThatFit): the items still to get, and any
 // crossed off on this card in the last HOME_HOLD_MS (homeRows), which stay where they are, ticked, so another tap can put them back.
 // An item added here is said on the status line, since it may not be one of the rows that fit.
-function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => void }) {
+//
+// `limit` is for the phone's column, which the document scrolls and which gives the card no height to measure: the card shows up to that
+// many rows and says how many more ("3 more") as it does when it has no room for them, and measures nothing.
+function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists: () => void; limit?: number | undefined }) {
   const say = useStatusLine();
   const { items, loaded, problem, add, toggle } = useItems(list.id);
   // What was crossed off on this card and when, and the time the card last looked at. Both go with the card, when Home is left.
@@ -456,7 +460,8 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
   // "Nothing left to get" waits until the last row has gone (`rows` holds a row crossed off here for its four seconds), so it never
   // pushes a row that was just crossed off down from under the finger.
   const nothing = loaded && rows.length === 0;
-  const shown = room === null ? 0 : rowsThatFit({ count: rows.length, room, row: HOME_ROW_PX, gap: HOME_GAP_PX });
+  const measured = limit === undefined;
+  const shown = !measured ? Math.min(rows.length, limit) : room === null ? 0 : rowsThatFit({ count: rows.length, room, row: HOME_ROW_PX, gap: HOME_GAP_PX });
   // The items still to get that the card has no room for.
   const hidden = withoutCrossed(rows.slice(shown)).length;
 
@@ -489,8 +494,8 @@ function HomeList({ list, onOpenLists }: { list: SharedList; onOpenLists: () => 
         }}
       />
       {/* What is drawn here is only what fits, so nothing in it is ever cut off or reached by Tab without being seen. */}
-      <div ref={region} className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
-        {room !== null && (
+      <div ref={region} className={measured ? 'flex min-h-0 flex-1 flex-col gap-2 overflow-hidden' : 'flex flex-col gap-2'}>
+        {(room !== null || !measured) && (
           <>
             {nothing && <EmptyWords className="shrink-0 px-1">Nothing left to get.</EmptyWords>}
             {rows.slice(0, shown).map((item) => (
@@ -547,11 +552,11 @@ export function EmptyListCard({ lists, onOpenLists }: { lists: number; onOpenLis
 }
 
 // The pinned Shared List, under Up next in Home's right column.
-export function PinnedListCard({ onOpenLists }: { onOpenLists: () => void }) {
+export function PinnedListCard({ onOpenLists, limit }: { onOpenLists: () => void; limit?: number | undefined }) {
   const { read, failed } = useLists();
   // undefined until the first read; null when no list is pinned (or the pinned one is gone).
   const pinned = read ? (read.lists.find((list) => list.id === read.pinnedId) ?? null) : undefined;
-  if (pinned) return <HomeList key={pinned.id} list={pinned} onOpenLists={onOpenLists} />;
+  if (pinned) return <HomeList key={pinned.id} list={pinned} onOpenLists={onOpenLists} limit={limit} />;
   if (pinned === null) return <EmptyListCard lists={read?.lists.length ?? 0} onOpenLists={onOpenLists} />;
 
   return (

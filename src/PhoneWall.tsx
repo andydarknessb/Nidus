@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
 import { BeforeHousehold } from './components/BeforeHousehold';
 import { EmptyWords } from './components/EmptyWords';
-import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
-import { HomeRail } from './components/HomeRail';
+import { PagedCalendar } from './components/FiveDayCalendar';
 import type { CalendarView, WallRoute } from './lib/calendar-occurrences';
 import type { HouseholdView } from './lib/household';
 import type { Profile } from './lib/profiles';
 import type { RoutinesToday } from './lib/use-routines-today';
 import type { Forecast } from './lib/weather';
 import { MealsScreen } from './MealsPage';
+import { PhoneHome } from './phone/PhoneHome';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
 
@@ -42,7 +42,7 @@ export type PhoneScreenProps = {
 export function PhoneWall(props: PhoneScreenProps) {
   const { route } = props;
   switch (route.view) {
-    case 'home': return <TabletHome {...props} />;
+    case 'home': return <PhoneHome {...props} />;
     case 'day': return <TabletCalendar {...props} route={route} />;
     case 'week': return <TabletCalendar {...props} route={route} />;
     case 'month': return <TabletCalendar {...props} route={route} />;
@@ -62,24 +62,6 @@ function Boxed({ children, className = 'h-[max(32rem,calc(100svh-17rem))]' }: { 
 }
 
 const COULD_NOT_LOAD = 'Could not load the calendar. Check your connection.';
-
-// Home: the tablet's calendar, one day (today), then the right rail, stacked.
-function TabletHome({ timezone, view, added, forecast, weatherOn, profiles, routines, tiles, openView, openRoutines, openLists }: PhoneScreenProps) {
-  return (
-    <>
-      <Boxed>
-        {timezone ? (
-          <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={1} />
-        ) : (
-          <BeforeHousehold label="Calendar" failed={view.failed} words={COULD_NOT_LOAD} />
-        )}
-      </Boxed>
-      <Boxed className="h-[max(36rem,calc(100svh-12rem))]">
-        <HomeRail routines={routines} failed={view.failed} tiles={tiles} onOpenRoutines={openRoutines} onOpenLists={openLists} />
-      </Boxed>
-    </>
-  );
-}
 
 // Day, Week and Month: the tablet's paged calendar.
 function TabletCalendar({ route, timezone, view, added, forecast, weatherOn, profiles, openView }: PhoneScreenProps & { route: Extract<WallRoute, { view: CalendarView }> }) {
