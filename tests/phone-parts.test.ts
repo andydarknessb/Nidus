@@ -83,6 +83,26 @@ describe('DayChips', () => {
   });
 });
 
+describe('DayChips, days that cannot be picked', () => {
+  const chips = (canPick?: (date: string) => boolean) =>
+    renderToStaticMarkup(createElement(DayChips, { label: 'Days of this week', dates: WEEK, today: '2026-10-01', picked: '2026-10-01', onPick: noop, ...(canPick ? { canPick } : {}) }));
+
+  it('draws a day that cannot be picked as a hatched cell that says so, and not as a button', () => {
+    const html = chips((date) => date >= '2026-09-30');
+    expect(buttons(html).map((button) => nameOf(button.tag))).toEqual(['Wednesday 30', 'Thursday 1, today', 'Friday 2', 'Saturday 3']);
+    expect(html.split('repeating-linear-gradient').length - 1).toBe(3);
+    expect(html).toContain('Sunday 27, Beyond the calendar&#x27;s range');
+    expect(html).toContain('Tuesday 29, Beyond the calendar&#x27;s range');
+    // Still seven things in the row, each sharing the width.
+    expect(html.match(/data-day="/g)).toHaveLength(7);
+  });
+
+  it('is the same markup when every day can be picked, or when nothing is passed', () => {
+    expect(chips(() => true)).toBe(chips());
+    expect(chips()).not.toContain('repeating-linear-gradient');
+  });
+});
+
 describe('Segmented', () => {
   type View = 'day' | 'week' | 'month';
   const OPTIONS: { value: View; label: string }[] = [
