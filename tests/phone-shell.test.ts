@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PhoneHeader as PhoneHeaderType, PhoneShell as PhoneShellType, PhoneTabs as PhoneTabsType } from '../src/components/PhoneShell';
 import type { WallRoute } from '../src/lib/calendar-occurrences';
+import { ChangeFeedContext } from '../src/lib/change-feed';
+import type { ChangeFeed, Connection } from '../src/lib/realtime';
 import type { Household } from '../src/lib/household';
 import type { Forecast } from '../src/lib/weather';
 
@@ -84,7 +86,47 @@ const FORECAST: Forecast = { current: { temperature: 72, code: 0, isDay: true },
 const header = (owner: boolean, household: Household | null = HOUSEHOLD) =>
   renderToStaticMarkup(createElement(PhoneHeader, { household, today: household ? '2026-10-01' : null, forecast: FORECAST, owner }));
 
+// A change feed that says what it is told: the Realtime connection is the only thing here that is not the database, and a static
+// render never opens one.
+function feedThatIs(status: Connection): ChangeFeed {
+  return { watch: () => () => undefined, status: () => status, onStatus: () => () => undefined, ready: Promise.resolve(), close: noop };
+}
+const HOUR = 3_600_000;
+const NOW = Date.parse('2026-10-06T15:00:00Z');
+const STALE = { accounts: [{ last_synced_at: new Date(NOW - 3 * HOUR - 600_000).toISOString(), created_at: '2026-01-01T00:00:00Z' }], now: NOW };
+const withPills = (owner: boolean) =>
+  renderToStaticMarkup(
+    createElement(ChangeFeedContext.Provider, { value: feedThatIs('offline') }, createElement(PhoneHeader, { household: HOUSEHOLD, today: '2026-10-01', forecast: FORECAST, owner, sync: STALE })),
+  );
+
 describe('the phone header', () => {
+  it('shows Offline and stale sync as compact pills when they would show on the tablet, the full words for a screen reader', () => {
+    const html = withPills(true);
+    // Offline: the icon and the word, with the rest of the sentence for a screen reader only.
+    expect(html).toMatch(/<p role="status" data-pill="" class="[^"]*bg-muted[^"]*">[\s\S]*<span aria-hidden="true" class="[^"]*">Offline<\/span><span class="sr-only">Offline\. Showing the last update\.<\/span>/);
+    // Stale sync: the icon and "3 h", the sentence for a screen reader only.
+    expect(html).toMatch(/<span aria-hidden="true" class="[^"]*">3 h<\/span><span class="sr-only">Last synced 3 hours ago<\/span>/);
+    // Both come before the gear, and the date is still there.
+    expect(html.indexOf('Offline')).toBeLessThan(html.indexOf('3 h'));
+    expect(html.indexOf('3 h')).toBeLessThan(html.indexOf('href="/settings"'));
+    expect(html).toMatch(/<p class="font-display text-\[26px\][^"]*whitespace-nowrap">/);
+  });
+
+  it('shows neither pill while the Wall is online and nothing is behind', () => {
+    const html = header(true);
+    expect(html).not.toContain('Offline');
+    expect(html).not.toContain('Last synced');
+  });
+
+  it('lets the name give way and never the date, and none of the pills shrink', () => {
+    const html = withPills(false);
+    expect(html).toMatch(/<h1 class="[^"]*truncate[^"]*\[contain:inline-size\]/);
+    expect(html).toMatch(/<div class="flex min-w-min flex-1 flex-col">/);
+    const pills = [...html.matchAll(/<p role="status" data-pill="" class="([^"]*)"/g)].map((match) => match[1]!).filter((classes) => classes.includes('bg-muted'));
+    expect(pills).toHaveLength(2);
+    for (const classes of pills) expect(classes).toContain('shrink-0');
+  });
+
   it("is one 56 tall row: the Household's name over the date, then the weather now", () => {
     const html = header(true);
     expect(html).toMatch(/^<header/);

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { watchMinute } from './household-day';
 import type { Mode } from './look';
-import { applyMode, canResolve, localStore, nextBoundary, readLastMode, readOverride, resolveMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeOverride } from './mode';
+import { applyMode, localStore, nextBoundary, stepMode, storedMode, sunAt, writeOverride, type Appearance, type ModeOverride } from './mode';
 import type { SunDay } from './weather';
 
 // What a screen's mode follows as time passes. The logic is src/lib/mode.ts's, which is pure and tested; this file
@@ -34,29 +34,32 @@ export type WallModeSettings = {
 // the next sunrise or sunset, on this screen only. It works as soon as the Household is read.
 export function useWallMode({ timezone, appearance, sun, system = false }: WallModeSettings): () => void {
   const [store] = useState(localStore);
-  const [override, setOverride] = useState(() => (system ? null : readOverride(store, Date.now())));
+  const [start] = useState(() => storedMode(store, system, Date.now()));
+  const [override, setOverride] = useState(start.override);
   // What the screen shows is the mode it last resolved, until it resolves another.
-  const [mode, setMode] = useState<Mode>(() => (system ? 'light' : readLastMode(store)));
+  const [mode, setMode] = useState<Mode>(start.mode);
   const prefersDark = usePrefersDark();
+
+  // A Wall that stops being a phone (the window grew past 768 px) takes up where the tablet's storage left it.
+  const wasSystem = useRef(system);
+  useEffect(() => {
+    if (wasSystem.current && !system) {
+      const back = storedMode(store, false, Date.now());
+      setOverride(back.override);
+      setMode(back.mode);
+    }
+    wasSystem.current = system;
+  }, [store, system]);
 
   useEffect(() => {
     // The phone's mode is the effect below's, and this one reads and writes nothing.
     if (system) return;
     const resolve = () => {
       const now = Date.now();
-      // An override that has run out is dropped from storage as well as ignored.
-      if (override && now >= override.until) {
-        writeOverride(store, null);
-        setOverride(null);
-        return;
-      }
       const inputs = { appearance, override, now, timezone, sunKnown: sun !== null, ...(timezone !== null ? sunAt(sun ?? [], timezone, now) : {}) };
-      // While the inputs cannot resolve a mode the screen keeps the one it has and keeps nothing new for its next load: what
-      // it keeps is only what it really resolved.
-      if (!canResolve(inputs)) return;
-      const resolved = resolveMode(inputs);
-      setMode(resolved);
-      writeLastMode(store, resolved);
+      const step = stepMode(store, system, override, inputs);
+      if (step === 'drop') setOverride(null);
+      else if (step) setMode(step.mode);
     };
     resolve();
     return watchMinute(resolve);

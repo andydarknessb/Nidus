@@ -26,7 +26,7 @@ export function useChangeTick(tables: readonly WatchedTable[]): number {
 // Whether the screen is hearing the server. 'connecting' until the first time it does.
 export function useConnection(): Connection {
   const feed = useContext(ChangeFeedContext);
-  const [status, setStatus] = useState<Connection>('connecting');
+  const [status, setStatus] = useState<Connection>(() => feed?.status() ?? 'connecting');
   useEffect(() => {
     if (!feed) return;
     setStatus(feed.status());

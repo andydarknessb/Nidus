@@ -9,6 +9,16 @@ import { WEEKDAYS } from '../lib/routines';
 // screen reads, so the screens that run in parallel after the shell (src/phone/) build on them without reaching into each other.
 // Colours are tokens only, and nothing here branches on the mode.
 
+// ---- Targets that touch ------------------------------------------------------------------------
+
+// A target at least 48 wide and tall may not have a gap next to it, so a chip or a choice in a control of a few touches its
+// neighbours and draws the Selected look 2 px inside itself, on an inner span (the Day view's blocks do the same): the button is
+// the target, the face is what is seen, and two picked-looking things never read as one. The button's own Selected look is switched
+// off, the span's comes from `aria-pressed` on the button (`group-aria-pressed`), and the focus ring is drawn inside the button, so
+// the row that scrolls does not clip it.
+const TOUCHING = 'group rounded-[14px] p-0.5 selected:bg-transparent selected:ring-0 active:bg-transparent focus-visible:-outline-offset-2';
+const FACE = 'flex size-full items-center justify-center rounded-xl group-aria-pressed:bg-accent group-aria-pressed:font-semibold group-aria-pressed:ring-2 group-aria-pressed:ring-foreground group-aria-pressed:ring-inset';
+
 // ---- Day chips ---------------------------------------------------------------------------------
 
 const weekdayOf = (date: string) => WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]!;
@@ -31,7 +41,7 @@ function dayChipName(date: string, today: string): string {
 // at 390 px a chip is about 51 wide. A row narrower than seven chips (7 x 48 = 336) scrolls sideways, as the phone's rows do.
 export function DayChips({ label, dates, today, picked, onPick }: { label: string; dates: readonly string[]; today: string; picked: string; onPick: (date: string) => void }) {
   return (
-    <SideScroll label={label} gap="gap-0" className="-mx-3">
+    <SideScroll label={label} gap="gap-0" className="-mx-3 py-0">
       {dates.map((date) => {
         const isToday = date === today;
         return (
@@ -43,11 +53,9 @@ export function DayChips({ label, dates, today, picked, onPick }: { label: strin
             aria-pressed={date === picked}
             aria-current={isToday ? 'date' : undefined}
             onClick={() => onPick(date)}
-            className="group h-16 min-w-12 flex-1 rounded-[14px] p-0.5 selected:bg-transparent selected:ring-0 active:bg-transparent"
+            className={cn(TOUCHING, 'h-16 min-w-12 flex-1')}
           >
-            <span
-              className="flex size-full flex-col items-center justify-center gap-0.5 rounded-xl group-aria-pressed:bg-accent group-aria-pressed:font-semibold group-aria-pressed:ring-2 group-aria-pressed:ring-foreground group-aria-pressed:ring-inset"
-            >
+            <span className={cn(FACE, 'flex-col gap-0.5')}>
               <span aria-hidden className={cn('text-[13px] leading-4', isToday ? 'font-semibold text-foreground' : 'font-medium')}>
                 {isToday ? 'Today' : weekdayOf(date).short}
               </span>
@@ -70,8 +78,8 @@ export function DayChips({ label, dates, today, picked, onPick }: { label: strin
 
 // ---- A control of a few ------------------------------------------------------------------------
 
-// Day, Week and Month; Morning, Afternoon, Evening and Whole day: a 52 tall --muted track of buttons 44 tall, the choice pressed
-// and in the Selected look. Named by `label`, as a group.
+// Day, Week and Month; Morning, Afternoon, Evening and Whole day: a 52 tall --muted track (2 px of padding) of buttons 48 tall that
+// touch, the choice pressed and in the Selected look, drawn inside its button. Named by `label`, as a group.
 export function Segmented<Value extends string>({
   label,
   options,
@@ -84,10 +92,10 @@ export function Segmented<Value extends string>({
   onChange: (value: Value) => void;
 }) {
   return (
-    <div role="group" aria-label={label} className="flex h-13 gap-1 rounded-2xl bg-muted p-1">
+    <div role="group" aria-label={label} className="flex h-13 rounded-2xl bg-muted p-0.5">
       {options.map((option) => (
-        <Button key={option.value} variant="quiet" aria-pressed={option.value === value} onClick={() => onChange(option.value)} className="h-11 min-w-0 flex-1 rounded-xl px-2">
-          {option.label}
+        <Button key={option.value} variant="quiet" aria-pressed={option.value === value} onClick={() => onChange(option.value)} className={cn(TOUCHING, 'h-12 min-w-0 flex-1 whitespace-normal')}>
+          <span className={cn(FACE, 'px-1 text-center leading-5')}>{option.label}</span>
         </Button>
       ))}
     </div>
@@ -134,11 +142,11 @@ export function Pager({
 
 // The people, the days or the lists in one line that the finger moves: no scroll bar and no "More" button, because the item cut at
 // the edge is the sign. Its items keep their natural width (they do not shrink), each a real button reached by Tab, and the
-// browser brings a focused one into view. There is no swipe handler: the browser's own scrolling is the gesture. Named by `label`. `gap` is the space
+// browser brings a focused one into view; the row has 4 px above and below, so the focus ring of an item is not cut by it. There is no swipe handler: the browser's own scrolling is the gesture. Named by `label`. `gap` is the space
 // between the items, 8 px unless a row says otherwise (the day chips touch).
 export function SideScroll({ label, children, className, gap = 'gap-2' }: { label: string; children: ReactNode; className?: string; gap?: string }) {
   return (
-    <div role="group" aria-label={label} className={cn('flex', gap, 'overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0', className)}>
+    <div role="group" aria-label={label} className={cn('flex', gap, 'overflow-x-auto overscroll-x-contain py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0', className)}>
       {children}
     </div>
   );
