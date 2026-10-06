@@ -257,6 +257,38 @@ export function columnsOf(profiles: Profile[], routines: Routine[], weekday: num
   ).map(({ profile, routines: own }) => ({ profile, routines: todaysRoutines(own, weekday) }));
 }
 
+// The person the phone's Routines tab opens on: the first, in the people strip's order, with something left in the part shown
+// (its own Routines, what is left from earlier and Routines for any time, or on the whole day any at all), else the first person.
+// Nobody when there are no people. `columns` are the chart's, in Profile order.
+export function firstPick(columns: readonly ProfileRoutines[], done: ReadonlySet<string>, part: ChartPart): string | null {
+  const left = ({ routines }: ProfileRoutines) => {
+    if (part === 'whole') return routines.some((routine) => !done.has(routine.id));
+    const view = partView(routines, done, part);
+    return [...view.own, ...view.earlier, ...view.anytime].some((routine) => !done.has(routine.id));
+  };
+  return (columns.find(left) ?? columns[0])?.profile.id ?? null;
+}
+
+// Whom the phone's Routines tab shows: the person picked while they are still on the chart, so a tick that finishes them, a refetch
+// that brings new data, Household midnight (when `settled` drops for a moment) and a failed read never move the card. Only when there
+// is no pick, or the person has left the chart, is someone picked again: by firstPick once today's ticks are read (`settled`, since
+// it looks for what is left), else the first person when the read has failed, so the tab is never waiting on a read that is not
+// coming. Null while there is nobody, or the read is still on its way.
+export function pickedPerson(input: {
+  picked: string | null;
+  columns: readonly ProfileRoutines[];
+  done: ReadonlySet<string>;
+  part: ChartPart;
+  settled: boolean;
+  failed: boolean;
+}): string | null {
+  const { picked, columns, done, part, settled, failed } = input;
+  if (picked !== null && columns.some(({ profile }) => profile.id === picked)) return picked;
+  if (columns.length === 0) return null;
+  if (settled) return firstPick(columns, done, part);
+  return failed ? columns[0]!.profile.id : null;
+}
+
 // ---- Up next -------------------------------------------------------------------------------------
 
 // Up next on Home shows a tile for this many people at most, unless the screen is too short for that many (home-layout.ts).

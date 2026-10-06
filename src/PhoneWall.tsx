@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { BeforeHousehold } from './components/BeforeHousehold';
-import { EmptyWords } from './components/EmptyWords';
 import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
 import { HomeRail } from './components/HomeRail';
 import type { CalendarView, WallRoute } from './lib/calendar-occurrences';
@@ -10,7 +9,7 @@ import type { RoutinesToday } from './lib/use-routines-today';
 import type { Forecast } from './lib/weather';
 import { PhoneLists } from './phone/PhoneLists';
 import { PhoneMeals } from './phone/PhoneMeals';
-import { RoutinesChart } from './RoutinesPage';
+import { PhoneRoutines } from './phone/PhoneRoutines';
 
 // The screen in the phone's column, chosen by the route (docs/specs/0004-the-wall-on-a-phone.md). HomeShell reads everything once and
 // hands it down, so a phone screen reads nothing of its own that the tablet's does not: no reader, query or subscription is added here.
@@ -46,7 +45,7 @@ export function PhoneWall(props: PhoneScreenProps) {
     case 'day': return <TabletCalendar {...props} route={route} />;
     case 'week': return <TabletCalendar {...props} route={route} />;
     case 'month': return <TabletCalendar {...props} route={route} />;
-    case 'routines': return <TabletRoutines {...props} />;
+    case 'routines': return <PhoneRoutines {...props} />;
     case 'meals': return <PhoneMeals {...props} route={route} />;
     case 'lists': return <PhoneLists />;
   }
@@ -94,23 +93,3 @@ function TabletCalendar({ route, timezone, view, added, forecast, weatherOn, pro
   );
 }
 
-// Routines: the tablet's chart.
-function TabletRoutines({ timezone, view, routines }: PhoneScreenProps) {
-  return (
-    <Boxed>
-      {timezone ? (
-        <RoutinesChart routines={routines} />
-      ) : (
-        <section aria-label="Routines" className="rounded-3xl bg-card p-4">
-          {view.failed ? (
-            <p role="alert" className="text-base">
-              Could not load routines. Check your connection.
-            </p>
-          ) : (
-            <EmptyWords>Loading</EmptyWords>
-          )}
-        </section>
-      )}
-    </Boxed>
-  );
-}
