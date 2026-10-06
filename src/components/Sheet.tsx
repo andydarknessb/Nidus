@@ -10,15 +10,15 @@ import { BODY_CLEARANCE, OverflowButton } from './OverflowButton';
 // a sheet rises from the foot (docs/specs/0004, Sheets): the scrim sets it at the bottom with no margin (PHONE_SCRIM), and the dialog
 // is full width, 24 round at the top and square at the foot, at most the screen's height less 24 px, 16 px inside and the foot clear
 // of the phone's safe area (PHONE_FRAME), with a SheetHandle at its top. There is no animation. At 768 px and wider none of it
-// applies: every class is a `max-[767px]:` variant, and each sheet keeps the classes it always had.
-export const PHONE_SCRIM = 'max-[767px]:items-end max-[767px]:p-0';
+// applies: every class is a `max-[768px]:` variant, and each sheet keeps the classes it always had.
+export const PHONE_SCRIM = 'max-[768px]:items-end max-[768px]:p-0';
 export const PHONE_FRAME =
-  'max-[767px]:max-h-[calc(100%-24px)] max-[767px]:max-w-none max-[767px]:rounded-t-3xl max-[767px]:rounded-b-none max-[767px]:p-4 max-[767px]:pb-[calc(1rem+env(safe-area-inset-bottom))]';
+  'max-[768px]:max-h-[calc(100%-24px)] max-[768px]:max-w-none max-[768px]:rounded-t-3xl max-[768px]:rounded-b-none max-[768px]:p-4 max-[768px]:pb-[calc(1rem+env(safe-area-inset-bottom))]';
 
 // The handle at the top of a phone sheet: 40 by 4 in --input, centred, decorative (aria-hidden) and not drawn at 768 px and wider. It is
 // the dialog's first child, so a screen reader meets the title first.
 export function SheetHandle() {
-  return <span aria-hidden="true" data-sheet-handle="" className="hidden h-1 w-10 flex-none self-center rounded-full bg-input max-[767px]:block" />;
+  return <span aria-hidden="true" data-sheet-handle="" className="hidden h-1 w-10 flex-none self-center rounded-full bg-input max-[768px]:block" />;
 }
 
 // A sheet over the Wall (docs/look.md): a card, 28 round, on the scrim. It is the one frame of an event's details and of the list
