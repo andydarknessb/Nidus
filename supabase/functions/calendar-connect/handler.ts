@@ -10,6 +10,10 @@
 //                  phone with no Nidus session (`kind: 'link'`). A settings flow may name
 //                  the Google account it is for (`google_email`), which is how a Calendar
 //                  Account that needs reauth is reconnected: Google offers that account first.
+//   POST icloud    Household Account only, checked as start does. Adds an iPhone (iCloud)
+//                  calendar from its public link: `{ url }` in, `{ id, name }` out, or an
+//                  `{ error }` in words the Settings card shows. The link is normalised,
+//                  fetched once so a wrong one fails at once, and stored in Vault.
 //   GET  consent   The shareable link. No session: the signed `state` is the whole
 //                  authority. Redirects to Google's consent screen.
 //   GET  callback  Google returns here with a code. Exchanges it, stores the refresh
@@ -19,6 +23,7 @@
 // id and an expiry, so a callback can only ever attach the account to the Household that
 // started the flow, and a forged or tampered state is refused.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { feedCalendarName, fetchFeed, normaliseFeedUrl } from '../_shared/feed.ts';
 
 export type ConnectEnv = {
   // Where this function is reachable from a browser, no trailing slash. Also the OAuth redirect base.
@@ -159,8 +164,8 @@ async function listCalendars(deps: ConnectDeps, accessToken: string): Promise<Go
   return calendars;
 }
 
-// POST start: who is asking must be a Household Account, and the state carries its Household.
-async function start(request: Request, deps: ConnectDeps, now: number): Promise<Response> {
+// Who is asking, for the routes only a Household Account may use: its Household, or the answer to send.
+async function householdOf(request: Request, deps: ConnectDeps): Promise<{ householdId: string } | Response> {
   const token = /^Bearer (.+)$/i.exec(request.headers.get('Authorization') ?? '')?.[1];
   if (!token) return json(401, { error: 'sign in first' });
   const { data: session } = await deps.admin.auth.getUser(token);
@@ -171,12 +176,18 @@ async function start(request: Request, deps: ConnectDeps, now: number): Promise<
     .eq('auth_user_id', session.user.id)
     .maybeSingle<{ household_id: string }>();
   if (!account) return json(403, { error: 'only the Household Account connects a Calendar Account' });
+  return { householdId: account.household_id };
+}
 
+// POST start: who is asking must be a Household Account, and the state carries its Household.
+async function start(request: Request, deps: ConnectDeps, now: number): Promise<Response> {
+  const who = await householdOf(request, deps);
+  if (who instanceof Response) return who;
   const body = (await request.json().catch(() => ({}))) as { kind?: unknown; google_email?: unknown };
   const kind: FlowKind = body.kind === 'link' ? 'link' : 'settings';
   const seconds = kind === 'link' ? LINK_STATE_SECONDS : SETTINGS_STATE_SECONDS;
   const state = await signState(deps.env.stateSecret, {
-    household_id: account.household_id,
+    household_id: who.householdId,
     kind,
     exp: Math.floor(now / 1000) + seconds,
   });
@@ -184,6 +195,33 @@ async function start(request: Request, deps: ConnectDeps, now: number): Promise<
   // whichever one signs in to this Household.
   const hint = typeof body.google_email === 'string' && body.google_email.length <= 320 ? body.google_email : undefined;
   return json(200, { url: kind === 'link' ? `${deps.env.functionUrl}/consent?state=${encodeURIComponent(state)}` : consentUrl(deps.env, state, hint) });
+}
+
+const NOT_A_LINK = 'That is not an iPhone calendar link.';
+const COULD_NOT_READ = 'Could not read that calendar. Check the link and that Public Calendar is on.';
+const ALREADY_ADDED = 'That calendar is already on the Wall.';
+
+// POST icloud: an iPhone calendar's public link in, an account and its one Mirrored Calendar out.
+async function icloud(request: Request, deps: ConnectDeps): Promise<Response> {
+  const who = await householdOf(request, deps);
+  if (who instanceof Response) return who;
+
+  const body = (await request.json().catch(() => ({}))) as { url?: unknown };
+  const link = typeof body.url === 'string' ? normaliseFeedUrl(body.url) : null;
+  if (!link) return json(400, { error: NOT_A_LINK });
+
+  const feed = await fetchFeed(link, { etag: null, lastModified: null }, deps.fetch);
+  if (feed.kind !== 'calendar') return json(502, { error: COULD_NOT_READ });
+
+  const name = feedCalendarName(feed.text);
+  const { data: id, error } = await deps.admin.rpc('store_icloud_calendar', {
+    p_household_id: who.householdId,
+    p_link: link,
+    p_name: name,
+  });
+  if (error?.code === '23505') return json(409, { error: ALREADY_ADDED });
+  if (error || typeof id !== 'string') return json(500, { error: 'Something went wrong on our side. Please try again.' });
+  return json(200, { id, name });
 }
 
 // GET consent: the shareable link. Nothing but the state proves anything, and that is enough.
@@ -255,6 +293,7 @@ export async function handleCalendarConnect(request: Request, deps: ConnectDeps)
   const url = new URL(request.url);
   const route = url.pathname.split('/').filter(Boolean).pop();
   if (route === 'start' && request.method === 'POST') return start(request, deps, now);
+  if (route === 'icloud' && request.method === 'POST') return icloud(request, deps);
   if (route === 'consent' && request.method === 'GET') return consent(url, deps, now);
   if (route === 'callback' && request.method === 'GET') return callback(url, deps, now);
   return json(404, { error: 'not found' });
