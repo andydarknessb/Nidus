@@ -37,7 +37,6 @@ const home = (timezone: string | null) =>
       weatherOn: false,
       profiles: [],
       routines,
-      tiles: 2,
       openView: noop,
       openRoutines: noop,
       openLists: noop,

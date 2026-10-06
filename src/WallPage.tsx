@@ -340,7 +340,6 @@ function HomeShell({ owner }: { owner: boolean }) {
             weatherOn={weatherOn}
             profiles={profiles}
             routines={routines}
-            tiles={home.tiles}
             openView={openView}
             openRoutines={openRoutines}
             openLists={openLists}

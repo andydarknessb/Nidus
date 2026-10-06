@@ -8,7 +8,7 @@ import { useSyncExternalStore } from 'react';
 export type HomeLayout = { days: 5 | 4; tiles: 3 | 2; phone: boolean };
 
 // The least width of a tablet: below it the Wall is a phone.
-export const PHONE_BELOW = 768;
+const PHONE_BELOW = 768;
 
 export function homeLayout({ width, height }: { width: number; height: number }): HomeLayout {
   return { days: width < 1200 ? 4 : 5, tiles: height < 760 ? 2 : 3, phone: width > 0 && width < PHONE_BELOW };

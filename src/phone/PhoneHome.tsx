@@ -22,7 +22,7 @@ import { PhoneCard } from './parts';
 
 // The most rows the Pinned List's card shows before it says how many more ("3 more", to the Lists screen). The tablet's card shows the
 // rows that fit the height it is given; the phone's column has no height to give, so it is a count.
-export const PHONE_LIST_ROWS = 6;
+const PHONE_LIST_ROWS = 6;
 
 // Today: today's disc, "Today", the day's high and low when the Household has weather, then every event of the day as the schedule's
 // stacked pills, ringed when on now, in the schedule's order and filtered by the strip (the Profile filter, in useOccurrences). The

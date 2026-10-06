@@ -27,8 +27,6 @@ export type PhoneScreenProps = {
   profiles: Profile[] | null;
   // Today's Routines, read once by HomeShell.
   routines: RoutinesToday;
-  // How many Up next tiles Home may show.
-  tiles: number;
   openView: (view: CalendarView, date: string) => void;
   openRoutines: () => void;
   openLists: () => void;

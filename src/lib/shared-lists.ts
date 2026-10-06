@@ -59,8 +59,8 @@ export function rowsThatFit({ count, room, row, gap }: { count: number; room: nu
 // From the drawing (v2/home.js): a row on Home is 48 px (h-12) and rows are 8 px apart (gap-2).
 // ponytail: these sit beside the classes they stand for and are not measured; if a larger text size (#69) ever grows a row,
 // measure the first row instead.
-export const HOME_ROW_PX = 48;
-export const HOME_GAP_PX = 8;
+const HOME_ROW_PX = 48;
+const HOME_GAP_PX = 8;
 
 // Which of the rows Home's card draws it shows, and how many items still to get it leaves out (what its link says: "3 more"). On a
 // tablet the card is measured: `room` px of height, none before it is laid out (then no row shows yet). On a phone the column has no
