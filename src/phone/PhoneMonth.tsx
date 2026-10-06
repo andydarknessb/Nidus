@@ -67,7 +67,8 @@ export function MonthDay({
   onPick: (date: string) => void;
 }) {
   const number = Number(day.date.slice(8));
-  const words = describeCell(day.date, occurrences === null ? null : occurrences.length);
+  // As the chips and the tablet's cells are named: the date and how many events, with ", today" on today's.
+  const words = `${describeCell(day.date, occurrences === null ? null : occurrences.length)}${day.isToday ? ', today' : ''}`;
   if (beyond) {
     return (
       <div className="h-[58px] min-w-12 p-0.5">
@@ -89,9 +90,9 @@ export function MonthDay({
       aria-pressed={picked}
       aria-current={day.isToday ? 'date' : undefined}
       onClick={() => onPick(day.date)}
-      className="group h-[58px] min-w-12 rounded-[14px] p-0.5 selected:bg-transparent selected:ring-0 active:bg-transparent"
+      className="group h-[58px] min-w-12 rounded-[14px] p-0.5 selected:bg-transparent selected:ring-0 active:bg-transparent focus-visible:-outline-offset-2"
     >
-      <span className="flex size-full flex-col items-center justify-center gap-0.5 rounded-xl group-aria-pressed:bg-accent group-aria-pressed:ring-2 group-aria-pressed:ring-foreground group-aria-pressed:ring-inset">
+      <span className="flex size-full flex-col items-center justify-center gap-0.5 rounded-xl group-aria-pressed:bg-accent group-aria-pressed:font-semibold group-aria-pressed:ring-2 group-aria-pressed:ring-foreground group-aria-pressed:ring-inset">
         {day.isToday ? (
           <span aria-hidden className="grid size-[30px] place-items-center rounded-full bg-primary font-display text-lg leading-none text-primary-foreground">
             {number}
@@ -116,7 +117,7 @@ export function MonthDay({
 type WeekRead = { occurrences: Occurrence[] | null; unread: boolean };
 
 // The seven cells of a week, given what its week has read (null until it has, and for a week that is never read).
-function WeekCells({
+export function WeekCells({
   days,
   anchor,
   window,
@@ -274,6 +275,7 @@ export function PhoneMonth({
           now={now}
           timezone={timezone}
           onEdited={() => setEdits((count) => count + 1)}
+          announce={false}
         />
       </PhoneCard>
     </>

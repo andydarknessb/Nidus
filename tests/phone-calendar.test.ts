@@ -69,12 +69,12 @@ describe('pickedDay of a month', () => {
     const now = new Date('2026-10-02T16:00:00Z');
     expect(pickedDay('month', '2026-10-01', NEW_YORK, now)).toBe('2026-10-02');
     expect(pickedDay('month', '2026-11-01', NEW_YORK, now)).toBe('2026-11-01');
-    expect(pickedDay('month', '2026-09-01', NEW_YORK, now)).toBe('2026-09-01');
+    expect(pickedDay('month', '2026-09-01', NEW_YORK, now)).toBe('2026-09-02'); // the 1st is before the calendar's first day
   });
 
   it('does not take today for a month that only shows it as a dimmed day of its grid', () => {
     // September's last row is Sept 27 to Oct 3, which holds Oct 2 without October's being September's.
-    expect(pickedDay('month', '2026-09-01', NEW_YORK, new Date('2026-10-02T16:00:00Z'))).toBe('2026-09-01');
+    expect(pickedDay('month', '2026-09-01', NEW_YORK, new Date('2026-10-02T16:00:00Z'))).toBe('2026-09-02');
   });
 
   it('takes any date of the month as its anchor', () => {
@@ -95,12 +95,41 @@ describe('pickedDay of a month', () => {
     expect(pickedDay('month', '2026-11-01', NEW_YORK, new Date('2026-11-02T04:59:59Z'))).toBe('2026-11-01');
     expect(pickedDay('month', '2026-11-01', NEW_YORK, new Date('2026-11-02T05:00:00Z'))).toBe('2026-11-02');
     expect(pickedDay('month', '2026-03-01', NEW_YORK, new Date('2026-03-08T07:00:00Z'))).toBe('2026-03-08');
-    expect(pickedDay('month', '2026-02-01', NEW_YORK, new Date('2026-03-08T07:00:00Z'))).toBe('2026-02-01');
+    expect(pickedDay('month', '2026-02-01', NEW_YORK, new Date('2026-03-08T07:00:00Z'))).toBe('2026-02-08');
   });
 
   it('follows the Household Timezone ahead of UTC', () => {
     // 1 AM on Oct 2 in Auckland: still Oct 1 in UTC.
     expect(pickedDay('month', '2026-10-01', AUCKLAND, new Date('2026-10-01T12:00:00Z'))).toBe('2026-10-02');
+  });
+});
+
+describe('pickedDay at the ends of the calendar', () => {
+  // Today is Thursday Oct 8 2026: the calendar keeps Sep 8 to Apr 8.
+  const now = new Date('2026-10-08T17:00:00Z');
+
+  it('never picks a day before the first the calendar keeps: the first week picks Sep 8, not its Sunday Sep 6', () => {
+    expect(pickedDay('week', '2026-09-06', NEW_YORK, now)).toBe('2026-09-08');
+    expect(pickedDay('week', '2026-09-08', NEW_YORK, now)).toBe('2026-09-08');
+    // The week after it is whole inside the calendar.
+    expect(pickedDay('week', '2026-09-13', NEW_YORK, now)).toBe('2026-09-13');
+  });
+
+  it('picks Sep 8 for the first month, and the 1st for a month that is whole inside the calendar', () => {
+    expect(pickedDay('month', '2026-09-01', NEW_YORK, now)).toBe('2026-09-08');
+    expect(pickedDay('month', '2026-10-01', NEW_YORK, now)).toBe('2026-10-08');
+    expect(pickedDay('month', '2026-11-01', NEW_YORK, now)).toBe('2026-11-01');
+  });
+
+  it('keeps the last month and week inside the calendar too', () => {
+    expect(pickedDay('month', '2027-04-01', NEW_YORK, now)).toBe('2027-04-01');
+    expect(pickedDay('week', '2027-04-04', NEW_YORK, now)).toBe('2027-04-04');
+  });
+
+  it('clamps by the Household date: the window moves at Household midnight, not at UTC midnight', () => {
+    // 9 PM on Oct 8 in New York is Oct 9 in UTC: the first day the calendar keeps is still Sep 8.
+    expect(pickedDay('month', '2026-09-01', NEW_YORK, new Date('2026-10-09T01:00:00Z'))).toBe('2026-09-08');
+    expect(pickedDay('month', '2026-09-01', NEW_YORK, new Date('2026-10-09T04:00:00Z'))).toBe('2026-09-09');
   });
 });
 

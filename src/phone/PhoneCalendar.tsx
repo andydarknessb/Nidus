@@ -38,9 +38,10 @@ const VIEWS: readonly { value: CalendarView; label: string }[] = [
 
 const COULD_NOT_LOAD = 'Could not load the calendar. Check your connection.';
 
-// What the Day view is as tall as: the hours it can show are the whole hours that fit between its two rows, so it is given a box, the
-// height of the phone's screen less what is above it (the header, the strip, the control and the pager) and below (the bar, Add event
-// and the gaps), and never under 36 rem, which holds eight hours. The document scrolls past it on a screen that is shorter.
+// The Day view's box: the hours it shows are the whole hours that fit between its Earlier and Later rows, so it is given a height. It is
+// the screen's height less about 26.5 rem for what is above it (the header, the strip, the control and the pager) and below (the bar,
+// Add event and the gaps), and never under 36 rem, which holds eight hours. On a screen shorter than that the box keeps its 36 rem and
+// the document scrolls past it, as the phone's column does everywhere else.
 const DAY_BOX = 'h-[max(36rem,calc(100svh-26.5rem))]';
 
 export function PhoneCalendar({ route, timezone, view, added, profiles, openView }: PhoneScreenProps & { route: Extract<WallRoute, { view: CalendarView }> }) {
@@ -150,7 +151,7 @@ function PhoneWeek({
   const { occurrences, failed } = useOccurrences(days, version + edits);
   return (
     <PhoneCard label="Calendar">
-      <DayChips label="Days of this week" dates={days.map((day) => day.date)} today={today} picked={picked} onPick={setPick} />
+      <DayChips label="Days of this week" dates={days.map((day) => day.date)} today={today} picked={picked} onPick={setPick} canPick={(date) => canOpenDay(date, window)} />
       <DayEvents
         day={days.find((day) => day.date === picked) ?? days[0]!}
         occurrences={occurrences}

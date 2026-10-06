@@ -43,13 +43,13 @@ describe('a phone Month cell', () => {
   it('is a button named with the full date and how many events it has', () => {
     const four = cell('2026-10-02', { occurrences: [event([]), event(['a']), event(['b']), event(['a', 'b'])] });
     expect(tagOf(four)).toMatch(/^<button\b/);
-    expect(tagOf(four)).toContain('aria-label="Friday, October 2, 4 events"');
+    expect(tagOf(four)).toContain('aria-label="Friday, October 2, 4 events, today"');
     expect(tagOf(cell('2026-10-03', { occurrences: [event(['a'])] }))).toContain('aria-label="Saturday, October 3, 1 event"');
     expect(tagOf(cell('2026-10-01'))).toContain('aria-label="Thursday, October 1, no events"');
   });
 
   it('gives the date alone until its week has been read, so a free day is never claimed before it is known to be', () => {
-    expect(tagOf(cell('2026-10-02', { occurrences: null }))).toContain('aria-label="Friday, October 2"');
+    expect(tagOf(cell('2026-10-02', { occurrences: null }))).toContain('aria-label="Friday, October 2, today"');
     expect(/aria-label="([^"]*)"/.exec(tagOf(cell('2026-10-02', { occurrences: null })))![1]).not.toMatch(/event/);
   });
 

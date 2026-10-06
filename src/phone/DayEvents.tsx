@@ -12,7 +12,8 @@ import { EventSheets, type OpenEvent } from '../components/EventSheets';
 // screen reads the events and hands them down, already through the Profile filter (useOccurrences), so what is listed here is what the
 // filter lets through; `occurrences` are null until the first read lands. `beyond` is a day past the range the calendar keeps, which
 // has nothing to read and says so. The pills wait for the Profiles, as the tablet's do. `onEdited` runs after an edit is saved, so the
-// screen reads again at once.
+// screen reads again at once. A failed read is said as an alert unless `announce` is false, for the Month, whose grid already alerts for
+// the same failure.
 export function DayEvents({
   day,
   occurrences,
@@ -22,6 +23,7 @@ export function DayEvents({
   now,
   timezone,
   onEdited,
+  announce = true,
 }: {
   day: WallDay;
   occurrences: Occurrence[] | null;
@@ -31,6 +33,7 @@ export function DayEvents({
   now: Date;
   timezone: string;
   onEdited: () => void;
+  announce?: boolean;
 }) {
   const [open, setOpen] = useState<OpenEvent>(null);
   const people = profiles ?? [];
@@ -42,7 +45,7 @@ export function DayEvents({
       {beyond ? (
         <EmptyWords>Beyond the calendar's range.</EmptyWords>
       ) : failed && occurrences === null ? (
-        <p role="alert" className="text-base">
+        <p role={announce ? 'alert' : undefined} className="text-base">
           Could not load the calendar. Check your connection.
         </p>
       ) : !loaded ? (

@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode, Ref } from 'react';
+import { BEYOND_RANGE, HATCH } from '../components/MonthCell';
 import { Button } from '../components/ui/button';
 import { WEEKDAYS } from '../lib/routines';
 
@@ -39,11 +40,43 @@ function dayChipName(date: string, today: string): string {
 // The targets are at least 48 wide and touch, as the Day view's blocks do: the Selected fill and ring are drawn 2 px inside each
 // button (its inner span), so two chips never read as one. The row bleeds over the 12 px padding of the card it sits in (-mx-3), so
 // at 390 px a chip is about 51 wide. A row narrower than seven chips (7 x 48 = 336) scrolls sideways, as the phone's rows do.
-export function DayChips({ label, dates, today, picked, onPick }: { label: string; dates: readonly string[]; today: string; picked: string; onPick: (date: string) => void }) {
+//
+// `canPick` says which days can be picked; one that cannot (a day beyond the calendar's range) is no button but the hatched cell the
+// tablet's Month grid draws for it, which says so. Left out, every day can be picked.
+export function DayChips({
+  label,
+  dates,
+  today,
+  picked,
+  onPick,
+  canPick = () => true,
+}: {
+  label: string;
+  dates: readonly string[];
+  today: string;
+  picked: string;
+  onPick: (date: string) => void;
+  canPick?: (date: string) => boolean;
+}) {
   return (
     <SideScroll label={label} gap="gap-0" className="-mx-3 py-0">
       {dates.map((date) => {
         const isToday = date === today;
+        if (!canPick(date)) {
+          return (
+            <div key={date} data-day={date} className="h-16 min-w-12 flex-1 p-0.5">
+              <div className={cn('flex size-full flex-col items-center justify-center gap-0.5 rounded-xl', HATCH)}>
+                <span aria-hidden className="rounded bg-card px-1 text-[13px] leading-4 font-medium text-muted-foreground">
+                  {weekdayOf(date).short}
+                </span>
+                <span aria-hidden className="grid h-[34px] min-w-8 place-items-center rounded-full bg-card px-1 font-display text-[22px] leading-none text-muted-foreground">
+                  {dayOfMonth(date)}
+                </span>
+                <span className="sr-only">{`${weekdayOf(date).name} ${dayOfMonth(date)}, ${BEYOND_RANGE}`}</span>
+              </div>
+            </div>
+          );
+        }
         return (
           <Button
             key={date}
