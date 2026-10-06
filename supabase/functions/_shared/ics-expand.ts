@@ -5,13 +5,9 @@
 // Vitest (Node) and the Edge Function (Deno). The machine's own zone is never consulted: every
 // wall-clock time is turned into an instant by the feed's zone or the Household Timezone.
 import ICAL from 'ical.js';
-import type { EventRow } from '../calendar-sync/handler.ts';
+import { type EventRow, MAX_DESCRIPTION, MAX_LOCATION, MAX_TITLE } from './event-row.ts';
 import { dayStartMs, wallClockMs } from './zoned-time.ts';
 
-// Kept equal to toRow's cuts in calendar-sync/handler.ts.
-const MAX_TITLE = 500;
-const MAX_LOCATION = 500;
-const MAX_DESCRIPTION = 8000;
 export const MAX_PER_EVENT = 1000;
 export const MAX_PER_FEED = 20000;
 // How far one rule is walked looking for the window: a rule that started long ago and fires

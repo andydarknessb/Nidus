@@ -17,7 +17,15 @@
 // wall never shows a partly emptied calendar. One calendar or account failing never stops the
 // others; an account Google no longer honours is marked needs_reauth and left alone until the
 // parent reconnects it.
+//
+// An iPhone (iCloud) calendar account (spec 0005) is read from its public link instead: the whole
+// feed, skipped when the server says it has not changed, its repeats expanded into the same
+// window (_shared/ics-expand.ts) and stored with the same replace_synced_events. It never
+// touches Google's token endpoint, and one account's failure never stops another's.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { type EventRow, MAX_DESCRIPTION, MAX_LOCATION, MAX_TITLE } from '../_shared/event-row.ts';
+import { expandFeed } from '../_shared/ics-expand.ts';
+import { fetchFeed } from '../_shared/feed.ts';
 import { dayStartMs } from '../_shared/zoned-time.ts';
 
 export type SyncEnv = {
@@ -44,9 +52,6 @@ export type SyncSummary = { accounts: number; calendars: number; events: number;
 export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export const GOOGLE_EVENTS_BASE = 'https://www.googleapis.com/calendar/v3/calendars';
 
-const MAX_TITLE = 500;
-const MAX_LOCATION = 500;
-const MAX_DESCRIPTION = 8000;
 // How long a calendar may go on being read incrementally before it is read in full again.
 export const FULL_SYNC_EVERY_MS = 24 * 60 * 60 * 1000;
 
@@ -76,17 +81,6 @@ type GoogleEvent = {
   location?: string;
   start?: { date?: string; dateTime?: string };
   end?: { date?: string; dateTime?: string };
-};
-
-// Also the shape of a row expanded from an iPhone calendar's feed (_shared/ics-expand.ts).
-export type EventRow = {
-  google_event_id: string;
-  title: string;
-  description: string | null;
-  location: string | null;
-  starts_at: string;
-  ends_at: string;
-  is_all_day: boolean;
 };
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -125,7 +119,7 @@ export function toRow(event: GoogleEvent, timezone: string): EventRow | null {
   };
 }
 
-type Account = { id: string; household_id: string; vault_secret_id: string };
+type Account = { id: string; household_id: string; vault_secret_id: string; provider: 'google' | 'icloud' };
 type Calendar = {
   id: string;
   google_calendar_id: string;
@@ -288,15 +282,88 @@ async function syncCalendar(deps: SyncDeps, accessToken: string, calendar: Calen
   return rows.length;
 }
 
+async function failAccount(deps: SyncDeps, account: Account, summary: SyncSummary, message: string, status?: 'needs_reauth'): Promise<void> {
+  summary.errors.push(`${account.id}: ${message}`);
+  await deps.admin
+    .from('calendar_accounts')
+    .update({ last_error: message, ...(status ? { status } : {}) })
+    .eq('id', account.id);
+}
+
+export const FEED_GONE_MESSAGE = 'This link no longer works. Turn on Public Calendar again and paste the new link.';
+
+// An iPhone calendar's validator, kept in its Mirrored Calendar's sync_token (no client can read
+// it) as JSON: {"etag": "...", "lastModified": "..."}, either null. Anything else reads as none,
+// so the feed is read in full.
+export function encodeFeedValidators(etag: string | null, lastModified: string | null): string | null {
+  return etag || lastModified ? JSON.stringify({ etag, lastModified }) : null;
+}
+
+function decodeFeedValidators(token: string | null): { etag: string | null; lastModified: string | null } {
+  try {
+    const parsed = JSON.parse(token ?? 'null') as { etag?: unknown; lastModified?: unknown } | null;
+    return {
+      etag: typeof parsed?.etag === 'string' ? parsed.etag : null,
+      lastModified: typeof parsed?.lastModified === 'string' ? parsed.lastModified : null,
+    };
+  } catch {
+    return { etag: null, lastModified: null };
+  }
+}
+
+// Syncs one iPhone calendar account: read its link from Vault, ask the feed whether it changed,
+// and on a change expand it into the window and replace the Mirrored Calendar's events. Never
+// throws, and never puts the link (or anything the feed said) in an error.
+async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary): Promise<void> {
+  const fail = (message: string, status?: 'needs_reauth') => failAccount(deps, account, summary, message, status);
+
+  const { data: link, error: secretError } = await deps.admin.rpc('read_calendar_secret', { p_secret_id: account.vault_secret_id });
+  if (secretError) return fail('Could not read the stored link.');
+  if (typeof link !== 'string') return fail(FEED_GONE_MESSAGE, 'needs_reauth');
+
+  const { data: calendars, error: listError } = await deps.admin
+    .from('mirrored_calendars')
+    .select('id, google_calendar_id, name, selected, sync_token, last_full_sync_at')
+    .eq('calendar_account_id', account.id)
+    .eq('selected', true)
+    .returns<Calendar[]>();
+  if (listError || !calendars) return fail('Could not read the account’s calendars.');
+
+  const markSynced = () => deps.admin.from('calendar_accounts').update({ last_synced_at: new Date(nowMs).toISOString(), last_error: null }).eq('id', account.id);
+  // Deselected: it has no events and no business with the feed.
+  const calendar = calendars[0];
+  if (!calendar) {
+    await markSynced();
+    return;
+  }
+
+  const feed = await fetchFeed(link, decodeFeedValidators(calendar.sync_token), deps.fetch);
+  if (feed.kind === 'gone') return fail(FEED_GONE_MESSAGE, 'needs_reauth');
+  if (feed.kind === 'error') return fail(`Could not read the iPhone calendar (${feed.message}).`);
+  if (feed.kind === 'calendar') {
+    const window = syncWindow(nowMs);
+    let rows: EventRow[];
+    try {
+      rows = expandFeed(feed.text, timezone, Date.parse(window.timeMin), Date.parse(window.timeMax));
+    } catch {
+      return fail('Could not read the iPhone calendar (it is not a calendar the Wall can read).');
+    }
+    try {
+      await replace(deps, calendar.id, rows, encodeFeedValidators(feed.etag, feed.lastModified), nowMs);
+    } catch {
+      return fail('Could not store the iPhone calendar’s events.');
+    }
+    summary.events += rows.length;
+  }
+  summary.calendars += 1;
+  await markSynced();
+}
+
 // Syncs one Calendar Account. Never throws: its outcome is on the account row and in `summary`.
 async function syncAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary): Promise<void> {
-  const fail = async (message: string, status?: 'needs_reauth') => {
-    summary.errors.push(`${account.id}: ${message}`);
-    await deps.admin
-      .from('calendar_accounts')
-      .update({ last_error: message, ...(status ? { status } : {}) })
-      .eq('id', account.id);
-  };
+  // An iPhone calendar has no Google sign-in: it never reaches the token minting below.
+  if (account.provider === 'icloud') return syncIcloudAccount(deps, account, timezone, nowMs, summary);
+  const fail = (message: string, status?: 'needs_reauth') => failAccount(deps, account, summary, message, status);
 
   const { data: refreshToken, error: secretError } = await deps.admin.rpc('read_calendar_secret', { p_secret_id: account.vault_secret_id });
   if (secretError) return fail('Could not read the stored Google sign-in.');
@@ -335,7 +402,7 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
   const nowMs = (deps.now ?? Date.now)();
   const summary: SyncSummary = { accounts: 0, calendars: 0, events: 0, errors: [] };
 
-  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id').eq('status', 'active');
+  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id, provider').eq('status', 'active');
   if (deps.householdId) query = query.eq('household_id', deps.householdId);
   const { data: accounts, error } = await query.returns<Account[]>();
   if (error || !accounts) {
