@@ -2,18 +2,29 @@
 // events on ingest) and the wall (which lays days out). Plain Intl, no Deno globals, so the
 // same code runs under Node, the browser and Deno, and cannot drift between them.
 
+// Building an Intl.DateTimeFormat is the slow part of every conversion; one per zone is enough.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+function formatterFor(timezone: string): Intl.DateTimeFormat {
+  let format = formatters.get(timezone);
+  if (!format) {
+    format = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+    });
+    formatters.set(timezone, format);
+  }
+  return format;
+}
+
 // The zone's offset from UTC at `timestamp`, in milliseconds (Chicago in summer: -5 h).
 export function offsetMs(timestamp: number, timezone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-  }).formatToParts(new Date(timestamp));
+  const parts = formatterFor(timezone).formatToParts(new Date(timestamp));
   const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
   const asUtc = Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second'));
   return asUtc - Math.floor(timestamp / 1000) * 1000;

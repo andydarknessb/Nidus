@@ -318,3 +318,21 @@ describe('when the feed says no', () => {
     expect(world.calls.map((call) => call.url)).toEqual([link]);
   });
 });
+
+describe('the order of a run', () => {
+  it('syncs Google accounts before iPhone calendars, so a slow feed cannot keep Google waiting', async () => {
+    const account = await arrange();
+    const link = newLink();
+    // The iPhone calendar is made first, so only the run's own ordering can put Google ahead of it.
+    await arrangeIcloud(account, link);
+    await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'refresh-A' });
+    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf() }]]));
+
+    await syncOk(deps(account, world));
+
+    const urls = world.calls.map((call) => call.url);
+    expect(urls.at(-1)).toBe(link);
+    expect(urls.indexOf(GOOGLE_TOKEN_URL)).toBeLessThan(urls.indexOf(link));
+    expect(urls.filter((url) => url === link)).toHaveLength(1);
+  });
+});

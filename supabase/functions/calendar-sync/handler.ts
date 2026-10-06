@@ -418,6 +418,9 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
     .returns<{ id: string; timezone: string }[]>();
   const timezones = new Map((households ?? []).map((household) => [household.id, household.timezone]));
 
+  // Google first, then the iPhone calendars: a feed that is slow or runs the function out of time
+  // can then never keep a Google account from syncing in the same run.
+  accounts.sort((a, b) => Number(a.provider === 'icloud') - Number(b.provider === 'icloud'));
   for (const account of accounts) {
     const timezone = timezones.get(account.household_id);
     if (!timezone) {

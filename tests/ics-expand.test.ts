@@ -5,7 +5,7 @@ import { expandFeed, FeedParseError } from '../supabase/functions/_shared/ics-ex
 // VTIMEZONE blocks, X-WR-CALNAME, folded lines), not objects built to suit the code. Run once
 // with TZ set to an odd zone (TZ=Pacific/Chatham) to see that the machine's zone never matters.
 
-const HOUSEHOLD = 'America/Chicago';
+const HOUSEHOLD = 'Pacific/Auckland';
 const WINDOW_START = Date.parse('2026-09-01T00:00:00Z');
 const WINDOW_END = Date.parse('2027-03-01T00:00:00Z');
 
@@ -132,41 +132,45 @@ describe('expandFeed: repeats', () => {
 });
 
 describe('expandFeed: times', () => {
+  // Auckland is on +13 from Sep 27 (NZDT) and +12 before; Chicago, where this suite runs, is neither.
   it('turns an all-day event into the Household midnight to the midnight after', () => {
-    const rows = expand(feed(event('DTSTART;VALUE=DATE:20261010\nDTEND;VALUE=DATE:20261011')));
+    const text = feed(event('DTSTART;VALUE=DATE:20261010\nDTEND;VALUE=DATE:20261011'));
+    const rows = expand(text);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ starts_at: '2026-10-10T05:00:00.000Z', ends_at: '2026-10-11T05:00:00.000Z', is_all_day: true });
+    expect(rows[0]).toMatchObject({ starts_at: '2026-10-09T11:00:00.000Z', ends_at: '2026-10-10T11:00:00.000Z', is_all_day: true });
     // In another Household the same date is another instant.
-    expect(expand(feed(event('DTSTART;VALUE=DATE:20261010\nDTEND;VALUE=DATE:20261011')), 'Asia/Tokyo')[0]?.starts_at).toBe('2026-10-09T15:00:00.000Z');
+    expect(expand(text, 'America/Chicago')[0]?.starts_at).toBe('2026-10-10T05:00:00.000Z');
   });
 
   it('runs a multi-day all-day event to the midnight after its last day, across a DST change', () => {
-    const [row] = expand(feed(event('DTSTART;VALUE=DATE:20261030\nDTEND;VALUE=DATE:20261103')));
-    expect(row).toMatchObject({ starts_at: '2026-10-30T05:00:00.000Z', ends_at: '2026-11-03T06:00:00.000Z', is_all_day: true });
+    // Sep 25 to Sep 28 inclusive; the clocks go forward in Auckland at 02:00 on Sep 27.
+    const [row] = expand(feed(event('DTSTART;VALUE=DATE:20260925\nDTEND;VALUE=DATE:20260929')));
+    expect(row).toMatchObject({ starts_at: '2026-09-24T12:00:00.000Z', ends_at: '2026-09-28T11:00:00.000Z', is_all_day: true });
   });
 
   it('gives an all-day event with no end one day, or its DURATION', () => {
-    expect(expand(feed(event('DTSTART;VALUE=DATE:20261010')))[0]?.ends_at).toBe('2026-10-11T05:00:00.000Z');
-    expect(expand(feed(event('DTSTART;VALUE=DATE:20261010\nDURATION:P3D')))[0]?.ends_at).toBe('2026-10-13T05:00:00.000Z');
+    expect(expand(feed(event('DTSTART;VALUE=DATE:20261010')))[0]?.ends_at).toBe('2026-10-10T11:00:00.000Z');
+    expect(expand(feed(event('DTSTART;VALUE=DATE:20261010\nDURATION:P3D')))[0]?.ends_at).toBe('2026-10-12T11:00:00.000Z');
   });
 
   it('repeats an all-day event on Household midnights', () => {
-    const rows = expand(feed(event('DTSTART;VALUE=DATE:20261030\nDTEND;VALUE=DATE:20261101\nRRULE:FREQ=WEEKLY;COUNT=2')));
+    const rows = expand(feed(event('DTSTART;VALUE=DATE:20260918\nDTEND;VALUE=DATE:20260920\nRRULE:FREQ=WEEKLY;COUNT=3')));
     expect(rows.map((row) => [row.starts_at, row.ends_at])).toEqual([
-      ['2026-10-30T05:00:00.000Z', '2026-11-01T05:00:00.000Z'],
-      ['2026-11-06T06:00:00.000Z', '2026-11-08T06:00:00.000Z'],
+      ['2026-09-17T12:00:00.000Z', '2026-09-19T12:00:00.000Z'],
+      ['2026-09-24T12:00:00.000Z', '2026-09-26T12:00:00.000Z'],
+      ['2026-10-01T11:00:00.000Z', '2026-10-03T11:00:00.000Z'],
     ]);
   });
 
   it('reads a floating time in the Household Timezone', () => {
     const text = feed(event('DTSTART:20261014T090000\nDTEND:20261014T100000'));
-    expect(expand(text)[0]).toMatchObject({ starts_at: '2026-10-14T14:00:00.000Z', ends_at: '2026-10-14T15:00:00.000Z', is_all_day: false });
+    expect(expand(text)[0]).toMatchObject({ starts_at: '2026-10-13T20:00:00.000Z', ends_at: '2026-10-13T21:00:00.000Z', is_all_day: false });
     expect(expand(text, 'Asia/Tokyo')[0]?.starts_at).toBe('2026-10-14T00:00:00.000Z');
   });
 
   it('keeps a floating repeat at the same wall time across a DST change', () => {
-    const text = feed(event('DTSTART:20261029T090000\nDTEND:20261029T100000\nRRULE:FREQ=WEEKLY;COUNT=2'));
-    expect(starts(text)).toEqual(['2026-10-29T14:00:00.000Z', '2026-11-05T15:00:00.000Z']);
+    const text = feed(event('DTSTART:20260924T090000\nDTEND:20260924T100000\nRRULE:FREQ=WEEKLY;COUNT=2'));
+    expect(starts(text)).toEqual(['2026-09-23T21:00:00.000Z', '2026-09-30T20:00:00.000Z']);
   });
 
   it('reads a TZID event in its own zone across that zone and the Household changing their clocks', () => {
@@ -176,7 +180,7 @@ describe('expandFeed: times', () => {
   });
 
   it('reads a TZID the feed never defines in the Household Timezone', () => {
-    expect(starts(feed(event('DTSTART;TZID=Mars/Olympus:20261014T090000')))).toEqual(['2026-10-14T14:00:00.000Z']);
+    expect(starts(feed(event('DTSTART;TZID=Mars/Olympus:20261014T090000')))).toEqual(['2026-10-13T20:00:00.000Z']);
   });
 
   it('reads UTC times as they are', () => {
@@ -263,5 +267,93 @@ describe('expandFeed: broken feeds', () => {
   it('skips an event with no start rather than failing the feed', () => {
     const rows = expand(feed('BEGIN:VEVENT\nUID:nostart\nSUMMARY:Broken\nEND:VEVENT', event('DTSTART:20261014T140000Z', 'ok')));
     expect(rows.map((row) => row.google_event_id.split('|')[0])).toEqual(['ok']);
+  });
+});
+
+describe('expandFeed: excluded starts', () => {
+  const series = (exdate: string) =>
+    event(`DTSTART;TZID=America/Chicago:20261006T180000\nDTEND;TZID=America/Chicago:20261006T190000\nRRULE:FREQ=WEEKLY;COUNT=3\n${exdate}`);
+
+  it('honours an EXDATE equal to DTSTART, in a zone and in UTC', () => {
+    for (const exdate of [
+      'EXDATE;TZID=America/Chicago:20261006T180000',
+      'EXDATE:20261006T230000Z',
+      'EXDATE:20261006T230000Z,20261013T230000Z',
+    ]) {
+      const rows = starts(feed(series(exdate)));
+      expect(rows, exdate).toEqual(exdate.includes('1013') ? ['2026-10-20T23:00:00.000Z'] : ['2026-10-13T23:00:00.000Z', '2026-10-20T23:00:00.000Z']);
+    }
+  });
+
+  it('honours an EXDATE on an event with only RDATEs', () => {
+    const alone = event('DTSTART:20261006T230000Z\nRDATE:20261008T230000Z\nEXDATE:20261006T230000Z');
+    expect(starts(feed(alone))).toEqual(['2026-10-08T23:00:00.000Z']);
+  });
+});
+
+describe('expandFeed: lengths', () => {
+  it('treats a DTEND before DTSTART as no DTEND, for times and for dates', () => {
+    expect(expand(feed(event('DTSTART:20261014T140000Z\nDTEND:20261014T130000Z')))[0]).toMatchObject({
+      starts_at: '2026-10-14T14:00:00.000Z',
+      ends_at: '2026-10-14T14:00:00.000Z',
+    });
+    expect(expand(feed(event('DTSTART:20261014T140000Z\nDTEND:20261014T130000Z\nDURATION:PT45M')))[0]?.ends_at).toBe('2026-10-14T14:45:00.000Z');
+    expect(expand(feed(event('DTSTART;VALUE=DATE:20261010\nDTEND;VALUE=DATE:20261008')))[0]).toMatchObject({
+      starts_at: '2026-10-09T11:00:00.000Z',
+      ends_at: '2026-10-10T11:00:00.000Z',
+    });
+  });
+
+  it('gives an all-day override at least one day, as its series', () => {
+    const series = event('DTSTART;VALUE=DATE:20261010\nDTEND;VALUE=DATE:20261011\nRRULE:FREQ=WEEKLY;COUNT=2');
+    for (const end of ['DTEND;VALUE=DATE:20261017', 'DTEND;VALUE=DATE:20261015', '']) {
+      const moved = event(`RECURRENCE-ID;VALUE=DATE:20261017\nDTSTART;VALUE=DATE:20261017\n${end}`);
+      const rows = expand(feed(series, moved));
+      expect(rows.map((row) => [row.starts_at, row.ends_at]), end).toEqual([
+        ['2026-10-09T11:00:00.000Z', '2026-10-10T11:00:00.000Z'],
+        ['2026-10-16T11:00:00.000Z', '2026-10-17T11:00:00.000Z'],
+      ]);
+    }
+  });
+});
+
+describe('expandFeed: work', () => {
+  // The bounds are generous: they catch a quadratic or runaway walk, not a slow machine.
+  const quickly = (work: () => void) => {
+    const began = Date.now();
+    work();
+    expect(Date.now() - began).toBeLessThan(3000);
+  };
+
+  it('expands a few thousand plain events at once', () => {
+    const events = Array.from({ length: 4000 }, (_, index) => event(`DTSTART:20261014T140000Z\nDTEND:20261014T150000Z`, `bulk-${index}`));
+    quickly(() => expect(expand(feed(...events))).toHaveLength(4000));
+  });
+
+  it('gives up on a rule that started in 1970 and fires every second, without throwing', () => {
+    quickly(() => expect(expand(feed(event('DTSTART:19700101T000000\nRRULE:FREQ=SECONDLY')))).toEqual([]));
+  });
+
+  it('gives up on a daily rule from the year 1700, without throwing', () => {
+    quickly(() => expect(expand(feed(event('DTSTART;VALUE=DATE:17000101\nRRULE:FREQ=DAILY')))).toEqual([]));
+  });
+
+  it('stops the feed once its step budget is spent, keeping what came before', () => {
+    const runaway = (uid: string) => event('DTSTART:19700101T000000\nRRULE:FREQ=SECONDLY', uid);
+    const rows = expand(feed(event('DTSTART:20261014T140000Z', 'first'), runaway('a'), runaway('b'), runaway('c'), event('DTSTART:20261015T140000Z\nRRULE:FREQ=DAILY;COUNT=2', 'last')));
+    expect(rows.map((row) => row.google_event_id.split('|')[0])).toEqual(['first']);
+  });
+});
+
+describe('expandFeed: one bad part is not the feed', () => {
+  it('skips an event whose start is not a date and keeps the rest', () => {
+    const rows = expand(feed(event('DTSTART:2026XX14T140000Z', 'bad'), event('DTSTART:20261014T140000Z', 'ok')));
+    expect(rows.map((row) => row.google_event_id.split('|')[0])).toEqual(['ok']);
+  });
+
+  it('skips a VTIMEZONE with no TZID and still reads the zones that have one', () => {
+    const noId = 'BEGIN:VTIMEZONE\nBEGIN:STANDARD\nTZOFFSETFROM:+0000\nTZOFFSETTO:+0100\nDTSTART:19700101T000000\nEND:STANDARD\nEND:VTIMEZONE';
+    const text = feed(noId, event('DTSTART;TZID=Europe/London:20261019T090000', 'london'));
+    expect(starts(text)).toEqual(['2026-10-19T08:00:00.000Z']);
   });
 });
