@@ -19,6 +19,14 @@ export function offsetMs(timestamp: number, timezone: string): number {
   return asUtc - Math.floor(timestamp / 1000) * 1000;
 }
 
+// The instant the wall clock in `timezone` reads `wall` (the clock's fields taken as a UTC
+// timestamp, e.g. Date.UTC(2026, 2, 8, 9, 0)), correct across daylight saving changes. A time
+// that never happens (the hour skipped in spring) reads as the instant an hour later.
+export function wallClockMs(wall: number, timezone: string): number {
+  const first = wall - offsetMs(wall, timezone);
+  return wall - offsetMs(first, timezone);
+}
+
 // The instant a Household day begins: local midnight of `date` ('YYYY-MM-DD') in `timezone`,
 // correct across daylight saving changes.
 export function dayStartMs(date: string, timezone: string): number {

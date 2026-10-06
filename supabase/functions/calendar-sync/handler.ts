@@ -78,7 +78,8 @@ type GoogleEvent = {
   end?: { date?: string; dateTime?: string };
 };
 
-type EventRow = {
+// Also the shape of a row expanded from an iPhone calendar's feed (_shared/ics-expand.ts).
+export type EventRow = {
   google_event_id: string;
   title: string;
   description: string | null;
