@@ -55,9 +55,29 @@ describe('DayChips', () => {
     expect(later).not.toContain('today');
   });
 
-  it('shares the row between the seven, each 64 tall with a 14 px radius and the Selected look from aria-pressed', () => {
-    const first = classesOf(buttons(chips('2026-10-01'))[0]!.tag);
-    expect(first).toEqual(expect.arrayContaining(['h-16', 'flex-1', 'rounded-[14px]', 'selected:bg-accent', 'selected:ring-2']));
+  it('shares the row between the seven, each at least 48 wide and 64 tall with a 14 px radius, and the targets touch', () => {
+    const html = chips('2026-10-01');
+    const first = classesOf(buttons(html)[0]!.tag);
+    expect(first).toEqual(expect.arrayContaining(['h-16', 'min-w-12', 'flex-1', 'rounded-[14px]']));
+    const row = classesOf(html.slice(0, html.indexOf('>') + 1));
+    expect(row).toContain('gap-0');
+    expect(row.some((name) => /^gap-[1-9]/.test(name))).toBe(false);
+  });
+
+  it('bleeds over the padding of its card and scrolls sideways when the seven do not fit', () => {
+    const row = classesOf(chips('2026-10-01').slice(0, chips('2026-10-01').indexOf('>') + 1));
+    expect(row).toEqual(expect.arrayContaining(['-mx-3', 'overflow-x-auto', '[scrollbar-width:none]']));
+  });
+
+  it('draws the Selected look 2 px inside the button, on an inner span, and not on the button itself', () => {
+    const html = chips('2026-10-02');
+    const button = classesOf(buttons(html)[0]!.tag);
+    expect(button).toContain('p-0.5');
+    expect(button).not.toContain('selected:bg-accent');
+    expect(button).not.toContain('selected:ring-2');
+    expect(html).toContain('group-aria-pressed:bg-accent');
+    expect(html).toContain('group-aria-pressed:ring-2');
+    expect(html).toContain('group-aria-pressed:ring-foreground');
   });
 });
 

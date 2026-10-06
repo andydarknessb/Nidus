@@ -24,10 +24,14 @@ function dayChipName(date: string, today: string): string {
 // date in a 34 px --primary disc, which says `aria-current="date"`. The picked one is pressed (`aria-pressed`) and takes the
 // Selected look. `dates` are Household dates ('YYYY-MM-DD'), seven for a week, in the order drawn; `today` is the Household's
 // today, which only says which chip is today's, so a week that does not hold it has none. `label` names the group ("Days of this
-// week"). Seven chips at 390 px are 44 wide and 8 closer than a button: the spec's drawing, and the 64 height keeps the target tall.
+// week").
+//
+// The targets are at least 48 wide and touch, as the Day view's blocks do: the Selected fill and ring are drawn 2 px inside each
+// button (its inner span), so two chips never read as one. The row bleeds over the 12 px padding of the card it sits in (-mx-3), so
+// at 390 px a chip is about 51 wide. A row narrower than seven chips (7 x 48 = 336) scrolls sideways, as the phone's rows do.
 export function DayChips({ label, dates, today, picked, onPick }: { label: string; dates: readonly string[]; today: string; picked: string; onPick: (date: string) => void }) {
   return (
-    <div role="group" aria-label={label} className="flex gap-1">
+    <SideScroll label={label} gap="gap-0" className="-mx-3">
       {dates.map((date) => {
         const isToday = date === today;
         return (
@@ -39,24 +43,28 @@ export function DayChips({ label, dates, today, picked, onPick }: { label: strin
             aria-pressed={date === picked}
             aria-current={isToday ? 'date' : undefined}
             onClick={() => onPick(date)}
-            className="h-16 min-w-0 flex-1 flex-col gap-0.5 rounded-[14px] px-0"
+            className="group h-16 min-w-12 flex-1 rounded-[14px] p-0.5 selected:bg-transparent selected:ring-0 active:bg-transparent"
           >
-            <span aria-hidden className={cn('text-[13px] leading-4', isToday ? 'font-semibold text-foreground' : 'font-medium')}>
-              {isToday ? 'Today' : weekdayOf(date).short}
+            <span
+              className="flex size-full flex-col items-center justify-center gap-0.5 rounded-xl group-aria-pressed:bg-accent group-aria-pressed:font-semibold group-aria-pressed:ring-2 group-aria-pressed:ring-foreground group-aria-pressed:ring-inset"
+            >
+              <span aria-hidden className={cn('text-[13px] leading-4', isToday ? 'font-semibold text-foreground' : 'font-medium')}>
+                {isToday ? 'Today' : weekdayOf(date).short}
+              </span>
+              {isToday ? (
+                <span aria-hidden className="grid size-[34px] place-items-center rounded-full bg-primary font-display text-xl leading-none text-primary-foreground">
+                  {dayOfMonth(date)}
+                </span>
+              ) : (
+                <span aria-hidden className="flex h-[34px] items-center font-display text-[22px] leading-none text-foreground">
+                  {dayOfMonth(date)}
+                </span>
+              )}
             </span>
-            {isToday ? (
-              <span aria-hidden className="grid size-[34px] place-items-center rounded-full bg-primary font-display text-xl leading-none text-primary-foreground">
-                {dayOfMonth(date)}
-              </span>
-            ) : (
-              <span aria-hidden className="flex h-[34px] items-center font-display text-[22px] leading-none text-foreground">
-                {dayOfMonth(date)}
-              </span>
-            )}
           </Button>
         );
       })}
-    </div>
+    </SideScroll>
   );
 }
 
@@ -121,10 +129,11 @@ export function Pager({
 
 // The people, the days or the lists in one line that the finger moves: no scroll bar and no "More" button, because the item cut at
 // the edge is the sign. Its items keep their natural width (they do not shrink), each a real button reached by Tab, and the
-// browser brings a focused one into view. There is no swipe handler: the browser's own scrolling is the gesture. Named by `label`.
-export function SideScroll({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+// browser brings a focused one into view. There is no swipe handler: the browser's own scrolling is the gesture. Named by `label`. `gap` is the space
+// between the items, 8 px unless a row says otherwise (the day chips touch).
+export function SideScroll({ label, children, className, gap = 'gap-2' }: { label: string; children: ReactNode; className?: string; gap?: string }) {
   return (
-    <div role="group" aria-label={label} className={cn('flex gap-2 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0', className)}>
+    <div role="group" aria-label={label} className={cn('flex', gap, 'overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0', className)}>
       {children}
     </div>
   );
