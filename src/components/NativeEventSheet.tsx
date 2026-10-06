@@ -31,7 +31,7 @@ import { useFailureWords } from '../lib/use-failure-words';
 import { useOverflow } from '../lib/use-overflow';
 import { InBody } from './InBody';
 import { HouseDisc, PersonDisc } from './people';
-import { SheetBody } from './Sheet';
+import { PHONE_FRAME, PHONE_SCRIM, SheetBody, SheetHandle } from './Sheet';
 import { Button } from './ui/button';
 
 // A field's caption, above it.
@@ -249,7 +249,7 @@ function EventSheetForm({
 
   return (
     <div
-      className="fixed inset-0 z-20 flex items-center justify-center bg-scrim p-3 min-[960px]:p-4"
+      className={`fixed inset-0 z-20 flex items-center justify-center bg-scrim p-3 min-[960px]:p-4 ${PHONE_SCRIM}`}
       // A press on the scrim must not take the focus off what had it. A sheet that stays open (something was typed) would
       // otherwise have its focus on the page behind it, and Escape, which the sheet hears, would never reach it.
       onMouseDown={(event) => {
@@ -268,8 +268,9 @@ function EventSheetForm({
         noValidate
         onSubmit={submit}
         onKeyDown={(event) => dialogKeys(event, onClose)}
-        className="flex max-h-full min-h-0 w-full max-w-[940px] flex-col gap-[18px] rounded-[28px] bg-card p-4 outline-none min-[960px]:min-h-[min(580px,100%)] min-[960px]:p-6"
+        className={`flex max-h-full min-h-0 w-full max-w-[940px] flex-col gap-[18px] rounded-[28px] bg-card p-4 outline-none min-[960px]:min-h-[min(580px,100%)] min-[960px]:p-6 ${PHONE_FRAME}`}
       >
+        <SheetHandle />
         <div className="flex h-12 flex-none items-center justify-between">
           <h2 id="native-event-title" className="font-display text-[30px] leading-9">
             {title}

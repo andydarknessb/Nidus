@@ -20,6 +20,7 @@ import {
   loadSyncFreshness,
   removeCalendarAccount,
   staleSyncBadge,
+  staleSyncShort,
   updateMirroredCalendar,
   type MirroredCalendar,
 } from '../src/lib/calendar-accounts';
@@ -596,6 +597,16 @@ describe('how fresh the mirror is', () => {
   it('counts an account that has never synced from when it was connected', () => {
     expect(staleSyncBadge([{ last_synced_at: null, created_at: ago(10 * MINUTE) }], NOW)).toBeNull();
     expect(staleSyncBadge([{ last_synced_at: null, created_at: ago(2 * HOUR) }], NOW)).toBe('Not synced yet');
+  });
+
+  it('says the same in a few characters for the phone: hours, days, or "Not synced"', () => {
+    const stale = (hours: number) => [{ last_synced_at: ago(hours * HOUR + 10 * MINUTE), created_at: ago(30 * 24 * HOUR) }];
+    expect(staleSyncShort([], NOW)).toBeNull();
+    expect(staleSyncShort([{ last_synced_at: ago(5 * MINUTE), created_at: ago(30 * 24 * HOUR) }], NOW)).toBeNull();
+    expect(staleSyncShort(stale(1), NOW)).toBe('1 h');
+    expect(staleSyncShort(stale(3), NOW)).toBe('3 h');
+    expect(staleSyncShort(stale(26), NOW)).toBe('1 d');
+    expect(staleSyncShort([{ last_synced_at: null, created_at: ago(2 * HOUR) }], NOW)).toBe('Not synced');
   });
 
   it('is readable by a Device, only for its own Household', async () => {

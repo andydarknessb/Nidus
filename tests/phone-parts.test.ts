@@ -73,6 +73,8 @@ describe('DayChips', () => {
     const html = chips('2026-10-02');
     const button = classesOf(buttons(html)[0]!.tag);
     expect(button).toContain('p-0.5');
+    // The focus ring is drawn inside the button, so the row that scrolls does not clip it.
+    expect(button).toContain('focus-visible:-outline-offset-2');
     expect(button).not.toContain('selected:bg-accent');
     expect(button).not.toContain('selected:ring-2');
     expect(html).toContain('group-aria-pressed:bg-accent');
@@ -101,10 +103,21 @@ describe('Segmented', () => {
     ]);
   });
 
-  it('is a 52 tall muted track of buttons 44 tall', () => {
+  it('is a 52 tall muted track, 2 px of padding round buttons 48 tall that touch', () => {
     const html = control('day');
-    expect(classesOf(html.slice(0, html.indexOf('>') + 1))).toEqual(expect.arrayContaining(['h-13', 'bg-muted']));
-    expect(classesOf(buttons(html)[0]!.tag)).toContain('h-11');
+    const track = classesOf(html.slice(0, html.indexOf('>') + 1));
+    expect(track).toEqual(expect.arrayContaining(['h-13', 'bg-muted', 'p-0.5']));
+    expect(track.some((name) => /^gap-/.test(name))).toBe(false);
+    expect(classesOf(buttons(html)[0]!.tag)).toEqual(expect.arrayContaining(['h-12', 'flex-1', 'p-0.5', 'focus-visible:-outline-offset-2']));
+  });
+
+  it('draws the choice in the Selected look 2 px inside its button, not on the button', () => {
+    const html = control('week');
+    const button = classesOf(buttons(html)[1]!.tag);
+    expect(button).not.toContain('selected:bg-accent');
+    expect(button).not.toContain('selected:ring-2');
+    expect(html).toContain('group-aria-pressed:bg-accent');
+    expect(html).toContain('group-aria-pressed:ring-2');
   });
 });
 
@@ -144,6 +157,8 @@ describe('SideScroll', () => {
     expect(row).toContain('aria-label="People"');
     expect(rowClasses).toEqual(expect.arrayContaining(['flex', 'overflow-x-auto', '[scrollbar-width:none]', '[&::-webkit-scrollbar]:hidden']));
     expect(rowClasses).not.toContain('flex-wrap');
+    // Room above and below, so an item's focus ring is not cut by the scroller.
+    expect(rowClasses).toContain('py-1');
   });
 
   it('keeps each item at its natural width and leaves them real buttons', () => {
