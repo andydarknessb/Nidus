@@ -315,8 +315,8 @@ const budget = (remaining = MAX_STEPS_PER_RUN): StepBudget => ({ remaining, spen
 const read = (text: string, run: StepBudget = budget()) => expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
 const ids = (rows: { google_event_id: string }[]) => rows.map((row) => row.google_event_id.split('|')[0]!);
 // A daily rule from the year 1700 reaches the window only after 119,000 steps: more than any cap.
-// A series with two rules is not skipped forward (see fastForwarded), so it is walked from DTSTART.
-const runaway = (uid: string, year = 1700) => event(`DTSTART:${year}0101T000000\nRRULE:FREQ=DAILY\nRRULE:FREQ=DAILY;INTERVAL=7`, uid);
+// A rule with a COUNT is not skipped forward (see fastForwarded), so it is walked from DTSTART.
+const runaway = (uid: string, year = 1700) => event(`DTSTART:${year}0101T000000\nRRULE:FREQ=DAILY;COUNT=400000`, uid);
 const dentist = event('DTSTART:20261014T140000Z', 'dentist', 'Dentist');
 
 describe('expandFeed: work', () => {
@@ -473,8 +473,8 @@ describe('expandFeed: the time limit of a run', () => {
 
   it('counts the time of every feed of the run: what the first spent, the second does not have', () => {
     const run = ticking();
-    // Daily since mid-2025, with two rules so that it is walked from DTSTART: about 640 steps to the end of the window.
-    const twoRules = (uid: string) => event('DTSTART:20250601T140000Z\nRRULE:FREQ=DAILY\nRRULE:FREQ=DAILY;INTERVAL=7', uid);
+    // Daily since mid-2025, with a COUNT so that it is walked from DTSTART: about 640 steps to the end of the window.
+    const twoRules = (uid: string) => event('DTSTART:20250601T140000Z\nRRULE:FREQ=DAILY;COUNT=700', uid);
     read(feed(twoRules('first')), run);
     expect(run.spentMs).toBeGreaterThan(600);
     expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
@@ -529,7 +529,85 @@ describe('expandFeed: rules the iPhone cannot make', () => {
     'FREQ=DAILY;BYDAY=1MO',
     'FREQ=DAILY;BYDAY=-1FR',
     'FREQ=DAILY;BYDAY=MO,2TU',
+    // Only the repeats Apple Calendar writes are walked: anything else is not, whatever it is made of.
+    'FREQ=YEARLY;BYMONTH=10;BYMONTHDAY=14',
+    'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30',
+    'FREQ=YEARLY;BYDAY=2WE',
+    'FREQ=YEARLY;BYMONTH=10;BYDAY=2WE,3TH',
+    'FREQ=YEARLY;BYMONTH=10;BYDAY=MO,TU',
+    'FREQ=YEARLY;BYMONTH=10;BYDAY=MO,TU;BYSETPOS=1,2',
+    'FREQ=YEARLY;BYMONTH=10;BYSETPOS=1',
+    'FREQ=MONTHLY;BYMONTHDAY=-2',
+    'FREQ=MONTHLY;BYMONTHDAY=0,5',
+    'FREQ=MONTHLY;BYDAY=MO',
+    'FREQ=MONTHLY;BYDAY=-2MO',
+    'FREQ=MONTHLY;BYDAY=2TU,3TU',
+    'FREQ=MONTHLY;BYDAY=2TU;BYMONTHDAY=3',
+    'FREQ=MONTHLY;BYDAY=MO,TU;BYSETPOS=1,2',
+    'FREQ=MONTHLY;BYDAY=MO,TU;BYSETPOS=-2',
+    'FREQ=MONTHLY;BYDAY=2MO,TU;BYSETPOS=1',
+    'FREQ=MONTHLY;BYMONTHDAY=31;BYSETPOS=1',
+    'FREQ=WEEKLY;BYDAY=2MO',
+    'FREQ=WEEKLY;BYDAY=MO;BYSETPOS=1',
+    'FREQ=WEEKLY;BYMONTHDAY=13',
+    // A "fifth" every few months or years can be one that never comes (the fifth Monday of a 28-day
+    // February every four years): ical.js searched for seconds inside one step.
+    'FREQ=MONTHLY;INTERVAL=48;BYDAY=5MO',
+    'FREQ=MONTHLY;INTERVAL=96;BYDAY=MO;BYSETPOS=5',
+    'FREQ=YEARLY;INTERVAL=2;BYMONTH=2;BYDAY=5MO',
+    'FREQ=YEARLY;INTERVAL=998;BYMONTH=2;BYDAY=5TH',
   ];
+
+  it('walks nothing of an event with two rules, and says so', () => {
+    const run = budget();
+    const { rows, truncated } = read(feed(event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY\nRRULE:FREQ=WEEKLY', 'two')), run);
+    expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-14T14:00:00.000Z']);
+    expect(truncated).toBe(true);
+    expect(run.remaining).toBe(MAX_STEPS_PER_RUN);
+  });
+
+  it.each([
+    'FREQ=DAILY',
+    'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR',
+    'FREQ=DAILY;INTERVAL=999;UNTIL=20271231T000000Z',
+    'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;WKST=SU',
+    'FREQ=MONTHLY;BYMONTHDAY=1,15',
+    'FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=40',
+    'FREQ=MONTHLY;BYDAY=-1FR',
+    'FREQ=MONTHLY;BYDAY=5MO',
+    'FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1',
+    'FREQ=YEARLY',
+    'FREQ=YEARLY;BYMONTH=5,6',
+    'FREQ=YEARLY;BYMONTH=5;BYDAY=2SU',
+    'FREQ=YEARLY;BYMONTH=10;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1',
+    'FREQ=YEARLY;BYMONTH=2;BYDAY=5MO',
+    'FREQ=YEARLY;INTERVAL=999',
+  ])('walks the iPhone’s %s, and says nothing was cut', (rule) => {
+    const run = budget();
+    const { rows, truncated } = read(feed(event(`DTSTART:20150105T090000Z
+RRULE:${rule}`, 'ok')), run);
+    expect(rows, rule).toBeInstanceOf(Array);
+    expect(truncated, rule).toBe(false);
+    expect(run.remaining, rule).toBeLessThan(MAX_STEPS_PER_RUN);
+  }, 5000);
+
+  it('walks a monthly BYSETPOS rule only when DTSTART is at most 240 of its steps before the window', () => {
+    const rule = (start: string, interval: number) => feed(event(`DTSTART:${start}T090000Z
+RRULE:FREQ=MONTHLY;INTERVAL=${interval};BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1`, 'last'));
+    // 2007-01 to 2026-09 is 236 months; 2006-01 is 248.
+    expect(read(rule('20070115', 1), budget()).truncated).toBe(false);
+    expect(read(rule('20060115', 1), budget()).truncated).toBe(true);
+    expect(read(rule('20060115', 2), budget()).truncated).toBe(false);
+    const run = budget();
+    expect(read(rule('19700115', 1), run).truncated).toBe(true);
+    expect(run.remaining).toBe(MAX_STEPS_PER_RUN);
+  });
+
+  it('does not start a series the run has no steps or time left for, even before its first step', () => {
+    const weekly = feed(event('DTSTART:20261014T140000Z\nRRULE:FREQ=WEEKLY', 'w'));
+    expect(() => read(weekly, budget(0))).toThrow(FeedTooLargeError);
+    expect(() => read(weekly, { ...budget(), spentMs: MAX_EXPANSION_MS })).toThrow(FeedTooLargeError);
+  });
 
   it.each(hostile)('does not expand %s: only its DTSTART, said so, and at once', (rule) => {
     const run = budget();
@@ -577,7 +655,6 @@ RRULE:${rule}`, 'weekdays')), run);
     'FREQ=MONTHLY;BYDAY=2TU',
     'FREQ=MONTHLY;BYMONTHDAY=-1',
     'FREQ=MONTHLY;BYSETPOS=-1;BYDAY=MO,TU,WE,TH,FR',
-    'FREQ=YEARLY;BYMONTH=10;BYMONTHDAY=14',
     'FREQ=YEARLY;BYMONTH=10;BYDAY=2WE',
     'FREQ=DAILY;INTERVAL=2',
     'FREQ=WEEKLY;INTERVAL=999;BYDAY=MO',

@@ -357,8 +357,8 @@ describe('when the feed says no', () => {
 
 describe('a run with more feed than it can read', () => {
   // A daily rule from the year 1700 reaches the window only after 119,000 steps: more than any cap.
-  // A series with two rules is not skipped forward (see fastForwarded), so it is walked from DTSTART.
-  const runaway = (uid: string, year = 1700) => vevent(uid, 'Runaway', `DTSTART:${year}0101T000000\nRRULE:FREQ=DAILY\nRRULE:FREQ=DAILY;INTERVAL=7`);
+  // A rule with a COUNT is not skipped forward (see fastForwarded), so it is walked from DTSTART.
+  const runaway = (uid: string, year = 1700) => vevent(uid, 'Runaway', `DTSTART:${year}0101T000000\nRRULE:FREQ=DAILY;COUNT=400000`);
   // Four rules are more than a feed's steps (60,000 at 30,000 each), and fit the run only once.
   const heavy = (...extra: string[]) => feedOf(...extra, runaway('a'), runaway('b', 1701), runaway('c', 1702), runaway('d', 1703));
   const MINUTE = 60_000;
@@ -412,34 +412,67 @@ describe('a run with more feed than it can read', () => {
     expect(JSON.parse(read[0]!.token!)).toEqual({ etag: '"v2"', lastModified: null, truncated: true });
   }, 60_000);
 
-  it('goes to the feeds the run had no steps for first next time, and the one that used them goes last', async () => {
+  it('goes to the feeds the run had no steps for first next time, one at a time, and the one that had the whole run goes last', async () => {
     const account = await arrange();
     const { feeds, calendars } = await arrangeFeeds(account, 3, heavy());
     const [p, q, r] = calendars as [(typeof calendars)[number], (typeof calendars)[number], (typeof calendars)[number]];
     const world = fakeWorld(feeds);
     const at = (run: number) => ({ ...deps(account, world), now: () => NOW + run * 5 * MINUTE });
 
-    // Run 0: none has been tried, so by id. P takes the run's steps; Q takes what is left and is not
-    // stored, so it has been tried; R found nothing left, was not really tried, and is as new as it was.
+    // Run 0: none has been tried, so by id. P takes the run's steps, and has been tried. Q takes what is
+    // left and is not stored, but it never had a whole run, so it was not really tried; R found nothing
+    // left. Both are as new as they were.
     await syncOk(at(0));
     expect((await accountOf(p.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
     for (const c of [q, r]) expect((await accountOf(c.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
     expect(await attemptedOf(p.accountId)).toBe(NOW);
-    expect(await attemptedOf(q.accountId)).toBe(NOW);
+    expect(await attemptedOf(q.accountId)).toBeNull();
     expect(await attemptedOf(r.accountId)).toBeNull();
     // Nothing was read of Q or R: their last_synced_at is not moved.
     for (const c of [q, r]) expect((await accountOf(c.accountId)).last_synced_at).toBeNull();
 
-    // Run 1: R, never tried, goes first.
+    // Run 1: Q, never tried and first by id, has the whole run. P is behind it.
     await syncOk(at(1));
-    expect((await accountOf(r.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
-    expect((await accountOf(p.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
-    expect(await attemptedOf(r.accountId)).toBe(NOW + 5 * MINUTE);
-    expect(await attemptedOf(q.accountId)).toBe(NOW);
-
-    // Run 2: Q, tried longest ago, goes first. P, the first of the two tried last, is last.
-    await syncOk(at(2));
     expect((await accountOf(q.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    // P was read before and keeps its note; R was never read and says it was not.
+    expect((await accountOf(p.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect((await accountOf(r.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(await attemptedOf(q.accountId)).toBe(NOW + 5 * MINUTE);
+    expect(await attemptedOf(p.accountId)).toBe(NOW);
+
+    // Run 2: R, never tried, goes first.
+    await syncOk(at(2));
+    expect((await accountOf(r.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect(await attemptedOf(r.accountId)).toBe(NOW + 10 * MINUTE);
+
+    // Run 3: P, tried longest ago, goes first.
+    await syncOk(at(3));
+    expect((await accountOf(p.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+  }, 120_000);
+
+  it('does not send a feed to the back for failing to fit what an earlier feed left: it keeps its place and gets a whole run next time', async () => {
+    const account = await arrange();
+    const { feeds, calendars } = await arrangeFeeds(account, 2, feedOf(dentist));
+    const [a, b] = calendars as [(typeof calendars)[number], (typeof calendars)[number]];
+    // A (the lower id) fits but takes 60,000 of the run's 80,000; B needs 30,000 and finds 20,000.
+    feeds.set(a.link, { text: feedOf(runaway('a1'), runaway('a2', 1701)) });
+    feeds.set(b.link, { text: feedOf(runaway('b1'), dentist) });
+    const world = fakeWorld(feeds);
+    const at = (run: number) => ({ ...deps(account, world), now: () => NOW + run * 5 * MINUTE, clock: () => 0 });
+
+    // Run 0: A is stored, B is not, and B had less than a whole run: it was not really tried.
+    await syncOk(at(0));
+    expect((await accountOf(a.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect((await accountOf(b.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(await attemptedOf(a.accountId)).toBe(NOW);
+    expect(await attemptedOf(b.accountId)).toBeNull();
+    expect(await rowsOf(b.calendarId)).toEqual([]);
+
+    // Run 1: B goes first, has the whole run, and stores what its rule reached.
+    await syncOk(at(1));
+    expect((await rowsOf(b.calendarId)).map((row) => row.title)).toContain('Dentist');
+    expect(await accountOf(b.accountId)).toMatchObject({ status: 'active', last_error: FEED_TRUNCATED_MESSAGE });
+    expect(await attemptedOf(b.accountId)).toBe(NOW + 5 * MINUTE);
   }, 120_000);
 
   it('does not start a feed the run has nothing left for, even a plain one: it is not fetched, and keeps its place in line', async () => {
@@ -460,8 +493,12 @@ describe('a run with more feed than it can read', () => {
     expect(await accountOf(last.accountId)).toMatchObject({ status: 'active', last_error: FEED_TOO_LARGE_MESSAGE });
     expect(await attemptedOf(last.accountId)).toBe(NOW - 60_000);
 
-    // The heavy feeds were tried: next time they are behind it, and it is read.
+    // Only the first heavy feed had the whole run, and goes back; the other two keep their places. Each
+    // of the next runs gives one of them a whole run, and the third leaves the run enough for the plain
+    // feed, which is read.
     await syncOk({ ...deps(account, world), now: () => NOW + 5 * MINUTE });
+    expect(await rowsOf(last.calendarId)).toEqual([]);
+    await syncOk({ ...deps(account, world), now: () => NOW + 10 * MINUTE });
     expect((await rowsOf(last.calendarId)).map((row) => row.title)).toEqual(['Dentist']);
     expect(await accountOf(last.accountId)).toMatchObject({ status: 'active', last_error: null });
   }, 60_000);
@@ -480,7 +517,7 @@ describe('a run with more feed than it can read', () => {
     expect((await accountOf(bare.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
   }, 60_000);
 
-  it('rotates a feed whose parse and added dates spend the run’s time, without walking a step, to the back, so the feeds behind it store their repeating series on the next runs', async () => {
+  it('rotates a feed whose parse and added dates spend the run’s time, without walking a step, to the back once it has had the run to itself, so the feeds behind it store their repeating series on the next runs', async () => {
     const account = await arrange();
     // The shape of a feed with a hundred thousand RDATEs, scaled down: its time is spent before and
     // apart from any step, so the run's steps are untouched when it fails.
@@ -511,14 +548,19 @@ RDATE:${dates}`);
       expect(await rowsOf(c.calendarId)).toEqual([]);
     }
 
-    // Run 1: the two never tried go first and store their repeating series; the heavy one is last.
+    // Run 1: the two never tried go first and store their repeating series; the heavy one is last, and
+    // finds the run's steps and time half spent, so it does not count as having been tried.
     await syncOk(at(1));
     for (const c of [p, q]) {
       expect((await rowsOf(c.calendarId)).map((row) => row.title)).toEqual(['Swim', 'Swim', 'Swim']);
       expect(await accountOf(c.accountId)).toMatchObject({ status: 'active', last_error: null });
     }
-    expect(await attemptedOf(heavyOne.accountId)).toBe(NOW + 5 * MINUTE);
+    expect(await attemptedOf(heavyOne.accountId)).toBe(NOW);
     expect(world.calls.map((call) => call.url).slice(-3)).toEqual([p.link, q.link, heavyOne.link]);
+
+    // Run 2: the heavy one goes first, has the run to itself, and fails: now it is last.
+    await syncOk(at(2));
+    expect(await attemptedOf(heavyOne.accountId)).toBe(NOW + 10 * MINUTE);
   }, 120_000);
 
   it('stops reading feeds once the run has spent its 800 ms, as it does when it has no steps left', async () => {

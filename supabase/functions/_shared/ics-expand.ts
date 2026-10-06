@@ -22,7 +22,7 @@ export const MAX_PER_FEED = 20000;
 // what it reached and the feed says so (`truncated`). Past the run's cap or time, the feed is not
 // read at all this run (FeedTooLargeError): storing it would delete the rows it did not reach.
 // ical.js can spend unbounded time inside one step of a rule that rarely or never matches, which
-// no step count sees, so a rule the iPhone cannot make is not walked at all (see `walkable`).
+// no step count sees, so a rule the iPhone does not write is not walked at all (see `walkableRule`).
 const MAX_STEPS_PER_EVENT = 30_000;
 const MAX_STEPS_PER_FEED = 60_000;
 export const MAX_STEPS_PER_RUN = 80_000;
@@ -118,31 +118,76 @@ function excludedStarts(ev: ICAL.Event, timezone: string): Set<number> {
   return out;
 }
 
-const DAILY_WEEKLY_WITHOUT = ['BYMONTH', 'BYMONTHDAY', 'BYYEARDAY', 'BYWEEKNO', 'BYSETPOS', 'BYHOUR', 'BYMINUTE', 'BYSECOND'];
-const MONTHLY_YEARLY_WITHOUT = ['BYHOUR', 'BYMINUTE', 'BYSECOND', 'BYWEEKNO', 'BYYEARDAY'];
-
 // The longest INTERVAL the iPhone offers; ical.js reaches the first occurrence of a daily or weekly
 // rule a day at a time, so INTERVAL=100000000 takes it seconds inside one step.
 const MAX_INTERVAL = 999;
 
-// Whether every rule of the event is one the iPhone can make: daily, weekly, monthly or yearly,
-// and none of the parts that make ical.js search without end for a date that never comes (a
-// daily rule on February 30th) or step a second at a time. Anything else is not expanded.
-function walkable(ev: ICAL.Event): boolean {
-  for (const property of ev.component.getAllProperties('rrule')) {
-    const rule = property.getFirstValue();
-    if (!(rule instanceof ICAL.Recur)) return false;
-    const without = rule.freq === 'DAILY' || rule.freq === 'WEEKLY' ? DAILY_WEEKLY_WITHOUT : rule.freq === 'MONTHLY' || rule.freq === 'YEARLY' ? MONTHLY_YEARLY_WITHOUT : null;
-    if (!without || without.some((part) => part in rule.parts) || rule.interval > MAX_INTERVAL) return false;
-    // A daily rule limited to weekdays, or an ordinal weekday ("the first Monday") on a daily rule,
-    // makes ical.js search a day at a time for a date that may never come: only "every day" and
-    // "every weekday" (bare day names, INTERVAL 1) are walked.
-    if (rule.freq === 'DAILY') {
-      const days = (rule.parts['BYDAY'] ?? []) as unknown[];
-      if (days.length && (rule.interval !== 1 || days.some((day) => !/^[A-Z]{2}$/.test(String(day))))) return false;
+const MAX_SETPOS_STEPS = 240;
+
+const BARE_DAY = /^(SU|MO|TU|WE|TH|FR|SA)$/;
+const ORDINAL_DAY = /^([+-]?\d{1,2})(SU|MO|TU|WE|TH|FR|SA)$/;
+// "The first to the fifth, or the last": the only places the iPhone puts a weekday or a position.
+const ordinal = (n: number) => (n >= 1 && n <= 5) || n === -1;
+
+// Whether a rule is one of the repeats Apple Calendar writes, and no other. A list of what is
+// walked, not of what is not: ical.js can search without end inside one step for a date that never
+// comes (a daily rule on February 30th, a weekday filter on a 7-day interval, a yearly rule on the
+// 31st of April), so any shape not named here is not expanded.
+//   every: FREQ, INTERVAL 1-999, UNTIL, COUNT, WKST, and then by FREQ
+//   DAILY    nothing else, or BYDAY of bare days with INTERVAL 1 (every weekday)
+//   WEEKLY   nothing else, or BYDAY of bare days
+//   MONTHLY  nothing else, or BYMONTHDAY (1-31 or -1), or one BYDAY with an ordinal (2nd Tuesday),
+//            or BYDAY of bare days with one BYSETPOS (last weekday)
+//   YEARLY   nothing else, or BYMONTH (1-12), and with it nothing else, or one BYDAY with an
+//            ordinal, or BYDAY of bare days with one BYSETPOS
+// Two shapes are narrower still, because measured they take seconds (see the tests): a "fifth"
+// (ordinal 5, or BYSETPOS 5) is walked only with INTERVAL 1, since a month or year that never has one
+// (the fifth Monday of a 28-day February, every 4 years) sends ical.js searching inside one step; and a
+// monthly BYSETPOS costs about 0.7 ms a step, so it is walked only when DTSTART is at most
+// MAX_SETPOS_STEPS of its steps before the window (`monthsToWindow`, in months).
+function walkableRule(rule: ICAL.Recur, monthsToWindow: number): boolean {
+  const parts = rule.parts as Record<string, unknown[] | undefined>;
+  const names = Object.keys(parts).sort().join(',');
+  const list = (name: string) => parts[name] ?? [];
+  const days = list('BYDAY').map(String);
+  const bare = days.length > 0 && days.every((day) => BARE_DAY.test(day));
+  const oneOrdinalDay = days.length === 1 && ORDINAL_DAY.test(days[0]!) && ordinal(parseInt(days[0]!, 10));
+  const position = list('BYSETPOS');
+  const onePosition = position.length === 1 && Number.isInteger(position[0]) && ordinal(position[0] as number);
+  const inRange = (name: string, ok: (n: number) => boolean) => list(name).every((n) => Number.isInteger(n) && ok(n as number));
+
+  if (!Number.isInteger(rule.interval) || rule.interval < 1 || rule.interval > MAX_INTERVAL) return false;
+  if (rule.interval !== 1 && (days.some((day) => parseInt(day, 10) === 5) || position.includes(5))) return false;
+  switch (rule.freq) {
+    case 'DAILY':
+      return names === '' || (names === 'BYDAY' && bare && rule.interval === 1);
+    case 'WEEKLY':
+      return names === '' || (names === 'BYDAY' && bare);
+    case 'MONTHLY':
+      return (
+        names === '' ||
+        (names === 'BYMONTHDAY' && inRange('BYMONTHDAY', (n) => (n >= 1 && n <= 31) || n === -1)) ||
+        (names === 'BYDAY' && oneOrdinalDay) ||
+        (names === 'BYDAY,BYSETPOS' && bare && onePosition && Math.ceil(Math.max(0, monthsToWindow) / rule.interval) <= MAX_SETPOS_STEPS)
+      );
+    case 'YEARLY': {
+      if (names === '') return true;
+      if (!inRange('BYMONTH', (n) => n >= 1 && n <= 12)) return false;
+      return names === 'BYMONTH' || (names === 'BYDAY,BYMONTH' && oneOrdinalDay) || (names === 'BYDAY,BYMONTH,BYSETPOS' && bare && onePosition);
     }
+    default:
+      return false;
   }
-  return true;
+}
+
+// Whether the event's one rule is a repeat the iPhone can make (see walkableRule); two rules on one
+// event are not something it writes.
+function walkable(ev: ICAL.Event, start: ICAL.Time, windowStartMs: number): boolean {
+  const rules = ev.component.getAllProperties('rrule');
+  const rule = rules.length === 1 ? rules[0]!.getFirstValue() : null;
+  const window = new Date(windowStartMs);
+  const monthsToWindow = window.getUTCFullYear() * 12 + window.getUTCMonth() - (start.year * 12 + start.month - 1);
+  return rule instanceof ICAL.Recur && walkableRule(rule, monthsToWindow);
 }
 
 // Whether every rule of the event has ended before the window, in any zone: nothing to walk.
@@ -326,7 +371,7 @@ function expand(
           const s: Series = { uid, ev, layout: l, startMs: instantMs(l.start, timezone), excluded: excludedStarts(ev, timezone) };
           const lengthBound = l.isAllDay ? l.lengthDays * DAY_MS : l.lengthMs;
           const live = ev.component.hasProperty('rrule') && !endedBefore(ev, windowStartMs, lengthBound);
-          const canWalk = live && walkable(ev);
+          const canWalk = live && walkable(ev, l.start, windowStartMs);
           const emit = emitterFor(s);
           // A series that is walked emits its own DTSTART there, where the row cap can stop it.
           if (!canWalk) emit(l.start);
@@ -356,6 +401,9 @@ function expand(
         const emit = emitterFor(s);
         // A rule's first occurrence is DTSTART.
         if (!emit(s.layout.start)) continue;
+        // Before the iterator is made or its first step taken: a series that starts with the run out of
+        // steps or time cannot be read, however long the one before it left the clock.
+        if (run.remaining <= 0 || outOfTime()) throw new FeedTooLargeError();
         const lengthBound = s.layout.isAllDay ? s.layout.lengthDays * DAY_MS : s.layout.lengthMs;
         const steps: { next(): ICAL.Time | null | undefined } =
           (run.noFastForward ? null : fastForwarded(s.ev, s.layout.start, lengthBound, windowStartMs)) ?? s.ev.iterator();

@@ -372,13 +372,18 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
     const window = syncWindow(nowMs);
     let truncated: boolean;
     let rows: EventRow[];
+    // Whether this feed had the whole run to itself: only then does failing to fit say it is too big.
+    const fresh = run.remaining === MAX_STEPS_PER_RUN && !run.spentMs;
     try {
       ({ rows, truncated } = expandFeed(feed.text, timezone, Date.parse(window.timeMin), Date.parse(window.timeMax), run));
     } catch (error) {
       // Not stored: replacing would delete the events the walk never reached. The old events and
       // validator stay, so the feed is read again next run.
       if (error instanceof FeedTooLargeError) {
-        // It started and did not fit: it keeps its new stamp and goes to the back of the line.
+        // It had the whole run and did not fit: it keeps its new stamp and goes to the back of the
+        // line. One that had less than a whole run (feeds before it took the rest) has not shown it is
+        // too big: it gets its old place back, and a whole run next time.
+        if (!fresh) await deps.admin.from('calendar_accounts').update({ last_attempted_at: account.last_attempted_at }).eq('id', account.id);
         return fail(FEED_TOO_LARGE_MESSAGE);
       }
       return fail('Could not read the iPhone calendar (it is not a calendar the Wall can read).');
