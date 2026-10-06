@@ -111,3 +111,22 @@ Settled on 2026-10-06 when the owner approved the phone drawings on the design c
 - **The month and agenda views** dropped from v1 are both now in: Month since v2, and the phone's Home and one-day Week are the agenda.
 - **Sheets rise from the foot** on a phone.
 - **No new data**: no migration.
+
+## v6: inviting another grown-up
+
+Settled on 2026-10-06 when the owner asked for an invite feature so that another adult can add events from their own phone. The spec is [0006](specs/0006-household-invites.md).
+
+### Decisions
+
+- **More than one Household Account**: "one Household Account" under Principals above becomes one or more, all equal. No owner, no roles. Any of them may remove any other, never itself, so a Household always keeps one.
+- **Invited by a link**: a Household Account makes a link in Settings and sends it through the phone's share sheet. It works once, for 7 days; one waits at a time, and a new one replaces it. Nidus sends no email.
+- **One Household per Google account**: joining is refused for a Household Account of another Household. No moving or merging.
+- **The token is a secret**: only its SHA-256 is stored; `/join/*` is served with `Referrer-Policy: no-referrer`.
+- **The Wall does not change**: Devices, Pairing Codes and the tablet screens are untouched.
+
+### Tables
+
+```
+household_invites     household_id (pk), token_hash (unique), created_at, expires_at
+household_accounts    + delete policy: another Household Account of the same Household
+```
