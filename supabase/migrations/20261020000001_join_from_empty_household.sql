@@ -11,7 +11,8 @@
 -- The rest of what hangs off a Household is reached only through those, so it is empty when they are:
 -- Mirrored Calendars and Synced Events through a Calendar Account, Routine Completions through a
 -- Routine, and the Native Event / Profile links through those two. The Household's own settings (name,
--- time zone, Appearance, weather place) do not count and go with it. A Pairing Code and the pairing
+-- time zone, Appearance, weather place) do not count and go with it. The Routine check is defence in
+-- depth: a Routine always has a Profile, so a Household with one is already refused for the Profile. A Pairing Code and the pairing
 -- failure log are keyed to an auth user, not a Household, so they are not the Household's to keep.
 
 create or replace function public.accept_household_invite(p_token text)
@@ -58,11 +59,13 @@ begin
     end if;
 
     -- Another Household. Lock both Households' rows, lowest id first, so two joins that cross
-    -- cannot deadlock. A row lock also holds off anything that would add to the caller's
-    -- Household (every child row's foreign key takes a conflicting share lock), so what is
-    -- counted below stays true until this transaction ends. remove_household_account locks the
-    -- same row.
+    -- cannot deadlock. A row lock holds off anything that would add a row whose foreign key
+    -- points at the locked row (every table with a household_id), so what is counted below stays
+    -- true until this transaction ends. A list item points at its list, not at the Household, so
+    -- the caller's lists are locked too (households first, then lists; nothing locks them the
+    -- other way). remove_household_account locks the same households row.
     perform 1 from public.households as h where h.id in (own_hid, invite_hid) order by h.id for update;
+    perform 1 from public.shared_lists as l where l.household_id = own_hid for update;
 
     select
       exists (select 1 from public.household_accounts as ha where ha.auth_user_id = uid and ha.household_id = own_hid)
