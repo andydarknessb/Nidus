@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { Button } from '../components/ui/button';
 import { WEEKDAYS } from '../lib/routines';
 
@@ -113,19 +113,25 @@ export function Pager({
   nextLabel,
   onPrevious,
   onNext,
+  headingRef,
 }: {
   words: string;
   previousLabel: string;
   nextLabel: string;
   onPrevious: (() => void) | null;
   onNext: (() => void) | null;
+  // For a screen that puts focus on the words after paging, when the button that was pressed has nowhere to go: the heading then takes
+  // focus by script (tabIndex -1), not by Tab.
+  headingRef?: Ref<HTMLHeadingElement>;
 }) {
   return (
     <div className="flex h-12 items-center gap-2">
       <Button aria-label={previousLabel} disabled={!onPrevious} onClick={onPrevious ?? undefined} className="size-12 rounded-full bg-card p-0">
         <ChevronLeft aria-hidden className="size-6" />
       </Button>
-      <h2 className="min-w-0 flex-1 truncate text-center font-display text-[22px] leading-7">{words}</h2>
+      <h2 ref={headingRef} tabIndex={headingRef ? -1 : undefined} className={cn('min-w-0 flex-1 truncate text-center font-display text-[22px] leading-7', headingRef && 'outline-none')}>
+        {words}
+      </h2>
       <Button aria-label={nextLabel} disabled={!onNext} onClick={onNext ?? undefined} className="size-12 rounded-full bg-card p-0">
         <ChevronRight aria-hidden className="size-6" />
       </Button>

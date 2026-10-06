@@ -197,3 +197,19 @@ export async function clearOptimistically(publish: Publish, before: ListItem[], 
     return false;
   }
 }
+
+// The list a phone's Lists screen has open: the one chosen if it is still there, else the Pinned List, else the first. Null with no lists.
+export function pickedList(lists: SharedList[], pinnedId: string | null, choice: string | null): string | null {
+  return lists.find((list) => list.id === choice)?.id ?? pinnedFirst(lists, pinnedId)[0]?.id ?? null;
+}
+
+// What a list's chip is called on the phone, as a screen reader hears it: "Groceries, 4 to get". Until the list's items are read it is the name alone.
+export function listChipName(name: string, left: number | null): string {
+  return left === null ? name : `${name}, ${left} to get`;
+}
+
+// How many are left to get on a list, for its chip and the card's count: null while that is not known, which is until its items are read
+// and whenever the last read or write failed (a list that could not be read holds nothing the chip may call "0 to get").
+export function leftToGet(loaded: boolean, problem: string, items: ListItem[]): number | null {
+  return loaded && !problem ? withoutCrossed(items).length : null;
+}

@@ -8,9 +8,9 @@ import type { HouseholdView } from './lib/household';
 import type { Profile } from './lib/profiles';
 import type { RoutinesToday } from './lib/use-routines-today';
 import type { Forecast } from './lib/weather';
-import { MealsScreen } from './MealsPage';
+import { PhoneLists } from './phone/PhoneLists';
+import { PhoneMeals } from './phone/PhoneMeals';
 import { RoutinesChart } from './RoutinesPage';
-import { ListsScreen } from './SharedListsPage';
 
 // The screen in the phone's column, chosen by the route (docs/specs/0004-the-wall-on-a-phone.md). HomeShell reads everything once and
 // hands it down, so a phone screen reads nothing of its own that the tablet's does not: no reader, query or subscription is added here.
@@ -47,8 +47,8 @@ export function PhoneWall(props: PhoneScreenProps) {
     case 'week': return <TabletCalendar {...props} route={route} />;
     case 'month': return <TabletCalendar {...props} route={route} />;
     case 'routines': return <TabletRoutines {...props} />;
-    case 'meals': return <TabletMeals {...props} route={route} />;
-    case 'lists': return <TabletLists />;
+    case 'meals': return <PhoneMeals {...props} route={route} />;
+    case 'lists': return <PhoneLists />;
   }
 }
 
@@ -111,24 +111,6 @@ function TabletRoutines({ timezone, view, routines }: PhoneScreenProps) {
           )}
         </section>
       )}
-    </Boxed>
-  );
-}
-
-// Meals: the tablet's week by slot.
-function TabletMeals({ route, timezone, view, openMeals }: PhoneScreenProps & { route: Extract<WallRoute, { view: 'meals' }> }) {
-  return (
-    <Boxed>
-      {timezone ? <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} /> : <BeforeHousehold label="Meals" failed={view.failed} words="Could not load meals. Check your connection." />}
-    </Boxed>
-  );
-}
-
-// Lists: the tablet's screen, which reads no date and so needs no Household Timezone to open.
-function TabletLists() {
-  return (
-    <Boxed>
-      <ListsScreen />
     </Boxed>
   );
 }
