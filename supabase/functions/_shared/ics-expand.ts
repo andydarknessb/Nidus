@@ -16,8 +16,9 @@ export const MAX_PER_FEED = 20000;
 // forever, and the hosted function has a 2 s CPU limit for the run (the run's caps leave a margin
 // under it). The caps only ever limit repeating series: a single event, an RDATE or a moved
 // occurrence is always read, costs no steps, and is kept whatever any budget says.
-// ponytail: no fast-forward in ical.js's iterator; series are walked newest start first, so the
-// ancient expensive rules are the ones a cap cuts. A series cut by the event's or feed's cap keeps
+// ponytail: ical.js's iterator cannot jump to the window, so a daily or weekly series is moved
+// forward by whole periods first (`fastForwarded`) and the rest is walked a step at a time, newest
+// start first, so the ancient expensive rules are the ones a cap cuts. A series cut by the event's or feed's cap keeps
 // what it reached and the feed says so (`truncated`). Past the run's cap or time, the feed is not
 // read at all this run (FeedTooLargeError): storing it would delete the rows it did not reach.
 // ical.js can spend unbounded time inside one step of a rule that rarely or never matches, which
@@ -133,6 +134,13 @@ function walkable(ev: ICAL.Event): boolean {
     if (!(rule instanceof ICAL.Recur)) return false;
     const without = rule.freq === 'DAILY' || rule.freq === 'WEEKLY' ? DAILY_WEEKLY_WITHOUT : rule.freq === 'MONTHLY' || rule.freq === 'YEARLY' ? MONTHLY_YEARLY_WITHOUT : null;
     if (!without || without.some((part) => part in rule.parts) || rule.interval > MAX_INTERVAL) return false;
+    // A daily rule limited to weekdays, or an ordinal weekday ("the first Monday") on a daily rule,
+    // makes ical.js search a day at a time for a date that may never come: only "every day" and
+    // "every weekday" (bare day names, INTERVAL 1) are walked.
+    if (rule.freq === 'DAILY') {
+      const days = (rule.parts['BYDAY'] ?? []) as unknown[];
+      if (days.length && (rule.interval !== 1 || days.some((day) => !/^[A-Z]{2}$/.test(String(day))))) return false;
+    }
   }
   return true;
 }
@@ -179,13 +187,17 @@ function fastForwarded(ev: ICAL.Event, start: ICAL.Time, lengthBound: number, wi
   return rule.iterator(moved);
 }
 
-// The starts an event's RDATEs name (a period names its start).
-function rdateStarts(ev: ICAL.Event): ICAL.Time[] {
-  const out: ICAL.Time[] = [];
+// The starts an event's RDATEs name (a period names its start): the first MAX_PER_EVENT of them, and
+// whether there were more (the rest are ignored).
+function rdateStarts(ev: ICAL.Event): { starts: ICAL.Time[]; cut: boolean } {
+  const starts: ICAL.Time[] = [];
   for (const property of ev.component.getAllProperties('rdate')) {
-    for (const value of property.getValues()) out.push(value instanceof ICAL.Period ? value.start : (value as ICAL.Time));
+    for (const value of property.getValues()) {
+      if (starts.length >= MAX_PER_EVENT) return { starts, cut: true };
+      starts.push(value instanceof ICAL.Period ? value.start : (value as ICAL.Time));
+    }
   }
-  return out;
+  return { starts, cut: false };
 }
 
 // Every non-cancelled occurrence of the feed that overlaps [windowStartMs, windowEndMs), as rows
@@ -320,7 +332,9 @@ function expand(
           if (!canWalk) emit(l.start);
           // A rule that could have had occurrences in the window and is not read: the feed says so.
           if (live && !canWalk && s.startMs < windowEndMs) truncated = true;
-          for (const at of rdateStarts(ev)) emit(at);
+          const rdates = rdateStarts(ev);
+          if (rdates.cut) truncated = true;
+          for (const at of rdates.starts) emit(at);
           if (canWalk) repeating.push(s);
         } catch {
           // A rule that cannot be fulfilled, or a time ical.js cannot read: this event only.

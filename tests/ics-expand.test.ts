@@ -522,6 +522,13 @@ describe('expandFeed: rules the iPhone cannot make', () => {
     'FREQ=YEARLY;BYYEARDAY=60',
     'FREQ=DAILY;INTERVAL=100000000',
     'FREQ=WEEKLY;INTERVAL=1000000;BYDAY=MO',
+    // Daily rules that hang ical.js inside one step: a weekday filter on a 7-day interval never
+    // matches, and an ordinal weekday is not something a daily rule can mean.
+    'FREQ=DAILY;INTERVAL=7;BYDAY=WE',
+    'FREQ=DAILY;INTERVAL=2;BYDAY=MO,TU,WE,TH,FR',
+    'FREQ=DAILY;BYDAY=1MO',
+    'FREQ=DAILY;BYDAY=-1FR',
+    'FREQ=DAILY;BYDAY=MO,2TU',
   ];
 
   it.each(hostile)('does not expand %s: only its DTSTART, said so, and at once', (rule) => {
@@ -532,7 +539,7 @@ describe('expandFeed: rules the iPhone cannot make', () => {
     expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-14T14:00:00.000Z']);
     expect(truncated).toBe(true);
     expect(run.remaining).toBe(MAX_STEPS_PER_RUN);
-  });
+  }, 5000);
 
   it('finishes the whole hostile list, started long ago, in well under a second', () => {
     const began = Date.now();
@@ -540,7 +547,18 @@ describe('expandFeed: rules the iPhone cannot make', () => {
     expect(Date.now() - began).toBeLessThan(1000);
     expect(rows).toEqual([]);
     expect(truncated).toBe(true);
-  });
+  }, 5000);
+
+  it('still walks the iPhone’s every weekday, daily or weekly, started long ago, and says nothing was cut', () => {
+    for (const rule of ['FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR']) {
+      const run = budget();
+      const { rows, truncated } = read(feed(event(`DTSTART:20150105T090000Z
+RRULE:${rule}`, 'weekdays')), run);
+      expect(rows.length, rule).toBeGreaterThan(100);
+      expect(truncated, rule).toBe(false);
+      expect(MAX_STEPS_PER_RUN - run.remaining, rule).toBeLessThan(500);
+    }
+  }, 5000);
 
   it('does not say anything was cut by a rule that starts after the window', () => {
     expect(read(feed(event('DTSTART:20270601T140000Z\nRRULE:FREQ=SECONDLY', 'later'))).truncated).toBe(false);
@@ -584,6 +602,21 @@ describe('expandFeed: rules the iPhone cannot make', () => {
     const ended = event('DTSTART:20100101T090000Z\nRRULE:FREQ=DAILY;UNTIL=20100201T000000Z\nRDATE:20261010T150000Z', 'ended');
     const rows = read(feed(straddles, ended)).rows;
     expect(rows.map((row) => row.google_event_id)).toEqual(['straddles|2026-08-31T23:00:00.000Z', 'ended|2026-10-10T15:00:00.000Z']);
+  });
+});
+
+describe('expandFeed: added dates', () => {
+  it('reads the first 1,000 RDATEs of an event and ignores the rest, saying so', () => {
+    const at = (index: number) => new Date(Date.UTC(2026, 8, 1) + (index + 1) * 3_600_000).toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+    const dates = (count: number) => Array.from({ length: count }, (_, index) => at(index)).join(',');
+    const many = read(feed(event(`DTSTART:20260101T000000Z
+RDATE:${dates(1500)}`, 'many')));
+    expect(many.rows.filter((row) => row.google_event_id.startsWith('many|'))).toHaveLength(1000);
+    expect(many.truncated).toBe(true);
+    const exact = read(feed(event(`DTSTART:20260101T000000Z
+RDATE:${dates(1000)}`, 'exact')));
+    expect(exact.rows).toHaveLength(1000);
+    expect(exact.truncated).toBe(false);
   });
 });
 
