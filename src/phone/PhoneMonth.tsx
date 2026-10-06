@@ -21,9 +21,9 @@ import type { Profile } from '../lib/profiles';
 import { WEEKDAYS } from '../lib/routines';
 import { useOccurrences } from '../lib/wall-hooks';
 import { DayEvents } from './DayEvents';
-import { PhoneCard, SideScroll } from './parts';
+import { FACE, PhoneCard, SideScroll, TOUCHING } from './parts';
 
-// The phone's Month (docs/specs/0004-the-wall-on-a-phone.md; docs/look.md, "The phone", A Month cell): the weekday initials, then the
+// The phone's Month (docs/specs/0004-the-wall-on-a-phone.md; docs/look.md, "The phone", A Month cell): the weekdays' three letters (14 px), then the
 // grid of 58 px cells, each a button for one day, then the picked day's heading and events under it. A cell is the date over up to
 // three 7 px dots (who has something that day: monthDots), and says its full date and how many events it has in its name, so the dots
 // are never the only telling. Today has the --primary disc and `aria-current="date"`; the picked day is `aria-pressed` and has the
@@ -90,9 +90,9 @@ export function MonthDay({
       aria-pressed={picked}
       aria-current={day.isToday ? 'date' : undefined}
       onClick={() => onPick(day.date)}
-      className="group h-[58px] min-w-12 rounded-[14px] p-0.5 selected:bg-transparent selected:ring-0 active:bg-transparent focus-visible:-outline-offset-2"
+      className={cn(TOUCHING, 'h-[58px] min-w-12')}
     >
-      <span className="flex size-full flex-col items-center justify-center gap-0.5 rounded-xl group-aria-pressed:bg-accent group-aria-pressed:font-semibold group-aria-pressed:ring-2 group-aria-pressed:ring-foreground group-aria-pressed:ring-inset">
+      <span className={cn(FACE, 'flex-col gap-0.5')}>
         {day.isToday ? (
           <span aria-hidden className="grid size-[30px] place-items-center rounded-full bg-primary font-display text-lg leading-none text-primary-foreground">
             {number}
@@ -236,8 +236,8 @@ export function PhoneMonth({
             {/* Every cell's name says its weekday already, so a screen reader need not hear the row of them first. */}
             <div aria-hidden className="grid grid-cols-7 pb-1">
               {WEEKDAYS.map((weekday) => (
-                <span key={weekday.bit} className="text-center text-[13px] leading-5 font-medium text-muted-foreground">
-                  {weekday.short.slice(0, 1)}
+                <span key={weekday.bit} className="text-center text-sm leading-5 font-medium text-muted-foreground">
+                  {weekday.short}
                 </span>
               ))}
             </div>

@@ -4,8 +4,9 @@ import { BeforeHousehold } from '../components/BeforeHousehold';
 import { EmptyWords } from '../components/EmptyWords';
 import { InBody } from '../components/InBody';
 import { Button } from '../components/ui/button';
-import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay, type WallRoute } from '../lib/calendar-occurrences';
-import { mealGrid, pickedDay, slotRowName, type Meal } from '../lib/meals';
+import { dayStartMs, describeCell, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay, type WallRoute } from '../lib/calendar-occurrences';
+import { mealGrid, mealsPickedDay, slotRowName, type Meal } from '../lib/meals';
+import { pageWords } from '../lib/phone-calendar';
 import { useHouseholdDay } from '../lib/wall-hooks';
 import { dayName, SLOT_PICTURES, sheetFor, useMeals } from '../lib/use-meals';
 import { MealSheet, type Editing } from '../MealsPage';
@@ -15,11 +16,6 @@ import { DayChips, Pager, PhoneCard } from './parts';
 // The phone's Meals tab (spec 0004, "Meals"): the pager by week, then a card with seven day chips, the picked day's heading and its
 // four slots as rows. It reads through the Meals screen's own reader (useMeals) and opens the Meals screen's own sheet (MealSheet), so
 // saving and clearing a Meal are the tablet's, and nothing is read that the tablet does not read.
-
-// A day in full, as the picked day's heading: "Thursday, October 1". Calendar dates carry no zone, so they are formatted in UTC.
-function dayHeading(date: string): string {
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(`${date}T00:00:00Z`));
-}
 
 // One slot of the picked day: a 68 px button (taller only if the Meal's words take a second line). The slot's picture in a 40 px disc,
 // the slot's name over the Meal or "Add a meal" with a plus. A planned Meal is on --everyone, an empty slot on --muted, so neither
@@ -78,7 +74,7 @@ function MealsWeek({ timezone, date, onNavigate }: { timezone: string; date: str
 
   return (
     <div className="flex flex-col gap-3">
-      <Pager words={describePage(days)} previousLabel="Previous week" nextLabel="Next week" onPrevious={previous ? () => open(previous) : null} onNext={next ? () => open(next) : null} headingRef={heading} />
+      <Pager words={pageWords(days, today)} previousLabel="Previous week" nextLabel="Next week" onPrevious={previous ? () => open(previous) : null} onNext={next ? () => open(next) : null} headingRef={heading} />
       {/* Always mounted, so a screen reader announces the words when they appear. */}
       <p role="status" className="text-base text-muted-foreground empty:hidden">
         {previous === null ? 'This is as far back as the meal plan goes.' : next === null ? 'This is as far ahead as the meal plan goes.' : ''}
@@ -90,7 +86,7 @@ function MealsWeek({ timezone, date, onNavigate }: { timezone: string; date: str
 }
 
 // One week's card: the chips, the picked day and its four slots. The picked day is the screen's own state; until a chip is pressed it
-// is today when the week holds it, else the Sunday (pickedDay), and it follows Household midnight.
+// is today when the week holds it, else the Sunday (mealsPickedDay), and it follows Household midnight.
 function MealsDay({ days, today }: { days: WallDay[]; today: string }) {
   const dates = days.map((day) => day.date);
   const [choice, setChoice] = useState<string | null>(null);
@@ -98,14 +94,14 @@ function MealsDay({ days, today }: { days: WallDay[]; today: string }) {
   const [editing, setEditing] = useState<Editing | null>(null);
   const { meals, failed } = useMeals(dates[0]!, dates[6]!, saves);
   const known = meals !== null;
-  const picked = pickedDay(dates, choice, today);
+  const picked = mealsPickedDay(dates, choice, today);
   const day = days[dates.indexOf(picked)]!;
   const rows = mealGrid(meals ?? [], [picked]);
 
   return (
     <PhoneCard label="Meal plan">
       <DayChips label="Days of this week" dates={dates} today={today} picked={picked} onPick={setChoice} />
-      <h3 className="px-1 font-display text-[22px] leading-7">{dayHeading(picked)}</h3>
+      <h3 className="px-1 text-[15px] leading-5 font-medium text-muted-foreground">{describeCell(picked, null)}</h3>
       {failed && !known && (
         <p role="alert" className="px-1 text-base">
           Could not load meals. Check your connection.

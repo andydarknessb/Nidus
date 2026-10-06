@@ -17,8 +17,8 @@ import { WEEKDAYS } from '../lib/routines';
 // the target, the face is what is seen, and two picked-looking things never read as one. The button's own Selected look is switched
 // off, the span's comes from `aria-pressed` on the button (`group-aria-pressed`), and the focus ring is drawn inside the button, so
 // the row that scrolls does not clip it.
-const TOUCHING = 'group rounded-[14px] p-0.5 selected:bg-transparent selected:ring-0 active:bg-transparent focus-visible:-outline-offset-2';
-const FACE = 'flex size-full items-center justify-center rounded-xl group-aria-pressed:bg-accent group-aria-pressed:font-semibold group-aria-pressed:ring-2 group-aria-pressed:ring-foreground group-aria-pressed:ring-inset';
+export const TOUCHING = 'group rounded-[14px] p-0.5 selected:bg-transparent selected:ring-0 active:bg-transparent focus-visible:-outline-offset-2';
+export const FACE = 'flex size-full items-center justify-center rounded-xl group-aria-pressed:bg-accent group-aria-pressed:font-semibold group-aria-pressed:ring-2 group-aria-pressed:ring-foreground group-aria-pressed:ring-inset';
 
 // ---- Day chips ---------------------------------------------------------------------------------
 
@@ -112,7 +112,8 @@ export function DayChips({
 // ---- A control of a few ------------------------------------------------------------------------
 
 // Day, Week and Month; Morning, Afternoon, Evening and Whole day: a 52 tall --muted track (2 px of padding) of buttons 48 tall that
-// touch, the choice pressed and in the Selected look, drawn inside its button. Named by `label`, as a group.
+// touch, the choice pressed and in the Selected look, drawn inside its button. Each button is as wide as its word (flex-auto, the word at 15
+// on one line, never cut), the buttons sharing what is left, so "Whole day" and "Afternoon" fit their buttons at 360 px. Named by `label`, as a group.
 export function Segmented<Value extends string>({
   label,
   options,
@@ -127,8 +128,8 @@ export function Segmented<Value extends string>({
   return (
     <div role="group" aria-label={label} className="flex h-13 rounded-2xl bg-muted p-0.5">
       {options.map((option) => (
-        <Button key={option.value} variant="quiet" aria-pressed={option.value === value} onClick={() => onChange(option.value)} className={cn(TOUCHING, 'h-12 min-w-0 flex-1 whitespace-normal')}>
-          <span className={cn(FACE, 'px-1 text-center leading-5')}>{option.label}</span>
+        <Button key={option.value} variant="quiet" aria-pressed={option.value === value} onClick={() => onChange(option.value)} className={cn(TOUCHING, 'h-12 flex-auto')}>
+          <span className={cn(FACE, 'px-1 text-center text-[15px] leading-5 whitespace-nowrap')}>{option.label}</span>
         </Button>
       ))}
     </div>

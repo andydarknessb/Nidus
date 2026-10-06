@@ -6,6 +6,7 @@ import { ProfileFilterContext } from '../src/lib/profile-filter';
 import type { Profile } from '../src/lib/profiles';
 import type { PhoneCalendar as PhoneCalendarType } from '../src/phone/PhoneCalendar';
 import type { WeekCells as WeekCellsType } from '../src/phone/PhoneMonth';
+import { FACE, TOUCHING } from '../src/phone/parts';
 import type { PhoneScreenProps } from '../src/PhoneWall';
 
 // The phone's Calendar screen rendered to markup (docs/specs/0004, Screens, Calendar): the control with the view pressed, the pager named
@@ -79,7 +80,24 @@ describe('the control and the pager', () => {
   });
 });
 
+describe('Day', () => {
+  it('is a card like the others on the phone: 22 round with 12 inside all round, 24 round and 8 at its left on the tablet', () => {
+    const card = /<section aria-label="Thursday, October 8, today" class="([^"]*)"/.exec(screen('day', '2026-10-08'));
+    expect(card).not.toBeNull();
+    const classes = card![1]!.split(' ');
+    expect(classes).toEqual(expect.arrayContaining(['max-[768px]:rounded-[22px]', 'max-[768px]:pl-3', 'py-3', 'pr-3']));
+    expect(classes).toEqual(expect.arrayContaining(['rounded-3xl', 'pl-2']));
+  });
+});
+
 describe('Week', () => {
+  it("heads the picked day with its full date in Lexend 15, weight 500, secondary", () => {
+    const heading = /<h3 class="([^"]*)">Thursday, October 8<\/h3>/.exec(screen('week', null));
+    expect(heading).not.toBeNull();
+    expect(heading![1]!.split(' ')).toEqual(expect.arrayContaining(['text-[15px]', 'font-medium', 'text-muted-foreground']));
+    expect(heading![1]).not.toContain('font-display');
+  });
+
   it('draws seven chips, today marked and picked', () => {
     const html = screen('week', null);
     const chips = named(html, /^\w+day \d+/);
@@ -109,6 +127,21 @@ describe('Week', () => {
 
 describe('Month', () => {
   const cellsOf = (html: string) => named(html, /^\w+day, \w+ \d+/);
+
+  it('heads the grid with the weekdays in three letters at 14 px, secondary, hidden from a screen reader (each cell says its weekday)', () => {
+    const row = /<div aria-hidden="true" class="grid grid-cols-7 pb-1">([\s\S]*?)<\/div>/.exec(screen('month', null))![1]!;
+    const spans = [...row.matchAll(/<span class="([^"]*)">([^<]*)<\/span>/g)];
+    expect(spans.map((span) => span[2])).toEqual(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+    for (const span of spans) expect(span[1]!.split(' ')).toEqual(expect.arrayContaining(['text-sm', 'text-muted-foreground']));
+  });
+
+  it('draws a cell from the shared touching target and face, as the day chips are', () => {
+    const html = screen('month', null);
+    const cell = cellsOf(html)[0]!;
+    expect(cell.tag).toContain('h-[58px]');
+    expect(cell.tag).toContain(TOUCHING);
+    expect(html).toContain(FACE);
+  });
 
   it('draws a button for every day of the grid, today named and marked, and today picked', () => {
     const cells = cellsOf(screen('month', null));

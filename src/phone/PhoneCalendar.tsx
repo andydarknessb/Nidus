@@ -72,14 +72,17 @@ function Calendar({
   const days = calendarView === 'month' ? null : pageDays(calendarView, anchor, timezone, now);
   const { previous, next } = paging(calendarView, anchor, window);
 
-  // Paging may switch off the button that was pressed: put focus on the page's words instead of losing it. Not on the first draw, which
-  // is the tab being opened, not a page being turned.
+  // Paging may switch off the button that was pressed: put focus on the page's words instead of losing it. Only after the page or the view
+  // has changed, never when the tab opens (which would scroll the page), StrictMode's second run of the effect included: the page it saw
+  // last is kept, as the Meals tab does.
   const heading = useRef<HTMLHeadingElement>(null);
-  const first = useRef(true);
+  const page = `${calendarView}:${anchor}`;
+  const seen = useRef(page);
   useEffect(() => {
-    if (first.current) first.current = false;
-    else heading.current?.focus();
-  }, [calendarView, anchor]);
+    if (seen.current === page) return;
+    seen.current = page;
+    heading.current?.focus({ preventScroll: true });
+  }, [page]);
 
   return (
     // A touch anywhere in the calendar keeps the Profile filter open.

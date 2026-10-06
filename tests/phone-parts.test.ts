@@ -128,7 +128,19 @@ describe('Segmented', () => {
     const track = classesOf(html.slice(0, html.indexOf('>') + 1));
     expect(track).toEqual(expect.arrayContaining(['h-13', 'bg-muted', 'p-0.5']));
     expect(track.some((name) => /^gap-/.test(name))).toBe(false);
-    expect(classesOf(buttons(html)[0]!.tag)).toEqual(expect.arrayContaining(['h-12', 'flex-1', 'p-0.5', 'focus-visible:-outline-offset-2']));
+    expect(classesOf(buttons(html)[0]!.tag)).toEqual(expect.arrayContaining(['h-12', 'flex-auto', 'p-0.5', 'focus-visible:-outline-offset-2']));
+  });
+
+  it('sizes each button from its word, at 15 px on one line, so "Whole day" and "Afternoon" are never broken or cut at 360 px', () => {
+    const html = control('day');
+    for (const button of buttons(html)) {
+      const classes = classesOf(button.tag);
+      expect(classes).not.toContain('min-w-0');
+      expect(classes).not.toContain('flex-1');
+      expect(classes).not.toContain('whitespace-normal');
+    }
+    const word = classesOf(/<span class="([^"]*items-center[^"]*)"/.exec(html)![0]);
+    expect(word).toEqual(expect.arrayContaining(['text-[15px]', 'whitespace-nowrap']));
   });
 
   it('draws the choice in the Selected look 2 px inside its button, not on the button', () => {

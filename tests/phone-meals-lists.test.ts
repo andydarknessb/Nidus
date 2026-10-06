@@ -1,13 +1,14 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { pageDays } from '../src/lib/calendar-occurrences';
-import { pickedDay, slotRowName, type Meal } from '../src/lib/meals';
+import { mealsPickedDay, slotRowName, type Meal } from '../src/lib/meals';
 import { householdDay } from '../src/lib/routines';
 import { sheetFor } from '../src/lib/use-meals';
 import { leftToGet, listChipName, pickedList, type SharedList } from '../src/lib/shared-lists';
-import { ListChip } from '../src/phone/PhoneLists';
-import { SlotRow } from '../src/phone/PhoneMeals';
+import { ListChip, PhoneLists } from '../src/phone/PhoneLists';
+import { PhoneMeals, SlotRow } from '../src/phone/PhoneMeals';
+import type { PhoneScreenProps } from '../src/PhoneWall';
 
 // The phone's Meals and Lists tabs: the picked day and the picked list as pure rules, and a slot row and a list chip as markup. How they
 // sit in a 390 px column is looked at in a browser. Colours are tokens only, so the 7:1 pairs are look.test.ts's.
@@ -18,9 +19,9 @@ const WEEK = ['2026-09-27', '2026-09-28', '2026-09-29', '2026-09-30', '2026-10-0
 const oatmeal: Meal = { id: 'm1', meal_date: '2026-10-01', slot: 'breakfast', title: 'Oatmeal' };
 const thursday = pageDays('week', '2026-10-01', LA, new Date('2026-10-01T12:00:00Z'))[4]!;
 
-describe('pickedDay', () => {
+describe('mealsPickedDay', () => {
   // The Household's today at an instant, as the screen has it (useHouseholdDay).
-  const picked = (choice: string | null, at: string, timezone = LA, week: readonly string[] = WEEK) => pickedDay(week, choice, householdDay(timezone, new Date(at)).date);
+  const picked = (choice: string | null, at: string, timezone = LA, week: readonly string[] = WEEK) => mealsPickedDay(week, choice, householdDay(timezone, new Date(at)).date);
 
   it('is today when the week holds it, and the Sunday when it does not', () => {
     expect(picked(null, '2026-10-01T20:00:00Z')).toBe('2026-10-01');
@@ -177,5 +178,38 @@ describe('a list chip', () => {
 
   it('has no em-dash', () => {
     expect(chip({ pinned: true })).not.toContain('\u2014');
+  });
+});
+
+describe('the Meals tab, drawn', () => {
+  // Thursday, October 8, 2026, noon in Chicago.
+  beforeAll(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-08T17:00:00Z'));
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+  });
+  const screen = (date: string | null) =>
+    renderToStaticMarkup(createElement(PhoneMeals, { route: { view: 'meals', date }, timezone: 'America/Chicago', view: { failed: false } } as unknown as PhoneScreenProps & { route: { view: 'meals'; date: string | null } }));
+
+  it('says the week as the Calendar does, with no year in the current year and the year in another', () => {
+    expect(screen(null)).toMatch(/<h2[^>]*>Oct 4 to Oct 10<\/h2>/);
+    expect(screen('2026-12-27')).toMatch(/<h2[^>]*>Dec 27, 2026 to Jan 2, 2027<\/h2>/);
+  });
+
+  it("heads the picked day with the Calendar's words, in Lexend 15, weight 500, secondary", () => {
+    const html = screen(null);
+    const heading = /<h3 class="([^"]*)">Thursday, October 8<\/h3>/.exec(html);
+    expect(heading).not.toBeNull();
+    expect(heading![1]!.split(' ')).toEqual(expect.arrayContaining(['text-[15px]', 'font-medium', 'text-muted-foreground']));
+    expect(heading![1]).not.toContain('font-display');
+  });
+});
+
+describe('the Lists tab, drawn', () => {
+  it('has an h2 of its own, before anything else, so the headings do not jump from the h1 to the picked list h3', () => {
+    const html = renderToStaticMarkup(createElement(PhoneLists));
+    expect(html.startsWith('<h2 class="sr-only">Lists</h2>')).toBe(true);
   });
 });

@@ -43,7 +43,18 @@ function CountReader({ listId, onCount }: { listId: string; onCount: (listId: st
   return null;
 }
 
+// The tab's own heading, for a screen reader (the chips and the card say the rest): the page's h1 is the Household's name, so without it
+// the headings would jump from that to the picked list's h3. Not drawn: the row of chips is what the eye starts at.
 export function PhoneLists() {
+  return (
+    <>
+      <h2 className="sr-only">Lists</h2>
+      <Lists />
+    </>
+  );
+}
+
+function Lists() {
   const { read, failed } = useLists();
   if (read === null) {
     return failed ? (

@@ -80,7 +80,7 @@ export function nextMealWords(slot: MealSlot): string {
 // The day a phone's Meals screen has picked: the one chosen while it is in the week shown, else today when the week holds it, else the week's
 // first day (its Sunday). `dates` are the week's Household dates and `today` the Household's own, so the pick follows Household midnight;
 // a choice made in another week is no choice, which is how the pick resets when the week changes.
-export function pickedDay(dates: readonly string[], choice: string | null, today: string): string {
+export function mealsPickedDay(dates: readonly string[], choice: string | null, today: string): string {
   if (choice !== null && dates.includes(choice)) return choice;
   return dates.includes(today) ? today : dates[0]!;
 }

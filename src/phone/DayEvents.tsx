@@ -41,7 +41,7 @@ export function DayEvents({
   const pills = loaded ? scheduleColumns(occurrences, [day], now)[0]!.pills : [];
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="font-display text-xl leading-7">{describeCell(day.date, null)}</h3>
+      <h3 className="text-[15px] leading-5 font-medium text-muted-foreground">{describeCell(day.date, null)}</h3>
       {beyond ? (
         <EmptyWords>Beyond the calendar's range.</EmptyWords>
       ) : failed && occurrences === null ? (
