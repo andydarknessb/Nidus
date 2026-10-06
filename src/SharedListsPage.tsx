@@ -221,7 +221,7 @@ export function ListsScreen() {
           Lists
         </h2>
         <div className="flex items-center gap-4">
-          <p className="text-[15px] text-muted-foreground">New lists are made on the phone.</p>
+          <p className="text-[15px] text-muted-foreground">The owner adds lists in Settings.</p>
           {/* The heading row is 48 px, and the button is the row's height. */}
           <OverflowButton control={row} of="lists" className="h-12" />
         </div>
@@ -231,7 +231,7 @@ export function ListsScreen() {
           Could not load lists. Check your connection.
         </p>
       )}
-      {read?.lists.length === 0 && <EmptyWords>No lists yet. Add one on your phone.</EmptyWords>}
+      {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
       <div
         ref={row.scroller}
         className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cards.length > 3 ? '[--card-w:calc((100%_-_3rem)/3.2)]' : '[--card-w:calc((100%_-_2rem)/3)]'}`}
@@ -369,8 +369,8 @@ function ListsLink({ words, name, onOpen, ref }: { words: string; name: string; 
   );
 }
 
-// Home's list card when no list is on the home screen. It keeps its heading, "Lists", and says what to do: with no list at all, to add
-// one on the phone; with lists and none on the home screen, to put one there, and the link to the Lists screen is there to see them. (It
+// Home's list card when no list is on the home screen. It keeps its heading, "Lists", and says what to do: with no list at all, who adds
+// one (the owner, in Settings); with lists and none on the home screen, who puts one there (the owner, in Settings), and the link to the Lists screen is there to see them. (It
 // used to have no heading, and to say to open a list that does not exist.)
 // On the phone layout (`phone`) the words say what the person holding the phone can do: only the owner makes and pins lists, in Settings.
 export function EmptyListCard({ lists, onOpenLists, phone = false }: { lists: number; onOpenLists: () => void; phone?: boolean }) {
@@ -386,8 +386,8 @@ export function EmptyListCard({ lists, onOpenLists, phone = false }: { lists: nu
             ? 'No lists yet. The owner adds lists in Settings.'
             : 'No list on Home yet. The owner picks one in Settings.'
           : lists === 0
-            ? 'No lists yet. Add one on your phone.'
-            : 'No list here yet. On your phone, open a list and choose Show on home screen.'}
+            ? 'No lists yet. The owner adds lists in Settings.'
+            : 'No list here yet. The owner picks one in Settings.'}
       </EmptyWords>
     </aside>
   );

@@ -162,7 +162,7 @@ export function RoutineTile({
 }
 
 // The small heading over a group of tiles: the part of the day (with its icon), Left from earlier or Any time.
-export function GroupLabel({ icon: Icon, children, status }: { icon?: LucideIcon | undefined; children: ReactNode; status?: ReactNode }) {
+function GroupLabel({ icon: Icon, children, status }: { icon?: LucideIcon | undefined; children: ReactNode; status?: ReactNode }) {
   return (
     <div className="flex h-[22px] flex-none items-center justify-between gap-2">
       <h4 className="flex items-center gap-1.5 px-1 text-[14.5px] leading-[18px] font-medium text-muted-foreground">
@@ -435,7 +435,7 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
           Could not load routines. Check your connection.
         </p>
       )}
-      {loaded && columns.length === 0 && <EmptyWords>No routines yet. Add some on your phone.</EmptyWords>}
+      {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
       <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
         {columns.map(({ profile, routines: today }) => (
           <Column

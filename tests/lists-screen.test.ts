@@ -21,10 +21,10 @@ const words = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' 
 describe("Home's list card with no list on the home screen", () => {
   const card = (lists: number) => renderToStaticMarkup(createElement(EmptyListCard, { lists, onOpenLists: () => undefined }));
 
-  it('keeps its heading, "Lists", and says to add one on the phone when there is no list at all', () => {
+  it('keeps its heading, "Lists", and says the owner adds one in Settings when there is no list at all', () => {
     const html = card(0);
     expect(html).toMatch(/<h2[^>]*>Lists<\/h2>/);
-    expect(words(html)).toContain('No lists yet. Add one on your phone.');
+    expect(words(html)).toContain('No lists yet. The owner adds lists in Settings.');
     // Nothing to open: there is no list to see, and nothing says to open a list that does not exist.
     expect(html).not.toContain('href="/lists"');
     expect(words(html)).not.toContain('open a list');
@@ -33,7 +33,7 @@ describe("Home's list card with no list on the home screen", () => {
   it('says to put one on the home screen when there are lists and none is, with the link to see them', () => {
     const html = card(3);
     expect(html).toMatch(/<h2[^>]*>Lists<\/h2>/);
-    expect(words(html)).toContain('No list here yet. On your phone, open a list and choose Show on home screen.');
+    expect(words(html)).toContain('No list here yet. The owner picks one in Settings.');
     expect(html).toContain('aria-label="All lists"');
   });
 
@@ -42,7 +42,7 @@ describe("Home's list card with no list on the home screen", () => {
     expect(phone(0)).toContain('No lists yet. The owner adds lists in Settings.');
     expect(phone(3)).toContain('No list on Home yet. The owner picks one in Settings.');
     expect(phone(0)).not.toContain('your phone');
-    expect(words(card(0))).toContain('No lists yet. Add one on your phone.');
+    expect(words(card(0))).toContain('No lists yet. The owner adds lists in Settings.');
   });
 
   it('says it in the one style every empty state has: 16 px in --muted-foreground', () => {
@@ -63,6 +63,11 @@ describe('the Lists screen', () => {
 
   it('takes the focus to its title when it opens, which it can: the title is reached by script and not by Tab', () => {
     expect(screen()).toMatch(/<h2 tabindex="-1" class="[^"]*">Lists<\/h2>/);
+  });
+
+  it('says the owner adds lists in Settings, not "on the phone", which the tablet cannot be told to use for what only Settings does', () => {
+    expect(words(screen())).toContain('The owner adds lists in Settings.');
+    expect(words(screen())).not.toContain('phone');
   });
 
   it('has the 28 px title in a heading row 48 tall, and the first card 16 px under it, as every screen has', () => {

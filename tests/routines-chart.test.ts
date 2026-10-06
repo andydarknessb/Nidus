@@ -70,9 +70,9 @@ describe("a person's column", () => {
 describe('what the chart says when it holds nothing', () => {
   const EMPTY = 'text-base text-muted-foreground';
 
-  it('says no routines yet, and where to add some', () => {
+  it('says no routines yet, and that the owner adds them in Settings', () => {
     const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], []));
-    expect(html).toContain(`<p class="${EMPTY}">No routines yet. Add some on your phone.</p>`);
+    expect(html).toContain(`<p class="${EMPTY}">No routines yet. The owner adds them in Settings.</p>`);
   });
 
   it('says what a part holds when it holds nothing, in the same style', () => {
