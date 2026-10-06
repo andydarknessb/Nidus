@@ -30,9 +30,13 @@ import {
   asHouseholdAccount,
   asServiceRole,
   createHousehold,
+  createSignedUpAccount,
   destroyHousehold,
+  destroySignedUpAccount,
   destroyTablet,
+  signInAs,
   type HouseholdAccount,
+  type SignedUpAccount,
   type Tablet,
 } from './support/supabase';
 
@@ -85,13 +89,13 @@ async function setColor(client: Awaited<ReturnType<typeof asHouseholdAccount>>, 
   return (await client.from('mirrored_calendars').update({ color }).eq('id', id)).error;
 }
 
-async function jwtOf(account: HouseholdAccount): Promise<string> {
-  const client = await asHouseholdAccount(account);
+async function jwtOf(account: { email: string; password: string }): Promise<string> {
+  const client = await signInAs(account);
   const { data } = await client.auth.getSession();
   return data.session!.access_token;
 }
 
-async function startFlow(account: HouseholdAccount, kind: 'settings' | 'link', d: ConnectDeps): Promise<string> {
+async function startFlow(account: { email: string; password: string }, kind: 'settings' | 'link', d: ConnectDeps): Promise<string> {
   const response = await handleCalendarConnect(
     new Request(`${env.functionUrl}/start`, {
       method: 'POST',
@@ -118,6 +122,7 @@ function stateOf(consentUrl: string): string {
 
 let households: HouseholdAccount[] = [];
 let tablets: Tablet[] = [];
+let newcomers: SignedUpAccount[] = [];
 
 async function arrange(): Promise<HouseholdAccount> {
   const account = await createHousehold();
@@ -142,18 +147,20 @@ async function connect(account: HouseholdAccount, email: string, refreshToken = 
 
 afterEach(async () => {
   await Promise.all(tablets.map((tablet) => destroyTablet(tablet)));
+  await Promise.all(newcomers.map((account) => destroySignedUpAccount(account)));
   await Promise.all(households.map((account) => destroyHousehold(account)));
   tablets = [];
+  newcomers = [];
   households = [];
 });
 
 describe('the signed state parameter', () => {
   it('round-trips a Household and refuses tampering, a wrong secret, and expiry', async () => {
     const exp = Math.floor(Date.now() / 1000) + 600;
-    const token = await signState(STATE_SECRET, { household_id: 'h1', kind: 'settings', exp });
-    expect(await verifyState(STATE_SECRET, token, Date.now())).toEqual({ household_id: 'h1', kind: 'settings', exp });
+    const token = await signState(STATE_SECRET, { household_id: 'h1', auth_user_id: 'u1', kind: 'settings', exp });
+    expect(await verifyState(STATE_SECRET, token, Date.now())).toEqual({ household_id: 'h1', auth_user_id: 'u1', kind: 'settings', exp });
 
-    const forged = await signState(STATE_SECRET, { household_id: 'h2', kind: 'settings', exp });
+    const forged = await signState(STATE_SECRET, { household_id: 'h2', auth_user_id: 'u1', kind: 'settings', exp });
     const swapped = `${forged.split('.')[0]}.${token.split('.')[1]}`;
     expect(await verifyState(STATE_SECRET, swapped, Date.now())).toBeNull();
     expect(await verifyState('another-secret-entirely-1234567890', token, Date.now())).toBeNull();
@@ -249,9 +256,9 @@ describe('calendar-connect callback', () => {
     const google = fakeGoogle({ email: 'parent@example.com' });
     const d = deps(google);
     const exp = Math.floor(Date.now() / 1000) + 600;
-    const genuine = await signState(STATE_SECRET, { household_id: account.household.id, kind: 'settings', exp });
-    const forged = await signState('attacker-secret-attacker-secret-1234', { household_id: account.household.id, kind: 'settings', exp });
-    const expired = await signState(STATE_SECRET, { household_id: account.household.id, kind: 'settings', exp: exp - 3600 });
+    const genuine = await signState(STATE_SECRET, { household_id: account.household.id, auth_user_id: account.authUserId, kind: 'settings', exp });
+    const forged = await signState('attacker-secret-attacker-secret-1234', { household_id: account.household.id, auth_user_id: account.authUserId, kind: 'settings', exp });
+    const expired = await signState(STATE_SECRET, { household_id: account.household.id, auth_user_id: account.authUserId, kind: 'settings', exp: exp - 3600 });
     const [payload] = genuine.split('.');
     const tampered = `${payload}x.${genuine.split('.')[1]}`;
 
@@ -315,11 +322,68 @@ describe('the shareable consent link', () => {
     expect(await loadCalendarAccounts(await asHouseholdAccount(other))).toEqual([]);
   });
 
+  it('refuses a link, at consent and at callback, once the Household Account that made it is removed', async () => {
+    const owner = await arrange();
+    const joiner = await createSignedUpAccount();
+    newcomers.push(joiner);
+    const ownerClient = await asHouseholdAccount(owner);
+    const invite = await ownerClient.rpc('create_household_invite').single<{ token: string }>();
+    expect((await (await signInAs(joiner)).rpc('accept_household_invite', { p_token: invite.data!.token })).error).toBeNull();
+
+    const google = fakeGoogle({ email: 'partner@example.com' });
+    const d = deps(google);
+    const link = await startFlow(joiner, 'link', d);
+    const state = new URL(link).searchParams.get('state')!;
+    expect((await ownerClient.rpc('remove_household_account', { p_auth_user_id: joiner.authUserId })).error).toBeNull();
+
+    const consent = await handleCalendarConnect(new Request(link), d);
+    expect(consent.status).toBe(400);
+    expect(await consent.text()).toContain('Link expired');
+    const done = await handleCalendarConnect(callbackFor(state), d);
+    expect(done.status).toBe(400);
+    expect(await done.text()).toContain('Link expired');
+
+    expect(google.calls).toHaveLength(0);
+    const { count } = await asServiceRole()
+      .from('calendar_accounts')
+      .select('id', { count: 'exact', head: true })
+      .eq('household_id', owner.household.id);
+    expect(count).toBe(0);
+  });
+
+  it('refuses a settings flow the same way, and a state signed before it named an account', async () => {
+    const owner = await arrange();
+    const joiner = await createSignedUpAccount();
+    newcomers.push(joiner);
+    const ownerClient = await asHouseholdAccount(owner);
+    const invite = await ownerClient.rpc('create_household_invite').single<{ token: string }>();
+    await (await signInAs(joiner)).rpc('accept_household_invite', { p_token: invite.data!.token });
+
+    const google = fakeGoogle({ email: 'partner@example.com' });
+    const d = deps(google);
+    const state = stateOf(await startFlow(joiner, 'settings', d));
+    await ownerClient.rpc('remove_household_account', { p_auth_user_id: joiner.authUserId });
+    expect((await handleCalendarConnect(callbackFor(state), d)).status).toBe(400);
+
+    // What a link made before this shipped looks like: genuine, unexpired, and no account in it.
+    const exp = Math.floor(Date.now() / 1000) + 600;
+    const old = await signState(STATE_SECRET, { household_id: owner.household.id, kind: 'link', exp } as never);
+    expect((await handleCalendarConnect(new Request(`${env.functionUrl}/consent?state=${old}`), d)).status).toBe(400);
+    expect((await handleCalendarConnect(callbackFor(old), d)).status).toBe(400);
+
+    expect(google.calls).toHaveLength(0);
+    const { count } = await asServiceRole()
+      .from('calendar_accounts')
+      .select('id', { count: 'exact', head: true })
+      .eq('household_id', owner.household.id);
+    expect(count).toBe(0);
+  });
+
   it('refuses a link that has expired or been altered', async () => {
     const account = await arrange();
     const d = deps(fakeGoogle({ email: 'a@example.com' }));
     const exp = Math.floor(Date.now() / 1000) + 60;
-    const token = await signState(STATE_SECRET, { household_id: account.household.id, kind: 'link', exp });
+    const token = await signState(STATE_SECRET, { household_id: account.household.id, auth_user_id: account.authUserId, kind: 'link', exp });
 
     const later = deps(fakeGoogle({ email: 'a@example.com' }), { now: () => (exp + 1) * 1000 });
     expect((await handleCalendarConnect(new Request(`${env.functionUrl}/consent?state=${token}`), later)).status).toBe(400);
