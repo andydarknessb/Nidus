@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { TOKENS } from '../src/lib/look';
-import { MAX_OVERRIDE_MS, MODE_KEY, OVERRIDE_KEY, canResolve, nextBoundary, readLastMode, readOverride, resolveMode, stepMode, storedMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeStore } from '../src/lib/mode';
+import { MAX_OVERRIDE_MS, MODE_KEY, OVERRIDE_KEY, canResolve, modeOnLayoutChange, nextBoundary, readLastMode, readOverride, resolveMode, stepMode, storedMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeStore } from '../src/lib/mode';
 import type { SunDay } from '../src/lib/weather';
 
 // Every instant is written in UTC and every Household Timezone is named, so no test reads the machine's zone.
@@ -632,6 +632,31 @@ describe('useWallMode with system: true (the phone layout)', () => {
     expect(items.get(MODE_KEY)).toBe('light');
     // While it cannot resolve (the Household is not read yet) it changes nothing and keeps nothing new.
     expect(stepMode(store, false, null, { now: NOW, timezone: null })).toBeNull();
+  });
+});
+
+describe('modeOnLayoutChange: a Wall that stops being a phone', () => {
+  const NOW = at('2026-10-01T18:00:00');
+  const running = { mode: 'dark' as const, until: NOW + 3_600_000 };
+
+  it('takes up the override that is still running and shows its mode on the first frame back, not the last mode it resolved', () => {
+    // The tablet last resolved light by day; the switch then set dark until the evening, and the phone layout opened on top of it.
+    const { store } = spyStore({ [MODE_KEY]: 'light', [OVERRIDE_KEY]: JSON.stringify(running) });
+    expect(modeOnLayoutChange(true, false, store, NOW)).toEqual({ override: running, mode: 'dark' });
+  });
+
+  it('takes up the mode last resolved when no override runs, and ignores one that has ended', () => {
+    expect(modeOnLayoutChange(true, false, spyStore({ [MODE_KEY]: 'dark' }).store, NOW)).toEqual({ override: null, mode: 'dark' });
+    const ended = { [MODE_KEY]: 'light', [OVERRIDE_KEY]: JSON.stringify({ mode: 'dark', until: NOW - 1 }) };
+    expect(modeOnLayoutChange(true, false, spyStore(ended).store, NOW)).toEqual({ override: null, mode: 'light' });
+  });
+
+  it('changes nothing in any other move: staying a phone, staying a tablet, or becoming a phone', () => {
+    const { store, uses } = spyStore({ [MODE_KEY]: 'dark', [OVERRIDE_KEY]: JSON.stringify(running) });
+    expect(modeOnLayoutChange(true, true, store, NOW)).toBeNull();
+    expect(modeOnLayoutChange(false, false, store, NOW)).toBeNull();
+    expect(modeOnLayoutChange(false, true, store, NOW)).toBeNull();
+    expect(uses).toEqual([]);
   });
 });
 

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { watchMinute } from './household-day';
 import type { Mode } from './look';
-import { applyMode, localStore, nextBoundary, stepMode, storedMode, sunAt, writeOverride, type Appearance, type ModeOverride } from './mode';
+import { applyMode, localStore, modeOnLayoutChange, nextBoundary, stepMode, storedMode, sunAt, writeOverride, type Appearance, type ModeOverride } from './mode';
 import type { SunDay } from './weather';
 
 // What a screen's mode follows as time passes. The logic is src/lib/mode.ts's, which is pure and tested; this file
@@ -40,16 +40,18 @@ export function useWallMode({ timezone, appearance, sun, system = false }: WallM
   const [mode, setMode] = useState<Mode>(start.mode);
   const prefersDark = usePrefersDark();
 
-  // A Wall that stops being a phone (the window grew past 768 px) takes up where the tablet's storage left it.
-  const wasSystem = useRef(system);
-  useEffect(() => {
-    if (wasSystem.current && !system) {
-      const back = storedMode(store, false, Date.now());
+  // A Wall that stops being a phone (the window grew past 768 px) takes up where the tablet's storage left it. That is worked out while
+  // this draws (React draws again at once, before anything is painted or any effect has run), so the first frame back is the stored
+  // override's mode, and the resolving below starts from that override and not from the nothing the phone held.
+  const [wasSystem, setWasSystem] = useState(system);
+  if (wasSystem !== system) {
+    setWasSystem(system);
+    const back = modeOnLayoutChange(wasSystem, system, store, Date.now());
+    if (back) {
       setOverride(back.override);
       setMode(back.mode);
     }
-    wasSystem.current = system;
-  }, [store, system]);
+  }
 
   useEffect(() => {
     // The phone's mode is the effect below's, and this one reads and writes nothing.

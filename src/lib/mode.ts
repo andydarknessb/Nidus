@@ -172,6 +172,16 @@ export function storedMode(store: ModeStore | null, system: boolean, now: number
   return system ? { override: null, mode: 'light' } : { override: readOverride(store, now), mode: readLastMode(store) };
 }
 
+// What the Wall takes up when its layout changes between the tablet's and the phone's: nothing (null) unless it stops being a phone, and
+// then what the tablet's storage holds, with the override that is still running ruling the mode and the mode last resolved otherwise. It
+// is worked out while the screen is drawn, so the tablet's first frame is that mode and the resolving that follows starts from the stored
+// override: it never paints light on the way back, or writes a last mode that ignores the override.
+export function modeOnLayoutChange(wasSystem: boolean, system: boolean, store: ModeStore | null, now: number): { override: ModeOverride | null; mode: Mode } | null {
+  if (!wasSystem || system) return null;
+  const { override, mode } = storedMode(store, false, now);
+  return { override, mode: override?.mode ?? mode };
+}
+
 // One step of keeping the Wall's mode right: what the screen does at the start of a minute. `drop` says the override has run out (and
 // is gone from storage); a mode is what resolved (and is kept for the next load); null is nothing to change. The phone layout
 // (`system`) never steps: it neither reads nor writes what the Wall stored.
