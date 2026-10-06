@@ -92,10 +92,11 @@ export async function updateHouseholdWeather(id: string, weather: WeatherPlace |
   return data;
 }
 
-export function signInWithGoogle() {
+// Signing in comes back to `returnTo`, a path on this site: Settings unless a page (the join page) has somewhere of its own.
+export function signInWithGoogle(returnTo = '/settings') {
   // Identity only: no calendar scope is requested (ADR 0002).
   return supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: `${window.location.origin}/settings` },
+    options: { redirectTo: `${window.location.origin}${returnTo}` },
   });
 }
