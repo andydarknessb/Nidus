@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HOME_HOLD_MS, homeRows, pinnedFirst, rowsThatFit, type ListItem, type SharedList } from '../src/lib/shared-lists';
+import { HOME_HOLD_MS, homeRows, homeWindow, pinnedFirst, rowsThatFit, type ListItem, type SharedList } from '../src/lib/shared-lists';
 
 // Pure rules for a Shared List's card on the Wall: how many rows Home's card holds, which rows it draws, and which list comes
 // first on the Lists screen. They run without the local stack.
@@ -77,6 +77,29 @@ describe('rowsThatFit', () => {
         before = shown;
       }
     }
+  });
+});
+
+describe('homeWindow', () => {
+  const items = (count: number, crossed = 0): ListItem[] =>
+    Array.from({ length: count }, (_, index) => ({ id: `i${index}`, list_id: 'l', text: `Item ${index}`, crossed_at: index < crossed ? '2026-10-01T12:00:00Z' : null, sort_order: index }));
+
+  it('on a phone shows up to the limit and counts the rest still to get: 9 items with a limit of 6 is 6 shown and 3 more', () => {
+    expect(homeWindow({ rows: items(9), limit: 6, room: null })).toEqual({ shown: 6, hidden: 3 });
+  });
+
+  it('on a phone shows all of 4 items, and leaves none out', () => {
+    expect(homeWindow({ rows: items(4), limit: 6, room: null })).toEqual({ shown: 4, hidden: 0 });
+  });
+
+  it('on a phone does not look at the room, and counts only items still to get among the rows left out', () => {
+    expect(homeWindow({ rows: [...items(7, 0)].map((item, index) => (index === 6 ? { ...item, crossed_at: '2026-10-01T12:00:00Z' } : item)), limit: 6, room: 0 })).toEqual({ shown: 6, hidden: 0 });
+  });
+
+  it("with no limit is the tablet's: as many rows as the room holds, none before the room is measured", () => {
+    expect(homeWindow({ rows: items(9), room: 5 * ROW + 4 * GAP })).toEqual({ shown: 5, hidden: 4 });
+    expect(homeWindow({ rows: items(3), room: 400 })).toEqual({ shown: 3, hidden: 0 });
+    expect(homeWindow({ rows: items(9), room: null })).toEqual({ shown: 0, hidden: 9 });
   });
 });
 

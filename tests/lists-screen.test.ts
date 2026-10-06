@@ -37,6 +37,14 @@ describe("Home's list card with no list on the home screen", () => {
     expect(html).toContain('aria-label="All lists"');
   });
 
+  it('says on the phone layout what the person holding the phone can do, and only there', () => {
+    const phone = (lists: number) => words(renderToStaticMarkup(createElement(EmptyListCard, { lists, onOpenLists: () => undefined, phone: true })));
+    expect(phone(0)).toContain('No lists yet. The owner adds lists in Settings.');
+    expect(phone(3)).toContain('No list on Home yet. The owner picks one in Settings.');
+    expect(phone(0)).not.toContain('your phone');
+    expect(words(card(0))).toContain('No lists yet. Add one on your phone.');
+  });
+
   it('says it in the one style every empty state has: 16 px in --muted-foreground', () => {
     for (const lists of [0, 3]) expect(card(lists)).toMatch(/<p class="text-base text-muted-foreground px-1">/);
   });

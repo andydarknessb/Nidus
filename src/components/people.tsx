@@ -22,11 +22,11 @@ const iconSize = (px: number): CSSProperties => ({ width: px, height: px });
 // A person: a disc in their strong colour with their initial, at 16, 24, 34, 40, 44 or 56 px (the 16 px disc is for the end of
 // a Month line). The name is always beside it, so it is hidden from a screen reader. The initial is always Lexend, whatever face the
 // words around the disc are set in (a heading in Young Serif, say).
-export function PersonDisc({ name, color, size = 40 }: { name: string; color: string; size?: number }) {
+export function PersonDisc({ name, color, size = 40, className }: { name: string; color: string; size?: number; className?: string }) {
   return (
     <span
       aria-hidden
-      className="person flex shrink-0 items-center justify-center rounded-full bg-person-strong font-sans leading-none font-semibold text-person-on-strong"
+      className={cn('person flex shrink-0 items-center justify-center rounded-full bg-person-strong font-sans leading-none font-semibold text-person-on-strong', className)}
       style={{ ...personStyle(color), width: size, height: size, fontSize: initialSize(size) }}
     >
       {initialOf(name)}
@@ -35,9 +35,9 @@ export function PersonDisc({ name, color, size = 40 }: { name: string; color: st
 }
 
 // Everyone, the whole Household: the same disc in --primary with a house in it.
-export function HouseDisc({ size = 40 }: { size?: number }) {
+export function HouseDisc({ size = 40, className }: { size?: number; className?: string }) {
   return (
-    <span aria-hidden className="flex shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground" style={{ width: size, height: size }}>
+    <span aria-hidden className={cn('flex shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground', className)} style={{ width: size, height: size }}>
       <House style={iconSize(Math.round(size * 0.54))} strokeWidth={2.4} />
     </span>
   );
@@ -56,10 +56,10 @@ export function EmptyRing({ size = 44, width = 3, color }: { size?: number; widt
 
 // A filled tick: in --primary, or with `color` in that person's tick pair, which is for a finished tile. With `strong` as
 // well it is their strong pair instead, which is for beside their progress. `strong` means nothing without `color`.
-export function Tick({ size = 44, color, strong = false }: { size?: number; color?: string | undefined; strong?: boolean }) {
+export function Tick({ size = 44, color, strong = false, className }: { size?: number; color?: string | undefined; strong?: boolean; className?: string }) {
   const look = color === undefined ? 'bg-primary text-primary-foreground' : strong ? 'person bg-person-strong text-person-on-strong' : 'person bg-person-tick text-person-on-tick';
   return (
-    <span aria-hidden className={cn('flex shrink-0 items-center justify-center rounded-full', look)} style={{ ...(color === undefined ? {} : personStyle(color)), width: size, height: size }}>
+    <span aria-hidden className={cn('flex shrink-0 items-center justify-center rounded-full', look, className)} style={{ ...(color === undefined ? {} : personStyle(color)), width: size, height: size }}>
       <Check style={iconSize(Math.round(size * 0.55))} strokeWidth={3.2} />
     </span>
   );

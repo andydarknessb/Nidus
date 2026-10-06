@@ -40,7 +40,7 @@ function pillOf(html: string, name: string): string {
 
 describe('the people strip', () => {
   it('keeps the row\'s height while the Profiles are read, and is nothing for a Household that has none', () => {
-    expect(strip(null)).toBe('<div class="h-14"></div>');
+    expect(strip(null)).toBe('<div class="h-14 max-[768px]:h-13"></div>');
     expect(strip([])).toBe('');
   });
 
