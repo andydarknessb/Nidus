@@ -8,8 +8,8 @@ export type JoinOutcome = 'joined' | 'expired' | 'other-household';
 
 // The two refusals accept_household_invite raises: any link that does not work, and a Google
 // account that already belongs to another Household.
-const DEAD_LINK = 'P0410';
-const OTHER_HOUSEHOLD = 'P0409';
+const DEAD_LINK = 'PT410';
+const OTHER_HOUSEHOLD = 'PT409';
 
 export function inviteLink(origin: string, token: string): string {
   return `${origin}/join/${token}`;
@@ -62,8 +62,8 @@ export async function listHouseholdAccounts(): Promise<HouseholdAccountRow[]> {
 }
 
 // Removes another Household Account of this Household. The database refuses your own and any other Household's by
-// matching no row, so nothing is deleted and nothing throws; the caller re-reads the list after its own write.
+// answering false, which is not an error; the caller re-reads the list after its own write.
 export async function removeHouseholdAccount(authUserId: string): Promise<void> {
-  const { error } = await supabase.from('household_accounts').delete().eq('auth_user_id', authUserId);
+  const { error } = await supabase.rpc('remove_household_account', { p_auth_user_id: authUserId });
   if (error) throw error;
 }

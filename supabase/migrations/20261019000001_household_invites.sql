@@ -27,32 +27,13 @@ create policy "household account reads its invite"
   to authenticated
   using (public.is_household_account() and household_id = public.current_household_id());
 
--- Removing a Household Account. A delete with a WHERE clause also needs the row
--- to pass a select policy, and the one policy so far shows a caller only their
--- own link, so a Household Account also reads its Household's links.
-create policy "household account reads its household's accounts"
-  on public.household_accounts
-  for select
-  to authenticated
-  using (public.is_household_account() and household_id = public.current_household_id());
-
-create policy "household account removes another of its household"
-  on public.household_accounts
-  for delete
-  to authenticated
-  using (
-    public.is_household_account()
-    and household_id = public.current_household_id()
-    and auth_user_id <> auth.uid()
-  );
-
--- authenticated held every default grant here, refused only by row-level
--- security. Say what is meant: read and delete (the policies above), never
--- insert or update. Accounts are made by ensure_household and
--- accept_household_invite, which are security definer. Defence in depth, as
--- 20261011000001 did for households.
-revoke all on public.household_accounts from authenticated;
-grant select, delete on public.household_accounts to authenticated;
+-- authenticated held every default grant on household_accounts (and anon too),
+-- refused only by row-level security. Say what is meant: a client reads its own
+-- link and nothing else. Accounts are made by ensure_household and
+-- accept_household_invite and removed by remove_household_account, all
+-- security definer. Defence in depth, as 20261011000001 did for households.
+revoke all on public.household_accounts from anon, authenticated;
+grant select on public.household_accounts to authenticated;
 
 -- Makes (or replaces) the Household's invite and returns the plain token, once.
 create or replace function public.create_household_invite()
@@ -71,6 +52,13 @@ begin
     raise exception 'only a Household Account can make a Household Invite' using errcode = '42501';
   end if;
   hid := public.current_household_id();
+
+  -- The per-Household lock removals take too, so a Household Account removed a
+  -- moment ago cannot leave a fresh invite behind.
+  perform 1 from public.households as h where h.id = hid for update;
+  if not exists (select 1 from public.household_accounts as ha where ha.auth_user_id = auth.uid() and ha.household_id = hid) then
+    raise exception 'only a Household Account can make a Household Invite' using errcode = '42501';
+  end if;
 
   insert into public.household_invites as i (household_id, token_hash, created_at, expires_at)
   values (hid, encode(extensions.digest(new_token, 'sha256'), 'hex'), now(), expiry)
@@ -105,9 +93,10 @@ revoke execute on function public.cancel_household_invite() from anon;
 grant execute on function public.cancel_household_invite() to authenticated;
 
 -- Called by the person invited, signed in with their own Google account.
--- Returns the Household. One refusal, P0410, for every link that does not work
+-- Returns the Household. One refusal, PT410, for every link that does not work
 -- (malformed, unknown, expired, replaced, cancelled or spent), so a guess learns
--- nothing; P0409 for a caller who already belongs to another Household.
+-- nothing; PT409 for a caller who already belongs to another Household. PostgREST
+-- answers these as HTTP 410 and 409.
 create or replace function public.accept_household_invite(p_token text)
 returns uuid
 language plpgsql
@@ -131,7 +120,7 @@ begin
   perform pg_advisory_xact_lock(hashtextextended(uid::text, 0));
 
   if p_token is null or p_token !~ '^[0-9a-f]{64}$' then
-    raise exception 'This invite link no longer works.' using errcode = 'P0410';
+    raise exception 'This invite link no longer works.' using errcode = 'PT410';
   end if;
   token_digest := encode(extensions.digest(p_token, 'sha256'), 'hex');
 
@@ -144,10 +133,10 @@ begin
     from public.household_invites as i
     where i.token_hash = token_digest and i.expires_at > now();
     if invite_hid is null then
-      raise exception 'This invite link no longer works.' using errcode = 'P0410';
+      raise exception 'This invite link no longer works.' using errcode = 'PT410';
     end if;
     if invite_hid <> own_hid then
-      raise exception 'This Google account already has its own household.' using errcode = 'P0409';
+      raise exception 'This Google account already has its own household.' using errcode = 'PT409';
     end if;
     return own_hid;
   end if;
@@ -158,7 +147,7 @@ begin
   where i.token_hash = token_digest and i.expires_at > now()
   returning i.household_id into invite_hid;
   if invite_hid is null then
-    raise exception 'This invite link no longer works.' using errcode = 'P0410';
+    raise exception 'This invite link no longer works.' using errcode = 'PT410';
   end if;
 
   insert into public.household_accounts (auth_user_id, household_id) values (uid, invite_hid);
@@ -196,3 +185,48 @@ $$;
 revoke all on function public.household_account_list() from public;
 revoke execute on function public.household_account_list() from anon;
 grant execute on function public.household_account_list() to authenticated;
+
+-- Removes another Household Account of the caller's Household (never the
+-- caller's own, so a Household keeps one). Returns whether anyone was removed:
+-- an unknown account, the caller's own and another Household's all match
+-- nothing and answer false. Only the link goes; what they added, the Calendar
+-- Accounts they connected and the tablets they paired stay. The Household's
+-- invite goes too, so a link made while they had access does not outlive it.
+create or replace function public.remove_household_account(p_auth_user_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid := auth.uid();
+  hid uuid;
+  removed integer;
+begin
+  if not public.is_household_account() then
+    raise exception 'only a Household Account can remove a Household Account' using errcode = '42501';
+  end if;
+  hid := public.current_household_id();
+
+  -- One removal (or new invite) at a time per Household. Two accounts removing
+  -- each other: the second waits, then finds it was removed and is refused.
+  perform 1 from public.households as h where h.id = hid for update;
+  if not exists (select 1 from public.household_accounts as ha where ha.auth_user_id = uid and ha.household_id = hid) then
+    raise exception 'only a Household Account can remove a Household Account' using errcode = '42501';
+  end if;
+
+  delete from public.household_accounts as ha
+  where ha.household_id = hid and ha.auth_user_id = p_auth_user_id and ha.auth_user_id <> uid;
+  get diagnostics removed = row_count;
+  if removed = 0 then
+    return false;
+  end if;
+
+  delete from public.household_invites as i where i.household_id = hid;
+  return true;
+end;
+$$;
+
+revoke all on function public.remove_household_account(uuid) from public;
+revoke execute on function public.remove_household_account(uuid) from anon;
+grant execute on function public.remove_household_account(uuid) to authenticated;

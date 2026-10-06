@@ -19,10 +19,10 @@ import {
 } from './support/supabase';
 
 // Household Invites through the seam (docs/specs/0006-household-invites.md): the Supabase client acting as a real
-// principal against the local stack. The refusals the database raises are P0410 (a link that does not work, whatever
-// the reason) and P0409 (the caller already belongs to another Household).
-const DEAD_LINK = 'P0410';
-const OTHER_HOUSEHOLD = 'P0409';
+// principal against the local stack. The refusals the database raises are PT410 (a link that does not work, whatever
+// the reason) and PT409 (the caller already belongs to another Household).
+const DEAD_LINK = 'PT410';
+const OTHER_HOUSEHOLD = 'PT409';
 const REFUSED = '42501';
 
 type Invite = { token: string; expires_at: string };
@@ -33,6 +33,7 @@ async function makeInvite(client: SupabaseClient): Promise<Invite> {
   return data;
 }
 
+const remove = (client: SupabaseClient, authUserId: string) => client.rpc('remove_household_account', { p_auth_user_id: authUserId });
 const accept = (client: SupabaseClient, token: string) => client.rpc('accept_household_invite', { p_token: token });
 
 describe('household invites', () => {
@@ -264,6 +265,23 @@ describe('household invites', () => {
       expect(await accountIds(arranged.household.id)).not.toContain(guest.arranged.authUserId);
     });
 
+    it('an expired invite is refused for a newcomer and for a member of its own Household', async () => {
+      const { arranged, phone } = await household();
+      const guest = await newcomer();
+      const { token } = await makeInvite(phone);
+      await asServiceRole()
+        .from('household_invites')
+        .update({ expires_at: new Date(Date.now() - 60_000).toISOString() })
+        .eq('household_id', arranged.household.id);
+
+      const fromNewcomer = await accept(guest.phone, token);
+      const fromMember = await accept(phone, token);
+
+      expect(fromNewcomer.error?.code).toBe(DEAD_LINK);
+      expect(await accountIds(arranged.household.id)).not.toContain(guest.arranged.authUserId);
+      expect(fromMember.error?.code).toBe(DEAD_LINK);
+    });
+
     it('a Household Account of another Household is refused with its own refusal, and stays where it was', async () => {
       const { arranged, phone } = await household();
       const neighbours = await household();
@@ -332,10 +350,10 @@ describe('household invites', () => {
       await accept(guest.phone, (await makeInvite(phone)).token);
       expect((await guest.phone.from('households').select('id')).data).toHaveLength(1);
 
-      const removed = await phone.from('household_accounts').delete().eq('auth_user_id', guest.arranged.authUserId).select('auth_user_id');
+      const removed = await remove(phone, guest.arranged.authUserId);
 
       expect(removed.error).toBeNull();
-      expect(removed.data).toEqual([{ auth_user_id: guest.arranged.authUserId }]);
+      expect(removed.data).toBe(true);
       expect(await accountIds(arranged.household.id)).toEqual([arranged.authUserId]);
       // The removed session is a stranger's at once, though its token is still valid.
       expect((await guest.phone.from('households').select('id')).data).toEqual([]);
@@ -348,11 +366,45 @@ describe('household invites', () => {
       const guest = await newcomer();
       await accept(guest.phone, (await makeInvite(phone)).token);
 
-      await phone.from('household_accounts').delete().eq('auth_user_id', guest.arranged.authUserId);
+      await remove(phone, guest.arranged.authUserId);
 
       const { data } = await asServiceRole().from('devices').select('auth_user_id').eq('household_id', arranged.household.id);
       expect(data).toEqual([{ auth_user_id: wall.authUserId }]);
       expect((await phone.from('households').select('id')).data).toHaveLength(1);
+    });
+
+    it("removing an account ends the Household's invite", async () => {
+      const { arranged, phone } = await household();
+      const guest = await newcomer();
+      await accept(guest.phone, (await makeInvite(phone)).token);
+      await makeInvite(phone);
+
+      await remove(phone, guest.arranged.authUserId);
+
+      expect(await storedInvite(arranged.household.id)).toBeNull();
+    });
+
+    it('a removed account cannot come back with a link it made before it was removed', async () => {
+      const { arranged, phone } = await household();
+      const guest = await newcomer();
+      await accept(guest.phone, (await makeInvite(phone)).token);
+      const { token } = await makeInvite(guest.phone);
+
+      await remove(phone, guest.arranged.authUserId);
+      const back = await accept(guest.phone, token);
+
+      expect(back.error?.code).toBe(DEAD_LINK);
+      expect(await accountIds(arranged.household.id)).toEqual([arranged.authUserId]);
+    });
+
+    it('a removal that matches nothing leaves the invite alone', async () => {
+      const { arranged, phone } = await household();
+      await makeInvite(phone);
+
+      const mine = await remove(phone, arranged.authUserId);
+
+      expect(mine.data).toBe(false);
+      expect(await storedInvite(arranged.household.id)).not.toBeNull();
     });
 
     it('nobody can remove themselves', async () => {
@@ -360,11 +412,13 @@ describe('household invites', () => {
       const guest = await newcomer();
       await accept(guest.phone, (await makeInvite(phone)).token);
 
-      const mine = await phone.from('household_accounts').delete().eq('auth_user_id', arranged.authUserId).select('auth_user_id');
-      const theirs = await guest.phone.from('household_accounts').delete().eq('auth_user_id', guest.arranged.authUserId).select('auth_user_id');
+      const mine = await remove(phone, arranged.authUserId);
+      const theirs = await remove(guest.phone, guest.arranged.authUserId);
 
-      expect(mine.data ?? []).toEqual([]);
-      expect(theirs.data ?? []).toEqual([]);
+      expect(mine.error).toBeNull();
+      expect(mine.data).toBe(false);
+      expect(theirs.error).toBeNull();
+      expect(theirs.data).toBe(false);
       expect(await accountIds(arranged.household.id)).toHaveLength(2);
     });
 
@@ -372,25 +426,53 @@ describe('household invites', () => {
       const { phone } = await household();
       const neighbours = await household();
 
-      const { data } = await phone.from('household_accounts').delete().eq('auth_user_id', neighbours.arranged.authUserId).select('auth_user_id');
+      const { data, error } = await remove(phone, neighbours.arranged.authUserId);
 
-      expect(data ?? []).toEqual([]);
+      expect(error).toBeNull();
+      expect(data).toBe(false);
       expect(await accountIds(neighbours.arranged.household.id)).toEqual([neighbours.arranged.authUserId]);
     });
 
-    it('a Device and a visitor with no session cannot remove an account', async () => {
+    it('two accounts removing each other at once leave exactly one', async () => {
+      const { arranged, phone } = await household();
+      const guest = await newcomer();
+      await accept(guest.phone, (await makeInvite(phone)).token);
+
+      const results = await Promise.all([remove(phone, guest.arranged.authUserId), remove(guest.phone, arranged.authUserId)]);
+
+      expect(results.filter((result) => result.error === null && result.data === true)).toHaveLength(1);
+      expect(results.filter((result) => result.error?.code === REFUSED)).toHaveLength(1);
+      expect(await accountIds(arranged.household.id)).toHaveLength(1);
+    });
+
+    it('a Device and a visitor with no session cannot remove an account, and nothing changes', async () => {
       const { arranged } = await household();
+      const neighbours = await household();
       const wall = await device(arranged);
 
-      const fromDevice = await wall.client.from('household_accounts').delete().eq('auth_user_id', arranged.authUserId).select('auth_user_id');
-      const fromVisitor = await asAnonymous().from('household_accounts').delete().eq('auth_user_id', arranged.authUserId);
-
-      expect(fromDevice.data ?? []).toEqual([]);
-      expect(fromVisitor.error?.code).toBe(REFUSED);
+      expect((await remove(wall.client, arranged.authUserId)).error?.code).toBe(REFUSED);
+      expect((await remove(asAnonymous(), arranged.authUserId)).error?.code).toBe(REFUSED);
+      // Another Household's account is a Household Account, so it is not refused: it matches nothing.
+      expect((await remove(neighbours.phone, arranged.authUserId)).data).toBe(false);
       expect(await accountIds(arranged.household.id)).toEqual([arranged.authUserId]);
     });
 
-    it('insert and update on household_accounts stay refused', async () => {
+    it("a Device and another Household's account select no household_accounts row that is not their own", async () => {
+      const { arranged, phone } = await household();
+      const guest = await newcomer();
+      await accept(guest.phone, (await makeInvite(phone)).token);
+      const neighbours = await household();
+      const wall = await device(arranged);
+
+      const fromDevice = await wall.client.from('household_accounts').select('auth_user_id');
+      const fromNeighbour = await neighbours.phone.from('household_accounts').select('auth_user_id');
+
+      expect(fromDevice.error).toBeNull();
+      expect(fromDevice.data).toEqual([]);
+      expect(fromNeighbour.data).toEqual([{ auth_user_id: neighbours.arranged.authUserId }]);
+    });
+
+    it('insert, update and delete on household_accounts stay refused to a Household Account', async () => {
       const { arranged, phone } = await household();
       const neighbours = await household();
       const guest = await newcomer();
@@ -398,10 +480,27 @@ describe('household invites', () => {
       const insert = await guest.phone.from('household_accounts').insert({ auth_user_id: guest.arranged.authUserId, household_id: arranged.household.id });
       const adopt = await phone.from('household_accounts').insert({ auth_user_id: guest.arranged.authUserId, household_id: arranged.household.id });
       const move = await phone.from('household_accounts').update({ household_id: neighbours.arranged.household.id }).eq('auth_user_id', arranged.authUserId);
+      const drop = await phone.from('household_accounts').delete().eq('auth_user_id', arranged.authUserId);
 
       expect(insert.error?.code).toBe(REFUSED);
       expect(adopt.error?.code).toBe(REFUSED);
       expect(move.error?.code).toBe(REFUSED);
+      expect(drop.error?.code).toBe(REFUSED);
+      expect(await accountIds(arranged.household.id)).toEqual([arranged.authUserId]);
+    });
+
+    it('a visitor with no session cannot insert, update or delete household_accounts', async () => {
+      const { arranged } = await household();
+      const guest = await newcomer();
+      const visitor = asAnonymous();
+
+      const insert = await visitor.from('household_accounts').insert({ auth_user_id: guest.arranged.authUserId, household_id: arranged.household.id });
+      const update = await visitor.from('household_accounts').update({ household_id: arranged.household.id }).eq('auth_user_id', arranged.authUserId);
+      const drop = await visitor.from('household_accounts').delete().eq('auth_user_id', arranged.authUserId);
+
+      expect(insert.error?.code).toBe(REFUSED);
+      expect(update.error?.code).toBe(REFUSED);
+      expect(drop.error?.code).toBe(REFUSED);
       expect(await accountIds(arranged.household.id)).toEqual([arranged.authUserId]);
     });
   });
