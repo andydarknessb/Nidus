@@ -554,6 +554,12 @@ describe('iPhone calendars in Settings', () => {
     expect(input).toContain(`aria-describedby="${steps}"`);
   });
 
+  it('marks the field invalid while a problem shows, and not otherwise', () => {
+    const input = (markup: string) => /<input[^>]*>/.exec(markup)![0];
+    expect(input(form({ problem: { words: 'That is not an iPhone calendar link.', n: 1 } }))).toContain('aria-invalid="true"');
+    expect(input(form())).not.toContain('aria-invalid');
+  });
+
   it('says "Adding" while it adds, and does nothing then', () => {
     expect(form({ adding: true })).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Adding<\/button>/);
     expect(form()).toMatch(/<button[^>]*type="submit"[^>]*>Add<\/button>/);
@@ -596,6 +602,13 @@ describe('iPhone calendars in Settings', () => {
     expect(words(markup)).toBe('Sam’s iPhone iPhone calendar Connected Last synced 5 minutes ago Whose calendar is Sam’s iPhone? Everyone Cory Sam Remove Sam’s iPhone');
     expect(markup).toMatch(/<option value="p-sam" selected="">Sam<\/option>/);
     expect(/<button[^>]*id="remove-a2"/.test(markup)).toBe(true);
+  });
+
+  it('does not say "iPhone calendar" twice when the calendar has no name of its own', () => {
+    const markup = block(iphone, [{ ...ical, name: 'iPhone calendar' }]);
+    expect(markup.match(/>iPhone calendar</g)).toHaveLength(1);
+    expect(words(markup)).toContain('iPhone calendar Connected');
+    expect(block(iphone, [ical]).match(/>iPhone calendar</g)).toHaveLength(1);
   });
 
   it('shows none of Google’s controls for an iPhone calendar, even when its link broke', () => {

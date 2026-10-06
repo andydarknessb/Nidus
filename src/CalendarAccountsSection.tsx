@@ -7,6 +7,7 @@ import { useRefetchOn } from '@/lib/change-feed';
 import {
   accountStatusText,
   addIphoneCalendar,
+  pressAdd,
   calendarsOfAccount,
   lastSyncedText,
   loadCalendarAccounts,
@@ -43,10 +44,9 @@ const problemId = (place: string) => `problem-${place}`;
 const removeButtonId = (id: string) => `remove-${id}`;
 const IPHONE_LINK = 'iphone-link';
 
-// The iPhone calendars card's steps, and what is said on the status line when a link was added.
+// The iPhone calendars card's steps.
 export const IPHONE_STEPS =
   'On your iPhone, open Calendar, tap Calendars, tap the i next to a calendar, turn on Public Calendar, tap Share Link, then Copy Link. Paste it here.';
-export const IPHONE_ADDED = 'Added. First sync within 5 minutes.';
 
 // Whose a calendar is: a person, or "Everyone" (the whole Household, as the Wall says it); '' is Everyone, the value a select can
 // carry. A Google calendar's row shows it while the calendar is shown; an iPhone calendar, which is always shown, always does.
@@ -99,10 +99,11 @@ export function CalendarRow({
 // name, with what it is under that.
 export function AccountSummary({ account, name, now }: { account: CalendarAccount; name?: string | undefined; now: number }) {
   const iphone = account.provider === 'icloud';
+  const heading = iphone ? (name ?? 'iPhone calendar') : account.google_email;
   return (
     <div className="flex flex-col gap-1">
-      <h3 className="text-[17px] leading-6 font-semibold break-words">{iphone ? (name ?? 'iPhone calendar') : account.google_email}</h3>
-      {iphone && <p className={helpClass}>iPhone calendar</p>}
+      <h3 className="text-[17px] leading-6 font-semibold break-words">{heading}</h3>
+      {iphone && heading !== 'iPhone calendar' && <p className={helpClass}>iPhone calendar</p>}
       <p className="text-base leading-6">{accountStatusText(account)}</p>
       <p className={helpClass}>{lastSyncedText(account.last_synced_at, now)}</p>
     </div>
@@ -236,6 +237,7 @@ export function IphoneCalendarForm({
           spellCheck={false}
           className={fieldClass}
           value={value}
+          aria-invalid={problem ? true : undefined}
           aria-describedby={problem ? `${stepsId} ${problemId(ADD_IPHONE)}` : stepsId}
           onChange={(event) => onChange(event.target.value)}
         />
@@ -264,6 +266,9 @@ export function CalendarAccountsSection() {
   const [removing, setRemoving] = useState(false);
   const [iphoneLink, setIphoneLink] = useState('');
   const [adding, setAdding] = useState(false);
+  // The guard against a second press, and what the field holds now (a press's answer comes after more may have been typed).
+  const addState = useRef({ adding: false });
+  const iphoneLinkNow = useRef('');
   const say = useStatusLine();
   // What has been asked of each calendar and not answered yet, laid over what is stored so that a tick shows at once; and, for each
   // calendar, the writes in the order they were asked, so that the last asked is the last written.
@@ -393,21 +398,24 @@ export function CalendarAccountsSection() {
     void refresh();
   }
 
-  // Adds the pasted link as an iPhone calendar. The route's own words are what is said when it refuses (it is the one that knows
-  // whether the link is wrong, taken or unreadable); the field is cleared only when it was added.
+  // Adds the pasted link as an iPhone calendar (pressAdd says what each answer comes to). The route's own words are said under the
+  // field when it refuses; any other failure is worded as every write on this page is.
   async function addIphone() {
-    if (adding) return;
     setAdding(true);
-    try {
-      await addIphoneCalendar(supabase, iphoneLink.trim());
-      problems.clear(ADD_IPHONE);
-      setIphoneLink('');
-      say(IPHONE_ADDED);
-      void refresh();
-    } catch (error) {
-      problems.say(ADD_IPHONE, error instanceof Error ? error.message : 'Could not add that calendar. Try again.');
-    }
+    const result = await pressAdd({ link: iphoneLink, state: addState.current, current: () => iphoneLinkNow.current, add: (url) => addIphoneCalendar(supabase, url) });
+    if (result.kind === 'ignored') return;
     setAdding(false);
+    if (result.kind === 'added') {
+      problems.clear(ADD_IPHONE);
+      if (result.clear) changeIphoneLink('');
+      say(result.say);
+      void refresh();
+    } else if (result.kind === 'refused') problems.say(ADD_IPHONE, result.words);
+    else problems.fail(ADD_IPHONE, result.error);
+  }
+  function changeIphoneLink(value: string) {
+    iphoneLinkNow.current = value;
+    setIphoneLink(value);
   }
 
   const block = (account: CalendarAccount) => (
@@ -464,7 +472,7 @@ export function CalendarAccountsSection() {
         {google?.map(block)}
       </Card>
       <Card title="iPhone calendars">
-        <IphoneCalendarForm value={iphoneLink} adding={adding} problem={problems.at(ADD_IPHONE)} onChange={setIphoneLink} onAdd={() => void addIphone()} />
+        <IphoneCalendarForm value={iphoneLink} adding={adding} problem={problems.at(ADD_IPHONE)} onChange={changeIphoneLink} onAdd={() => void addIphone()} />
         {iphones?.map(block)}
       </Card>
     </>
