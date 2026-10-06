@@ -2,6 +2,7 @@ import { LogOut } from 'lucide-react';
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { AppearanceSection } from '@/AppearanceSection';
 import { DevicesSection } from '@/DevicesSection';
+import { HouseholdAccountsSection } from '@/HouseholdAccountsSection';
 import { ProfilesSection } from '@/ProfilesSection';
 import { WeatherSection } from '@/WeatherSection';
 import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass } from '@/components/phone';
@@ -10,11 +11,11 @@ import { updateHousehold, type Household } from '@/lib/household';
 import { timezoneOptions } from '@/lib/timezones';
 import { useWriteProblem } from '@/lib/use-write-problem';
 
-type Props = { household: Household; onSaved: (household: Household) => void; onSignOut: () => void };
+type Props = { household: Household; userId: string; onSaved: (household: Household) => void; onSignOut: () => void };
 
 // The phone's Household page (/settings): the Household's name and time zone, how the Wall looks, the weather, the people and the
-// Wall tablets, then Sign out. The Calendar Accounts and the events added in Nidus are on the Calendars page.
-export function SettingsPage({ household, onSaved, onSignOut }: Props) {
+// Wall tablets and who can sign in, then Sign out. The Calendar Accounts and the events added in Nidus are on the Calendars page.
+export function SettingsPage({ household, userId, onSaved, onSignOut }: Props) {
   const [name, setName] = useState(household.name);
   const [timezone, setTimezone] = useState(household.timezone);
   const [saved, setSaved] = useState(false);
@@ -109,6 +110,7 @@ export function SettingsPage({ household, onSaved, onSignOut }: Props) {
       <WeatherSection household={household} onSaved={onSaved} />
       <ProfilesSection householdId={household.id} />
       <DevicesSection />
+      <HouseholdAccountsSection householdId={household.id} timezone={household.timezone} userId={userId} />
       <Button variant="quiet" className="h-12 w-full" onClick={onSignOut}>
         <LogOut aria-hidden className="size-[22px]" />
         Sign out
