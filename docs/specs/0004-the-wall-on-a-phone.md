@@ -60,9 +60,10 @@ The eight decisions the owner approved:
 
 ### Choosing the layout
 
-- The layout is chosen by viewport width alone, never by user agent, device kind or a per-Device setting. `src/lib/home-layout.ts` already tracks the window's size for Home; `homeLayout(width, height)` gains `phone: width < 768`, and `useHomeLayout` returns it. One listener, one pure function.
+- The layout is chosen by viewport width alone, never by user agent, device kind or a per-Device setting. `src/lib/home-layout.ts` already tracks the window's size for Home; `homeLayout(width, height)` gains `phone: width > 0 && width < 768` (a WebView can report a width of 0 before its first layout, and a tablet must not start as a phone), and `useHomeLayout` returns it. One listener, one pure function.
 - `HomeShell` keeps every piece of shared state where it is (the route, the Household read, the forecast, the Profiles, the Profile filter, today's Routines, the Add event sheet) and only its chrome branches: `phone ? <PhoneShell …> : <the existing grid>`. No reader, query or subscription is added or duplicated for the phone, and none changes for the tablet.
 - `PhoneShell` (`src/components/PhoneShell.tsx`) draws the header, the screen in one scrolling column, the Add event button and the tab bar. The screen for each route is chosen in `src/PhoneWall.tsx`, one branch per route, each a phone screen under `src/phone/`. Until a screen's ticket lands, its branch renders the tablet's component, so the shell ticket ships a working app.
+- Every sheet's scrim stacks above the tab bar and the Add event button (ruling from the branch review: a sheet's footer must never sit under the bar).
 - Crossing 768 px (a window resized, a tablet turned) swaps the layout without a reload and keeps the route, the Profile filter and an open sheet's inputs where React can keep them; an open Add event sheet may close.
 
 ### The shell
@@ -87,7 +88,7 @@ The eight decisions the owner approved:
   - The Profile filter applies to every one of them, dots included.
 - **Routines**: a row of people (disc, name, "3 of 5" or "All done", the selected ring on the picked one), then the tablet's part-of-day control (Morning, Afternoon, Evening, Whole day, opening on the part it is now), then the picked person's card in their soft colour: their disc and name, their progress, then their tiles under the part's heading, what is left from earlier, and how many are done. The picked person starts as the first in the people strip's order with something left now, else the first. Ticking and unticking are the tablet's, through the same reader.
 - **Meals**: the pager by week, then a card with the seven day chips, the picked day's heading and its four slots (Breakfast, Lunch, Dinner, Snack) as 68 px rows: the slot's icon, the slot's name over the meal or "Add a meal". Tapping a row opens the existing meal sheet for that day and slot. The picked day follows Week's rule.
-- **Lists**: a row of list chips (the Pinned List first with its pin, each with "N to get"), then the picked list's card: its name, the add row, its items, "Clear N crossed off". The Pinned List is picked first. Everything else about lists (adding, crossing off, clearing, creating, renaming, deleting) is the tablet's.
+- **Lists**: a row of list chips (the Pinned List first with its pin, each with "N to get"), then the picked list's card: its name, the add row, its items, "Clear N crossed off". The Pinned List is picked first. Adding, crossing off and clearing are the tablet's. Creating, renaming and deleting lists, and choosing the Pinned List, stay in Settings, for the owner, on the phone as on the tablet; the Wall's words say so ("The owner adds lists in Settings.").
 
 ### Sheets
 
