@@ -121,7 +121,8 @@ Settled on 2026-10-06 when the owner chose, of four ways to bring the family's i
 - **iCloud by its public link**: the owner makes a calendar a Public Calendar on the iPhone and pastes its link into Settings. The link is a secret in Vault; only links on Apple's iCloud hosts are accepted or followed.
 - **Same mirror**: an iCloud calendar is a Calendar Account of provider `icloud` with one Mirrored Calendar, attributed and drawn exactly as a Google calendar. Read-only; polled every five minutes; a whole read each time, skipped when unchanged.
 - **Repeats expanded by Nidus** for this source, with `ical.js`, inside the same rolling window.
-- **Deploy order**: as v2. One additive migration, pushed immediately before the pull request that reads it is merged; the Edge Functions are deployed with it.
+- **Deploy order**: push the migration, then deploy `calendar-connect` and `calendar-sync`, then merge. The new sync selects `provider`, so deploying it before the migration would stop every account's sync, Google's included.
+- **A full read every 24 hours**, as for Google: a feed that keeps answering "unchanged" is still re-read once a day so its repeats roll forward with the window.
 
 ### Tables
 

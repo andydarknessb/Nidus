@@ -29,7 +29,7 @@ An iCloud calendar can be made a Public Calendar on the iPhone, which gives a lo
 - `calendar_accounts` gains `provider` (`google` or `icloud`, default `google`). `google_email` becomes nullable: required for `google`, null for `icloud` (a check constraint says so). An `icloud` account's Vault secret is the feed's link, normalised (below). A new `feed_key` (a SHA-256 of the normalised link, not readable by clients) is unique per Household, so the same link cannot be added twice. Existing rows are all `google`.
 - An `icloud` account has exactly one Mirrored Calendar, its `google_calendar_id` the literal `ics` (the column keeps its name; a comment says what it holds for each provider) and its `name` the feed's `X-WR-CALNAME`, else "iPhone calendar". It starts selected, for the whole Household; the owner sets who it is for in the existing picker.
 - A Synced Event from a feed has `google_event_id` = the event's `UID`, a separator and the occurrence's original start as a UTC instant (its `RECURRENCE-ID` for a moved occurrence), so each occurrence keeps its key when it is moved and is replaced, not duplicated. The column keeps its name, with a comment.
-- The feed's `ETag` (or `Last-Modified`) is kept in the Mirrored Calendar's `sync_token`, which no client can read.
+- The feed's `ETag` and `Last-Modified`, as a small JSON object, are kept in the Mirrored Calendar's `sync_token`, which no client can read. They are not sent when the last full read is 24 hours old or more, so the window rolls forward even for a calendar nobody edits (ruling from review).
 - RLS, grants and what a Device may read are unchanged: a Device reads accounts (without the secret), Mirrored Calendars and Synced Events, and writes none of them. The link is never in a column a client can select.
 - One migration. It adds, it does not rename.
 
@@ -49,7 +49,7 @@ An iCloud calendar can be made a Public Calendar on the iPhone, which gives a lo
 - Parsing and expanding use `ical.js` (Mozilla), added to `package.json` and to the function's import map: `RRULE`, `RDATE`, `EXDATE`, overrides by `RECURRENCE-ID`, `VTIMEZONE` and `TZID`. All-day events (`VALUE=DATE`) start at the Household's midnight and end at the midnight after their last day, as Google's do. A time with no zone is read in the Household Timezone. No `DTEND`: `DURATION`, else one day for a date and zero length for a time. `STATUS:CANCELLED` is skipped. At most 1000 occurrences per event and 20000 per feed, so a rule with no end cannot run away. Titles, places and notes are cut as Google's are.
 - A 401, 403, 404 or 410 means the link no longer works: the account becomes `needs_reauth` with "This link no longer works. Turn on Public Calendar again and paste the new link." Any other failure is a `last_error` and the next run tries again, as for Google.
 - One feed's failure never stops another account's sync. Google accounts are synced first in each run and iCloud feeds after them, so a feed that exhausts the function cannot cost Google its sync (ruling from review).
-- The expansion's work is capped per event and per feed (steps walked, not only occurrences kept), and an event the parser cannot read is skipped alone, never the whole feed.
+- The expansion's work is capped per event, per feed and per run (steps walked, not only occurrences kept), so a few hostile feeds cannot use up the function's time; a feed cut short keeps its rows and says it will be read again. An event the parser cannot read is skipped alone, never the whole feed.
 
 ### Settings
 
