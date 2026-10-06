@@ -14,6 +14,13 @@ For each Calendar Account whose status is `active`:
 4. Calendars that are not selected are not read. Un-selecting one removes its events (and its sync token) in the same statement, through a trigger, so the wall loses them at once rather than at the next run; selecting it again means a full read on the next run.
 5. Sets `last_synced_at` and clears `last_error` on the account. If a calendar failed, the account keeps `last_error` and that calendar keeps its previous events and token; the others still sync.
 
+Google accounts are synced first in each run. Then iPhone (iCloud) accounts, a Calendar Account of provider `icloud` with one Mirrored Calendar ([ADR 0003](adr/0003-icloud-by-public-link.md), spec 0005), in the order they were last attempted (never-attempted first); each one's `last_attempted_at` is written before its feed is read, so a feed that stops a run goes to the back of the next one:
+
+1. Reads the feed's link from Vault and fetches it (only iCloud hosts, at most three redirects, 15 s, 2 MB), with the stored ETag and Last-Modified unless the last full read is a day old. A 304 changes nothing and counts as synced; 401, 403, 404 or 410 makes the account `needs_reauth` ("This link no longer works...").
+2. Expands the feed with `ical.js` into occurrences over the same window: single events, added dates (RDATE) and moved occurrences first, then repeating series, newest first. Only the repeats an iPhone can make are expanded (DAILY, WEEKLY, MONTHLY, YEARLY without the parts that can make the library search without end, and INTERVAL up to 999); others show their first occurrence. Daily and weekly series without COUNT are fast-forwarded to the window, so a long history costs nothing.
+3. Work is capped: 30,000 steps per series, 60,000 per feed, 80,000 and 800 ms per run. A series cut by its own caps keeps what was reached and the account notes it ("Connected. Some repeating events start too long ago to show in full." in Settings); a feed the run had no time for keeps its old rows and is read first next time.
+4. Stores the rows with `replace_synced_events`, the validators (and whether the read was cut) as JSON in the calendar's `sync_token`.
+
 Reconnecting an account that needs reauth (the "Connect again" button in settings) goes through `calendar-connect` like a first connection: it updates the Vault secret in place, sets the account `active` and keeps its Mirrored Calendars, Profiles and colours.
 
 Settings shows each account's status, last error and last-synced time. The wall shows a "Last synced N hours ago" badge only when an account is more than an hour behind.
@@ -53,4 +60,4 @@ Until both secrets exist the job does nothing, so a fresh stack is unaffected. T
 
 ## Hosted
 
-Set the three secrets with `supabase secrets set`, deploy with `supabase functions deploy calendar-sync`, and create the two Vault secrets with the project's own function URL (`https://<project-ref>.supabase.co/functions/v1/calendar-sync`). Applying the migration schedules the job; creating the Vault secrets is what turns it on.
+Set the three secrets with `supabase secrets set`, push the migrations first, then deploy with `supabase functions deploy calendar-sync` (and `calendar-connect`, which adds iPhone calendars), and create the two Vault secrets with the project's own function URL (`https://<project-ref>.supabase.co/functions/v1/calendar-sync`). Applying the migration schedules the job; creating the Vault secrets is what turns it on.

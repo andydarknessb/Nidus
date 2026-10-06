@@ -127,5 +127,5 @@ Settled on 2026-10-06 when the owner chose, of four ways to bring the family's i
 ### Tables
 
 ```
-calendar_accounts     + provider (google|icloud, default google), google_email nullable (required for google), + feed_key (unique per Household, icloud only)
+calendar_accounts     + provider (google|icloud, default google), google_email nullable (required for google), + feed_key (unique per Household, icloud only), + last_attempted_at (icloud read order)
 ```
