@@ -494,7 +494,7 @@ describe('a Calendar Account and its calendars', () => {
 
   it('says of an account whose last update failed what Nidus says, and none of what the sync wrote', () => {
     const now = Date.parse('2026-10-01T19:21:00Z');
-    const account = { id: 'a1', google_email: 'sam.work@example.com', status: 'active' as const, last_synced_at: '2026-10-01T16:21:00Z', last_error: 'Work: Google answered 500 (backendError)' };
+    const account = { id: 'a1', provider: 'google' as const, google_email: 'sam.work@example.com', status: 'active' as const, last_synced_at: '2026-10-01T16:21:00Z', last_error: 'Work: Google answered 500 (backendError)' };
     const shown = words(renderToStaticMarkup(createElement(AccountSummary, { account, now })));
     expect(shown).toContain('sam.work@example.com');
     expect(shown).toContain('Connected, but the last update failed. Nidus tries again every 5 minutes.');

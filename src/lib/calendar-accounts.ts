@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
 
 // Calendar Accounts and Mirrored Calendars (CONTEXT.md). Every function takes the
 // client so the same code runs in the app and in tests against the local stack.
@@ -7,10 +7,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // reaches a client, and neither does the column that names its Vault secret.
 
 export type CalendarAccountStatus = 'active' | 'needs_reauth';
+export type CalendarProvider = 'google' | 'icloud';
 
 export type CalendarAccount = {
   id: string;
-  google_email: string;
+  provider: CalendarProvider;
+  // Null for an iPhone (iCloud) calendar, which has no Google email.
+  google_email: string | null;
   status: CalendarAccountStatus;
   last_synced_at: string | null;
   last_error: string | null;
@@ -35,7 +38,7 @@ export type MirroredCalendarChoice = { selected?: boolean; profile_id?: string |
 
 // Explicit column lists: `select *` on these tables is refused, because vault_secret_id
 // and sync_token are not granted to clients.
-const accountColumns = 'id, google_email, status, last_synced_at, last_error';
+const accountColumns = 'id, provider, google_email, status, last_synced_at, last_error';
 const calendarColumns = 'id, calendar_account_id, google_calendar_id, name, color, profile_id, selected';
 
 export async function loadCalendarAccounts(client: SupabaseClient): Promise<CalendarAccount[]> {
@@ -59,6 +62,15 @@ export async function startCalendarConnect(client: SupabaseClient, kind: 'settin
   });
   if (error || !data?.url) throw error ?? new Error('calendar-connect returned no url');
   return data.url;
+}
+
+// Adds an iPhone calendar from its public link. The route answers in the words the Settings card shows, and those are what is
+// thrown; the link itself is never kept here.
+export async function addIphoneCalendar(client: SupabaseClient, url: string): Promise<void> {
+  const { error } = await client.functions.invoke<{ id: string; name: string }>('calendar-connect/icloud', { body: { url } });
+  if (!error) return;
+  const words = error instanceof FunctionsHttpError ? ((await error.context.json().catch(() => null)) as { error?: unknown } | null)?.error : null;
+  throw new Error(typeof words === 'string' ? words : 'Could not add that calendar. Try again.');
 }
 
 export async function updateMirroredCalendar(

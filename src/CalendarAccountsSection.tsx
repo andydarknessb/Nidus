@@ -161,7 +161,7 @@ export function CalendarAccountsSection() {
   async function reconnect(account: CalendarAccount) {
     setNotice(null);
     try {
-      window.location.assign(await startCalendarConnect(supabase, 'settings', account.google_email));
+      window.location.assign(await startCalendarConnect(supabase, 'settings', account.google_email ?? undefined));
     } catch (error) {
       problems.fail(reconnectPlace(account.id), error, { said: CONNECT_SAID });
     }
