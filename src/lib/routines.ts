@@ -257,6 +257,18 @@ export function columnsOf(profiles: Profile[], routines: Routine[], weekday: num
   ).map(({ profile, routines: own }) => ({ profile, routines: todaysRoutines(own, weekday) }));
 }
 
+// The person the phone's Routines tab opens on: the first, in the people strip's order, with something left in the part shown
+// (its own Routines, what is left from earlier and Routines for any time, or on the whole day any at all), else the first person.
+// Nobody when there are no people. `columns` are the chart's, in Profile order.
+export function firstPick(columns: readonly ProfileRoutines[], done: ReadonlySet<string>, part: ChartPart): string | null {
+  const left = ({ routines }: ProfileRoutines) => {
+    if (part === 'whole') return routines.some((routine) => !done.has(routine.id));
+    const view = partView(routines, done, part);
+    return [...view.own, ...view.earlier, ...view.anytime].some((routine) => !done.has(routine.id));
+  };
+  return (columns.find(left) ?? columns[0])?.profile.id ?? null;
+}
+
 // ---- Up next -------------------------------------------------------------------------------------
 
 // Up next on Home shows a tile for this many people at most, unless the screen is too short for that many (home-layout.ts).

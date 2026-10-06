@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { BeforeHousehold } from './components/BeforeHousehold';
-import { EmptyWords } from './components/EmptyWords';
 import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
 import { HomeRail } from './components/HomeRail';
 import type { CalendarView, WallRoute } from './lib/calendar-occurrences';
@@ -9,7 +8,7 @@ import type { Profile } from './lib/profiles';
 import type { RoutinesToday } from './lib/use-routines-today';
 import type { Forecast } from './lib/weather';
 import { MealsScreen } from './MealsPage';
-import { RoutinesChart } from './RoutinesPage';
+import { PhoneRoutines } from './phone/PhoneRoutines';
 import { ListsScreen } from './SharedListsPage';
 
 // The screen in the phone's column, chosen by the route (docs/specs/0004-the-wall-on-a-phone.md). HomeShell reads everything once and
@@ -46,7 +45,7 @@ export function PhoneWall(props: PhoneScreenProps) {
     case 'day': return <TabletCalendar {...props} route={route} />;
     case 'week': return <TabletCalendar {...props} route={route} />;
     case 'month': return <TabletCalendar {...props} route={route} />;
-    case 'routines': return <TabletRoutines {...props} />;
+    case 'routines': return <PhoneRoutines {...props} />;
     case 'meals': return <TabletMeals {...props} route={route} />;
     case 'lists': return <TabletLists />;
   }
@@ -89,27 +88,6 @@ function TabletCalendar({ route, timezone, view, added, forecast, weatherOn, pro
         <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
       ) : (
         <BeforeHousehold label="Calendar" failed={view.failed} words={COULD_NOT_LOAD} />
-      )}
-    </Boxed>
-  );
-}
-
-// Routines: the tablet's chart.
-function TabletRoutines({ timezone, view, routines }: PhoneScreenProps) {
-  return (
-    <Boxed>
-      {timezone ? (
-        <RoutinesChart routines={routines} />
-      ) : (
-        <section aria-label="Routines" className="rounded-3xl bg-card p-4">
-          {view.failed ? (
-            <p role="alert" className="text-base">
-              Could not load routines. Check your connection.
-            </p>
-          ) : (
-            <EmptyWords>Loading</EmptyWords>
-          )}
-        </section>
       )}
     </Boxed>
   );
