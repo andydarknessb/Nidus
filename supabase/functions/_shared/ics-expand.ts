@@ -29,8 +29,9 @@ export const MAX_EXPANSION_MS = 800;
 
 // What is left of a run's work, shared by every feed the run expands: steps, and the milliseconds
 // of expansion (parsing included) already spent. `now` is the clock (performance.now by default),
-// injectable so the time limit is testable.
-export type StepBudget = { remaining: number; spentMs?: number; now?: () => number };
+// injectable so the time limit is testable. `noFastForward` turns off the skip over the years before
+// the window (below), so that a test can compare the two walks.
+export type StepBudget = { remaining: number; spentMs?: number; now?: () => number; noFastForward?: boolean };
 
 // No zone is more than 14 hours from UTC, so a wall-clock time this far before the window start
 // is before it in every zone and needs no zone arithmetic.
@@ -149,6 +150,33 @@ function endedBefore(ev: ICAL.Event, windowStartMs: number, lengthBound: number)
       return last + MAX_ZONE_OFFSET_MS + lengthBound < windowStartMs;
     })
   );
+}
+
+// ical.js has no way to jump to the window, so a daily or weekly series that began long ago would
+// be walked a step at a time from DTSTART. These rules repeat exactly every INTERVAL days (weeks), so
+// the walk can start from DTSTART moved on by a whole number of periods, in wall-clock terms in the
+// series' own zone, which keeps the phase of the interval, the weekday and the wall time across any
+// DST change. The moved start still ends 14 h before the window, so it is never a row of its own;
+// EXDATEs, overrides and keys are matched on the occurrences' real instants as before. A rule with
+// COUNT counts from DTSTART, so it is walked from there (it is bounded), as is a monthly or yearly
+// one (a few steps a year), and an event with more than one rule.
+function fastForwarded(ev: ICAL.Event, start: ICAL.Time, lengthBound: number, windowStartMs: number): ICAL.RecurIterator | null {
+  const rules = ev.component.getAllProperties('rrule');
+  const rule = rules.length === 1 ? rules[0]!.getFirstValue() : null;
+  if (!(rule instanceof ICAL.Recur) || rule.count || (rule.freq !== 'DAILY' && rule.freq !== 'WEEKLY')) return null;
+  const periodDays = rule.interval * (rule.freq === 'WEEKLY' ? 7 : 1);
+  const wall = Date.UTC(start.year, start.month - 1, start.day, start.hour, start.minute, start.second);
+  // The most periods that keep moved start + length + 14 h strictly before the window.
+  const periods = Math.floor((windowStartMs - MAX_ZONE_OFFSET_MS - lengthBound - wall - 1) / (periodDays * DAY_MS));
+  if (!(periods >= 1)) return null;
+  // Built from whole fields: a Time moved with addDuration is normalised only when read, which the
+  // iterator does not do.
+  const day = new Date(Date.UTC(start.year, start.month - 1, start.day + periods * periodDays));
+  const moved = ICAL.Time.fromData(
+    { year: day.getUTCFullYear(), month: day.getUTCMonth() + 1, day: day.getUTCDate(), hour: start.hour, minute: start.minute, second: start.second, isDate: start.isDate },
+    start.zone,
+  );
+  return rule.iterator(moved);
 }
 
 // The starts an event's RDATEs name (a period names its start).
@@ -314,7 +342,9 @@ function expand(
         const emit = emitterFor(s);
         // A rule's first occurrence is DTSTART.
         if (!emit(s.layout.start)) continue;
-        const steps = s.ev.iterator();
+        const lengthBound = s.layout.isAllDay ? s.layout.lengthDays * DAY_MS : s.layout.lengthMs;
+        const steps: { next(): ICAL.Time | null | undefined } =
+          (run.noFastForward ? null : fastForwarded(s.ev, s.layout.start, lengthBound, windowStartMs)) ?? s.ev.iterator();
         let n = 0;
         for (let next = steps.next(); next; next = steps.next()) {
           if (n >= MAX_STEPS_PER_EVENT || budget <= 0) {

@@ -357,7 +357,8 @@ describe('when the feed says no', () => {
 
 describe('a run with more feed than it can read', () => {
   // A daily rule from the year 1700 reaches the window only after 119,000 steps: more than any cap.
-  const runaway = (uid: string, year = 1700) => vevent(uid, 'Runaway', `DTSTART:${year}0101T000000\nRRULE:FREQ=DAILY`);
+  // A series with two rules is not skipped forward (see fastForwarded), so it is walked from DTSTART.
+  const runaway = (uid: string, year = 1700) => vevent(uid, 'Runaway', `DTSTART:${year}0101T000000\nRRULE:FREQ=DAILY\nRRULE:FREQ=DAILY;INTERVAL=7`);
   // Four rules are more than a feed's steps (60,000 at 30,000 each), and fit the run only once.
   const heavy = (...extra: string[]) => feedOf(...extra, runaway('a'), runaway('b', 1701), runaway('c', 1702), runaway('d', 1703));
   const MINUTE = 60_000;

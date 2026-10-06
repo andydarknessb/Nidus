@@ -315,7 +315,8 @@ const budget = (remaining = MAX_STEPS_PER_RUN): StepBudget => ({ remaining, spen
 const read = (text: string, run: StepBudget = budget()) => expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
 const ids = (rows: { google_event_id: string }[]) => rows.map((row) => row.google_event_id.split('|')[0]!);
 // A daily rule from the year 1700 reaches the window only after 119,000 steps: more than any cap.
-const runaway = (uid: string, year = 1700) => event(`DTSTART:${year}0101T000000\nRRULE:FREQ=DAILY`, uid);
+// A series with two rules is not skipped forward (see fastForwarded), so it is walked from DTSTART.
+const runaway = (uid: string, year = 1700) => event(`DTSTART:${year}0101T000000\nRRULE:FREQ=DAILY\nRRULE:FREQ=DAILY;INTERVAL=7`, uid);
 const dentist = event('DTSTART:20261014T140000Z', 'dentist', 'Dentist');
 
 describe('expandFeed: work', () => {
@@ -331,12 +332,20 @@ describe('expandFeed: work', () => {
     quickly(() => expect(expand(feed(...events))).toHaveLength(4000));
   });
 
-  it('gives up on a daily rule from the year 1700, without throwing, and says so', () => {
+  it('gives up on a series with two rules from the year 1700, without throwing, and says so', () => {
     quickly(() => {
-      const { rows, truncated } = read(feed(event('DTSTART;VALUE=DATE:17000101\nRRULE:FREQ=DAILY')));
+      const { rows, truncated } = read(feed(event('DTSTART;VALUE=DATE:17000101\nRRULE:FREQ=DAILY\nRRULE:FREQ=DAILY;INTERVAL=7')));
       expect(rows).toEqual([]);
       expect(truncated).toBe(true);
     });
+  });
+
+  it('reads a single daily rule from the year 1700 in full, for a few steps', () => {
+    const run = budget();
+    const { rows, truncated } = read(feed(event('DTSTART;VALUE=DATE:17000101\nRRULE:FREQ=DAILY')), run);
+    expect(rows.length).toBeGreaterThan(150);
+    expect(truncated).toBe(false);
+    expect(MAX_STEPS_PER_RUN - run.remaining).toBeLessThan(300);
   });
 
   it('always keeps a single event, before or after a runaway rule, and says the rule was cut', () => {
@@ -464,12 +473,13 @@ describe('expandFeed: the time limit of a run', () => {
 
   it('counts the time of every feed of the run: what the first spent, the second does not have', () => {
     const run = ticking();
-    // Daily since mid-2025: about 640 steps to the end of the window.
-    read(feed(event('DTSTART:20250601T140000Z\nRRULE:FREQ=DAILY', 'first')), run);
+    // Daily since mid-2025, with two rules so that it is walked from DTSTART: about 640 steps to the end of the window.
+    const twoRules = (uid: string) => event('DTSTART:20250601T140000Z\nRRULE:FREQ=DAILY\nRRULE:FREQ=DAILY;INTERVAL=7', uid);
+    read(feed(twoRules('first')), run);
     expect(run.spentMs).toBeGreaterThan(600);
     expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
     // The second feed's walk needs about as much again, and the run has a fifth of that left.
-    expect(() => read(feed(event('DTSTART:20250601T140000Z\nRRULE:FREQ=DAILY', 'second')), run)).toThrow(FeedTooLargeError);
+    expect(() => read(feed(twoRules('second')), run)).toThrow(FeedTooLargeError);
     expect(run.spentMs).toBeGreaterThanOrEqual(MAX_EXPANSION_MS - 1);
   });
 
@@ -630,7 +640,7 @@ describe('expandFeed: what the caps cut', () => {
   });
 
   it('keeps the RDATEs and moved occurrences of a series that a cap cut', () => {
-    const cut = event('DTSTART:17000101T000000\nRRULE:FREQ=DAILY\nRDATE:20261010T150000Z\nRDATE;VALUE=PERIOD:20261012T150000Z/PT1H', 'cut');
+    const cut = event('DTSTART:17000101T000000\nRRULE:FREQ=DAILY\nRRULE:FREQ=DAILY;INTERVAL=7\nRDATE:20261010T150000Z\nRDATE;VALUE=PERIOD:20261012T150000Z/PT1H', 'cut');
     const moved = event('RECURRENCE-ID:17000105T000000\nDTSTART:20261011T150000Z\nDTEND:20261011T160000Z', 'cut');
     const { rows, truncated } = read(feed(cut, moved));
     expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-10T15:00:00.000Z', '2026-10-11T15:00:00.000Z', '2026-10-12T15:00:00.000Z']);
@@ -644,6 +654,80 @@ describe('expandFeed: what the caps cut', () => {
     const series = event('DTSTART:20261001T150000Z\nRRULE:FREQ=WEEKLY;COUNT=1\nRDATE:20261010T150000Z\nRDATE:20261011T150000Z\nEXDATE:20261010T150000Z', 'x');
     const moved = event('RECURRENCE-ID:20261011T150000Z\nDTSTART:20261012T150000Z', 'x');
     expect(read(feed(series, moved)).rows.map((row) => row.starts_at)).toEqual(['2026-10-01T15:00:00.000Z', '2026-10-12T15:00:00.000Z']);
+  });
+});
+
+describe('expandFeed: daily and weekly series that began long ago', () => {
+  // Each series is read twice, from DTSTART a step at a time and with the skip over the years before
+  // the window, and must give the same rows; the skip must cost almost no steps.
+  const both = (...components: string[]) => {
+    const slow = { ...budget(), noFastForward: true };
+    const fast = budget();
+    const walked = read(feed(...components), slow);
+    const skipped = read(feed(...components), fast);
+    expect(skipped.rows).toEqual(walked.rows);
+    expect(skipped.truncated).toBe(walked.truncated);
+    return { rows: skipped.rows, slow: MAX_STEPS_PER_RUN - slow.remaining, fast: MAX_STEPS_PER_RUN - fast.remaining };
+  };
+
+  it('gives a weekly BYDAY=MO,WE series with a TZID since 2010 the same rows across a DST change, for a few steps', () => {
+    // Chicago ends daylight time on 2026-11-01: the 09:00 rows are 14:00Z before and 15:00Z after.
+    const { rows, slow, fast } = both(
+      event('DTSTART;TZID=America/Chicago:20100106T090000\nDTEND;TZID=America/Chicago:20100106T100000\nRRULE:FREQ=WEEKLY;BYDAY=MO,WE', 'weekly'),
+    );
+    expect(rows.length).toBeGreaterThan(40);
+    expect(rows.map((row) => row.starts_at)).toContain('2026-10-28T14:00:00.000Z');
+    expect(rows.map((row) => row.starts_at)).toContain('2026-11-02T15:00:00.000Z');
+    expect(slow).toBeGreaterThan(1500);
+    expect(fast).toBeLessThan(100);
+  });
+
+  it('keeps a daily INTERVAL=3 series on its three-day phase', () => {
+    const { rows, slow, fast } = both(event('DTSTART;TZID=Europe/London:20200102T080000\nRRULE:FREQ=DAILY;INTERVAL=3', 'every3'));
+    const days = rows.map((row) => Date.parse(row.starts_at) / 86_400_000);
+    // Wall time 08:00 in London is 07:00Z in summer and 08:00Z in winter: whole days apart, at 3-day steps of the calendar.
+    expect(rows.length).toBeGreaterThan(55);
+    for (let i = 1; i < days.length; i += 1) expect(Math.round(days[i]! - days[i - 1]!)).toBe(3);
+    // 2020-01-02 plus a whole number of three-day periods: 2026-09-?? is on the phase.
+    const first = Date.parse(rows[0]!.starts_at);
+    const sinceStart = Math.round((Date.UTC(new Date(first).getUTCFullYear(), new Date(first).getUTCMonth(), new Date(first).getUTCDate()) - Date.UTC(2020, 0, 2)) / 86_400_000);
+    expect(sinceStart % 3).toBe(0);
+    expect(slow).toBeGreaterThan(700);
+    expect(fast).toBeLessThan(100);
+  });
+
+  it('reads an all-day weekly series, a floating one and a UTC one the same', () => {
+    both(
+      event('DTSTART;VALUE=DATE:20120104\nRRULE:FREQ=WEEKLY;INTERVAL=2', 'allday'),
+      event('DTSTART:20150305T180000\nDTEND:20150305T200000\nRRULE:FREQ=DAILY;INTERVAL=5', 'floating'),
+      event('DTSTART:20190101T230000Z\nDTEND:20190102T010000Z\nRRULE:FREQ=DAILY', 'utc'),
+    );
+  });
+
+  it('reads a series with an UNTIL inside the window the same, and stops at it', () => {
+    const { rows, fast } = both(event('DTSTART;TZID=America/Chicago:20150107T090000\nRRULE:FREQ=WEEKLY;BYDAY=WE;UNTIL=20261104T150000Z', 'until'));
+    expect(rows.at(-1)!.starts_at).toBe('2026-11-04T15:00:00.000Z');
+    expect(fast).toBeLessThan(100);
+  });
+
+  it('still leaves out EXDATEs and moved occurrences, and keeps RDATEs', () => {
+    const series = event(
+      'DTSTART;TZID=America/Chicago:20100106T090000\nRRULE:FREQ=WEEKLY;BYDAY=MO,WE\nEXDATE;TZID=America/Chicago:20261014T090000\nRDATE;TZID=America/Chicago:20261015T090000',
+      'x',
+    );
+    const moved = event('RECURRENCE-ID;TZID=America/Chicago:20261019T090000\nDTSTART;TZID=America/Chicago:20261020T100000', 'x');
+    const { rows } = both(series, moved);
+    const starts = rows.map((row) => row.starts_at);
+    expect(starts).not.toContain('2026-10-14T14:00:00.000Z');
+    expect(starts).not.toContain('2026-10-19T14:00:00.000Z');
+    expect(starts).toContain('2026-10-20T15:00:00.000Z');
+    expect(starts).toContain('2026-10-15T14:00:00.000Z');
+  });
+
+  it('walks a series with COUNT from DTSTART, as it counts from there', () => {
+    const { rows, slow, fast } = both(event('DTSTART:20260601T140000Z\nRRULE:FREQ=WEEKLY;COUNT=40', 'counted'));
+    expect(rows.length).toBeGreaterThan(20);
+    expect(fast).toBe(slow);
   });
 });
 
