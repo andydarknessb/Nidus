@@ -113,7 +113,8 @@ export function DayChips({
 
 // Day, Week and Month; Morning, Afternoon, Evening and Whole day: a 52 tall --muted track (2 px of padding) of buttons 48 tall that
 // touch, the choice pressed and in the Selected look, drawn inside its button. Each button is as wide as its word (flex-auto, the word at 15
-// on one line, never cut), the buttons sharing what is left, so "Whole day" and "Afternoon" fit their buttons at 360 px. Named by `label`, as a group.
+// on one line, never cut), the buttons sharing what is left, so "Whole day" and "Afternoon" fit their buttons at 360 px. Below 360 px the buttons may
+// shrink (min-w-0) and the words wrap, at 18 px a line so two lines still sit inside the 48 px button, rather than push the page sideways. Named by `label`, as a group.
 export function Segmented<Value extends string>({
   label,
   options,
@@ -128,8 +129,8 @@ export function Segmented<Value extends string>({
   return (
     <div role="group" aria-label={label} className="flex h-13 rounded-2xl bg-muted p-0.5">
       {options.map((option) => (
-        <Button key={option.value} variant="quiet" aria-pressed={option.value === value} onClick={() => onChange(option.value)} className={cn(TOUCHING, 'h-12 flex-auto')}>
-          <span className={cn(FACE, 'px-1 text-center text-[15px] leading-5 whitespace-nowrap')}>{option.label}</span>
+        <Button key={option.value} variant="quiet" aria-pressed={option.value === value} onClick={() => onChange(option.value)} className={cn(TOUCHING, 'h-12 min-w-0 flex-auto')}>
+          <span className={cn(FACE, 'px-1 text-center text-[15px] leading-5 whitespace-nowrap max-[359px]:leading-[18px] max-[359px]:whitespace-normal')}>{option.label}</span>
         </Button>
       ))}
     </div>

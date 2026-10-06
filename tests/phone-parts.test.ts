@@ -131,16 +131,27 @@ describe('Segmented', () => {
     expect(classesOf(buttons(html)[0]!.tag)).toEqual(expect.arrayContaining(['h-12', 'flex-auto', 'p-0.5', 'focus-visible:-outline-offset-2']));
   });
 
-  it('sizes each button from its word, at 15 px on one line, so "Whole day" and "Afternoon" are never broken or cut at 360 px', () => {
+  it('sizes each button from its word, at 15 px on one line from 360 px, so "Whole day" and "Afternoon" are never broken or cut there', () => {
     const html = control('day');
     for (const button of buttons(html)) {
       const classes = classesOf(button.tag);
-      expect(classes).not.toContain('min-w-0');
       expect(classes).not.toContain('flex-1');
       expect(classes).not.toContain('whitespace-normal');
     }
     const word = classesOf(/<span class="([^"]*items-center[^"]*)"/.exec(html)![0]);
-    expect(word).toEqual(expect.arrayContaining(['text-[15px]', 'whitespace-nowrap']));
+    expect(word).toEqual(expect.arrayContaining(['text-[15px]', 'leading-5', 'whitespace-nowrap']));
+  });
+
+  it('lets the buttons shrink and the words wrap below 360 px, in 18 px lines that keep two lines inside the 48 px button', () => {
+    const html = control('day');
+    for (const button of buttons(html)) {
+      const classes = classesOf(button.tag);
+      expect(classes).toEqual(expect.arrayContaining(['h-12', 'min-w-0', 'flex-auto']));
+      // twMerge drops the Button's own shrink-0 for flex-auto, which shrinks.
+      expect(classes).not.toContain('shrink-0');
+    }
+    const word = classesOf(/<span class="([^"]*items-center[^"]*)"/.exec(html)![0]);
+    expect(word).toEqual(expect.arrayContaining(['max-[359px]:whitespace-normal', 'max-[359px]:leading-[18px]']));
   });
 
   it('draws the choice in the Selected look 2 px inside its button, not on the button', () => {
