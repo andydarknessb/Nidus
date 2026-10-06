@@ -44,7 +44,7 @@ END:VTIMEZONE`;
 const WINDOW_START = Date.parse('2026-09-06T00:00:00Z');
 const WINDOW_END = Date.parse('2027-04-06T00:00:00Z');
 const SHAPES = 400;
-const SHAPE_MS = 300;
+const SHAPE_MS = 2000;
 
 function mulberry(seed: number) {
   return () => {

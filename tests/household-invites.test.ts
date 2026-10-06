@@ -81,6 +81,11 @@ describe('household invites', () => {
     return data;
   }
 
+  async function addProfile(householdId: string) {
+    const { error } = await asServiceRole().from('profiles').insert({ household_id: householdId, name: 'Sam', color: '#ffd166' });
+    if (error) throw error;
+  }
+
   describe('making, reading and cancelling', () => {
     it('a Household Account gets a 64-character hex token that lasts 7 days, and only its SHA-256 is stored', async () => {
       const { arranged, phone } = await household();
@@ -285,6 +290,8 @@ describe('household invites', () => {
     it('a Household Account of another Household is refused with its own refusal, and stays where it was', async () => {
       const { arranged, phone } = await household();
       const neighbours = await household();
+      // A Household with nothing in it is given up on joining; one with a person in it is not.
+      await addProfile(neighbours.arranged.household.id);
       const { token } = await makeInvite(phone);
 
       const { data, error } = await accept(neighbours.phone, token);
@@ -321,6 +328,227 @@ describe('household invites', () => {
       tablets.push(loose);
       expect((await accept(loose.client, token)).error?.code).toBe(REFUSED);
       expect(await storedInvite(arranged.household.id)).not.toBeNull();
+    });
+  });
+
+  // Someone who opened /settings before tapping Join has the empty Household ensure_household made for them
+  // (issue #126). It holds nothing of theirs, so joining gives it up; anything in it and they are refused.
+  describe('joining from an empty Household', () => {
+    const TIMEZONE = 'America/Chicago';
+
+    // What /settings does for a signed-up account: ensure_household, which makes the Household and its Groceries list.
+    async function emptyHousehold() {
+      const guest = await newcomer();
+      const ensured = await guest.phone.rpc('ensure_household', { display_name: 'Mine', browser_timezone: TIMEZONE });
+      if (ensured.error) throw ensured.error;
+      const householdId = ensured.data as string;
+      const arranged: HouseholdAccount = {
+        household: { id: householdId, name: 'Mine', timezone: TIMEZONE },
+        email: guest.arranged.email,
+        password: guest.arranged.password,
+        authUserId: guest.arranged.authUserId,
+      };
+      return { guest, householdId, arranged };
+    }
+
+    async function householdRows(householdId: string) {
+      const { data, error } = await asServiceRole().from('households').select('id').eq('id', householdId);
+      if (error) throw error;
+      return data;
+    }
+
+    async function listsOf(householdId: string) {
+      const { data, error } = await asServiceRole().from('shared_lists').select('id, name').eq('household_id', householdId);
+      if (error) throw error;
+      return data;
+    }
+
+    async function insertOrThrow(table: string, row: Record<string, unknown>) {
+      const { data, error } = await asServiceRole().from(table).insert(row).select('id').single<{ id: string }>();
+      if (error) throw error;
+      return data.id;
+    }
+
+    it('joins the inviting Household, gives up the empty one it had, and spends the invite', async () => {
+      const { arranged, phone } = await household('The Andersons');
+      const { guest, householdId } = await emptyHousehold();
+      const { token } = await makeInvite(phone);
+
+      const { data, error } = await accept(guest.phone, token);
+
+      expect(error).toBeNull();
+      expect(data).toBe(arranged.household.id);
+      const { data: links } = await asServiceRole().from('household_accounts').select('household_id').eq('auth_user_id', guest.arranged.authUserId);
+      expect(links).toEqual([{ household_id: arranged.household.id }]);
+      expect(await householdRows(householdId)).toEqual([]);
+      expect(await listsOf(householdId)).toEqual([]);
+      expect(await storedInvite(arranged.household.id)).toBeNull();
+      expect(await accountIds(arranged.household.id)).toHaveLength(2);
+      // The caller is now the inviting Household's, and no one else's.
+      const read = await guest.phone.from('households').select('id, name');
+      expect(read.data).toEqual([{ id: arranged.household.id, name: 'The Andersons' }]);
+    });
+
+    it('a dead link is still refused with the dead-link refusal, and changes nothing', async () => {
+      const { arranged, phone } = await household();
+      const { guest, householdId } = await emptyHousehold();
+      const { token } = await makeInvite(phone);
+      await phone.rpc('cancel_household_invite');
+
+      const { data, error } = await accept(guest.phone, token);
+
+      expect(error?.code).toBe(DEAD_LINK);
+      expect(data).toBeNull();
+      expect(await accountIds(householdId)).toEqual([guest.arranged.authUserId]);
+      expect(await householdRows(householdId)).toHaveLength(1);
+      expect(await accountIds(arranged.household.id)).toEqual([arranged.authUserId]);
+    });
+
+    it('a Household whose only change is its settings is still given up', async () => {
+      const { arranged, phone } = await household();
+      const { guest, householdId } = await emptyHousehold();
+      const changed = await guest.phone
+        .from('households')
+        .update({ name: 'Our place', timezone: 'Europe/London', appearance: 'dark' })
+        .eq('id', householdId)
+        .select('name');
+      expect(changed.data).toEqual([{ name: 'Our place' }]);
+      const { token } = await makeInvite(phone);
+
+      const { data, error } = await accept(guest.phone, token);
+
+      expect(error).toBeNull();
+      expect(data).toBe(arranged.household.id);
+      expect(await householdRows(householdId)).toEqual([]);
+    });
+
+    it('a Household whose Groceries list was renamed but holds no item is still given up', async () => {
+      const { arranged, phone } = await household();
+      const { guest, householdId } = await emptyHousehold();
+      const renamed = await guest.phone.from('shared_lists').update({ name: 'Costco' }).eq('household_id', householdId).select('name');
+      expect(renamed.data).toEqual([{ name: 'Costco' }]);
+      const { token } = await makeInvite(phone);
+
+      const { data, error } = await accept(guest.phone, token);
+
+      expect(error).toBeNull();
+      expect(data).toBe(arranged.household.id);
+      expect(await householdRows(householdId)).toEqual([]);
+      expect(await listsOf(householdId)).toEqual([]);
+    });
+
+    // One case per thing that makes a Household not empty. A Routine cannot exist without its Profile, so its case
+    // carries a Profile too; the Profile case is what shows a Profile alone is enough.
+    const kept: Array<[string, (householdId: string, account: HouseholdAccount) => Promise<void>]> = [
+      [
+        'a second Household Account',
+        async (householdId) => {
+          const other = await createSignedUpAccount();
+          newcomers.push(other);
+          const { error } = await asServiceRole().from('household_accounts').insert({ auth_user_id: other.authUserId, household_id: householdId });
+          if (error) throw error;
+        },
+      ],
+      ['a Device', async (_householdId, account) => void (await device(account))],
+      ['a Profile', async (householdId) => void (await insertOrThrow('profiles', { household_id: householdId, name: 'Sam', color: '#ffd166' }))],
+      [
+        'a Google Calendar Account',
+        async (householdId) =>
+          void (await insertOrThrow('calendar_accounts', { household_id: householdId, google_email: 'sam@example.com', vault_secret_id: householdId })),
+      ],
+      [
+        'an iCloud Calendar Account',
+        async (householdId) =>
+          void (await insertOrThrow('calendar_accounts', {
+            household_id: householdId,
+            provider: 'icloud',
+            google_email: null,
+            feed_key: 'a'.repeat(64),
+            vault_secret_id: householdId,
+          })),
+      ],
+      [
+        'a Native Event',
+        async (householdId) =>
+          void (await insertOrThrow('native_events', { household_id: householdId, title: 'Dentist', starts_at: '2026-10-07T15:00:00Z', ends_at: '2026-10-07T16:00:00Z' })),
+      ],
+      [
+        'a Routine',
+        async (householdId) => {
+          const profileId = await insertOrThrow('profiles', { household_id: householdId, name: 'Sam', color: '#ffd166' });
+          await insertOrThrow('routines', { household_id: householdId, profile_id: profileId, title: 'Teeth', days_of_week: 127 });
+        },
+      ],
+      ['a Meal', async (householdId) => void (await insertOrThrow('meals', { household_id: householdId, meal_date: '2026-10-07', slot: 'dinner', title: 'Tacos' }))],
+      [
+        'a waiting invite',
+        async (householdId) => {
+          const { error } = await asServiceRole()
+            .from('household_invites')
+            .insert({ household_id: householdId, token_hash: 'b'.repeat(64), expires_at: new Date(Date.now() + 86_400_000).toISOString() });
+          if (error) throw error;
+        },
+      ],
+      ['a second Shared List', async (householdId) => void (await insertOrThrow('shared_lists', { household_id: householdId, name: 'Packing' }))],
+      [
+        'an item on its Groceries list',
+        async (householdId) => {
+          const [groceries] = await listsOf(householdId);
+          await insertOrThrow('list_items', { list_id: groceries?.id, text: 'Milk' });
+        },
+      ],
+    ];
+
+    it.each(kept)('is refused when its Household holds %s, which stays where it was', async (_label, arrange) => {
+      const { arranged, phone } = await household();
+      const { guest, householdId, arranged: own } = await emptyHousehold();
+      await arrange(householdId, own);
+      const { token } = await makeInvite(phone);
+
+      const { data, error } = await accept(guest.phone, token);
+
+      expect(error?.code).toBe(OTHER_HOUSEHOLD);
+      expect(data).toBeNull();
+      expect(await householdRows(householdId)).toHaveLength(1);
+      const { data: links } = await asServiceRole().from('household_accounts').select('household_id').eq('auth_user_id', guest.arranged.authUserId);
+      expect(links).toEqual([{ household_id: householdId }]);
+      expect(await storedInvite(arranged.household.id)).not.toBeNull();
+      expect(await accountIds(arranged.household.id)).toEqual([arranged.authUserId]);
+    });
+
+    it('two crossing joins between two Households that each hold a waiting invite finish without a deadlock, both refused, nothing changed', async () => {
+      const first = await emptyHousehold();
+      const second = await emptyHousehold();
+      const fromFirst = await makeInvite(first.guest.phone);
+      const fromSecond = await makeInvite(second.guest.phone);
+
+      const results = await Promise.all([accept(first.guest.phone, fromSecond.token), accept(second.guest.phone, fromFirst.token)]);
+
+      // Each caller's own Household holds the invite the other is using, so neither is empty.
+      expect(results.map((result) => result.error?.code)).toEqual([OTHER_HOUSEHOLD, OTHER_HOUSEHOLD]);
+      expect(await accountIds(first.householdId)).toEqual([first.guest.arranged.authUserId]);
+      expect(await accountIds(second.householdId)).toEqual([second.guest.arranged.authUserId]);
+      expect(await storedInvite(first.householdId)).not.toBeNull();
+      expect(await storedInvite(second.householdId)).not.toBeNull();
+    });
+
+    it('two empty-Household accounts racing one link: exactly one joins, and the other keeps its Household', async () => {
+      const { arranged, phone } = await household();
+      const first = await emptyHousehold();
+      const second = await emptyHousehold();
+      const { token } = await makeInvite(phone);
+
+      const results = await Promise.all([accept(first.guest.phone, token), accept(second.guest.phone, token)]);
+
+      expect(results.filter((result) => result.error === null)).toHaveLength(1);
+      expect(results.filter((result) => result.error?.code === DEAD_LINK)).toHaveLength(1);
+      const [winner, loser] = results[0]?.error === null ? [first, second] : [second, first];
+      expect(await householdRows(winner.householdId)).toEqual([]);
+      expect(await householdRows(loser.householdId)).toHaveLength(1);
+      expect(await accountIds(loser.householdId)).toEqual([loser.guest.arranged.authUserId]);
+      expect(await accountIds(arranged.household.id)).toHaveLength(2);
+      expect(await accountIds(arranged.household.id)).toContain(winner.guest.arranged.authUserId);
+      expect(await storedInvite(arranged.household.id)).toBeNull();
     });
   });
 
