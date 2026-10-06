@@ -63,7 +63,7 @@ export function Sheet({
   return (
     <InBody>
       <div
-        className={cn('fixed inset-0 z-10 flex items-center justify-center bg-scrim p-4', PHONE_SCRIM)}
+        className={cn('fixed inset-0 z-20 flex items-center justify-center bg-scrim p-4', PHONE_SCRIM)}
         onClick={(event) => {
           if (event.target === event.currentTarget) onClose();
         }}

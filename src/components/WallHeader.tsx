@@ -9,7 +9,7 @@ import { useNow } from '../lib/wall-hooks';
 import type { Forecast } from '../lib/weather';
 import { HeaderNextMeal } from '../MealsPage';
 import { ConnectionBadge } from './ConnectionBadge';
-import { PHONE_PILL_WORD } from './phone-pill';
+import { PHONE_PILL, PHONE_SYNC_WORD } from './phone-pill';
 import { WeatherNow } from './Weather';
 
 // How often the wall re-reads how fresh the mirror is, and re-words the badge as time passes.
@@ -75,9 +75,9 @@ export function SyncBadge({ compact = false, initial }: { compact?: boolean; ini
   if (!badge) return null;
   if (compact) {
     return (
-      <p role="status" data-pill="" className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-muted px-2.5 text-sm font-medium whitespace-nowrap">
+      <p role="status" data-pill="" className={PHONE_PILL}>
         <RefreshCwOff aria-hidden className="size-[18px] shrink-0" />
-        <span aria-hidden className={PHONE_PILL_WORD}>
+        <span aria-hidden className={PHONE_SYNC_WORD}>
           {staleSyncShort(accounts, now)}
         </span>
         <span className="sr-only">{badge}</span>

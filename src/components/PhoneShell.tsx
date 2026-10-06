@@ -16,8 +16,8 @@ import { WeatherNow } from './Weather';
 // only what the chrome draws; the screen in the column is the children (src/PhoneWall.tsx chooses it by route), and the people
 // strip is `strip`, drawn at the top of the column on the calendar screens.
 
-// How tall the tab bar is: its 56 px tabs, 8 px above and below them, and the hairline over it.
-const BAR = '4.5rem + 1px';
+// How tall the tab bar is: its 56 px tabs, 8 px above them and 16 below (the phone's safe area comes on top of that), and the hairline over it.
+const BAR = '5rem + 1px';
 // Add event sits 16 px above the bar, which keeps the phone's bottom safe area clear.
 const ADD_BOTTOM = `calc(${BAR} + 1rem + env(safe-area-inset-bottom))`;
 // The status line sits above Add event (the button is 3.5 rem), so that it never covers it: 8 px of air over the button.
@@ -25,11 +25,12 @@ const STATUS_FOOT = `calc(${BAR} + 1rem + 3.5rem + 0.5rem + env(safe-area-inset-
 // The column's foot: the bar, 16 px, the button and 16 px more, so nothing ends under either.
 const COLUMN_FOOT = `calc(${BAR} + 1rem + 3.5rem + 1rem + env(safe-area-inset-bottom))`;
 
-// A tab: an icon at 24 over its word at 14, 56 tall, radius 14. The current one says so with `aria-current`, which is also what
+// A tab: an icon at 24 over its word at 14, 56 tall, radius 14. Below 380 px wide the word's letters are a little closer (tracking-tight), so that "Calendar" clears the 2 px ring of the
+// Selected look at 360 px, where a tab is 67 px wide. The current one says so with `aria-current`, which is also what
 // draws the Selected look, so it never rests on colour alone.
 function Tab({ icon: Icon, label, current = false, ...props }: { icon: LucideIcon; label: string; current?: boolean } & Omit<ComponentProps<typeof Button>, 'children'>) {
   return (
-    <Button variant="quiet" aria-current={current ? 'page' : undefined} className="h-14 min-w-0 flex-1 flex-col gap-0.5 rounded-[14px] px-0 text-sm font-medium whitespace-normal" {...props}>
+    <Button variant="quiet" aria-current={current ? 'page' : undefined} className="h-14 min-w-0 flex-1 flex-col gap-0.5 rounded-[14px] px-0 text-sm font-medium whitespace-normal max-[380px]:tracking-tight" {...props}>
       <Icon aria-hidden className="size-6" />
       {label}
     </Button>
@@ -39,7 +40,7 @@ function Tab({ icon: Icon, label, current = false, ...props }: { icon: LucideIco
 // The tab bar: Home, Calendar, Routines, Meals and Lists. Calendar holds Day, Week and Month, so it is current on all three, and it
 // opens Week on the date the Wall is on (navigationRailDate, as the navigation rail's Day, Week and Month do, read at the tap so
 // one just after Household midnight is right). It waits for the Household Timezone, as the rail's calendar entries do; the others
-// open at once. The five are 8 px apart.
+// open at once. The five are 4 px apart, so each is about 72 px wide at 390 px.
 export function PhoneTabs({
   route,
   timezone,
@@ -59,7 +60,7 @@ export function PhoneTabs({
 }) {
   const onCalendar = route.view === 'day' || route.view === 'week' || route.view === 'month';
   return (
-    <nav aria-label="Wall sections" className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-border bg-card px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+    <nav aria-label="Wall sections" className="fixed inset-x-0 bottom-0 z-20 flex gap-1 border-t border-border bg-card px-1 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
       <Tab icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
       <Tab
         icon={CalendarDays}
@@ -108,7 +109,7 @@ export function PhoneHeader({
 }) {
   const timezone = household?.timezone ?? null;
   return (
-    <header className="group/header flex h-14 items-center gap-2 px-4">
+    <header className="group/header mt-4 flex h-14 items-center gap-1.5 px-4">
       {timezone ? <NameAndDate name={household?.name ?? ''} timezone={timezone} /> : <div className="flex-1" />}
       {household && today && <WeatherNow forecast={forecast} unit={household.temperature_unit} today={today} phone />}
       <ConnectionBadge phone />
@@ -167,7 +168,7 @@ export function PhoneShell({
   return (
     <>
       <PhoneHeader household={household} today={today} forecast={forecast} owner={owner} />
-      <main className="flex min-w-0 flex-col gap-3 px-4" style={{ paddingBottom: COLUMN_FOOT }}>
+      <main className="flex min-w-0 flex-col gap-3 px-4 pt-3" style={{ paddingBottom: COLUMN_FOOT }}>
         {strip}
         {children}
       </main>

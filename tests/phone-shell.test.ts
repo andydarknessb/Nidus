@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -44,7 +45,21 @@ describe('the tab bar', () => {
     const html = tabs({ view: 'home' });
     expect(html).toMatch(/^<nav aria-label="Wall sections"/);
     expect(buttons(html).map((tab) => tab.words)).toEqual(['Home', 'Calendar', 'Routines', 'Meals', 'Lists']);
-    expect(classesOf(html.slice(0, html.indexOf('>') + 1))).toEqual(expect.arrayContaining(['fixed', 'bottom-0', 'bg-card', 'border-t', 'gap-2']));
+    expect(classesOf(html.slice(0, html.indexOf('>') + 1))).toEqual(expect.arrayContaining(['fixed', 'bottom-0', 'bg-card', 'border-t', 'gap-1', 'px-1']));
+  });
+
+  it('is 4 px between tabs and 16 under them plus the safe area, 8 above: about 72 px a tab at 390 px', () => {
+    const bar = classesOf(tabs({ view: 'home' }).slice(0, tabs({ view: 'home' }).indexOf('>') + 1));
+    expect(bar).toEqual(expect.arrayContaining(['gap-1', 'px-1', 'pt-2', 'pb-[calc(1rem+env(safe-area-inset-bottom))]']));
+    expect(bar).not.toContain('gap-2');
+    // (390 - 2 x 4 - 4 x 4) / 5
+    expect((390 - 8 - 16) / 5).toBeCloseTo(73.2, 1);
+  });
+
+  it('keeps the word at 14 px and takes a little off its letter-spacing below 380 px, so "Calendar" clears the 2 px ring at 360', () => {
+    for (const tab of buttons(tabs({ view: 'home' }))) {
+      expect(classesOf(tab.tag)).toEqual(expect.arrayContaining(['text-sm', 'max-[380px]:tracking-tight']));
+    }
   });
 
   it('draws each tab 56 tall as an icon over its word, the icon hidden from a screen reader', () => {
@@ -112,6 +127,25 @@ describe('the phone header', () => {
     expect(html).toMatch(/<p class="font-display text-\[26px\][^"]*whitespace-nowrap">/);
   });
 
+  it('keeps the word "Offline" beside stale sync, which is the one that gives way to its icon, and the weather gives way below 420 px', () => {
+    const html = withPills(true);
+    const word = (text: string) => classesOf(new RegExp(`<span aria-hidden="true" class="[^"]*">${text}</span>`).exec(html)![0]);
+    // Offline: never hidden on its own, only below 360 px and beside a second pill.
+    expect(word('Offline')).toEqual(['max-[360px]:group-has-[[data-pill]~[data-pill]]/header:hidden']);
+    // Stale sync: its short age ("3 h", not the sentence) is hidden beside a second pill.
+    expect(word('3 h')).toContain('group-has-[[data-pill]~[data-pill]]/header:hidden');
+    // The weather is what gives way when a pill shows below 420 px.
+    expect(classesOf(/<div role="img"[^>]*>/.exec(html)![0])).toContain('max-[420px]:group-has-[[data-pill]]/header:hidden');
+  });
+
+  it('draws both pills 36 tall, 8 px in from their edges, so Offline, "3 h" as an icon, the date and the gear fit 328 px', () => {
+    const html = withPills(true);
+    const pills = [...html.matchAll(/<p role="status" data-pill="" class="([^"]*)"/g)].map((match) => match[1]!.split(' '));
+    expect(pills).toHaveLength(2);
+    for (const classes of pills) expect(classes).toEqual(expect.arrayContaining(['h-9', 'px-2', 'gap-1', 'shrink-0']));
+    expect(classesOf(html.slice(0, html.indexOf('>') + 1))).toContain('gap-1.5');
+  });
+
   it('shows neither pill while the Wall is online and nothing is behind', () => {
     const html = header(true);
     expect(html).not.toContain('Offline');
@@ -125,6 +159,12 @@ describe('the phone header', () => {
     const pills = [...html.matchAll(/<p role="status" data-pill="" class="([^"]*)"/g)].map((match) => match[1]!).filter((classes) => classes.includes('bg-muted'));
     expect(pills).toHaveLength(2);
     for (const classes of pills) expect(classes).toContain('shrink-0');
+  });
+
+  it('is 16 under the top of the screen, and the column starts 12 under it', () => {
+    expect(classesOf(header(true).slice(0, header(true).indexOf('>') + 1))).toContain('mt-4');
+    const html = renderToStaticMarkup(createElement(PhoneShell, { owner: false, route: { view: 'home' }, household: HOUSEHOLD, today: '2026-10-01', forecast: null, strip: null, onOpen: noop, onHome: noop, onRoutines: noop, onMeals: noop, onLists: noop, onAdd: noop, children: null }));
+    expect(classesOf(/<main[^>]*>/.exec(html)![0])).toEqual(expect.arrayContaining(['pt-3', 'px-4']));
   });
 
   it("is one 56 tall row: the Household's name over the date, then the weather now", () => {
@@ -208,7 +248,7 @@ describe('Add event', () => {
     expect(classesOf(add(html).tag)).toEqual(expect.arrayContaining(['size-14', 'rounded-full', 'bg-primary', 'fixed', 'right-4']));
     expect(add(html).tag).toContain('aria-haspopup="dialog"');
     expect(add(html).tag).not.toContain(' disabled=""');
-    expect(html).toMatch(/bottom:calc\(4\.5rem \+ 1px \+ 1rem \+ env\(safe-area-inset-bottom\)\)/);
+    expect(html).toMatch(/bottom:calc\(5rem \+ 1px \+ 1rem \+ env\(safe-area-inset-bottom\)\)/);
   });
 
   it('waits for the Household Timezone, as the rail does', () => {
@@ -222,5 +262,30 @@ describe('Add event', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(html).toMatch(/<main[^>]*padding-bottom:calc\(/);
     expect(html).toMatch(/<main[^>]*class="[^"]*px-4/);
+  });
+});
+
+describe('sheets and the tab bar', () => {
+  const zOf = (tag: string) => Number(classesOf(tag).find((name) => /^z-\d+$/.test(name))?.slice(2));
+  // A sheet's footer (Edit, Close) and the last rows of a list must never sit under the bar or the Add event button.
+  it('stacks every sheet scrim at least as high as the bar and Add event, and the status line above them all', async () => {
+    const html = renderToStaticMarkup(
+      createElement(PhoneShell, { owner: false, route: { view: 'home' }, household: HOUSEHOLD, today: '2026-10-01', forecast: null, strip: null, onOpen: noop, onHome: noop, onRoutines: noop, onMeals: noop, onLists: noop, onAdd: noop, children: null }),
+    );
+    const bar = zOf(/<nav[^>]*>/.exec(html)![0]);
+    const add = zOf(/<button[^>]*aria-label="Add event"[^>]*>/.exec(html)![0]);
+    expect(bar).toBeGreaterThanOrEqual(20);
+    const { Sheet } = await import('../src/components/Sheet');
+    const sheet = renderToStaticMarkup(createElement(Sheet, { labelledBy: 't', title: 'T', onClose: noop, header: createElement('h2', { id: 't' }, 'T'), children: null }));
+    expect(zOf(/<div[^>]*>/.exec(sheet)![0])).toBeGreaterThanOrEqual(Math.max(bar, add));
+    // The two dialogs that draw their own scrim: the Native Event sheet and the meal sheet.
+    for (const file of ['../src/components/NativeEventSheet.tsx', '../src/MealsPage.tsx']) {
+      const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+      const scrim = /fixed inset-0 z-(\d+)[^`'"]*bg-scrim/.exec(source);
+      expect(scrim, file).not.toBeNull();
+      expect(Number(scrim![1]), file).toBeGreaterThanOrEqual(Math.max(bar, add));
+    }
+    const status = readFileSync(new URL('../src/components/StatusLine.tsx', import.meta.url), 'utf8');
+    expect(Number(/fixed[^"]*\bz-(\d+)/.exec(status)![1])).toBeGreaterThan(Math.max(bar, add));
   });
 });
