@@ -16,3 +16,9 @@
   for = "/manifest.webmanifest"
   [headers.values]
     Content-Type = "application/manifest+json"
+
+# An invite link carries its token in the path: nothing the page links to or loads may be told where it came from.
+[[headers]]
+  for = "/join/*"
+  [headers.values]
+    Referrer-Policy = "no-referrer"

@@ -8,7 +8,7 @@
     <script>
       // Sets the mode before the first paint, so a reload never flashes the other one; src/lib/mode.ts keeps it
       // right from there. The Wall paints the mode it last resolved (light when it has none). The phone's pages,
-      // under /settings, and the Wall below 768 px wide (src/lib/home-layout.ts, the phone layout) paint what the phone
+      // under /settings, and the join page, under /join, and the Wall below 768 px wide (src/lib/home-layout.ts, the phone layout) paint what the phone
       // prefers and never what the Wall stored. The two metas follow, so a dark
       // reload shows no light browser bar until React mounts; their colours are the page colours of src/lib/look.ts
       // (tests/mode.test.ts holds them equal). If anything throws, such as blocked localStorage, nothing more is set
@@ -16,7 +16,7 @@
       (function () {
         try {
           var path = location.pathname;
-          var phone = path === '/settings' || path.indexOf('/settings/') === 0 || (typeof innerWidth === 'number' && innerWidth > 0 && innerWidth < 768);
+          var phone = path === '/settings' || path.indexOf('/settings/') === 0 || path === '/join' || path.indexOf('/join/') === 0 || (typeof innerWidth === 'number' && innerWidth > 0 && innerWidth < 768);
           var dark = phone ? matchMedia('(prefers-color-scheme: dark)').matches : localStorage.getItem('nidus:mode') === 'dark';
           document.documentElement.setAttribute('data-mode', dark ? 'dark' : 'light');
           var scheme = document.querySelector('meta[name="color-scheme"]');

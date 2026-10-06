@@ -11,6 +11,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0002-skylight-gaps.md` is the v2 spec, cut from the comparison in `docs/skylight-comparison.md`; its tracker copy and tickets are named in its opening paragraph.
 - `docs/specs/0003-the-look.md` is the v3 spec: the look, in a light and a dark mode. `docs/look.md` is the source for every colour, type size and shared part; read it before touching anything a person sees.
 - `docs/specs/0004-the-wall-on-a-phone.md` is the v4 spec: the Wall below 768 px wide, with five tabs at the foot.
+- `docs/specs/0006-household-invites.md` is the v6 spec: more than one Household Account, joined by a Household Invite link.
 
 ## Conventions
 

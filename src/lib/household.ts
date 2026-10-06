@@ -92,10 +92,20 @@ export async function updateHouseholdWeather(id: string, weather: WeatherPlace |
   return data;
 }
 
-export function signInWithGoogle() {
+// Signing in comes back to `returnTo`, a path on this site: Settings unless a page (the join page) has somewhere of its own.
+// `extra` is for that page too: Google's own query (which screen to open) and whether to hand back the address instead of going.
+export function signInWithGoogle(returnTo = '/settings', extra: { queryParams?: Record<string, string>; skipBrowserRedirect?: boolean } = {}) {
   // Identity only: no calendar scope is requested (ADR 0002).
   return supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: `${window.location.origin}/settings` },
+    options: { redirectTo: `${window.location.origin}${returnTo}`, ...extra },
   });
+}
+
+// The join page's sign-in: back to this invite's own link, always at Google's account chooser (so that "Use another Google account"
+// is offered the choice), and by `replace`, so that the link, which holds the token, is not left in the back stack.
+export async function signInToJoin(token: string): Promise<void> {
+  const { data, error } = await signInWithGoogle(`/join/${token}`, { queryParams: { prompt: 'select_account' }, skipBrowserRedirect: true });
+  if (error) throw error;
+  window.location.replace(data.url);
 }

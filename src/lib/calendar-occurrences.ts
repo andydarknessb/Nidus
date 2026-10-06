@@ -372,6 +372,9 @@ export function formatDate(ms: number, timezone: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(ms));
 }
 
+// "Oct 1, 2026": a date that may be a year or more ago, as "Since" says it in Settings.
+export const formatDateWithYear = (ms: number, timezone: string): string => new Intl.DateTimeFormat('en-US', { timeZone: timezone, month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(ms));
+
 // "Tue, Sep 30, 9:00 AM to 10:00 AM", or "Tue, Sep 30, all day": the time as the details sheet shows it.
 export function describeWhen(occurrence: Occurrence, timezone: string): string {
   const start = startOf(occurrence);
