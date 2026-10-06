@@ -228,6 +228,11 @@ describe('Who can sign in: what it decides', () => {
     expect(inviteViewOf(null, undefined)).toBeNull();
   });
 
+  it('draws none once a removal has cleared the link and the stored invite, which the database cancels with it', () => {
+    expect(inviteViewOf(null, null)).toEqual({ kind: 'none' });
+    expect(inviteViewOf(made, stored)).not.toEqual({ kind: 'none' });
+  });
+
   it('says its own words for a link that was not made and an invite that was not cancelled, online or off', () => {
     expect(MAKE_SAID).toEqual({ failed: 'Could not make the link. Try again.', offline: 'No internet, so the link was not made. Try again soon.' });
     expect(CANCEL_SAID).toEqual({ failed: 'Could not cancel the invite. Try again.', offline: 'No internet, so the invite was not cancelled. Try again soon.' });

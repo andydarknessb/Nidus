@@ -290,6 +290,9 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       () => removeHouseholdAccount(id),
       () => {
         setAccounts((list) => list && list.filter((account) => account.authUserId !== id));
+        // Removing someone also cancels the waiting invite, server side: a link just made would be a dead one.
+        setMade(null);
+        setStored(null);
         setOpen(null);
         setFocusNext(INVITE_MAIN);
       },
