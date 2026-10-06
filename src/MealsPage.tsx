@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- the reader, the sheet and the rows are shared with the phone's screens (src/phone/): exported, not copied. */
 import { ChevronLeft, ChevronRight, Cookie, Moon, Plus, Sun, Sunrise, X, type LucideIcon } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { InBody } from './components/InBody';
@@ -24,13 +25,13 @@ const RETRY_MS = 5_000;
 const MEAL_TABLES = ['meals'] as const;
 
 // The picture each slot is marked with, in the plan's rows and on the header's button.
-const SLOT_PICTURES: Record<MealSlot, LucideIcon> = { breakfast: Sunrise, lunch: Sun, dinner: Moon, snack: Cookie };
+export const SLOT_PICTURES: Record<MealSlot, LucideIcon> = { breakfast: Sunrise, lunch: Sun, dinner: Moon, snack: Cookie };
 
 // The Meals from `from` to `to` (Household dates), read again when a Meal changes anywhere in the
 // Household, when `saves` goes up (a save made here) and every minute, or after five seconds when
 // the last read failed. `meals` is null until a read has landed; a failed read keeps what is shown.
 // Callers are keyed on the span, so a turned page never shows the last page's Meals.
-function useMeals(from: string, to: string, saves = 0): { meals: Meal[] | null; failed: boolean } {
+export function useMeals(from: string, to: string, saves = 0): { meals: Meal[] | null; failed: boolean } {
   const [read, setRead] = useState<{ meals: Meal[] | null; failed: boolean }>({ meals: null, failed: false });
   // A change pokes the loop instead of restarting it, so a read in flight lands and one more follows.
   const loop = useRef<ReadLoop | null>(null);
@@ -52,10 +53,10 @@ function useMeals(from: string, to: string, saves = 0): { meals: Meal[] | null; 
 }
 
 // "Thu 1": a day as the grid names it, and "Thursday 1": the same in full, as a screen reader hears it.
-function dayLabel(day: WallDay): string {
+export function dayLabel(day: WallDay): string {
   return `${WEEKDAYS[day.weekday]!.short} ${Number(day.date.slice(8))}`;
 }
-function dayName(day: WallDay): string {
+export function dayName(day: WallDay): string {
   return `${WEEKDAYS[day.weekday]!.name} ${Number(day.date.slice(8))}`;
 }
 
@@ -110,7 +111,7 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
 }
 
 // The cell the sheet is open on: its Household date and slot, how it is named, and the Meal it holds.
-type Editing = { date: string; slot: MealSlot; heading: string; meal: Meal | null };
+export type Editing = { date: string; slot: MealSlot; heading: string; meal: Meal | null };
 
 // A heading row of days over a row for each slot, each row starting with the slot's picture and name. Each cell is
 // one button, at least 48 px either way, that opens the sheet; a planned Meal is on --everyone and an empty slot is a
@@ -226,7 +227,7 @@ function DayHeading({ day }: { day: WallDay }) {
 // Focus moves onto the field on open, so the tablet's keyboard comes up at once, and back to the cell on close;
 // Close, Cancel and Escape close it without writing, and so does a tap on the scrim while the field still holds what
 // it opened with. A blank field is a clear.
-function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
+export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
   const dialog = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing.meal?.title ?? '');

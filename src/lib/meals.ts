@@ -76,3 +76,19 @@ export function nextMealWords(slot: MealSlot): string {
   const { label } = MEAL_SLOTS.find((entry) => entry.slot === slot)!;
   return slot === 'dinner' ? `${label} tonight` : `${label} today`;
 }
+
+// The day a phone's Meals screen opens a week on: today when the week holds it, else the week's first day (its Sunday). `week` is the
+// week's Household dates; today is the Household's own at `now`, never the machine's, so the pick turns over at Household midnight.
+export function pickedDay(week: readonly string[], now: Date, timezone: string): string {
+  const today = householdDay(timezone, now).date;
+  return week.includes(today) ? today : week[0]!;
+}
+
+// What a slot's row is called on the phone, as a screen reader hears it: "Breakfast, Thursday 1: Oatmeal", or "Breakfast, Thursday 1:
+// nothing planned. Add a meal". While the Meals are not read (`meal` undefined) it is "Breakfast, Thursday 1" alone, since a row that
+// looked empty and could be tapped would invite writing over a Meal that is only not read yet. `day` is the day in full and its date.
+export function slotRowName(label: string, day: string, meal: Meal | null | undefined): string {
+  const head = `${label}, ${day}`;
+  if (meal === undefined) return head;
+  return `${head}: ${meal ? meal.title : 'nothing planned. Add a meal'}`;
+}

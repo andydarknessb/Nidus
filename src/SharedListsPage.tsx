@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- the reader, the sheet and the rows are shared with the phone's screens (src/phone/): exported, not copied. */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { ArrowDown, ArrowUp, ChevronRight, List, Pin, Plus } from 'lucide-react';
@@ -63,7 +64,7 @@ const noting = (why: { error?: unknown }, work: () => Promise<void>) => () =>
     throw error;
   });
 
-function useItems(listId: string) {
+export function useItems(listId: string) {
   const [state, setState] = useState<ItemsState>({ items: [], loaded: false, problem: '' });
   // What a write that did not go through says: the one vocabulary of the Wall and the phone (write-failure.ts).
   const failureWords = useFailureWords();
@@ -162,7 +163,7 @@ function useItems(listId: string) {
 
 // Every Shared List and which one is pinned, read again when a list or the Household changes. `read` is null until the
 // first read has landed; a read that fails after that keeps what is shown.
-function useLists(): { read: { lists: SharedList[]; pinnedId: string | null } | null; failed: boolean } {
+export function useLists(): { read: { lists: SharedList[]; pinnedId: string | null } | null; failed: boolean } {
   const [read, setRead] = useState<{ lists: SharedList[]; pinnedId: string | null } | null>(null);
   const [failed, setFailed] = useState(false);
   const changes = useChangeTick(LIST_TABLES);
@@ -210,7 +211,7 @@ const ROW = {
 
 // One item. The whole row is the button: a tap crosses the item off, another puts it back. To get, it is an empty ring;
 // crossed off, a tick and struck-through words, so it never rests on colour alone.
-function ItemRow({ item, size, onToggle, ref }: { item: ListItem; size: keyof typeof ROW; onToggle: () => void; ref?: Ref<HTMLButtonElement> }) {
+export function ItemRow({ item, size, onToggle, ref }: { item: ListItem; size: keyof typeof ROW; onToggle: () => void; ref?: Ref<HTMLButtonElement> }) {
   const crossed = item.crossed_at !== null;
   const ring = size === 'home' ? 26 : 28;
   return (
@@ -231,7 +232,7 @@ function ItemRow({ item, size, onToggle, ref }: { item: ListItem; size: keyof ty
 // The field that adds an item, and its button: 52 px on the Wall, 56 on the phone. `onAdd` says whether the item was added. The
 // field empties at once, so a second Enter while the first is still out has nothing to add; if the item could not be added the
 // words come back, unless something else has been typed there since.
-function AddRow({ listName, size = 'wall', onAdd }: { listName: string; size?: 'wall' | 'phone'; onAdd: (text: string) => Promise<boolean> }) {
+export function AddRow({ listName, size = 'wall', onAdd }: { listName: string; size?: 'wall' | 'phone'; onAdd: (text: string) => Promise<boolean> }) {
   const [text, setText] = useState('');
 
   async function submit(event: FormEvent) {
@@ -261,17 +262,17 @@ function AddRow({ listName, size = 'wall', onAdd }: { listName: string; size?: '
 
 // What a card's title is called on the page, so that focus can be put on it from the phone's list editor, which is not the component that
 // draws the title.
-const titleId = (listId: string) => `title-${listId}`;
+export const titleId = (listId: string) => `title-${listId}`;
 
 // After "Clear N crossed off" the button is gone, and focus with it. It goes to the card's title (tabIndex -1: reached by script, not by
 // Tab), not to the field, which would raise a tablet's or a phone's keyboard; the next Tab lands on what follows the title. Focus does
 // not scroll the page, so a long list on the phone stays where it is.
-function focusTitle(listId: string) {
+export function focusTitle(listId: string) {
   document.getElementById(titleId(listId))?.focus({ preventScroll: true });
 }
 
 // The mark on the Pinned List, on the Wall's card and on the phone's.
-function PinnedMark() {
+export function PinnedMark() {
   return (
     <p className="flex h-8 shrink-0 items-center gap-2 self-start rounded-full bg-muted px-3 text-sm text-muted-foreground">
       <Pin aria-hidden className="size-4" />
