@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expandFeed, FeedParseError } from '../supabase/functions/_shared/ics-expand';
+import { expandFeed, FeedParseError, FeedTooLargeError, MAX_STEPS_PER_RUN } from '../supabase/functions/_shared/ics-expand';
 
 // Pure: feed text in, rows out. The fixtures are iCloud-style feeds (CRLF line endings,
 // VTIMEZONE blocks, X-WR-CALNAME, folded lines), not objects built to suit the code. Run once
@@ -342,6 +342,47 @@ describe('expandFeed: work', () => {
     const runaway = (uid: string) => event('DTSTART:19700101T000000\nRRULE:FREQ=SECONDLY', uid);
     const rows = expand(feed(event('DTSTART:20261014T140000Z', 'first'), runaway('a'), runaway('b'), runaway('c'), event('DTSTART:20261015T140000Z\nRRULE:FREQ=DAILY;COUNT=2', 'last')));
     expect(rows.map((row) => row.google_event_id.split('|')[0])).toEqual(['first']);
+  });
+});
+
+describe('expandFeed: the step budget of a run', () => {
+  const runaway = (uid: string) => event('DTSTART:19700101T000000\nRRULE:FREQ=SECONDLY', uid);
+  const expandIn = (text: string, run: { remaining: number }) => expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+
+  it('lets one feed take at most half of the run, keeping the events it reached', () => {
+    const run = { remaining: MAX_STEPS_PER_RUN };
+    const rows = expandIn(feed(event('DTSTART:20261014T140000Z', 'first'), runaway('a'), runaway('b')), run);
+    expect(rows.map((row) => row.google_event_id.split('|')[0])).toEqual(['first']);
+    expect(run.remaining).toBe(MAX_STEPS_PER_RUN / 2);
+  });
+
+  it('shares what is left between feeds: two bad feeds spend the run, a third is not read', () => {
+    const run = { remaining: MAX_STEPS_PER_RUN };
+    expect(expandIn(feed(runaway('a')), run)).toEqual([]);
+    expect(expandIn(feed(runaway('b')), run)).toEqual([]);
+    expect(run.remaining).toBe(0);
+    expect(() => expandIn(feed(event('DTSTART:20261014T140000Z', 'plain')), run)).toThrow(FeedTooLargeError);
+  });
+
+  it('throws, rather than return half a feed, when the run ran out in the middle of one', () => {
+    const run = { remaining: 30_000 };
+    expect(() => expandIn(feed(event('DTSTART:20261014T140000Z', 'first'), runaway('a')), run)).toThrow(FeedTooLargeError);
+    expect(run.remaining).toBe(0);
+  });
+
+  it('throws when the run ran out exactly as one event ended, with a later event unread', () => {
+    const few = event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY;COUNT=5', 'few');
+    const measured = { remaining: 1000 };
+    expandIn(feed(few), measured);
+    const run = { remaining: 1000 - measured.remaining };
+    expect(() => expandIn(feed(few, event('DTSTART:20261014T140000Z', 'later')), run)).toThrow(FeedTooLargeError);
+  });
+
+  it('reads a feed that fits whole, and spends only what it walked', () => {
+    const run = { remaining: 1000 };
+    expect(expandIn(feed(event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY;COUNT=5', 'few')), run)).toHaveLength(5);
+    expect(run.remaining).toBeGreaterThan(900);
+    expect(run.remaining).toBeLessThan(1000);
   });
 });
 

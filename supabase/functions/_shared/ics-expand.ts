@@ -10,12 +10,18 @@ import { dayStartMs, wallClockMs } from './zoned-time.ts';
 
 export const MAX_PER_EVENT = 1000;
 export const MAX_PER_FEED = 20000;
-// How far one rule is walked looking for the window, and how many steps the whole feed may take:
-// a rule that started long ago and fires every few seconds would otherwise take forever.
-// ponytail: no fast-forward in ical.js's iterator; past either, the later occurrences of such a
-// rule (or the later events of the feed) are dropped.
+// How far one rule is walked looking for the window, how many steps one feed may take, and how many
+// all the feeds of one run may take between them: a rule that started long ago and fires every few
+// seconds would otherwise take forever, and the hosted function has a 2 s CPU limit for the run.
+// ponytail: no fast-forward in ical.js's iterator; past the first two, the later occurrences of
+// such a rule (or the later events of the feed) are dropped. Past the run's, the feed is not
+// read at all this run (FeedTooLargeError): storing it would delete the rows it did not reach.
 const MAX_STEPS_PER_EVENT = 100_000;
-const MAX_STEPS_PER_FEED = 200_000;
+const MAX_STEPS_PER_FEED = 100_000;
+export const MAX_STEPS_PER_RUN = 200_000;
+
+// What is left of a run's steps, shared by every feed the run expands.
+export type StepBudget = { remaining: number };
 // No zone is more than 14 hours from UTC, so a wall-clock time this far before the window start
 // is before it in every zone and needs no zone arithmetic.
 const MAX_ZONE_OFFSET_MS = 14 * 3_600_000;
@@ -24,6 +30,8 @@ const DAY_MS = 86_400_000;
 const KEY_SEPARATOR = '|';
 
 export class FeedParseError extends Error {}
+// The run's step budget ran out before this feed was read in full.
+export class FeedTooLargeError extends Error {}
 
 const pad = (n: number, width = 2) => String(n).padStart(width, '0');
 const dateOf = (t: ICAL.Time) => `${pad(t.year, 4)}-${pad(t.month)}-${pad(t.day)}`;
@@ -99,8 +107,10 @@ function excludedStarts(ev: ICAL.Event, timezone: string): Set<number> {
 }
 
 // Every non-cancelled occurrence of the feed that overlaps [windowStartMs, windowEndMs), as rows
-// in start order. Throws FeedParseError when the text is not a calendar.
-export function expandFeed(text: string, timezone: string, windowStartMs: number, windowEndMs: number): EventRow[] {
+// in start order. Throws FeedParseError when the text is not a calendar, and FeedTooLargeError
+// when `run` (the steps left for the whole run) runs out before the feed is read in full.
+export function expandFeed(text: string, timezone: string, windowStartMs: number, windowEndMs: number, run: StepBudget = { remaining: MAX_STEPS_PER_RUN }): EventRow[] {
+  if (run.remaining <= 0) throw new FeedTooLargeError();
   let calendar: ICAL.Component;
   try {
     const parsed = ICAL.parse(text);
@@ -160,10 +170,15 @@ export function expandFeed(text: string, timezone: string, windowStartMs: number
     }
 
     let budget = MAX_STEPS_PER_FEED;
+    // Set when the run's steps, not the feed's own, ran out with something left to read.
+    let cutByRun = false;
     for (const [uid, list] of series) {
       for (const { ev, layout: l } of list) {
         if (cancelled(ev)) continue;
-        if (budget <= 0 || rows.size >= MAX_PER_FEED) break;
+        if (budget <= 0 || run.remaining <= 0 || rows.size >= MAX_PER_FEED) {
+          if (budget > 0 && run.remaining <= 0) cutByRun = true;
+          break;
+        }
         try {
           const excluded = excludedStarts(ev, timezone);
           const lengthBound = l.isAllDay ? l.lengthDays * DAY_MS : l.lengthMs;
@@ -189,7 +204,13 @@ export function expandFeed(text: string, timezone: string, windowStartMs: number
           if (!emit(l.start)) continue;
           if (ev.isRecurring()) {
             const steps = ev.iterator();
-            for (let n = 0, next = steps.next(); next && n < MAX_STEPS_PER_EVENT && budget > 0; n += 1, budget -= 1, next = steps.next()) {
+            for (let n = 0, next = steps.next(); next && n < MAX_STEPS_PER_EVENT; n += 1, next = steps.next()) {
+              if (budget <= 0 || run.remaining <= 0) {
+                if (budget > 0) cutByRun = true;
+                break;
+              }
+              budget -= 1;
+              run.remaining -= 1;
               if (!emit(next)) break;
             }
           }
@@ -198,6 +219,7 @@ export function expandFeed(text: string, timezone: string, windowStartMs: number
         }
       }
     }
+    if (cutByRun) throw new FeedTooLargeError();
   } finally {
     ICAL.TimezoneService.reset();
   }

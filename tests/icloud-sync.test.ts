@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { GOOGLE_TOKEN_URL, handleCalendarSync, type SyncDeps, type SyncSummary } from '../supabase/functions/calendar-sync/handler';
+import { FEED_TOO_LARGE_MESSAGE, GOOGLE_TOKEN_URL, handleCalendarSync, type SyncDeps, type SyncSummary } from '../supabase/functions/calendar-sync/handler';
 import { arrangeCalendar } from './support/calendar';
 import { asHouseholdAccount, asServiceRole, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
@@ -230,6 +230,39 @@ describe('a later sync', () => {
     expect(Date.parse((await accountOf(accountId)).last_synced_at!)).toBe(later);
   });
 
+  it('reads the feed in full again once a day, so an unedited endless rule reaches the new window', async () => {
+    const account = await arrange();
+    const link = newLink();
+    const { calendarId } = await arrangeIcloud(account, link);
+    const weekly = vevent('weekly', 'Weekly', 'DTSTART:20261006T230000Z\nDTEND:20261007T000000Z\nRRULE:FREQ=WEEKLY');
+    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(weekly), etag: '"v1"' }]]));
+    const first = deps(account, world);
+    await syncOk(first);
+    const before = await rowsOf(calendarId);
+    // Six months on from NOW ends before the 23:00Z occurrence of 2027-03-30.
+    expect(before.map((row) => row.starts_at)).not.toContain('2027-03-30T23:00:00+00:00');
+
+    // Within a day the feed is asked with its validator, answers 304, and nothing is read again.
+    const HOUR = 3_600_000;
+    await syncOk({ ...first, now: () => NOW + 23 * HOUR });
+    expect(world.calls.at(-1)!.headers.get('If-None-Match')).toBe('"v1"');
+    expect(await rowsOf(calendarId)).toEqual(before);
+
+    // A day on it sends no validator, reads the feed in full, and the rows come from the new window.
+    await syncOk({ ...first, now: () => NOW + 25 * HOUR });
+    const sent = world.calls.at(-1)!.headers;
+    expect(sent.get('If-None-Match')).toBeNull();
+    expect(sent.get('If-Modified-Since')).toBeNull();
+    const after = await rowsOf(calendarId);
+    expect(after.map((row) => row.starts_at)).toContain('2027-03-30T23:00:00+00:00');
+    expect(after).toHaveLength(before.length + 1);
+    expect(JSON.parse((await tokenOf(calendarId))!)).toEqual({ etag: '"v1"', lastModified: null });
+
+    // And the day's clock starts again from that read.
+    await syncOk({ ...first, now: () => NOW + 26 * HOUR });
+    expect(world.calls.at(-1)!.headers.get('If-None-Match')).toBe('"v1"');
+  });
+
   it('reads the feed in full again when the calendar is reselected', async () => {
     const account = await arrange();
     const link = newLink();
@@ -317,6 +350,54 @@ describe('when the feed says no', () => {
     await syncOk(deps(account, world));
     expect(world.calls.map((call) => call.url)).toEqual([link]);
   });
+});
+
+describe('a run with more feed than it can read', () => {
+  const runaway = (uid: string) => vevent(uid, 'Runaway', 'DTSTART:19700101T000000\nRRULE:FREQ=SECONDLY');
+
+  it('shares one step budget across the feeds: two bad feeds are read as far as their caps, the third is left as it was and says so', async () => {
+    const account = await arrange();
+    const feeds = new Map<string, Reply>();
+    const calendars: { accountId: string; calendarId: string; link: string }[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const link = newLink();
+      feeds.set(link, { text: feedOf(dentist), etag: '"v1"' });
+      calendars.push({ ...(await arrangeIcloud(account, link)), link });
+    }
+    const world = fakeWorld(feeds);
+    await syncOk(deps(account, world));
+    const changed = vevent('changed', 'Changed', 'DTSTART:20261009T150000Z\nDTEND:20261009T160000Z');
+    for (const { link } of calendars) feeds.set(link, { text: feedOf(changed, runaway('a')), etag: '"v2"' });
+
+    const summary = await syncOk(deps(account, world));
+
+    const states = await Promise.all(
+      calendars.map(async (c) => ({ account: await accountOf(c.accountId), rows: await rowsOf(c.calendarId), token: await tokenOf(c.calendarId) })),
+    );
+    const skipped = states.filter((state) => state.account.last_error === FEED_TOO_LARGE_MESSAGE);
+    const read = states.filter((state) => state.account.last_error === null);
+    expect(skipped).toHaveLength(1);
+    expect(read).toHaveLength(2);
+    expect(summary.errors).toHaveLength(1);
+    // The feed that was not read keeps its events and its validator, and stays active.
+    expect(skipped[0]!.account.status).toBe('active');
+    expect(skipped[0]!.rows.map((row) => row.title)).toEqual(['Dentist']);
+    expect(JSON.parse(skipped[0]!.token!)).toEqual({ etag: '"v1"', lastModified: null });
+    // The others keep what they reached of theirs.
+    for (const state of read) expect(state.rows.map((row) => row.title)).toEqual(['Changed']);
+  }, 60_000);
+
+  it('stops one feed at its own cap and keeps the events it reached, with no error', async () => {
+    const account = await arrange();
+    const link = newLink();
+    const { accountId, calendarId } = await arrangeIcloud(account, link);
+    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist, runaway('a'), runaway('b')), etag: '"v1"' }]]));
+
+    await syncOk(deps(account, world));
+
+    expect((await rowsOf(calendarId)).map((row) => row.title)).toEqual(['Dentist']);
+    expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: null });
+  }, 60_000);
 });
 
 describe('the order of a run', () => {

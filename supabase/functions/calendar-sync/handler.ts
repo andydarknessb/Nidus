@@ -24,7 +24,7 @@
 // touches Google's token endpoint, and one account's failure never stops another's.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { type EventRow, MAX_DESCRIPTION, MAX_LOCATION, MAX_TITLE } from '../_shared/event-row.ts';
-import { expandFeed } from '../_shared/ics-expand.ts';
+import { expandFeed, FeedTooLargeError, MAX_STEPS_PER_RUN, type StepBudget } from '../_shared/ics-expand.ts';
 import { fetchFeed } from '../_shared/feed.ts';
 import { dayStartMs } from '../_shared/zoned-time.ts';
 
@@ -290,6 +290,7 @@ async function failAccount(deps: SyncDeps, account: Account, summary: SyncSummar
     .eq('id', account.id);
 }
 
+export const FEED_TOO_LARGE_MESSAGE = 'This calendar is too large to read in full right now; it will be tried again.';
 export const FEED_GONE_MESSAGE = 'This link no longer works. Turn on Public Calendar again and paste the new link.';
 
 // An iPhone calendar's validator, kept in its Mirrored Calendar's sync_token (no client can read
@@ -314,7 +315,7 @@ function decodeFeedValidators(token: string | null): { etag: string | null; last
 // Syncs one iPhone calendar account: read its link from Vault, ask the feed whether it changed,
 // and on a change expand it into the window and replace the Mirrored Calendar's events. Never
 // throws, and never puts the link (or anything the feed said) in an error.
-async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary): Promise<void> {
+async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary, run: StepBudget): Promise<void> {
   const fail = (message: string, status?: 'needs_reauth') => failAccount(deps, account, summary, message, status);
 
   const { data: link, error: secretError } = await deps.admin.rpc('read_calendar_secret', { p_secret_id: account.vault_secret_id });
@@ -337,15 +338,21 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
     return;
   }
 
-  const feed = await fetchFeed(link, decodeFeedValidators(calendar.sync_token), deps.fetch);
+  // As Google's incremental sync is dropped every FULL_SYNC_EVERY_MS, so is a validator: a feed
+  // that keeps answering 304 would otherwise never be expanded past the window it was last read in.
+  const validators = canReadIncrementally(calendar, nowMs) ? decodeFeedValidators(calendar.sync_token) : { etag: null, lastModified: null };
+  const feed = await fetchFeed(link, validators, deps.fetch);
   if (feed.kind === 'gone') return fail(FEED_GONE_MESSAGE, 'needs_reauth');
   if (feed.kind === 'error') return fail(`Could not read the iPhone calendar (${feed.message}).`);
   if (feed.kind === 'calendar') {
     const window = syncWindow(nowMs);
     let rows: EventRow[];
     try {
-      rows = expandFeed(feed.text, timezone, Date.parse(window.timeMin), Date.parse(window.timeMax));
-    } catch {
+      rows = expandFeed(feed.text, timezone, Date.parse(window.timeMin), Date.parse(window.timeMax), run);
+    } catch (error) {
+      // Not stored: replacing would delete the events the walk never reached. The old events and
+      // validator stay, so the feed is read again next run.
+      if (error instanceof FeedTooLargeError) return fail(FEED_TOO_LARGE_MESSAGE);
       return fail('Could not read the iPhone calendar (it is not a calendar the Wall can read).');
     }
     try {
@@ -360,9 +367,9 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
 }
 
 // Syncs one Calendar Account. Never throws: its outcome is on the account row and in `summary`.
-async function syncAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary): Promise<void> {
+async function syncAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary, run: StepBudget): Promise<void> {
   // An iPhone calendar has no Google sign-in: it never reaches the token minting below.
-  if (account.provider === 'icloud') return syncIcloudAccount(deps, account, timezone, nowMs, summary);
+  if (account.provider === 'icloud') return syncIcloudAccount(deps, account, timezone, nowMs, summary, run);
   const fail = (message: string, status?: 'needs_reauth') => failAccount(deps, account, summary, message, status);
 
   const { data: refreshToken, error: secretError } = await deps.admin.rpc('read_calendar_secret', { p_secret_id: account.vault_secret_id });
@@ -420,6 +427,8 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
 
   // Google first, then the iPhone calendars: a feed that is slow or runs the function out of time
   // can then never keep a Google account from syncing in the same run.
+  // One step budget for every feed of the run: the hosted function has a 2 s CPU limit in all.
+  const run: StepBudget = { remaining: MAX_STEPS_PER_RUN };
   accounts.sort((a, b) => Number(a.provider === 'icloud') - Number(b.provider === 'icloud'));
   for (const account of accounts) {
     const timezone = timezones.get(account.household_id);
@@ -428,7 +437,7 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
       continue;
     }
     summary.accounts += 1;
-    await syncAccount(deps, account, timezone, nowMs, summary);
+    await syncAccount(deps, account, timezone, nowMs, summary, run);
   }
   return summary;
 }
