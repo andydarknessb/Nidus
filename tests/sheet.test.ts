@@ -198,7 +198,11 @@ describe('a sheet on a phone', () => {
       }),
     );
   // Every class of the phone frame is in the element's class list.
-  const hasFrame = (element: string, frame: string) => frame.split(' ').every((name) => element.includes(name));
+  const classesOf = (element: string) => (/class="([^"]*)"/.exec(element)?.[1] ?? '').split(/s+/).filter(Boolean);
+  const hasFrame = (element: string, frame: string) => {
+    const own = classesOf(element);
+    return frame.split(' ').every((name) => own.includes(name));
+  };
 
   it('draws the shared phone frame on Sheet, on the scrim and on the dialog, with the handle first inside the dialog', () => {
     const html = drawSheet();
@@ -235,6 +239,25 @@ describe('a sheet on a phone', () => {
     expect(dialogOf(html)).toContain('p-6');
     expect(scrimOf(html)).toContain('items-center');
     expect(scrimOf(html)).toContain('p-4');
+  });
+
+  it('has no sm: or md: class on a scrim or a frame that would compete with a phone class (Tailwind emits those after max-[768px])', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+    const { NativeEventSheet } = await import('../src/components/NativeEventSheet');
+    const { MealSheet } = await import('../src/MealsPage');
+    const sheets = [
+      drawSheet(),
+      renderToStaticMarkup(createElement(NativeEventSheet, { timezone: 'America/Chicago', profiles: [], date: '2026-10-02', onSaved: () => undefined, onClose: () => undefined })),
+      renderToStaticMarkup(createElement(MealSheet, { editing: { date: '2026-10-02', slot: 'dinner', heading: 'Friday dinner', meal: null }, onSaved: () => undefined, onClose: () => undefined })),
+    ];
+    for (const html of sheets) {
+      for (const element of [scrimOf(html), dialogOf(html)]) {
+        const own = classesOf(element);
+        expect(own.some((name) => name.startsWith('max-[768px]:'))).toBe(true);
+        expect(own.filter((name) => /^(sm|md):/.test(name))).toEqual([]);
+      }
+    }
   });
 
   it('is the same frame on the Add event sheet and on the meal sheet', async () => {

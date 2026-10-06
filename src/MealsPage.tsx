@@ -284,7 +284,7 @@ export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onS
 
   return (
     <div
-      className={`fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-4 sm:items-center sm:p-8 ${PHONE_SCRIM}`}
+      className={`fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-4 min-[768px]:items-center min-[768px]:p-8 ${PHONE_SCRIM}`}
       // A press on the scrim must not take focus off the field: the browser would hand it to the page behind, and
       // Escape would then reach nothing.
       onMouseDown={(event) => {
@@ -317,15 +317,15 @@ export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onS
         {/* On a phone the field and what is said of it scroll between the title row and the buttons; on the Wall the box is not there
             (display: contents), and the sheet is as it was. */}
         <div className="flex min-h-0 flex-col gap-[18px] max-[768px]:overflow-y-auto min-[768px]:contents">
-        <label className="flex flex-col gap-2">
-          <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
-          <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
-        </label>
-        <p role="alert" className="min-h-6 text-[15px] leading-5 font-medium empty:hidden">
-          {problem}
-        </p>
+          <label className="flex flex-col gap-2">
+            <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
+            <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+          </label>
+          <p role="alert" className="min-h-6 text-[15px] leading-5 font-medium empty:hidden">
+            {problem}
+          </p>
         </div>
-        <div className="flex flex-none flex-wrap items-center justify-end gap-3">
+        <div className="flex max-[768px]:flex-none flex-wrap items-center justify-end gap-3">
           {editing.meal && (
             <Button className="mr-auto h-14 px-6 text-[17px]" disabled={busy} onClick={() => void write('')}>
               Clear
