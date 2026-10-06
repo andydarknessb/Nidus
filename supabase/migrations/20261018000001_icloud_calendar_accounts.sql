@@ -32,7 +32,7 @@ comment on column public.calendar_accounts.vault_secret_id is 'The Vault secret:
 comment on column public.calendar_accounts.feed_key is 'icloud only: SHA-256 hex of the normalised feed link, unique per Household. No client may read this column.';
 
 comment on column public.mirrored_calendars.google_calendar_id is 'google: the Google calendar id. icloud: the literal ics (an iCloud account has exactly one Mirrored Calendar). The column keeps its name.';
-comment on column public.mirrored_calendars.sync_token is 'google: the Google sync token. icloud: the feed''s ETag, else its Last-Modified. No client may read this column.';
+comment on column public.mirrored_calendars.sync_token is 'google: the Google sync token. icloud: the feed''s validators as JSON, {"etag": ..., "lastModified": ...}, either null (null when the server sent neither). No client may read this column.';
 comment on column public.synced_events.google_event_id is 'google: the Google event id. icloud: the event''s UID, a separator and the occurrence''s original start as a UTC instant (its RECURRENCE-ID for a moved occurrence). The column keeps its name.';
 
 -- ---- Service-role only: storing an iCloud calendar -----------------------------------------
