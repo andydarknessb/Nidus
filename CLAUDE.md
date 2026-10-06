@@ -10,6 +10,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0001-nidus-v1.md` is the v1 spec; GitHub issue #1 is its tracker copy, and its sub-issues are the tickets.
 - `docs/specs/0002-skylight-gaps.md` is the v2 spec, cut from the comparison in `docs/skylight-comparison.md`; its tracker copy and tickets are named in its opening paragraph.
 - `docs/specs/0003-the-look.md` is the v3 spec: the look, in a light and a dark mode. `docs/look.md` is the source for every colour, type size and shared part; read it before touching anything a person sees.
+- `docs/specs/0004-the-wall-on-a-phone.md` is the v4 spec: the Wall below 768 px wide, with five tabs at the foot.
 
 ## Conventions
 
@@ -17,7 +18,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - Tests run through one seam: the Supabase JS client against the local stack, acting as a real principal (Household Account, Device, anonymous). Google's HTTP API is the only fake, injected into the Edge Function. Never mock the database.
 - Row-level security on every table; `current_household_id()` is the one helper policies use. A Device may write only Native Events, Routine Completions, list items, Meals and its own heartbeat.
 - All date logic uses the Household Timezone. Never use the machine's local zone.
-- Two modes, light and dark, from one set of tokens (`docs/look.md`). The mode is the document's `data-mode`; no component branches on it for colour. WCAG AAA contrast in both, 48 px minimum touch targets, landscape 16:10 on the Wall.
+- Two modes, light and dark, from one set of tokens (`docs/look.md`). The mode is the document's `data-mode`; no component branches on it for colour. WCAG AAA contrast in both, 48 px minimum touch targets, landscape 16:10 on the Wall, and a phone layout below 768 px wide (`docs/specs/0004-the-wall-on-a-phone.md`, `docs/look.md` "The phone").
 - The chrome is neutral and colour belongs to people. Nothing is told by colour alone: a person is a disc with their initial.
 - Words the family reads are plain (people, tablets, lists, time zone); the glossary's terms are for code, tests, issues and PRs.
 - No em-dashes in user-facing copy.

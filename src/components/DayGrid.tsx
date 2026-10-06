@@ -24,7 +24,8 @@ const LANE_GAP_PX = 8;
 // kiosk browser draws no scrollbars, so a row that holds more than it shows says so with the shared button (OverflowButton) beside
 // it: "More", and "Back" at its end, named for what moves (`of`: "earlier events"). `control` is what the screen has measured of
 // the row's box (useOverflow); the button is as tall as the row, 52 px, so the row never grows, on the row's own card in the fill a
-// secondary button has on one, and 8 px from the pills, in the row's own gap.
+// secondary button has on one, and 8 px from the pills, in the row's own gap. Below 768 px (the phone, whose rows are moved by touch) the
+// button is not drawn: the row scrolls under the finger, as the phone's other rows do.
 export function PillRow({
   ref,
   label,
@@ -64,7 +65,7 @@ export function PillRow({
           ))
         )}
       </div>
-      <OverflowButton control={control} of={of} short className="h-13 bg-secondary" />
+      <OverflowButton control={control} of={of} short className="h-13 bg-secondary max-[768px]:hidden" />
     </div>
   );
 }
@@ -132,7 +133,10 @@ const PAINTED = 'pointer-events-none absolute inset-x-0 top-0 bottom-0.5 rounded
 
 // One event in the grid: a flat fill in its people's colours with, on one line, the title (two lines when it is too long for one,
 // then ending in an ellipsis; never broken inside a word), its time, "On now" when it is, and its discs at the right. The title
-// gives way first: the time is never cut. A Native Event has the pin before its title. The one that is on now has the 2.5 px
+// gives way first: the time is never cut. Below 768 px (the phone, whose lanes are about 110 px wide) the block is two rows instead: the title
+// across the whole block on one line, then the time (which ends in an ellipsis before anything else is moved), "On now" and the discs, which never shrink or clip. A lane (about 105 px of
+// words at 390 px) has no room for "On now" beside a time and the discs, so in a block that shares the width the word is not drawn there: the 2.5 px ring is the
+// shape that says it, and the block's name, which a screen reader hears, still ends "on now". A Native Event has the pin before its title. The one that is on now has the 2.5 px
 // ring in --foreground, drawn over the fill. The fill and the ring stop 2 px short of the target (PAINTED), and the words are
 // centred on the fill. The second lane of a lane pair starts 4 px past the middle, so the blocks are 8 px apart; one that
 // leaves room for the "+N" is 8 px short of it.
@@ -146,7 +150,7 @@ function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top:
       data-event={occurrence.id}
       aria-label={pillName(pill, day, people)}
       onClick={() => onOpen(occurrence)}
-      className="absolute h-auto justify-start gap-3 rounded-[14px] px-0 pt-0 pr-2.5 pb-0.5 pl-3.5 text-left font-normal whitespace-normal text-foreground focus-visible:-outline-offset-2 active:bg-transparent"
+      className="absolute h-auto justify-start gap-3 rounded-[14px] px-0 pt-0 pr-2.5 pb-0.5 pl-3.5 text-left font-normal whitespace-normal text-foreground focus-visible:-outline-offset-2 active:bg-transparent max-[768px]:flex-wrap max-[768px]:content-center max-[768px]:gap-x-2 max-[768px]:gap-y-0.5 max-[768px]:pr-2 max-[768px]:pl-2.5"
       style={{
         top,
         height: heightOf(block.bottomHour - block.topHour),
@@ -157,12 +161,12 @@ function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top:
       <span aria-hidden className={PAINTED}>
         <EventFill people={people} />
       </span>
-      <span className="relative line-clamp-2 min-w-0 text-base leading-5 font-semibold text-ellipsis">
+      <span className="relative line-clamp-2 min-w-0 text-base leading-5 font-semibold text-ellipsis max-[768px]:line-clamp-1 max-[768px]:basis-full">
         {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="mr-1 inline size-3.5 align-[-2px]" />}
         {occurrence.title}
       </span>
-      <span className="relative min-w-max flex-1 text-sm leading-[18px]">{pill.time}</span>
-      {pill.onNow && <span className="relative shrink-0 text-sm leading-[18px] font-semibold">On now</span>}
+      <span className="relative min-w-max flex-1 text-sm leading-[18px] max-[768px]:min-w-0 max-[768px]:truncate">{pill.time}</span>
+      {pill.onNow && <span className={cn('relative shrink-0 text-sm leading-[18px] font-semibold', block.lanes > 1 && 'max-[768px]:hidden')}>On now</span>}
       <span className="relative flex shrink-0">
         <EventDiscs people={people} />
       </span>

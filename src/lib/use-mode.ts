@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { watchMinute } from './household-day';
 import type { Mode } from './look';
-import { applyMode, canResolve, localStore, nextBoundary, readLastMode, readOverride, resolveMode, sunAt, writeLastMode, writeOverride, type Appearance, type ModeOverride } from './mode';
+import { applyMode, localStore, modeOnLayoutChange, nextBoundary, stepMode, storedMode, sunAt, writeOverride, type Appearance, type ModeOverride } from './mode';
 import type { SunDay } from './weather';
 
 // What a screen's mode follows as time passes. The logic is src/lib/mode.ts's, which is pure and tested; this file
@@ -18,6 +18,11 @@ export type WallModeSettings = {
   // null while the Household has a weather place and the first read of its forecast has not finished or failed: the sun is
   // not known yet, and Auto waits for it. Light, Dark and the switch do not.
   sun: readonly SunDay[] | null;
+  // The phone layout (below 768 px wide, src/lib/home-layout.ts): the mode is the phone's own, as useSystemMode makes it, and
+  // the Household's Appearance, the switch's override and what the Wall last resolved play no part: none is read and none is
+  // written. Hooks cannot be conditional, so a Wall that crosses 768 px by resizing keeps this one and flips this input;
+  // false (or left out) is the tablet's behaviour exactly.
+  system?: boolean | undefined;
 };
 
 // Keeps the document's mode right on the Wall: the switch's override while it lasts, else the Household's Appearance, which
@@ -27,51 +32,65 @@ export type WallModeSettings = {
 // resolved for the next load to paint. The sun is read from the forecast at each minute and not once, so the Household date
 // moving on at midnight needs no new render. Returns the switch: it sets an override for the opposite mode that lasts until
 // the next sunrise or sunset, on this screen only. It works as soon as the Household is read.
-export function useWallMode({ timezone, appearance, sun }: WallModeSettings): () => void {
+export function useWallMode({ timezone, appearance, sun, system = false }: WallModeSettings): () => void {
   const [store] = useState(localStore);
-  const [override, setOverride] = useState(() => readOverride(store, Date.now()));
+  const [start] = useState(() => storedMode(store, system, Date.now()));
+  const [override, setOverride] = useState(start.override);
   // What the screen shows is the mode it last resolved, until it resolves another.
-  const [mode, setMode] = useState<Mode>(() => readLastMode(store));
+  const [mode, setMode] = useState<Mode>(start.mode);
+  const prefersDark = usePrefersDark();
+
+  // A Wall that stops being a phone (the window grew past 768 px) takes up where the tablet's storage left it. That is worked out while
+  // this draws (React draws again at once, before anything is painted or any effect has run), so the first frame back is what the
+  // Household's settings resolve to (the phone never wrote a last mode), and the resolving below starts from the stored override, or the
+  // in-memory one when storage is blocked, and not from the nothing the phone held.
+  const [wasSystem, setWasSystem] = useState(system);
+  if (wasSystem !== system) {
+    setWasSystem(system);
+    const now = Date.now();
+    const settings = { appearance, timezone, sunKnown: sun !== null, ...(timezone !== null ? sunAt(sun ?? [], timezone, now) : {}) };
+    const back = modeOnLayoutChange(wasSystem, system, store, now, settings, override);
+    if (back) {
+      setOverride(back.override);
+      setMode(back.mode);
+    }
+  }
 
   useEffect(() => {
+    // The phone's mode is the effect below's, and this one reads and writes nothing.
+    if (system) return;
     const resolve = () => {
       const now = Date.now();
-      // An override that has run out is dropped from storage as well as ignored.
-      if (override && now >= override.until) {
-        writeOverride(store, null);
-        setOverride(null);
-        return;
-      }
       const inputs = { appearance, override, now, timezone, sunKnown: sun !== null, ...(timezone !== null ? sunAt(sun ?? [], timezone, now) : {}) };
-      // While the inputs cannot resolve a mode the screen keeps the one it has and keeps nothing new for its next load: what
-      // it keeps is only what it really resolved.
-      if (!canResolve(inputs)) return;
-      const resolved = resolveMode(inputs);
-      setMode(resolved);
-      writeLastMode(store, resolved);
+      const step = stepMode(store, system, override, inputs);
+      if (step === 'drop') setOverride(null);
+      else if (step) setMode(step.mode);
     };
     resolve();
     return watchMinute(resolve);
-  }, [store, appearance, override, timezone, sun]);
+  }, [store, appearance, override, timezone, sun, system]);
 
-  useEffect(() => applyMode(mode), [mode]);
+  const shown: Mode = system ? (prefersDark ? 'dark' : 'light') : mode;
+  useEffect(() => applyMode(shown), [shown]);
 
   return useCallback(() => {
-    if (timezone === null) return;
+    // The phone has no switch.
+    if (system || timezone === null) return;
     // The override ends at the next boundary from what the screen has now: the forecast's sun when it is known, else 7:00 and 19:00.
     const now = Date.now();
     const next: ModeOverride = { mode: mode === 'dark' ? 'light' : 'dark', until: nextBoundary({ now, timezone, ...sunAt(sun ?? [], timezone, now) }) };
     writeOverride(store, next);
     setOverride(next);
-  }, [store, mode, timezone, sun]);
+  }, [store, mode, timezone, sun, system]);
 }
 
 // The phone's pages follow the phone: prefers-color-scheme, and light when it says nothing. They change when it
 // does, and they neither read nor write what the Wall stored.
 const PREFERS_DARK = '(prefers-color-scheme: dark)';
 
-export function useSystemMode(): void {
-  const dark = useSyncExternalStore(
+// Whether the phone prefers dark now, and drawn again when it changes.
+function usePrefersDark(): boolean {
+  return useSyncExternalStore(
     (notify) => {
       const query = window.matchMedia(PREFERS_DARK);
       query.addEventListener('change', notify);
@@ -79,6 +98,10 @@ export function useSystemMode(): void {
     },
     () => window.matchMedia(PREFERS_DARK).matches,
   );
+}
+
+export function useSystemMode(): void {
+  const dark = usePrefersDark();
   useEffect(() => applyMode(dark ? 'dark' : 'light'), [dark]);
 }
 

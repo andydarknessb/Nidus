@@ -1,6 +1,6 @@
 import { RefreshCwOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { loadSyncFreshness, staleSyncBadge, type SyncFreshness } from '../lib/calendar-accounts';
+import { loadSyncFreshness, staleSyncBadge, staleSyncShort, type SyncFreshness } from '../lib/calendar-accounts';
 import { formatClock, formatDate } from '../lib/calendar-occurrences';
 import { useChangeTick } from '../lib/change-feed';
 import type { Household } from '../lib/household';
@@ -9,6 +9,7 @@ import { useNow } from '../lib/wall-hooks';
 import type { Forecast } from '../lib/weather';
 import { HeaderNextMeal } from '../MealsPage';
 import { ConnectionBadge } from './ConnectionBadge';
+import { PHONE_PILL, PHONE_SYNC_WORD } from './phone-pill';
 import { WeatherNow } from './Weather';
 
 // How often the wall re-reads how fresh the mirror is, and re-words the badge as time passes.
@@ -43,9 +44,12 @@ export function WallTime({ name, timezone }: { name: string; timezone: string })
 
 // The "last synced N hours ago" mark: nothing while every Calendar Account is within an hour, so a healthy wall
 // stays clean. A failed read keeps what the wall last knew.
-function SyncBadge() {
-  const [accounts, setAccounts] = useState<SyncFreshness[]>([]);
-  const [now, setNow] = useState(() => Date.now());
+//
+// `compact` is the phone's header's form: the icon and a short age ("3 h"), the sentence for a screen reader only. `initial` is
+// what it holds before its first read lands, which a test gives it; the Wall passes none, and reads at once.
+export function SyncBadge({ compact = false, initial }: { compact?: boolean; initial?: { accounts: SyncFreshness[]; now: number } | undefined }) {
+  const [accounts, setAccounts] = useState<SyncFreshness[]>(initial?.accounts ?? []);
+  const [now, setNow] = useState(() => initial?.now ?? Date.now());
   const changes = useChangeTick(SYNC_TABLES);
   useEffect(() => {
     let live = true;
@@ -69,6 +73,17 @@ function SyncBadge() {
   }, [changes]);
   const badge = staleSyncBadge(accounts, now);
   if (!badge) return null;
+  if (compact) {
+    return (
+      <p role="status" data-pill="" className={PHONE_PILL}>
+        <RefreshCwOff aria-hidden className="size-[18px] shrink-0" />
+        <span aria-hidden className={PHONE_SYNC_WORD}>
+          {staleSyncShort(accounts, now)}
+        </span>
+        <span className="sr-only">{badge}</span>
+      </p>
+    );
+  }
   return (
     <p role="status" className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-muted px-3.5 text-sm font-medium whitespace-nowrap">
       <RefreshCwOff aria-hidden className="size-[18px] shrink-0" />

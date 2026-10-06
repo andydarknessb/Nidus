@@ -166,6 +166,52 @@ export function writeOverride(store: ModeStore | null, override: ModeOverride | 
   }
 }
 
+// What a Wall starts from, or goes back to when it stops being a phone: the switch's override that is still running and the mode it
+// last resolved. The phone layout (`system`) follows the phone and neither reads nor writes either, so it starts from nothing.
+export function storedMode(store: ModeStore | null, system: boolean, now: number): { override: ModeOverride | null; mode: Mode } {
+  return system ? { override: null, mode: 'light' } : { override: readOverride(store, now), mode: readLastMode(store) };
+}
+
+// What the Wall takes up when its layout changes between the tablet's and the phone's: nothing (null) unless it stops being a phone. Then
+// the override is the one the tablet's storage holds that is still running, or, with no storage at all (`store` null), the one the
+// screen held in memory (`held`) that has not ended; and the mode is what the inputs resolve to when they can (the Household's Appearance,
+// the sun, the Household Timezone and that override), else the override's mode, else the mode last resolved. The phone never writes the
+// last mode, so a screen that has never drawn the tablet has none, and the first frame must not be a light one for a dark Wall. It is
+// worked out while the screen is drawn, so the tablet's first frame is that mode and the resolving that follows starts from that
+// override: it never paints light on the way back, or writes a last mode that ignores the override.
+export function modeOnLayoutChange(
+  wasSystem: boolean,
+  system: boolean,
+  store: ModeStore | null,
+  now: number,
+  settings: Omit<ModeInputs, 'now' | 'override'> = { timezone: null },
+  held: ModeOverride | null = null,
+): { override: ModeOverride | null; mode: Mode } | null {
+  if (!wasSystem || system) return null;
+  const stored = storedMode(store, false, now);
+  const override = store === null && held && now < held.until ? held : stored.override;
+  const inputs: ModeInputs = { ...settings, override, now };
+  return { override, mode: canResolve(inputs) ? resolveMode(inputs) : (override?.mode ?? stored.mode) };
+}
+
+// One step of keeping the Wall's mode right: what the screen does at the start of a minute. `drop` says the override has run out (and
+// is gone from storage); a mode is what resolved (and is kept for the next load); null is nothing to change. The phone layout
+// (`system`) never steps: it neither reads nor writes what the Wall stored.
+export function stepMode(store: ModeStore | null, system: boolean, override: ModeOverride | null, inputs: ModeInputs): 'drop' | { mode: Mode } | null {
+  if (system) return null;
+  // An override that has run out is dropped from storage as well as ignored.
+  if (override && inputs.now >= override.until) {
+    writeOverride(store, null);
+    return 'drop';
+  }
+  // While the inputs cannot resolve a mode the screen keeps the one it has and keeps nothing new for its next load: what it keeps
+  // is only what it really resolved.
+  if (!canResolve(inputs)) return null;
+  const mode = resolveMode(inputs);
+  writeLastMode(store, mode);
+  return { mode };
+}
+
 // Sets the document's mode, and keeps the browser's own idea of it in step: `color-scheme` (form controls,
 // scrollbars) and the `theme-color` of the page.
 export function applyMode(mode: Mode, doc: Document = document): void {

@@ -1,63 +1,20 @@
-import { ChevronLeft, ChevronRight, Cookie, Moon, Plus, Sun, Sunrise, X, type LucideIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { InBody } from './components/InBody';
+import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
 import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
-import { useRefetchOn } from './lib/change-feed';
 import { dialogKeys } from './lib/dialog';
 import { appBehind, holdBackground } from './lib/inert-behind';
-import { loadMeals, mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
-import { startReadLoop, type ReadLoop } from './lib/read-loop';
+import { mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
 import { householdDay, WEEKDAYS } from './lib/routines';
 import { supabase } from './lib/supabase';
+import { dayLabel, dayName, SLOT_PICTURES, useMeals } from './lib/use-meals';
 import { useFailureWords } from './lib/use-failure-words';
 import { useHouseholdDay, useNow } from './lib/wall-hooks';
 
 // Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the header's button for the
 // next meal of today. Written by a Household Account or a Device, whichever session `supabase` holds.
-
-// A change heard from the server reads at once; this slow read is the backstop for one that was
-// missed while the connection was down. A read that failed is tried again sooner, as the calendar's is.
-const REFRESH_MS = 60_000;
-const RETRY_MS = 5_000;
-// What each read here listens to: a Meal changed anywhere in the Household.
-const MEAL_TABLES = ['meals'] as const;
-
-// The picture each slot is marked with, in the plan's rows and on the header's button.
-const SLOT_PICTURES: Record<MealSlot, LucideIcon> = { breakfast: Sunrise, lunch: Sun, dinner: Moon, snack: Cookie };
-
-// The Meals from `from` to `to` (Household dates), read again when a Meal changes anywhere in the
-// Household, when `saves` goes up (a save made here) and every minute, or after five seconds when
-// the last read failed. `meals` is null until a read has landed; a failed read keeps what is shown.
-// Callers are keyed on the span, so a turned page never shows the last page's Meals.
-function useMeals(from: string, to: string, saves = 0): { meals: Meal[] | null; failed: boolean } {
-  const [read, setRead] = useState<{ meals: Meal[] | null; failed: boolean }>({ meals: null, failed: false });
-  // A change pokes the loop instead of restarting it, so a read in flight lands and one more follows.
-  const loop = useRef<ReadLoop | null>(null);
-  useRefetchOn(MEAL_TABLES, () => loop.current?.poke());
-  useEffect(() => {
-    loop.current = startReadLoop({
-      read: () => loadMeals(supabase, from, to),
-      onResult: (meals) => setRead({ meals, failed: false }),
-      onFail: () => setRead((prev) => ({ ...prev, failed: true })),
-      refreshMs: REFRESH_MS,
-      retryMs: RETRY_MS,
-    });
-    return () => {
-      loop.current?.stop();
-      loop.current = null;
-    };
-  }, [from, to, saves]);
-  return read;
-}
-
-// "Thu 1": a day as the grid names it, and "Thursday 1": the same in full, as a screen reader hears it.
-function dayLabel(day: WallDay): string {
-  return `${WEEKDAYS[day.weekday]!.short} ${Number(day.date.slice(8))}`;
-}
-function dayName(day: WallDay): string {
-  return `${WEEKDAYS[day.weekday]!.name} ${Number(day.date.slice(8))}`;
-}
 
 // ---- The Meals screen: a week by slot ------------------------------------------------
 
@@ -110,7 +67,7 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
 }
 
 // The cell the sheet is open on: its Household date and slot, how it is named, and the Meal it holds.
-type Editing = { date: string; slot: MealSlot; heading: string; meal: Meal | null };
+export type Editing = { date: string; slot: MealSlot; heading: string; meal: Meal | null };
 
 // A heading row of days over a row for each slot, each row starting with the slot's picture and name. Each cell is
 // one button, at least 48 px either way, that opens the sheet; a planned Meal is on --everyone and an empty slot is a
@@ -226,7 +183,7 @@ function DayHeading({ day }: { day: WallDay }) {
 // Focus moves onto the field on open, so the tablet's keyboard comes up at once, and back to the cell on close;
 // Close, Cancel and Escape close it without writing, and so does a tap on the scrim while the field still holds what
 // it opened with. A blank field is a clear.
-function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
+export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
   const dialog = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing.meal?.title ?? '');
@@ -283,7 +240,7 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
 
   return (
     <div
-      className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-4 sm:items-center sm:p-8"
+      className={`fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-4 min-[768px]:items-center min-[768px]:p-8 ${PHONE_SCRIM}`}
       // A press on the scrim must not take focus off the field: the browser would hand it to the page behind, and
       // Escape would then reach nothing.
       onMouseDown={(event) => {
@@ -302,8 +259,9 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
         noValidate
         onSubmit={submit}
         onKeyDown={(event) => dialogKeys(event, close)}
-        className="flex w-full max-w-lg flex-col gap-[18px] rounded-[28px] bg-card p-6 outline-none"
+        className={`flex w-full max-w-lg flex-col gap-[18px] rounded-[28px] bg-card p-6 outline-none ${PHONE_FRAME} max-[768px]:min-h-0`}
       >
+        <SheetHandle />
         <div className="flex h-12 items-center justify-between gap-4">
           <h2 id="meal-sheet-title" className="font-display text-[30px] leading-9">
             {editing.heading}
@@ -312,14 +270,18 @@ function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: (
             <X aria-hidden className="size-[26px]" strokeWidth={2.2} />
           </Button>
         </div>
-        <label className="flex flex-col gap-2">
-          <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
-          <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
-        </label>
-        <p role="alert" className="min-h-6 text-[15px] leading-5 font-medium empty:hidden">
-          {problem}
-        </p>
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        {/* On a phone the field and what is said of it scroll between the title row and the buttons; on the Wall the box is not there
+            (display: contents), and the sheet is as it was. */}
+        <div className="flex min-h-0 flex-col gap-[18px] max-[768px]:overflow-y-auto min-[768px]:contents">
+          <label className="flex flex-col gap-2">
+            <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
+            <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+          </label>
+          <p role="alert" className="min-h-6 text-[15px] leading-5 font-medium empty:hidden">
+            {problem}
+          </p>
+        </div>
+        <div className="flex max-[768px]:flex-none flex-wrap items-center justify-end gap-3">
           {editing.meal && (
             <Button className="mr-auto h-14 px-6 text-[17px]" disabled={busy} onClick={() => void write('')}>
               Clear

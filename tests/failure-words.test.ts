@@ -9,12 +9,14 @@ import { NOT_SAVED, NOT_SAVED_OFFLINE } from '../src/lib/write-failure';
 // The wiring is in components that need a browser to draw, so the source of each is read.
 
 const source = (file: string) => readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
-const WRITERS = ['SharedListsPage.tsx', 'MealsPage.tsx', 'components/NativeEventSheet.tsx'];
+const WRITERS = ['SharedListsPage.tsx', 'lib/use-shared-lists.ts', 'MealsPage.tsx', 'components/NativeEventSheet.tsx'];
 
 describe("the Wall's writers", () => {
   it('say their trouble through the one vocabulary, chosen when the write fails', () => {
     for (const file of WRITERS) {
-      expect(source(file), file).toMatch(/from '(\.\/|\.\.\/)lib\/use-failure-words'/);
+      // The Shared Lists' writer is in lib/use-shared-lists.ts (shared with the phone); the screens that write draw its hook or use their own.
+      if (file === 'SharedListsPage.tsx') continue;
+      expect(source(file), file).toMatch(/from '(\.\/|\.\.\/lib\/)(lib\/)?use-failure-words'/);
       expect(source(file), file).toContain('useFailureWords()');
     }
   });

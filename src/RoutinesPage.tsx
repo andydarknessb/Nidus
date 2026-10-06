@@ -1,5 +1,5 @@
 import { cn } from 'cn';
-import { ArrowDown, ArrowUp, Moon, Star, Sun, Sunrise, type LucideIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, Star, type LucideIcon } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type Ref } from 'react';
 import { EmptyWords } from './components/EmptyWords';
 import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
@@ -14,16 +14,12 @@ import {
   WEEKDAYS,
   archiveRoutine,
   createRoutine,
-  followClock,
   groupByTimeOfDay,
-  holdShown,
   loadRoutines,
   maskOf,
   movedIdsInGroup,
-  openChart,
   partDone,
   partView,
-  pickPart,
   reorderRoutines,
   routineProgress,
   showsTimeOfDayHeadings,
@@ -31,6 +27,7 @@ import {
   updateRoutine,
   isScheduledOn,
   type Burst,
+  type PartView,
   type ChartPart,
   type Routine,
   type RoutineEdit,
@@ -40,6 +37,7 @@ import { PictureField, RoutinePicture } from './lib/routine-pictures';
 import { useRefetchOn } from './lib/change-feed';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
+import { CHART_CHOICES, PART_ICON, WORDS, timeWord, useChartPart } from './lib/routine-chart';
 import { useOverflow } from './lib/use-overflow';
 import { useCelebration, type RoutinesToday } from './lib/use-routines-today';
 import { unnamed } from './lib/write-failure';
@@ -90,12 +88,6 @@ export function Confetti({ at, onDone }: { at: number; onDone: () => void }) {
     </span>
   );
 }
-
-// The words of a tile, whatever they are. A word too long for its line is hyphenated (the page says lang="en") or, where that
-// cannot be done, broken onto the next line, and what is past the last line ends in an ellipsis: no letter is ever cut with
-// nothing to show it. `dir="auto"` on the element sets the direction from the words, so a right-to-left title starts at the
-// right and, when it is cut, is cut at its end; `text-start` follows that direction.
-const WORDS = 'min-w-0 text-start break-words hyphens-auto';
 
 // A Routine's tile (docs/look.md, A Routine tile): the whole tile is the button, 80 px tall, with the picture in a 52 px disc,
 // the words on up to two lines and a 44 px ring. To do, the ring is the person's strong colour; done, the tile is filled
@@ -169,9 +161,6 @@ export function RoutineTile({
   );
 }
 
-// The icon each part of the day has on the chart's control and over a column.
-const PART_ICON: Record<TimeOfDay, LucideIcon> = { morning: Sunrise, afternoon: Sun, evening: Moon };
-
 // The small heading over a group of tiles: the part of the day (with its icon), Left from earlier or Any time.
 function GroupLabel({ icon: Icon, children, status }: { icon?: LucideIcon | undefined; children: ReactNode; status?: ReactNode }) {
   return (
@@ -181,6 +170,108 @@ function GroupLabel({ icon: Icon, children, status }: { icon?: LucideIcon | unde
         {children}
       </h4>
       {status}
+    </div>
+  );
+}
+
+// The tiles of one group: a list of Routine tiles on a person's colour, each the whole button.
+function Tiles({ list, profile, done, onTap }: { list: Routine[]; profile: Profile; done: ReadonlySet<string>; onTap: (routine: Routine, button: HTMLElement) => void }) {
+  return (
+    <ul className="flex flex-col gap-2.5">
+      {list.map((routine) => (
+        <li key={routine.id}>
+          <RoutineTile routine={routine} color={profile.color} done={done.has(routine.id)} onTap={(button) => onTap(routine, button)} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// What one Profile's column shows for the part of the day (or every part): the part's heading with its Done mark, its tiles, what is
+// left from earlier and the Routines for any time, or, on the whole day, every Routine under its part. The phone's card draws the same.
+// `view` is partView for the part, null on the whole day, and `finished` whether the Profile has done everything today.
+export function PartGroups({
+  profile,
+  routines,
+  done,
+  part,
+  view,
+  finished,
+  onTap,
+}: {
+  profile: Profile;
+  routines: Routine[];
+  done: ReadonlySet<string>;
+  part: ChartPart;
+  view: PartView | null;
+  finished: boolean;
+  onTap: (routine: Routine, button: HTMLElement) => void;
+}) {
+  const tiles = (list: Routine[]) => <Tiles list={list} profile={profile} done={done} onTap={onTap} />;
+  if (view === null || part === 'whole') {
+    return groupByTimeOfDay(routines).map((group) => (
+      <Fragment key={group.label}>
+        <GroupLabel icon={group.value === null ? undefined : PART_ICON[group.value]}>{group.label}</GroupLabel>
+        {tiles(group.routines)}
+      </Fragment>
+    ));
+  }
+  return (
+    <>
+      <GroupLabel
+        icon={PART_ICON[part]}
+        // Keyed by the part: a part already done is not announced when it is switched to, only a tick that makes it so is.
+        // And a finished day is announced once, by the heading ("Ben: All done"): this stays on the page, for the eye, and says
+        // nothing more to a screen reader then.
+        status={
+          <span key={part} role="status" className="flex items-center gap-1.5 text-[14.5px] leading-[18px] font-semibold">
+            {partDone(view, done) && (
+              <>
+                {!finished && (
+                  <span className="sr-only">
+                    {profile.name}: {timeWord(part)}{' '}
+                  </span>
+                )}
+                <span aria-hidden={finished || undefined} className="flex items-center gap-1.5">
+                  <Tick size={20} color={profile.color} strong />
+                  Done
+                </span>
+              </>
+            )}
+          </span>
+        }
+      >
+        {timeWord(part)}
+      </GroupLabel>
+      {view.own.length > 0 && tiles(view.own)}
+      {view.earlier.length > 0 && (
+        <>
+          <GroupLabel>Left from earlier</GroupLabel>
+          {tiles(view.earlier)}
+        </>
+      )}
+      {view.anytime.length > 0 && (
+        <>
+          <GroupLabel>Any time</GroupLabel>
+          {tiles(view.anytime)}
+        </>
+      )}
+      {view.own.length + view.earlier.length + view.anytime.length === 0 && <EmptyWords className="px-1">Nothing this {part}.</EmptyWords>}
+    </>
+  );
+}
+
+// The foot line under a column: how many Routines of earlier parts are done, with a tick for each of the first three. Nothing when none.
+export function DoneEarlier({ view, color }: { view: PartView; color: string }) {
+  if (view.doneEarlier === 0) return null;
+  return (
+    <div className="mt-1 flex h-6 flex-none items-center gap-2">
+      <span aria-hidden className="flex gap-1">
+        {Array.from({ length: Math.min(view.doneEarlier, 3) }, (_, index) => (
+          <Tick key={index} size={20} color={color} strong />
+        ))}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm leading-[18px] text-muted-foreground">{view.doneEarlier} done earlier today</span>
     </div>
   );
 }
@@ -235,16 +326,6 @@ function Column({
     void onToggle(routine);
   }
 
-  const tiles = (list: Routine[]) => (
-    <ul className="flex flex-col gap-2.5">
-      {list.map((routine) => (
-        <li key={routine.id}>
-          <RoutineTile routine={routine} color={profile.color} done={done.has(routine.id)} onTap={(button) => tap(routine, button)} />
-        </li>
-      ))}
-    </ul>
-  );
-
   return (
     <section
       ref={column}
@@ -288,71 +369,13 @@ function Column({
         // keyboard's focus is scrolled clear of it.
         <div ref={more.scroller} className={cn('-m-1 min-h-0 overflow-y-auto', FOOT_CLEARANCE)}>
           <div className="flex flex-col gap-2.5 p-1">
-            {view === null
-              ? groupByTimeOfDay(routines).map((group) => (
-                  <Fragment key={group.label}>
-                    <GroupLabel icon={group.value === null ? undefined : PART_ICON[group.value]}>{group.label}</GroupLabel>
-                    {tiles(group.routines)}
-                  </Fragment>
-                ))
-              : part !== 'whole' && (
-                  <>
-                    <GroupLabel
-                      icon={PART_ICON[part]}
-                      // Keyed by the part: a part already done is not announced when it is switched to, only a tick that makes it so is.
-                      // And a finished day is announced once, by the heading ("Ben: All done"): this stays on the page, for the eye, and says
-                      // nothing more to a screen reader then.
-                      status={
-                        <span key={part} role="status" className="flex items-center gap-1.5 text-[14.5px] leading-[18px] font-semibold">
-                          {partDone(view, done) && (
-                            <>
-                              {!finished && (
-                                <span className="sr-only">
-                                  {profile.name}: {timeWord(part)}{' '}
-                                </span>
-                              )}
-                              <span aria-hidden={finished || undefined} className="flex items-center gap-1.5">
-                                <Tick size={20} color={profile.color} strong />
-                                Done
-                              </span>
-                            </>
-                          )}
-                        </span>
-                      }
-                    >
-                      {timeWord(part)}
-                    </GroupLabel>
-                    {view.own.length > 0 && tiles(view.own)}
-                    {view.earlier.length > 0 && (
-                      <>
-                        <GroupLabel>Left from earlier</GroupLabel>
-                        {tiles(view.earlier)}
-                      </>
-                    )}
-                    {view.anytime.length > 0 && (
-                      <>
-                        <GroupLabel>Any time</GroupLabel>
-                        {tiles(view.anytime)}
-                      </>
-                    )}
-                    {view.own.length + view.earlier.length + view.anytime.length === 0 && <EmptyWords className="px-1">Nothing this {part}.</EmptyWords>}
-                  </>
-                )}
+            <PartGroups profile={profile} routines={routines} done={done} part={part} view={view} finished={finished} onTap={tap} />
           </div>
           {/* The tiles are 4 px in from the box, so the button is. */}
           <OverflowButton control={more} of={`${profile.name}'s routines`} surface="person" className="px-1" />
         </div>
       )}
-      {view !== null && view.doneEarlier > 0 && (
-        <div className="mt-1 flex h-6 flex-none items-center gap-2">
-          <span aria-hidden className="flex gap-1">
-            {Array.from({ length: Math.min(view.doneEarlier, 3) }, (_, index) => (
-              <Tick key={index} size={20} color={profile.color} strong />
-            ))}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-sm leading-[18px] text-muted-foreground">{view.doneEarlier} done earlier today</span>
-        </div>
-      )}
+      {view !== null && <DoneEarlier view={view} color={profile.color} />}
       {problem && (
         <p role="alert" className="flex-none px-1 text-[15px] leading-5">
           {problem}
@@ -363,20 +386,12 @@ function Column({
   );
 }
 
-// The words and icon on the chart's control, one choice for each part of the day and one for all of it.
-const CHART_CHOICES: { part: ChartPart; label: string; icon?: LucideIcon }[] = [
-  { part: 'morning', label: 'Morning', icon: Sunrise },
-  { part: 'afternoon', label: 'Afternoon', icon: Sun },
-  { part: 'evening', label: 'Evening', icon: Moon },
-  { part: 'whole', label: 'Whole day' },
-];
-
 // The Routines chart, a screen of its own: a control for the part of the day and a column for each Profile that has a
 // Routine on any day, side by side in the Profiles' order. It opens on the part it is now, and moves to a new part when
 // that part begins; a part picked by hand holds until then. Only when there are more Profiles than fit at a readable
 // width does the row scroll sideways, and the heading row then holds a "More people" button that says so.
 export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
-  const { loaded, settled, failed, part: clock, problems, columns, done, toggle } = routines;
+  const { loaded, failed, problems, columns, done, toggle } = routines;
   const celebration = useCelebration(routines);
   // The row of columns, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row.
   const row = useOverflow('x');
@@ -384,17 +399,7 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
 
-  // What the chart shows follows the clock, and keeps in place what it has shown as left from earlier, in this render, so
-  // that not one frame of it is drawn with a Routine gone that was ticked a moment ago. See followClock and holdShown. What
-  // is shown before the day's ticks have been read is not kept: it is not what is left.
-  const [chart, setChart] = useState(() => openChart(clock));
-  const followed = followClock(chart, clock);
-  const shown = followed.part;
-  const current = holdShown(
-    followed,
-    shown === 'whole' || !settled ? [] : columns.flatMap((column) => partView(column.routines, done, shown).earlier.map((routine) => routine.id)),
-  );
-  if (current !== chart) setChart(current);
+  const { shown, held, pick } = useChartPart(routines);
 
   return (
     <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-4">
@@ -411,7 +416,7 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
                 key={part}
                 variant="quiet"
                 aria-pressed={shown === part}
-                onClick={() => setChart(pickPart(current, part))}
+                onClick={() => pick(part)}
                 className="h-12 min-w-12 gap-2 rounded-[18px] px-4 text-[15px] font-medium"
               >
                 {Icon && <Icon aria-hidden className="size-5" />}
@@ -430,7 +435,7 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
           Could not load routines. Check your connection.
         </p>
       )}
-      {loaded && columns.length === 0 && <EmptyWords>No routines yet. Add some on your phone.</EmptyWords>}
+      {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
       <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
         {columns.map(({ profile, routines: today }) => (
           <Column
@@ -439,7 +444,7 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
             routines={today}
             done={done}
             part={shown}
-            held={current.held}
+            held={held}
             problem={problems[profile.id]}
             onToggle={toggle}
             burst={celebration.bursts[profile.id]}
@@ -455,11 +460,6 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
 // ---- The phone: manage Routines per Profile (Household Account only) ------------------
 
 const allDays = maskOf(WEEKDAYS.map((weekday) => weekday.bit));
-
-// The word for a time of day. Any time has none: it is the absence of one.
-function timeWord(timeOfDay: TimeOfDay | null): string | undefined {
-  return TIME_OF_DAY_GROUPS.find((group) => group.value !== null && group.value === timeOfDay)?.label;
-}
 
 // The days, then the time of day when the Routine has one: "Mon, Tue · Morning". Non-breaking
 // spaces keep a wrapped line from ending on the dot.

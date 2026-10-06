@@ -23,7 +23,8 @@ export function StatusLineProvider({ children }: { children: ReactNode }) {
       <div data-behind-sheets="" className="contents">
         {children}
       </div>
-      <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-4 bottom-4 z-30 flex justify-center">
+      {/* --status-foot is how far up the screen its own foot is: the phone's Wall sets it to clear its tab bar and Add event (PhoneShell). */}
+      <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-4 bottom-[var(--status-foot,1rem)] z-30 flex justify-center">
         {line && (
           <p key={said} className="max-w-xl rounded-2xl bg-foreground px-5 py-3 text-center text-base font-medium text-balance text-background">
             {line}

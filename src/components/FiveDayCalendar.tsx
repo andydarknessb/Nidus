@@ -202,7 +202,7 @@ const FIT_UNTIL_MEASURED = 8;
 // lane that opens a list of it. The blocks wait for the Profiles, as the schedule's pills do, and are filled from them. Tapping an
 // event opens its details; after an event is deleted from its sheet, or moved by an edit, focus goes to its new pill or block, or
 // to the page title (`focusHeading`) if it is not on the day any more, and never to the page (EventSheets).
-function DayView({
+export function DayView({
   timezone,
   now,
   day,
@@ -253,7 +253,7 @@ function DayView({
   return (
     <section
       aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`}
-      className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card py-3 pr-3 pl-2"
+      className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card py-3 pr-3 pl-2 max-[768px]:rounded-[22px] max-[768px]:pl-3"
     >
       {failed && occurrences === null && (
         <p role="alert" className="px-4 py-2 text-xl">

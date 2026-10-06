@@ -123,6 +123,23 @@ describe('the grid', () => {
     expect(html).toContain('>4:00 to 4:45 PM<');
   });
 
+  it('lays a block out in two rows below 768 px: the title across the whole block, then the time, "On now" and the discs, which never shrink', () => {
+    const html = grid(plan([event('Piano lesson with Mrs. Okonkwo', OCT1, '17:00', '18:00', ['p-ava', 'p-cory'])]), OCT1);
+    const classes = (tag: string) => (/class="([^"]*)"/.exec(tag)?.[1] ?? '').split(' ');
+    const tag = block(html, 'Piano lesson');
+    expect(classes(tag)).toEqual(expect.arrayContaining(['max-[768px]:flex-wrap', 'max-[768px]:gap-y-0.5']));
+    const title = /<span class="([^"]*)">Piano lesson with Mrs\. Okonkwo<\/span>/.exec(inner(html, 'Piano lesson'))![1]!.split(' ');
+    expect(title).toEqual(expect.arrayContaining(['max-[768px]:basis-full', 'max-[768px]:line-clamp-1', 'min-w-0']));
+    // The time gives way before the discs do, and the discs (shrink-0, as on the tablet) are drawn after it.
+    const time = /<span class="([^"]*)">5:00 to 6:00 PM<\/span>/.exec(inner(html, 'Piano lesson'))![1]!.split(' ');
+    expect(time).toEqual(expect.arrayContaining(['max-[768px]:min-w-0', 'max-[768px]:truncate']));
+    expect(inner(html, 'Piano lesson')).toMatch(/5:00 to 6:00 PM<\/span>[\s\S]*<span class="relative flex shrink-0">/);
+    // None of it changes at 768 px and wider: every phone class is a max-[768px]: variant, so the tablet keeps its line clamp and its time.
+    expect(classes(tag)).toEqual(expect.arrayContaining(['gap-3', 'pl-3.5']));
+    expect(title).toContain('line-clamp-2');
+    expect(time).toContain('min-w-max');
+  });
+
   it('says which event each block is, so focus can be put back on it when a sheet it opened has closed', () => {
     const piano = event('Piano', OCT1, '16:00', '17:00');
     expect(block(grid(plan([piano])), 'Piano')).toContain(`data-event="${piano.id}"`);
@@ -142,6 +159,18 @@ describe('the grid', () => {
     expect(html).toContain('top:10.05');
     // It is behind: nothing about it asks for a place above the blocks.
     expect(html).not.toMatch(/data-testid="now-line"[^>]*z-/);
+  });
+
+  it('keeps "On now" on a block that has the whole width, and leaves it to the ring and the name in a lane, below 768 px', () => {
+    // Now is 7:21 PM: both are on now. One is alone, the other shares the width with a second event.
+    const alone = grid(plan([event('Family dinner', OCT1, '19:00', '20:00')]));
+    const shared = grid(plan([event('Family dinner', OCT1, '19:00', '20:00'), event('Piano', OCT1, '19:00', '20:00')]));
+    const onNow = (html: string) => (/<span class="([^"]*)">On now<\/span>/.exec(html)?.[1] ?? '').split(' ');
+    expect(onNow(alone)).not.toContain('max-[768px]:hidden');
+    expect(onNow(shared)).toContain('max-[768px]:hidden');
+    // Still there for a screen reader, and the ring is still drawn.
+    expect(shared).toContain('on now');
+    expect(count(shared, 'shadow-[inset_0_0_0_2.5px_var(--foreground)]')).toBe(2);
   });
 
   it('has no now line on another day', () => {
@@ -286,6 +315,15 @@ describe('the rows above and below the grid', () => {
         expect(later(says(true), day)).toContain('aria-label="More later events"');
         expect(earlier(says(true, true), day)).toContain('aria-label="Back to the first earlier events"');
         expect(button(later(says(true), day))).not.toMatch(/today/);
+      }
+    });
+
+    it('hide the button below 768 px, where a finger moves the row, and keep it from 768 px', () => {
+      for (const html of [earlier(says(true)), later(says(true, true))]) {
+        const classes = button(html);
+        expect(classes).toContain('max-[768px]:hidden');
+        // The tablet side has no rule of its own that the phone's could lose to, or win against.
+        expect(classes).not.toMatch(/ (sm|md|lg):/);
       }
     });
 

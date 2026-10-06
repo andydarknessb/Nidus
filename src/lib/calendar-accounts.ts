@@ -152,6 +152,22 @@ export async function loadSyncFreshness(client: SupabaseClient): Promise<SyncFre
 // The wall's badge: null while every account is within an hour of now, otherwise how far behind
 // the furthest-behind one is. An account that has never synced counts from when it was connected.
 export function staleSyncBadge(accounts: SyncFreshness[], nowMs: number): string | null {
+  const worst = furthestBehind(accounts, nowMs);
+  if (worst === null) return null;
+  return worst.synced ? `Last synced ${formatAge(nowMs - worst.since)}` : 'Not synced yet';
+}
+
+// The same mark in as few characters as it can be said in, for the phone's header: "3 h", "2 d", or "Not synced". The words of
+// staleSyncBadge are still what a screen reader hears.
+export function staleSyncShort(accounts: SyncFreshness[], nowMs: number): string | null {
+  const worst = furthestBehind(accounts, nowMs);
+  if (worst === null) return null;
+  if (!worst.synced) return 'Not synced';
+  const age = nowMs - worst.since;
+  return age < DAY_MS ? `${Math.floor(age / HOUR_MS)} h` : `${Math.floor(age / DAY_MS)} d`;
+}
+
+function furthestBehind(accounts: SyncFreshness[], nowMs: number): { since: number; synced: boolean } | null {
   let worst: { since: number; synced: boolean } | null = null;
   for (const account of accounts) {
     const synced = account.last_synced_at !== null;
@@ -159,6 +175,5 @@ export function staleSyncBadge(accounts: SyncFreshness[], nowMs: number): string
     if (Number.isNaN(since) || nowMs - since <= SYNC_STALE_MS) continue;
     if (worst === null || since < worst.since) worst = { since, synced };
   }
-  if (worst === null) return null;
-  return worst.synced ? `Last synced ${formatAge(nowMs - worst.since)}` : 'Not synced yet';
+  return worst;
 }
