@@ -116,6 +116,22 @@ Cards 24, tiles and fields 16 to 18, rows and event pills 14, pills and discs ro
 - **The pairing screen.** A tablet that is not paired is always light, whatever the hour: it holds nothing of the Household's. Its title is Young Serif at 40, and its code, under the sentence that says where to enter it, is Young Serif at 128, spaced out by letter-spacing, with the clock's lining tabular figures (no monospace face is shipped). The sentence never breaks between "sign" and "in", and the way in for the owner of the household is one line.
 - **Beyond the calendar's range.** A hatch in `--input`, a gradient that carries meaning: this day is not on the calendar.
 
+## The phone
+
+Below 768 px of viewport width the Wall is laid out for a phone ([0004](specs/0004-the-wall-on-a-phone.md)); at 768 px and wider nothing above changes. The tokens, the type, the parts and their sizes are the same; what changes is the shell and how much a screen shows at once.
+
+- **The mode** follows the phone's own setting (`prefers-color-scheme`), as `/settings` does. There is no switch, and the Household's Appearance is for the Wall's tablets.
+- **The column.** 16 px gutters, one card under another 12 apart, cards 22 round with 12 inside. The page itself scrolls.
+- **The header.** One row 56 tall: the Household's name (13, `--muted-foreground`) over the date (Young Serif 26), the weather now (an icon and Young Serif 22), Offline and stale sync, and for the owner a 48 px round gear on `--card`. No clock and no next meal.
+- **The tab bar.** Fixed at the foot on `--card` with a hairline above it: five tabs (Home, Calendar, Routines, Meals, Lists), each 56 tall, an icon at 24 over its word at 14, radius 14. The current tab takes the Selected look. Under it, the phone's safe area.
+- **Add event.** A 56 px round primary button with a plus, 16 from the right edge and 16 above the bar, on every tab.
+- **Rows that scroll sideways** (the people strip, Routines' people, the lists) have no "More" button: the item cut at the edge is the sign, and a swipe moves them. People strip pills are 132 wide, 52 tall, a 36 px disc, the name and the pips.
+- **Day chips.** Seven to a row, sharing the width, 64 tall, radius 14: the weekday (13) over the date (Young Serif 22). Today is the word "Today" over the date in a 34 px `--primary` disc. The picked chip takes the Selected look.
+- **A control of a few** (Day, Week, Month; Morning, Afternoon, Evening, Whole day): a 52 tall `--muted` track, its buttons 44 tall, the choice in the Selected look.
+- **The pager.** A 48 tall row: a 48 px round Previous on `--card`, the period's words in Young Serif 22 in the middle, a 48 px round Next.
+- **A Month cell** on a phone is a 58 tall button: the date (Young Serif 18, out-of-month dates `--muted-foreground`) over up to three 7 px dots, a person's strong colour or `--primary` for the whole Household. Its name says the date and how many events it has.
+- **A sheet** rises from the foot: full width, 24 round at the top only, a 40 by 4 px handle in `--input` at its top, its foot clear of the safe area.
+
 ## Routine pictures
 
 The key stored in `routines.picture`, and the icon it draws (lucide names). Any other value, or none, draws a plain circle.

@@ -96,3 +96,18 @@ Settled on 2026-10-02 after a UI and UX audit of the v2 build and the owner's re
 households            + appearance (auto|light|dark, default auto)
 routines              + picture (a key from the app's fixed set, null = none)
 ```
+
+## v4: the Wall on a phone
+
+Settled on 2026-10-06 when the owner approved the phone drawings on the design canvas. The spec is [0004](specs/0004-the-wall-on-a-phone.md); the sizes are in [look.md](look.md), "The phone". It replaces the fleet's #50.
+
+### Decisions
+
+- **The Wall is not only for a tablet**: "one or two Android tablets in landscape" above stays the Devices' setting, and the Household Account may open the Wall on a phone. Below 768 px of viewport width it is laid out for a phone; at 768 px and wider nothing changes. The width alone decides, never the user agent or a per-Device setting.
+- **Five tabs**: Home, Calendar (Day, Week and Month behind one control), Routines, Meals, Lists, at the foot. Add event is a round button above them. Settings is a gear in the header, for the owner only.
+- **No clock** in the phone's header: the date, the weather and the gear.
+- **The phone's mode is the phone's**: it follows `prefers-color-scheme`. The Household's Appearance and the switch are for the Wall's tablets.
+- **One thing at a time**: Home is one scrolling column (today, Up next, the Pinned List); Week and Meals show one day picked from seven chips; Month keeps the grid with a dot per person and lists the picked day; Routines shows one person; Lists one list.
+- **The month and agenda views** dropped from v1 are both now in: Month since v2, and the phone's Home and one-day Week are the agenda.
+- **Sheets rise from the foot** on a phone.
+- **No new data**: no migration.
