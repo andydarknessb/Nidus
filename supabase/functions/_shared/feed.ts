@@ -9,20 +9,24 @@
 
 const MAX_REDIRECTS = 3;
 const TIMEOUT_MS = 15_000;
-const MAX_BYTES = 5 * 1024 * 1024;
+// 2 MB: a feed expands to roughly thirty times its size in heap, and an Edge Function has little.
+const MAX_BYTES = 2 * 1024 * 1024;
 const DEFAULT_NAME = 'iPhone calendar';
 const MAX_NAME = 500;
+const MAX_LINK = 2048;
 
-// The link in its one spelling (https, host in lower case, no fragment), or null when it is not
-// an iPhone calendar link: only https (or webcal, which is rewritten) on icloud.com or a host
-// ending .icloud.com, with a path, and no port, user info or IP address.
+// The link in its one spelling (https, host in lower case, no query or fragment, escapes of
+// unreserved characters decoded), or null when it is not an iPhone calendar link: only https (or
+// webcal, which is rewritten) on icloud.com or a host ending .icloud.com, with a path, and no
+// port, user info or IP address. One link is one spelling, so it is one feed_key.
 export function normaliseFeedUrl(text: string): string | null {
   const trimmed = text.trim();
-  if (/[\s\p{Cc}]/u.test(trimmed)) return null;
+  if (trimmed.length > MAX_LINK || /[\s\p{Cc}]/u.test(trimmed)) return null;
   const rewritten = trimmed.replace(/^webcal:\/\//i, 'https://');
-  // The text before the first slash is the authority however the URL parser would read it, so a
-  // ':' (port, IPv6) or '@' (user info) there is refused outright; a backslash is a slash to it.
-  const authority = /^https:\/\/([^/\\?#]*)/i.exec(rewritten)?.[1];
+  // The text before the first slash is the authority however the URL parser would read it (it
+  // skips any run of slashes and backslashes after the scheme), so a ':' (port, IPv6) or '@'
+  // (user info) there is refused outright, whatever the port, even the default one.
+  const authority = /^https:[/\\]*([^/\\?#]*)/i.exec(rewritten)?.[1];
   if (authority === undefined || /[:@]/.test(authority)) return null;
   let url: URL;
   try {
@@ -34,6 +38,11 @@ export function normaliseFeedUrl(text: string): string | null {
   const onIcloud = host === 'icloud.com' || host.endsWith('.icloud.com');
   if (url.protocol !== 'https:' || !onIcloud || url.username || url.password || url.port || url.pathname === '/') return null;
   url.hash = '';
+  url.search = '';
+  url.pathname = url.pathname.replace(/%([0-9a-f]{2})/gi, (escape, hex: string) => {
+    const char = String.fromCharCode(parseInt(hex, 16));
+    return /[A-Za-z0-9\-._~]/.test(char) ? char : escape.toUpperCase();
+  });
   return url.toString();
 }
 
@@ -51,8 +60,14 @@ async function readCapped(response: Response, signal: AbortSignal): Promise<stri
   if (announced > MAX_BYTES) return null;
   const reader = response.body?.getReader();
   if (!reader) return '';
-  // A body that stalls is cut off with the rest of the read: cancelling ends a pending read.
-  signal.addEventListener('abort', () => void reader.cancel().catch(() => undefined), { once: true });
+  // A body that stalls is cut off with the rest of the read: cancelling ends a pending read. The
+  // listener goes on before any read, and a signal that has already fired is handled here.
+  const stop = () => void reader.cancel().catch(() => undefined);
+  signal.addEventListener('abort', stop, { once: true });
+  if (signal.aborted) {
+    stop();
+    signal.throwIfAborted();
+  }
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (;;) {
@@ -121,6 +136,10 @@ export async function fetchFeed(
 export function feedCalendarName(text: string): string {
   const unfolded = text.replace(/\r?\n[ \t]/g, '');
   const value = /^X-WR-CALNAME(?:;[^:\r\n]*)?:(.*)$/im.exec(unfolded)?.[1];
-  const name = (value ?? '').replace(/\\(.)/g, (_all, char: string) => (char === 'n' || char === 'N' ? ' ' : char)).trim();
-  return (name || DEFAULT_NAME).slice(0, MAX_NAME);
+  const name = (value ?? '')
+    .replace(/\\(.)/g, (_all, char: string) => (char === 'n' || char === 'N' ? ' ' : char))
+    .replace(/\p{Cc}/gu, '')
+    .trim();
+  // By code points, so a character outside the Basic Multilingual Plane is never cut in half.
+  return Array.from(name || DEFAULT_NAME).slice(0, MAX_NAME).join('');
 }
