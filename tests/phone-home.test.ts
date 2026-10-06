@@ -69,6 +69,10 @@ describe('the phone Home', () => {
     expect(html).toContain('aria-label="Pinned list"');
   });
 
+  it('draws the frame before the Household is read 22 round on a phone, like the cards', () => {
+    expect(home(null)).toContain('<section aria-label="Calendar" class="rounded-3xl bg-card max-[768px]:rounded-[22px]">');
+  });
+
   it('shows Up next at 22 round, and says no em-dash anywhere', () => {
     const html = home('America/Chicago');
     expect(html).toMatch(/aria-label="Up next" class="[^"]*max-\[768px\]:rounded-\[22px\]/);
@@ -88,10 +92,22 @@ describe('the people strip on a phone', () => {
     expect(row).toEqual(expect.arrayContaining(['max-[768px]:overflow-x-auto', 'max-[768px]:h-13', 'max-[768px]:[scrollbar-width:none]']));
   });
 
+  it('bleeds the row to the screen edge with the gutter as its own padding, so the last pill is cut at the screen edge', () => {
+    const html = strip(family);
+    expect(classesOf(html.slice(0, html.indexOf('>') + 1))).toEqual(expect.arrayContaining(['max-[768px]:-mx-4', 'max-[768px]:px-4', 'max-[768px]:scroll-px-4']));
+  });
+
+  it('keeps the row height while the Profiles are read, on a phone too, and gives Everyone a least width, not a fixed one', () => {
+    expect(renderToStaticMarkup(createElement(PeopleStrip, { profiles: null, routines, filter: createProfileFilter(), pressed: [] }))).toContain('max-[768px]:h-13');
+    const everyone = pills(strip(family))[0]!;
+    expect(classesOf(everyone)).toEqual(expect.arrayContaining(['max-[768px]:min-w-[132px]']));
+    expect(classesOf(everyone)).not.toContain('max-[768px]:w-[132px]');
+  });
+
   it('has every pill 132 wide and 52 tall that does not shrink, Everyone first, and the name\'s minimum width gives way to it', () => {
     const [everyone, ...people] = pills(strip(family));
     expect(everyone).toContain('aria-pressed');
-    expect(classesOf(everyone!)).toEqual(expect.arrayContaining(['max-[768px]:h-13', 'max-[768px]:w-[132px]']));
+    expect(classesOf(everyone!)).toEqual(expect.arrayContaining(['max-[768px]:h-13', 'max-[768px]:min-w-[132px]']));
     expect(people).toHaveLength(2);
     for (const pill of people) {
       expect(classesOf(pill)).toEqual(expect.arrayContaining(['max-[768px]:h-13', 'max-[768px]:w-[132px]', 'max-[768px]:min-w-[132px]!', 'max-[768px]:flex-none']));

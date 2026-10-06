@@ -12,6 +12,7 @@ import {
   deleteList,
   HOME_HOLD_MS,
   homeRows,
+  homeWindow,
   loadItems,
   loadLists,
   loadPinnedListId,
@@ -21,7 +22,6 @@ import {
   renameList,
   reorderItems,
   reorderLists,
-  rowsThatFit,
   setCrossed,
   setPinnedList,
   withoutCrossed,
@@ -407,11 +407,6 @@ export function ListsScreen() {
 
 // ---- Home's card: the Pinned List -----------------------------------------------------
 
-// From the drawing (v2/home.js): a row is 48 px (h-12) and rows are 8 px apart (gap-2).
-// ponytail: these sit beside the classes they stand for and are not measured; if a larger text size (#69) ever grows a row,
-// measure the first row instead.
-const HOME_ROW_PX = 48;
-const HOME_GAP_PX = 8;
 // min-w-0: the card is a grid item, whose width is otherwise at least that of its widest unwrapped words, so one long item or list
 // name would make the whole right rail, and the page, wider than the screen.
 // On a phone (below 768 px, spec 0004) the card is 22 round, like every card of its column.
@@ -461,9 +456,8 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
   // pushes a row that was just crossed off down from under the finger.
   const nothing = loaded && rows.length === 0;
   const measured = limit === undefined;
-  const shown = !measured ? Math.min(rows.length, limit) : room === null ? 0 : rowsThatFit({ count: rows.length, room, row: HOME_ROW_PX, gap: HOME_GAP_PX });
-  // The items still to get that the card has no room for.
-  const hidden = withoutCrossed(rows.slice(shown)).length;
+  // The rows that show, and the items still to get that the card has no room for.
+  const { shown, hidden } = homeWindow({ rows, limit, room });
 
   // A tap crosses a row off, or puts back one crossed off here. The row stays where it is either way.
   function tap(item: ListItem) {
@@ -539,14 +533,23 @@ function ListsLink({ words, name, onOpen, ref }: { words: string; name: string; 
 // Home's list card when no list is on the home screen. It keeps its heading, "Lists", and says what to do: with no list at all, to add
 // one on the phone; with lists and none on the home screen, to put one there, and the link to the Lists screen is there to see them. (It
 // used to have no heading, and to say to open a list that does not exist.)
-export function EmptyListCard({ lists, onOpenLists }: { lists: number; onOpenLists: () => void }) {
+// On the phone layout (`phone`) the words say what the person holding the phone can do: only the owner makes and pins lists, in Settings.
+export function EmptyListCard({ lists, onOpenLists, phone = false }: { lists: number; onOpenLists: () => void; phone?: boolean }) {
   return (
     <aside aria-label="Pinned list" className={HOME_CARD}>
       <div className="flex h-12 shrink-0 items-center justify-between gap-2">
         <h2 className="min-w-0 flex-1 truncate px-1 font-display text-[22px] leading-7">Lists</h2>
         {lists > 0 && <ListsLink words="All lists" name="All lists" onOpen={onOpenLists} />}
       </div>
-      <EmptyWords className="px-1">{lists === 0 ? 'No lists yet. Add one on your phone.' : 'No list here yet. On your phone, open a list and choose Show on home screen.'}</EmptyWords>
+      <EmptyWords className="px-1">
+        {phone
+          ? lists === 0
+            ? 'No lists yet. The owner adds lists in Settings.'
+            : 'No list on Home yet. The owner picks one in Settings.'
+          : lists === 0
+            ? 'No lists yet. Add one on your phone.'
+            : 'No list here yet. On your phone, open a list and choose Show on home screen.'}
+      </EmptyWords>
     </aside>
   );
 }
@@ -557,7 +560,7 @@ export function PinnedListCard({ onOpenLists, limit }: { onOpenLists: () => void
   // undefined until the first read; null when no list is pinned (or the pinned one is gone).
   const pinned = read ? (read.lists.find((list) => list.id === read.pinnedId) ?? null) : undefined;
   if (pinned) return <HomeList key={pinned.id} list={pinned} onOpenLists={onOpenLists} limit={limit} />;
-  if (pinned === null) return <EmptyListCard lists={read?.lists.length ?? 0} onOpenLists={onOpenLists} />;
+  if (pinned === null) return <EmptyListCard lists={read?.lists.length ?? 0} onOpenLists={onOpenLists} phone={limit !== undefined} />;
 
   return (
     <aside aria-label="Pinned list" className={HOME_CARD}>

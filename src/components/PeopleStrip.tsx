@@ -75,14 +75,14 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
     <div
       role="group"
       aria-label="Show events for"
-      className="flex h-14 gap-2 max-[768px]:h-13 max-[768px]:items-center max-[768px]:overflow-x-auto max-[768px]:overscroll-x-contain max-[768px]:[scrollbar-width:none] max-[768px]:[&::-webkit-scrollbar]:hidden max-[768px]:[&>*]:shrink-0"
+      className="flex h-14 gap-2 max-[768px]:h-13 max-[768px]:-mx-4 max-[768px]:items-center max-[768px]:scroll-px-4 max-[768px]:px-4 max-[768px]:overflow-x-auto max-[768px]:overscroll-x-contain max-[768px]:[scrollbar-width:none] max-[768px]:[&::-webkit-scrollbar]:hidden max-[768px]:[&>*]:shrink-0"
     >
       {!alone && (
         <Button
           variant="quiet"
           aria-pressed={pressed.length === 0}
           onClick={filter.clear}
-          className="h-14 gap-2.5 rounded-[18px] bg-card px-0 pr-4.5 pl-2 text-base text-foreground max-[768px]:h-13 max-[768px]:w-[132px] max-[768px]:gap-2 max-[768px]:pr-2 max-[768px]:focus-visible:-outline-offset-2"
+          className="h-14 gap-2.5 rounded-[18px] bg-card px-0 pr-4.5 pl-2 text-base text-foreground max-[768px]:h-13 max-[768px]:min-w-[132px] max-[768px]:gap-2 max-[768px]:pr-2 max-[768px]:focus-visible:-outline-offset-2"
         >
           <HouseDisc size={40} className={PHONE_DISC} />
           Everyone
@@ -125,7 +125,7 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
 // read the row keeps its height, so the calendar under it does not move when they arrive; a Household with no
 // Profiles has nothing to show.
 export function PeopleStrip({ profiles, routines, filter, pressed }: { profiles: Profile[] | null; routines: RoutinesToday; filter: ProfileFilter; pressed: readonly string[] }) {
-  if (profiles === null) return <div className="h-14" />;
+  if (profiles === null) return <div className="h-14 max-[768px]:h-13" />;
   if (profiles.length === 0) return null;
   return <Strip people={stripPeople(profiles, routines.groups, routines.done)} filter={filter} pressed={pressed} />;
 }
