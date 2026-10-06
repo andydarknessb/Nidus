@@ -2,7 +2,7 @@ import { createElement, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { HouseholdAccountsView as HouseholdAccountsViewType } from '../src/HouseholdAccountsSection';
-import { CANCEL_SAID, MAKE_SAID, SHARE_TEXT, inviteViewOf, sharePayload } from '../src/lib/household-accounts';
+import { CANCEL_SAID, LOAD_FAILED, MAKE_SAID, REMOVED_WORDS, SHARE_TEXT, inviteViewOf, isRemoved, loadFailedWords, sharePayload } from '../src/lib/household-accounts';
 import { writeFailureWords } from '../src/lib/write-failure';
 
 // The "Who can sign in" card of the phone's settings (src/HouseholdAccountsSection.tsx), rendered to markup so that what is
@@ -245,5 +245,32 @@ describe('Who can sign in: what it decides', () => {
   it('shares the link with the line that goes with it', () => {
     expect(SHARE_TEXT).toBe('Join our household on Nidus');
     expect(sharePayload(LINK)).toEqual({ url: LINK, text: 'Join our household on Nidus' });
+  });
+});
+
+describe('Who can sign in: an account removed while the screen was open', () => {
+  const refused = { code: '42501', message: 'new row violates row-level security policy' };
+
+  it('says the household can no longer be changed, for a read that was refused', () => {
+    expect(loadFailedWords(refused)).toBe('You can no longer change this household. Reload the page.');
+    expect(loadFailedWords(refused)).toBe(REMOVED_WORDS);
+  });
+
+  it('knows that refusal by its code alone', () => {
+    expect(isRemoved(refused)).toBe(true);
+    for (const other of [{ code: 'PT410' }, { code: '23514' }, new TypeError('Failed to fetch'), new Error('boom'), null, undefined, '42501']) {
+      expect(isRemoved(other)).toBe(false);
+    }
+  });
+
+  it('keeps the connection words for every other failed read', () => {
+    expect(loadFailedWords(new TypeError('Failed to fetch'))).toBe(LOAD_FAILED);
+    expect(loadFailedWords({ code: 'PGRST301' })).toBe('Could not load who can sign in. Check your connection.');
+  });
+
+  it('is said instead of the try-again words, and writes no em-dash', () => {
+    expect(writeFailureWords(refused, { offline: false, said: MAKE_SAID })).toBe(MAKE_SAID.failed);
+    expect(REMOVED_WORDS).not.toContain('—');
+    expect(render({ loadProblem: loadFailedWords(refused) })).toContain(REMOVED_WORDS);
   });
 });

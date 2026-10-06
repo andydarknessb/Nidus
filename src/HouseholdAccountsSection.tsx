@@ -14,7 +14,7 @@ import {
   type HouseholdAccountRow,
   type HouseholdInvite,
 } from '@/lib/household-invites';
-import { CANCEL_SAID, MAKE_SAID, inviteViewOf, sharePayload, type InviteView } from '@/lib/household-accounts';
+import { CANCEL_SAID, MAKE_SAID, REMOVED_WORDS, inviteViewOf, isRemoved, loadFailedWords, sharePayload, type InviteView } from '@/lib/household-accounts';
 import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
 
 // What the status line says: nothing, or what the last tap did.
@@ -220,9 +220,9 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       setStored(waiting);
       setLoadProblem(null);
       readFailed.current = false;
-    } catch {
+    } catch (error) {
       readFailed.current = true;
-      setLoadProblem('Could not load who can sign in. Check your connection.');
+      setLoadProblem(loadFailedWords(error));
     }
   }, [householdId]);
 
@@ -237,20 +237,22 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   }, [connection, refresh]);
 
   // One write, alone: `place` is where it says so when it fails (in `said`'s words, or the default ones), `done` what changes once it landed.
-  async function write(place: string, run: () => Promise<void>, done: () => void, said?: { failed: string; offline: string }) {
+  async function write(place: string, run: () => Promise<unknown>, done: (result: unknown) => void, said?: { failed: string; offline: string }) {
     if (working.current) return;
     working.current = true;
     setBusy(true);
+    let result: unknown;
     try {
-      await run();
+      result = await run();
       problems.clear(place);
     } catch (error) {
-      problems.fail(place, error, said ? { said } : {});
+      if (isRemoved(error)) problems.say(place, REMOVED_WORDS);
+      else problems.fail(place, error, said ? { said } : {});
       working.current = false;
       setBusy(false);
       return;
     }
-    done();
+    done(result);
     working.current = false;
     setBusy(false);
     await refresh();
@@ -288,7 +290,9 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
     void write(
       removePlace(id),
       () => removeHouseholdAccount(id),
-      () => {
+      (removed) => {
+        // false: the database refused (yourself, another Household's, already gone), so nothing was removed and the invite stands.
+        if (removed !== true) return;
         setAccounts((list) => list && list.filter((account) => account.authUserId !== id));
         // Removing someone also cancels the waiting invite, server side: a link just made would be a dead one.
         setMade(null);

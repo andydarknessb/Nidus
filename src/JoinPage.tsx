@@ -3,15 +3,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Problem, cardClass } from './components/phone';
 import { Button } from './components/ui/button';
 import { signInToJoin } from './lib/household';
-import { acceptHouseholdInvite, joinTokenOf } from './lib/household-invites';
-import { joinViewFor, joinViewOf, type JoinView, type Refusal } from './lib/join-view';
+import { acceptHouseholdInvite, isHouseholdAccount, joinTokenOf } from './lib/household-invites';
+import { joinViewFor, joinViewOf, offersSettings, type JoinView, type Refusal } from './lib/join-view';
 import { supabase } from './lib/supabase';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useSystemMode } from './lib/use-mode';
 import { writeFailureWords, type Said } from './lib/write-failure';
 
 const JOIN_SAID = { failed: 'Could not join. Try again.', offline: 'No internet, so that did not join. Try again soon.' };
-const SIGN_IN_SAID = { failed: 'Could not sign in. Try again.', offline: 'No internet, so that did not sign in. Try again soon.' };
+// Signing in makes no request from this page (the implicit flow leaves for Google), so there is no offline case to word.
+const SIGN_IN_FAILED = 'Could not sign in. Try again.';
 
 // Where a refusal is said and where focus goes when it is: the Join button that had it is gone.
 const OUTCOME_ID = 'join-outcome';
@@ -21,20 +22,25 @@ const OUTCOME_ID = 'join-outcome';
 export function JoinCard({
   view,
   email,
+  member = false,
   busy = false,
   problem,
   onSignIn,
   onJoin,
   onUseAnother,
+  onOpenSettings,
 }: {
   view: JoinView;
   // The signed-in Google account's address; null when there is none to say.
   email: string | null;
+  // The account is already a Household Account: a dead link then also offers Settings.
+  member?: boolean | undefined;
   busy?: boolean | undefined;
   problem?: Said | null | undefined;
   onSignIn: () => void;
   onJoin: () => void;
   onUseAnother: () => void;
+  onOpenSettings: () => void;
 }) {
   // Switching account while a join is on its way would sign out under it, so it waits like Join does.
   const useAnother = (
@@ -81,9 +87,16 @@ export function JoinCard({
             {useAnother}
           </>
         ) : (
-          <p id={OUTCOME_ID} role="status" tabIndex={-1} className="text-base leading-6">
-            This invite link no longer works. Ask for a new one.
-          </p>
+          <>
+            <p id={OUTCOME_ID} role="status" tabIndex={-1} className="text-base leading-6">
+              This invite link no longer works. Ask for a new one.
+            </p>
+            {offersSettings(view, member) && (
+              <Button variant="primary" size="phone" className="w-full" onClick={onOpenSettings}>
+                Open Settings
+              </Button>
+            )}
+          </>
         )}
       </div>
     </main>
@@ -137,7 +150,12 @@ export function JoinPage() {
         window.location.replace('/settings');
         return;
       }
-      if (next === 'expired' || next === 'other-household') setRefused({ userId, view: next });
+      if (next === 'other-household') setRefused({ userId, view: next, member: false });
+      else if (next === 'expired') {
+        // A spent link opened again by someone who joined by it: say so, and offer Settings if the account is in a Household.
+        const member = await isHouseholdAccount().catch(() => false);
+        setRefused({ userId, view: next, member });
+      }
     } catch (error) {
       setProblem({ words: writeFailureWords(error, { offline: false, said: JOIN_SAID }), n: (problem?.n ?? 0) + 1 });
     }
@@ -149,8 +167,8 @@ export function JoinPage() {
     if (!token) return;
     try {
       await signInToJoin(token);
-    } catch (error) {
-      setProblem({ words: writeFailureWords(error, { offline: false, said: SIGN_IN_SAID }), n: (problem?.n ?? 0) + 1 });
+    } catch {
+      setProblem({ words: SIGN_IN_FAILED, n: (problem?.n ?? 0) + 1 });
     }
   }
 
@@ -158,10 +176,12 @@ export function JoinPage() {
     <JoinCard
       view={view}
       email={email}
+      member={refused !== null && refused.userId === session?.user.id && refused.member}
       busy={busy}
       problem={problem}
       onSignIn={() => void signIn()}
       onJoin={() => void join()}
+      onOpenSettings={() => window.location.replace('/settings')}
       onUseAnother={() => {
         setRefused(null);
         setProblem(null);

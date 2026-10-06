@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { JoinCard as JoinCardType } from '../src/JoinPage';
-import { joinViewFor, joinViewOf, type JoinView } from '../src/lib/join-view';
+import { joinViewFor, joinViewOf, offersSettings, type JoinView } from '../src/lib/join-view';
 import { pageOf } from '../src/lib/page-of';
 
 // The join page (spec 0006, The join page): which page a path gets, which view the page is in, what each view says, and where an
@@ -58,10 +58,16 @@ describe('which view the join page is in', () => {
   });
 
   it('is what the database refused this account, and not what it refused another', () => {
-    const refused = { userId: 'a', view: 'other-household' as const };
+    const refused = { userId: 'a', view: 'other-household' as const, member: false };
     expect(joinViewFor({ token: TOKEN, session: google('a'), refused })).toBe('other-household');
     expect(joinViewFor({ token: TOKEN, session: google('b'), refused })).toBe('signed-in');
     expect(joinViewFor({ token: TOKEN, session: null, refused })).toBe('signed-out');
+  });
+
+  it('offers Settings on a dead link only to an account that already is a Household Account', () => {
+    expect(offersSettings('expired', true)).toBe(true);
+    expect(offersSettings('expired', false)).toBe(false);
+    for (const view of ['signed-out', 'signed-in', 'other-household'] as const) expect(offersSettings(view, true), view).toBe(false);
   });
 
   it('goes to Settings when the person joined or already was in the Household, and stays to say anything else', () => {
@@ -86,8 +92,10 @@ describe('the join page', () => {
       .split('|')
       .map((piece) => piece.trim())
       .filter(Boolean);
-  const draw = (view: JoinView, extra: { email?: string | null; busy?: boolean; problem?: { words: string; n: number } } = {}) =>
-    renderToStaticMarkup(createElement(JoinCard, { view, email: 'ana@example.com', ...extra, onSignIn: noop, onJoin: noop, onUseAnother: noop }));
+  const draw = (view: JoinView, extra: { email?: string | null; member?: boolean; busy?: boolean; problem?: { words: string; n: number } } = {}) =>
+    renderToStaticMarkup(
+      createElement(JoinCard, { view, email: 'ana@example.com', ...extra, onSignIn: noop, onJoin: noop, onUseAnother: noop, onOpenSettings: noop }),
+    );
   const buttons = (markup: string) => words(markup.match(/<button[^>]*>.*?<\/button>/g)?.join('') ?? '');
   // The buttons by their words, each with whether it is inert.
   const inert = (markup: string) =>
@@ -132,6 +140,18 @@ describe('the join page', () => {
     const markup = draw('expired');
     expect(words(markup)).toEqual(['Join a household', 'This invite link no longer works. Ask for a new one.']);
     expect(buttons(markup)).toEqual([]);
+  });
+
+  it('adds a primary Open Settings button to a dead link when the account is already a Household Account, with the same words', () => {
+    const markup = draw('expired', { member: true });
+    expect(words(markup)).toEqual(['Join a household', 'This invite link no longer works. Ask for a new one.', 'Open Settings']);
+    expect(buttons(markup)).toEqual(['Open Settings']);
+    expect(markup.match(/<button[^>]*>/)?.[0]).toMatch(/\bh-14\b/);
+  });
+
+  it('never offers Open Settings to anyone else', () => {
+    expect(buttons(draw('expired', { member: false }))).toEqual([]);
+    for (const view of ['signed-out', 'signed-in', 'other-household'] as const) expect(buttons(draw(view, { member: true })), view).not.toContain('Open Settings');
   });
 
   it('says the account has its own household and offers another account', () => {

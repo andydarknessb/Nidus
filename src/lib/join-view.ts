@@ -11,7 +11,11 @@ export function joinViewOf(outcome: JoinOutcome): JoinView | null {
 }
 
 // What the database said of this link for one account, kept with that account.
-export type Refusal = { userId: string; view: 'expired' | 'other-household' };
+// `member`: the account is already a Household Account, so Settings is open to it (a spent link reopened by someone who joined by it).
+export type Refusal = { userId: string; view: 'expired' | 'other-household'; member: boolean };
+
+// Whether a dead link also offers Open Settings: only to an account that already is a Household Account.
+export const offersSettings = (view: JoinView, member: boolean): boolean => view === 'expired' && member;
 
 // The view the page is in: a link that is not a live one is dead whoever is looking; otherwise what the database refused this
 // account, if it did, else the question or the way in, by whether the session is a Google account's. A tablet's anonymous session

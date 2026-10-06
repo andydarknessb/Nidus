@@ -35,6 +35,8 @@ create policy "household account reads its invite"
 revoke all on public.household_accounts from anon, authenticated;
 grant select on public.household_accounts to authenticated;
 
+comment on table public.household_accounts is 'A sign-in identity that administers a Household; a Household has one or more, all equal (docs/specs/0006).';
+
 -- Makes (or replaces) the Household's invite and returns the plain token, once.
 create or replace function public.create_household_invite()
 returns table (token text, expires_at timestamptz)

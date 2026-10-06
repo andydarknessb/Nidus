@@ -13,6 +13,17 @@ export const SHARE_TEXT = 'Join our household on Nidus';
 export const MAKE_SAID = { failed: 'Could not make the link. Try again.', offline: 'No internet, so the link was not made. Try again soon.' };
 export const CANCEL_SAID = { failed: 'Could not cancel the invite. Try again.', offline: 'No internet, so the invite was not cancelled. Try again soon.' };
 
+// What a read or write says when the database refuses it for lack of right (42501): the account was removed while the screen was
+// open. It is the one thing that no retry or connection will fix, so it replaces the connection and try-again words.
+export const REMOVED_WORDS = 'You can no longer change this household. Reload the page.';
+export const LOAD_FAILED = 'Could not load who can sign in. Check your connection.';
+
+export const isRemoved = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '42501';
+
+// What a failed read says.
+export const loadFailedWords = (error: unknown): string => (isRemoved(error) ? REMOVED_WORDS : LOAD_FAILED);
+
 // What the invite area draws: the link just made, else the one the database holds, else none; null until the first read lands.
 export function inviteViewOf(made: { link: string; expiresAt: Date } | null, stored: HouseholdInvite | null | undefined): InviteView | null {
   if (made) return { kind: 'made', ...made };

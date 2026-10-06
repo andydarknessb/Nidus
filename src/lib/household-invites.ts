@@ -61,9 +61,17 @@ export async function listHouseholdAccounts(): Promise<HouseholdAccountRow[]> {
   return rows.map((row) => ({ authUserId: row.auth_user_id, email: row.email, createdAt: new Date(row.created_at) }));
 }
 
-// Removes another Household Account of this Household. The database refuses your own and any other Household's by
-// answering false, which is not an error; the caller re-reads the list after its own write.
-export async function removeHouseholdAccount(authUserId: string): Promise<void> {
-  const { error } = await supabase.rpc('remove_household_account', { p_auth_user_id: authUserId });
+// Removes another Household Account of this Household; true when it was removed (and the Household's invite cancelled with
+// it). The database refuses your own and any other Household's by answering false, which is not an error: nothing changed.
+export async function removeHouseholdAccount(authUserId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('remove_household_account', { p_auth_user_id: authUserId });
   if (error) throw error;
+  return data === true;
+}
+
+// Whether the signed-in account is a Household Account: one that may open Settings.
+export async function isHouseholdAccount(): Promise<boolean> {
+  const { data, error } = await supabase.rpc('is_household_account');
+  if (error) throw error;
+  return data === true;
 }
