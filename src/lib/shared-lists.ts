@@ -207,3 +207,9 @@ export function pickedList(lists: SharedList[], pinnedId: string | null, choice:
 export function listChipName(name: string, left: number | null): string {
   return left === null ? name : `${name}, ${left} to get`;
 }
+
+// How many are left to get on a list, for its chip and the card's count: null while that is not known, which is until its items are read
+// and whenever the last read or write failed (a list that could not be read holds nothing the chip may call "0 to get").
+export function leftToGet(loaded: boolean, problem: string, items: ListItem[]): number | null {
+  return loaded && !problem ? withoutCrossed(items).length : null;
+}

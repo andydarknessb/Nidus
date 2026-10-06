@@ -1,64 +1,19 @@
-/* eslint-disable react-refresh/only-export-components -- the reader, the sheet and the rows are shared with the phone's screens (src/phone/): exported, not copied. */
-import { ChevronLeft, ChevronRight, Cookie, Moon, Plus, Sun, Sunrise, X, type LucideIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { InBody } from './components/InBody';
 import { Button } from './components/ui/button';
 import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
-import { useRefetchOn } from './lib/change-feed';
 import { dialogKeys } from './lib/dialog';
 import { appBehind, holdBackground } from './lib/inert-behind';
-import { loadMeals, mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
-import { startReadLoop, type ReadLoop } from './lib/read-loop';
+import { mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
 import { householdDay, WEEKDAYS } from './lib/routines';
 import { supabase } from './lib/supabase';
+import { dayLabel, dayName, SLOT_PICTURES, useMeals } from './lib/use-meals';
 import { useFailureWords } from './lib/use-failure-words';
 import { useHouseholdDay, useNow } from './lib/wall-hooks';
 
 // Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the header's button for the
 // next meal of today. Written by a Household Account or a Device, whichever session `supabase` holds.
-
-// A change heard from the server reads at once; this slow read is the backstop for one that was
-// missed while the connection was down. A read that failed is tried again sooner, as the calendar's is.
-const REFRESH_MS = 60_000;
-const RETRY_MS = 5_000;
-// What each read here listens to: a Meal changed anywhere in the Household.
-const MEAL_TABLES = ['meals'] as const;
-
-// The picture each slot is marked with, in the plan's rows and on the header's button.
-export const SLOT_PICTURES: Record<MealSlot, LucideIcon> = { breakfast: Sunrise, lunch: Sun, dinner: Moon, snack: Cookie };
-
-// The Meals from `from` to `to` (Household dates), read again when a Meal changes anywhere in the
-// Household, when `saves` goes up (a save made here) and every minute, or after five seconds when
-// the last read failed. `meals` is null until a read has landed; a failed read keeps what is shown.
-// Callers are keyed on the span, so a turned page never shows the last page's Meals.
-export function useMeals(from: string, to: string, saves = 0): { meals: Meal[] | null; failed: boolean } {
-  const [read, setRead] = useState<{ meals: Meal[] | null; failed: boolean }>({ meals: null, failed: false });
-  // A change pokes the loop instead of restarting it, so a read in flight lands and one more follows.
-  const loop = useRef<ReadLoop | null>(null);
-  useRefetchOn(MEAL_TABLES, () => loop.current?.poke());
-  useEffect(() => {
-    loop.current = startReadLoop({
-      read: () => loadMeals(supabase, from, to),
-      onResult: (meals) => setRead({ meals, failed: false }),
-      onFail: () => setRead((prev) => ({ ...prev, failed: true })),
-      refreshMs: REFRESH_MS,
-      retryMs: RETRY_MS,
-    });
-    return () => {
-      loop.current?.stop();
-      loop.current = null;
-    };
-  }, [from, to, saves]);
-  return read;
-}
-
-// "Thu 1": a day as the grid names it, and "Thursday 1": the same in full, as a screen reader hears it.
-export function dayLabel(day: WallDay): string {
-  return `${WEEKDAYS[day.weekday]!.short} ${Number(day.date.slice(8))}`;
-}
-export function dayName(day: WallDay): string {
-  return `${WEEKDAYS[day.weekday]!.name} ${Number(day.date.slice(8))}`;
-}
 
 // ---- The Meals screen: a week by slot ------------------------------------------------
 

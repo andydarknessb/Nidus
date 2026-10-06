@@ -77,11 +77,12 @@ export function nextMealWords(slot: MealSlot): string {
   return slot === 'dinner' ? `${label} tonight` : `${label} today`;
 }
 
-// The day a phone's Meals screen opens a week on: today when the week holds it, else the week's first day (its Sunday). `week` is the
-// week's Household dates; today is the Household's own at `now`, never the machine's, so the pick turns over at Household midnight.
-export function pickedDay(week: readonly string[], now: Date, timezone: string): string {
-  const today = householdDay(timezone, now).date;
-  return week.includes(today) ? today : week[0]!;
+// The day a phone's Meals screen has picked: the one chosen while it is in the week shown, else today when the week holds it, else the week's
+// first day (its Sunday). `dates` are the week's Household dates and `today` the Household's own, so the pick follows Household midnight;
+// a choice made in another week is no choice, which is how the pick resets when the week changes.
+export function pickedDay(dates: readonly string[], choice: string | null, today: string): string {
+  if (choice !== null && dates.includes(choice)) return choice;
+  return dates.includes(today) ? today : dates[0]!;
 }
 
 // What a slot's row is called on the phone, as a screen reader hears it: "Breakfast, Thursday 1: Oatmeal", or "Breakfast, Thursday 1:

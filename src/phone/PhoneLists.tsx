@@ -1,9 +1,10 @@
 import { Pin } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { EmptyWords } from '../components/EmptyWords';
 import { Button } from '../components/ui/button';
-import { listChipName, pinnedFirst, pickedList, withoutCrossed, type SharedList } from '../lib/shared-lists';
-import { AddRow, focusTitle, ItemRow, PinnedMark, titleId, useItems, useLists } from '../SharedListsPage';
+import { leftToGet, listChipName, pinnedFirst, pickedList, type ListItem, type SharedList } from '../lib/shared-lists';
+import { focusTitle, titleId, useItems, useLists } from '../lib/use-shared-lists';
+import { AddRow, ItemRow, PinnedMark } from '../SharedListsPage';
 import { PhoneCard, SideScroll } from './parts';
 
 // The phone's Lists tab (spec 0004, "Lists"): a row of list chips that scrolls sideways, the Pinned List first, then the picked list's
@@ -24,19 +25,21 @@ export function ListChip({ name, left, pinned, picked, onPick }: { name: string;
           {pinned && <Pin className="size-4 shrink-0" />}
           <span className="truncate text-[17px] leading-6">{name}</span>
         </span>
-        <span className="text-[13px] leading-4 font-medium text-muted-foreground">{left === null ? '' : `${left} to get`}</span>
+        {left !== null && <span className="text-[13px] leading-4 font-medium text-muted-foreground">{left} to get</span>}
       </span>
     </Button>
   );
 }
 
-// Reads one list's items for its chip's count and says nothing on the page: the same reader the card uses, kept for a list that is not open.
-function CountReader({ listId, onCount }: { listId: string; onCount: (listId: string, left: number) => void }) {
-  const { items, loaded } = useItems(listId);
-  const left = withoutCrossed(items).length;
-  useEffect(() => {
-    if (loaded) onCount(listId, left);
-  }, [loaded, left, listId, onCount]);
+// What a chip counts: how many are left to get on its list, or null while that is not known (not read yet, or the last read or write
+// failed), which the chip leaves unsaid. The count of a list is told up to the row by the reader or the card that holds its items.
+type Counts = Readonly<Record<string, number | null>>;
+
+// Reads one list's items for its chip's count and draws nothing: the same reader the card uses, kept for a list that is not open.
+function CountReader({ listId, onCount }: { listId: string; onCount: (listId: string, left: number | null) => void }) {
+  const { items, loaded, problem } = useItems(listId);
+  const left = leftToGet(loaded, problem, items);
+  useEffect(() => onCount(listId, left), [left, listId, onCount]);
   return null;
 }
 
@@ -57,76 +60,78 @@ export function PhoneLists() {
 
 function ListsBody({ lists, pinnedId }: { lists: SharedList[]; pinnedId: string | null }) {
   const [choice, setChoice] = useState<string | null>(null);
+  const [counts, setCounts] = useState<Counts>({});
   const pickedId = pickedList(lists, pinnedId, choice)!;
   const list = lists.find((candidate) => candidate.id === pickedId)!;
-  // The picked list's items are read once, for the card and for its chip; the chips of the others hold the count their own reader last said.
-  const card = useItems(pickedId);
-  const left = withoutCrossed(card.items).length;
-  const crossed = card.items.length - left;
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const count = (id: string, n: number) => setCounts((before) => (before[id] === n ? before : { ...before, [id]: n }));
-  useEffect(() => {
-    if (card.loaded) count(pickedId, left);
-  }, [card.loaded, left, pickedId]);
+  const count = useCallback((id: string, left: number | null) => setCounts((before) => (before[id] === left ? before : { ...before, [id]: left })), []);
 
   return (
     <div className="flex flex-col gap-3">
       {/* The row bleeds to the screen's edges, so the chip that does not fit is cut there. The padding keeps a focus ring inside what scrolls. */}
       <SideScroll label="Lists" className="-mx-4 -my-1 px-4 py-1">
         {pinnedFirst(lists, pinnedId).map((entry) => (
-          <ListChip
-            key={entry.id}
-            name={entry.name}
-            left={entry.id === pickedId ? (card.loaded ? left : null) : (counts[entry.id] ?? null)}
-            pinned={entry.id === pinnedId}
-            picked={entry.id === pickedId}
-            onPick={() => setChoice(entry.id)}
-          />
+          <ListChip key={entry.id} name={entry.name} left={counts[entry.id] ?? null} pinned={entry.id === pinnedId} picked={entry.id === pickedId} onPick={() => setChoice(entry.id)} />
         ))}
       </SideScroll>
-      {lists.filter((entry) => entry.id !== pickedId).map((entry) => (
-        <CountReader key={entry.id} listId={entry.id} onCount={count} />
-      ))}
-      <PhoneCard label={card.loaded ? `${list.name}, ${left} left` : list.name}>
-        <div className="flex min-h-12 items-center gap-3 px-1">
-          <h3 id={titleId(list.id)} tabIndex={-1} className="min-w-0 flex-1 font-display text-[22px] leading-7 wrap-anywhere outline-none">
-            {list.name}
-          </h3>
-          {card.loaded && <span className="shrink-0 text-[15px] text-muted-foreground">{left} to get</span>}
-        </div>
-        {list.id === pinnedId && <PinnedMark />}
-        <AddRow listName={list.name} size="phone" onAdd={async (text) => (await card.add(text)) !== null} />
-        {card.problem && (
-          <p role="alert" className="px-1 text-base">
-            {card.problem}
-          </p>
-        )}
-        {card.loaded && card.items.length === 0 && !card.problem && <EmptyWords className="px-1">Nothing on this list.</EmptyWords>}
-        {card.items.length > 0 && (
-          <ul className="flex flex-col gap-2">
-            {card.items.map((item) => (
-              <li key={item.id}>
-                <ItemRow item={item} size="phone" onToggle={() => void card.toggle(item)} />
-              </li>
-            ))}
-          </ul>
-        )}
-        {crossed > 0 && (
-          <Button
-            variant="secondary"
-            size="phone"
-            aria-label={`Clear ${crossed} crossed off from ${list.name}`}
-            className="w-full"
-            // The button goes when nothing is crossed off any more, and focus would fall to the page with it: it goes to the card's title.
-            onClick={() => {
-              focusTitle(list.id);
-              void card.clear();
-            }}
-          >
-            Clear {crossed} crossed off
-          </Button>
-        )}
-      </PhoneCard>
+      {lists
+        .filter((entry) => entry.id !== pickedId)
+        .map((entry) => (
+          <CountReader key={entry.id} listId={entry.id} onCount={count} />
+        ))}
+      {/* Keyed on the list, so what one list's card holds (its items, its failed write, the words typed in its field) never reaches another's. */}
+      <PickedListCard key={pickedId} list={list} pinned={list.id === pinnedId} onCount={count} />
     </div>
+  );
+}
+
+function PickedListCard({ list, pinned, onCount }: { list: SharedList; pinned: boolean; onCount: (listId: string, left: number | null) => void }) {
+  const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
+  const left = leftToGet(loaded, problem, items);
+  const crossed = items.filter((item: ListItem) => item.crossed_at !== null).length;
+  useEffect(() => onCount(list.id, left), [left, list.id, onCount]);
+
+  return (
+    <PhoneCard label={loaded ? `${list.name}, ${items.length - crossed} left` : list.name}>
+      <div className="flex min-h-12 items-center gap-3 px-1">
+        <h3 id={titleId(list.id)} tabIndex={-1} className="min-w-0 flex-1 font-display text-[22px] leading-7 wrap-anywhere outline-none">
+          {list.name}
+        </h3>
+        {left !== null && <span className="shrink-0 text-[15px] text-muted-foreground">{left} to get</span>}
+      </div>
+      {pinned && <PinnedMark />}
+      <AddRow listName={list.name} size="phone" onAdd={async (text) => (await add(text)) !== null} />
+      {loaded && items.length === 0 && !problem && <EmptyWords className="px-1">Nothing on this list.</EmptyWords>}
+      {items.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {items.map((item) => (
+            <li key={item.id}>
+              <ItemRow item={item} size="phone" onToggle={() => void toggle(item)} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {/* What did not save is said at the card's foot, under the rows, as the Wall's card does: a line over them would push the row that was
+          just tapped down from under the finger. */}
+      {problem && (
+        <p role="alert" className="px-1 text-base">
+          {problem}
+        </p>
+      )}
+      {crossed > 0 && (
+        <Button
+          variant="secondary"
+          size="phone"
+          aria-label={`Clear ${crossed} crossed off from ${list.name}`}
+          className="w-full"
+          // The button goes when nothing is crossed off any more, and focus would fall to the page with it: it goes to the card's title.
+          onClick={() => {
+            focusTitle(list.id);
+            void clear();
+          }}
+        >
+          Clear {crossed} crossed off
+        </Button>
+      )}
+    </PhoneCard>
   );
 }

@@ -7,7 +7,8 @@ import { Button } from '../components/ui/button';
 import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay, type WallRoute } from '../lib/calendar-occurrences';
 import { mealGrid, pickedDay, slotRowName, type Meal } from '../lib/meals';
 import { useHouseholdDay } from '../lib/wall-hooks';
-import { dayLabel, dayName, MealSheet, SLOT_PICTURES, useMeals, type Editing } from '../MealsPage';
+import { dayName, SLOT_PICTURES, sheetFor, useMeals } from '../lib/use-meals';
+import { MealSheet, type Editing } from '../MealsPage';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { DayChips, Pager, PhoneCard } from './parts';
 
@@ -42,7 +43,7 @@ export function SlotRow({ label, slot, day, meal, onOpen }: { label: string; slo
             {meal.title}
           </span>
         ) : (
-          <span className="text-[17px] leading-6 font-medium text-muted-foreground">{meal === null ? 'Add a meal' : ''}</span>
+          meal === null && <span className="text-[17px] leading-6 font-medium text-muted-foreground">Add a meal</span>
         )}
       </span>
       {meal === null && <Plus aria-hidden className="size-6 shrink-0 text-muted-foreground" strokeWidth={2.4} />}
@@ -65,48 +66,39 @@ function MealsWeek({ timezone, date, onNavigate }: { timezone: string; date: str
   const { previous, next } = paging('week', anchor, pagingWindowAround(today));
   const open = (week: string) => onNavigate(mealsPageDate(week, today));
 
-  // Paging may disable the button that was pressed: put focus on the pager's title instead of losing it. Not on arrival, which would
-  // scroll the page and raise nothing that was asked for.
-  const top = useRef<HTMLDivElement>(null);
-  const arrived = useRef(false);
+  // Paging may disable the button that was pressed: put focus on the pager's words instead of losing it. Only after the week has changed,
+  // never when the screen opens (which would scroll the page), StrictMode's second run of the effect included: the anchor it saw last is kept.
+  const heading = useRef<HTMLHeadingElement>(null);
+  const seen = useRef(anchor);
   useEffect(() => {
-    if (!arrived.current) {
-      arrived.current = true;
-      return;
-    }
-    const title = top.current?.querySelector('h2');
-    if (title) {
-      title.tabIndex = -1;
-      title.classList.add('outline-none');
-      title.focus({ preventScroll: true });
-    }
+    if (seen.current === anchor) return;
+    seen.current = anchor;
+    heading.current?.focus({ preventScroll: true });
   }, [anchor]);
 
   return (
     <div className="flex flex-col gap-3">
-      <div ref={top}>
-        <Pager words={describePage(days)} previousLabel="Previous week" nextLabel="Next week" onPrevious={previous ? () => open(previous) : null} onNext={next ? () => open(next) : null} />
-      </div>
+      <Pager words={describePage(days)} previousLabel="Previous week" nextLabel="Next week" onPrevious={previous ? () => open(previous) : null} onNext={next ? () => open(next) : null} headingRef={heading} />
       {/* Always mounted, so a screen reader announces the words when they appear. */}
       <p role="status" className="text-base text-muted-foreground empty:hidden">
         {previous === null ? 'This is as far back as the meal plan goes.' : next === null ? 'This is as far ahead as the meal plan goes.' : ''}
       </p>
       {/* Keyed on the week, so a turned page never shows the last week's Meals or keeps its picked day. */}
-      <MealsDay key={days[0]!.date} days={days} today={today} timezone={timezone} />
+      <MealsDay key={days[0]!.date} days={days} today={today} />
     </div>
   );
 }
 
 // One week's card: the chips, the picked day and its four slots. The picked day is the screen's own state; until a chip is pressed it
 // is today when the week holds it, else the Sunday (pickedDay), and it follows Household midnight.
-function MealsDay({ days, today, timezone }: { days: WallDay[]; today: string; timezone: string }) {
+function MealsDay({ days, today }: { days: WallDay[]; today: string }) {
   const dates = days.map((day) => day.date);
   const [choice, setChoice] = useState<string | null>(null);
   const [saves, setSaves] = useState(0);
   const [editing, setEditing] = useState<Editing | null>(null);
   const { meals, failed } = useMeals(dates[0]!, dates[6]!, saves);
   const known = meals !== null;
-  const picked = choice !== null && dates.includes(choice) ? choice : pickedDay(dates, new Date(dayStartMs(today, timezone)), timezone);
+  const picked = pickedDay(dates, choice, today);
   const day = days[dates.indexOf(picked)]!;
   const rows = mealGrid(meals ?? [], [picked]);
 
@@ -129,8 +121,7 @@ function MealsDay({ days, today, timezone }: { days: WallDay[]; today: string; t
             slot={row.slot}
             day={day}
             meal={meal}
-            // The sheet's title is drawn short ("Breakfast, Thu 1"); the row is heard in full.
-            onOpen={() => setEditing({ date: picked, slot: row.slot, heading: `${row.label}, ${dayLabel(day)}`, meal: meal ?? null })}
+            onOpen={() => setEditing(sheetFor(day, row, meal ?? null))}
           />
         );
       })}

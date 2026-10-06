@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { pageDays } from '../src/lib/calendar-occurrences';
 import { pickedDay, slotRowName, type Meal } from '../src/lib/meals';
-import { listChipName, pickedList, type SharedList } from '../src/lib/shared-lists';
+import { householdDay } from '../src/lib/routines';
+import { sheetFor } from '../src/lib/use-meals';
+import { leftToGet, listChipName, pickedList, type SharedList } from '../src/lib/shared-lists';
 import { ListChip } from '../src/phone/PhoneLists';
 import { SlotRow } from '../src/phone/PhoneMeals';
 
@@ -17,22 +19,68 @@ const oatmeal: Meal = { id: 'm1', meal_date: '2026-10-01', slot: 'breakfast', ti
 const thursday = pageDays('week', '2026-10-01', LA, new Date('2026-10-01T12:00:00Z'))[4]!;
 
 describe('pickedDay', () => {
-  it('is today when the week holds it', () => {
-    expect(pickedDay(WEEK, new Date('2026-10-01T20:00:00Z'), LA)).toBe('2026-10-01');
+  // The Household's today at an instant, as the screen has it (useHouseholdDay).
+  const picked = (choice: string | null, at: string, timezone = LA, week: readonly string[] = WEEK) => pickedDay(week, choice, householdDay(timezone, new Date(at)).date);
+
+  it('is today when the week holds it, and the Sunday when it does not', () => {
+    expect(picked(null, '2026-10-01T20:00:00Z')).toBe('2026-10-01');
+    expect(picked(null, '2026-10-12T20:00:00Z')).toBe('2026-09-27');
+    expect(picked(null, '2026-09-20T20:00:00Z')).toBe('2026-09-27');
   });
 
-  it('is the Sunday when the week does not hold today', () => {
-    expect(pickedDay(WEEK, new Date('2026-10-12T20:00:00Z'), LA)).toBe('2026-09-27');
-    expect(pickedDay(WEEK, new Date('2026-09-20T20:00:00Z'), LA)).toBe('2026-09-27');
+  it('keeps the day chosen while it is in the week, and resets when the week changes', () => {
+    expect(picked('2026-09-29', '2026-10-01T20:00:00Z')).toBe('2026-09-29');
+    const nextWeek = ['2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10'];
+    // A choice made in the week before is no choice here: today's week would open on today, any other on its Sunday.
+    expect(picked('2026-09-29', '2026-10-01T20:00:00Z', LA, nextWeek)).toBe('2026-10-04');
+    expect(picked('2026-09-29', '2026-10-05T20:00:00Z', LA, nextWeek)).toBe('2026-10-05');
   });
 
   it("turns over at the Household's midnight, not the machine's or UTC's", () => {
     // 06:59 UTC on 4 October is 23:59 on 3 October in Los Angeles (still in the week); 07:00 UTC is midnight, the next week.
-    expect(pickedDay(WEEK, new Date('2026-10-04T06:59:00Z'), LA)).toBe('2026-10-03');
-    expect(pickedDay(WEEK, new Date('2026-10-04T07:00:00Z'), LA)).toBe('2026-09-27');
+    expect(picked(null, '2026-10-04T06:59:00Z')).toBe('2026-10-03');
+    expect(picked(null, '2026-10-04T07:00:00Z')).toBe('2026-09-27');
     // Auckland is UTC+13 in October: midnight on 4 October there is 11:00 UTC on the 3rd.
-    expect(pickedDay(WEEK, new Date('2026-10-03T10:59:00Z'), 'Pacific/Auckland')).toBe('2026-10-03');
-    expect(pickedDay(WEEK, new Date('2026-10-03T11:00:00Z'), 'Pacific/Auckland')).toBe('2026-09-27');
+    expect(picked(null, '2026-10-03T10:59:00Z', 'Pacific/Auckland')).toBe('2026-10-03');
+    expect(picked(null, '2026-10-03T11:00:00Z', 'Pacific/Auckland')).toBe('2026-09-27');
+  });
+
+  it('turns over at Household midnight on the day the clocks go back', () => {
+    // Los Angeles goes back on 2026-11-01: midnight that day is still PDT, so 07:00Z is its start, and 06:59Z is the evening before.
+    const week = ['2026-11-01', '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07'];
+    const before = ['2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31'];
+    expect(householdDay(LA, new Date('2026-11-01T07:00:00Z')).date).toBe('2026-11-01');
+    expect(householdDay(LA, new Date('2026-10-31T06:59:00Z')).date).toBe('2026-10-30');
+    expect(householdDay(LA, new Date('2026-11-01T06:59:00Z')).date).toBe('2026-10-31');
+    expect(picked(null, '2026-11-01T07:00:00Z', LA, week)).toBe('2026-11-01');
+    expect(picked(null, '2026-11-01T06:59:00Z', LA, week)).toBe('2026-11-01');
+    expect(picked(null, '2026-11-01T06:59:00Z', LA, before)).toBe('2026-10-31');
+    expect(picked(null, '2026-11-01T07:00:00Z', LA, before)).toBe('2026-10-25');
+  });
+});
+
+describe('what a slot row opens', () => {
+  it("is the picked day and the row's slot, titled short, with the Meal it holds", () => {
+    expect(sheetFor(thursday, { slot: 'breakfast', label: 'Breakfast' }, oatmeal)).toEqual({ date: '2026-10-01', slot: 'breakfast', heading: 'Breakfast, Thu 1', meal: oatmeal });
+    expect(sheetFor(thursday, { slot: 'snack', label: 'Snack' }, null)).toEqual({ date: '2026-10-01', slot: 'snack', heading: 'Snack, Thu 1', meal: null });
+  });
+});
+
+describe('leftToGet', () => {
+  const items = [
+    { id: '1', list_id: 'l', text: 'Milk', crossed_at: null, sort_order: 0 },
+    { id: '2', list_id: 'l', text: 'Eggs', crossed_at: '2026-10-01T00:00:00Z', sort_order: 1 },
+  ];
+
+  it('counts what is not crossed off once the items are read', () => {
+    expect(leftToGet(true, '', items)).toBe(1);
+    expect(leftToGet(true, '', [])).toBe(0);
+  });
+
+  it('is nothing known before the read and when it or a write failed, never "0 to get"', () => {
+    expect(leftToGet(false, '', [])).toBeNull();
+    expect(leftToGet(true, 'Could not load this list. Check your connection.', [])).toBeNull();
+    expect(leftToGet(true, 'Could not save. Check your connection.', items)).toBeNull();
   });
 });
 
