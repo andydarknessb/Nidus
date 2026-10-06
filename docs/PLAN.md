@@ -128,5 +128,5 @@ Settled on 2026-10-06 when the owner asked for an invite feature so that another
 
 ```
 household_invites     household_id (pk), token_hash (unique), created_at, expires_at
-household_accounts    + delete policy: another Household Account of the same Household
+household_accounts    grants narrowed to select; removal by remove_household_account (locks the Household, cancels its invite)
 ```
