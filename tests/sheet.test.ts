@@ -198,7 +198,7 @@ describe('a sheet on a phone', () => {
       }),
     );
   // Every class of the phone frame is in the element's class list.
-  const classesOf = (element: string) => (/class="([^"]*)"/.exec(element)?.[1] ?? '').split(/s+/).filter(Boolean);
+  const classesOf = (element: string) => (/class="([^"]*)"/.exec(element)?.[1] ?? '').split(/\s+/).filter(Boolean);
   const hasFrame = (element: string, frame: string) => {
     const own = classesOf(element);
     return frame.split(' ').every((name) => own.includes(name));
