@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Profile } from '../src/lib/profiles';
-import { columnsOf, finishedProfiles, firstPick, groupByProfile, todaysRoutines, type ProfileRoutines, type Routine, type TimeOfDay } from '../src/lib/routines';
+import { columnsOf, finishedProfiles, firstPick, groupByProfile, pickedPerson, todaysRoutines, type ProfileRoutines, type Routine, type TimeOfDay } from '../src/lib/routines';
 import type { RoutinesToday } from '../src/lib/use-routines-today';
 import type { PhoneRoutines as PhoneRoutinesType } from '../src/phone/PhoneRoutines';
 
@@ -155,7 +155,63 @@ describe('the phone Routines tab', () => {
   });
 
   it('says what it holds when nobody has a Routine, and before the Household is read', () => {
-    expect(screen(routinesToday(people, []))).toContain('No routines yet. Add some on your phone.');
+    expect(screen(routinesToday(people, []))).toContain('No routines yet. The owner adds them in Settings.');
     expect(screen(routinesToday(people, routines), null)).toContain('Loading');
+  });
+});
+
+describe('pickedPerson', () => {
+  const columns = [column('ava', 0, [routine('a1', 'ava', 'morning')]), column('ben', 1, [routine('b1', 'ben', 'morning')])];
+  const base = { picked: null, columns, done: new Set<string>(), part: 'morning' as const, settled: true, failed: false };
+
+  it('picks by the first-pick rule once today is read, and waits before that', () => {
+    expect(pickedPerson({ ...base, done: new Set(['a1']) })).toBe('ben');
+    expect(pickedPerson({ ...base, settled: false })).toBeNull();
+  });
+
+  it('is nobody when the chart has nobody', () => {
+    expect(pickedPerson({ ...base, columns: [], settled: false, failed: true })).toBeNull();
+    expect(pickedPerson({ ...base, columns: [] })).toBeNull();
+  });
+
+  it('keeps the person picked while they are on the chart', () => {
+    expect(pickedPerson({ ...base, picked: 'ava', done: new Set(['a1']) })).toBe('ava');
+  });
+
+  it('does not yank the card from a person who finishes mid-use', () => {
+    // Ava was picked with one thing left; ticking it leaves nobody with anything in the morning, and then Ben's is ticked too.
+    expect(pickedPerson({ ...base, picked: 'ava', done: new Set(['a1']) })).toBe('ava');
+    expect(pickedPerson({ ...base, picked: 'ava', done: new Set(['a1', 'b1']) })).toBe('ava');
+  });
+
+  it('keeps the person through a refetch, which brings the same people as new objects with new ticks', () => {
+    const refetched = columns.map(({ profile, routines }) => ({ profile: { ...profile }, routines: [...routines] }));
+    expect(pickedPerson({ ...base, picked: 'ben', columns: refetched, done: new Set(['b1']) })).toBe('ben');
+  });
+
+  it('keeps the person across Household midnight, when what was read is for another day and nothing is settled', () => {
+    expect(pickedPerson({ ...base, picked: 'ben', settled: false })).toBe('ben');
+    expect(pickedPerson({ ...base, picked: 'ben', settled: true })).toBe('ben');
+  });
+
+  it('picks again, by the rule, when the person leaves the chart', () => {
+    const gone = [columns[1]!];
+    expect(pickedPerson({ ...base, picked: 'ava', columns: gone })).toBe('ben');
+    // And waits for today's ticks to be read, as the first pick does.
+    expect(pickedPerson({ ...base, picked: 'ava', columns: gone, settled: false })).toBeNull();
+  });
+
+  it('with a failed read and nothing settled picks the first person, so the tab never waits on a read that is not coming', () => {
+    expect(pickedPerson({ ...base, settled: false, failed: true })).toBe('ava');
+    expect(pickedPerson({ ...base, picked: 'ben', settled: false, failed: true })).toBe('ben');
+  });
+});
+
+describe('the phone Routines tab after Household midnight with a failed read', () => {
+  it('says it could not load routines, and shows the first person rather than "Loading" for ever', () => {
+    const people = [profile('ava', 0), profile('ben', 1)];
+    const html = screen(routinesToday(people, [routine('a1', 'ava', 'evening')], [], { settled: false, failed: true }));
+    expect(html).toContain('Could not load routines. Check your connection.');
+    expect(html).not.toContain('Loading');
   });
 });

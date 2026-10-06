@@ -7,7 +7,7 @@ import { MAX_PIPS, PersonDisc, Pips } from '../components/people';
 import { Button } from '../components/ui/button';
 import { personStyle } from '../lib/look';
 import { CHART_CHOICES, WORDS, useChartPart } from '../lib/routine-chart';
-import { firstPick, partView, routineProgress, tapFinishesProfile, type Burst, type ChartPart, type ProfileRoutines, type Routine } from '../lib/routines';
+import { pickedPerson, partView, routineProgress, tapFinishesProfile, type Burst, type ChartPart, type ProfileRoutines, type Routine } from '../lib/routines';
 import { stripPeople, type StripPerson } from '../lib/schedule';
 import { useCelebration } from '../lib/use-routines-today';
 import type { PhoneScreenProps } from '../PhoneWall';
@@ -45,7 +45,7 @@ function PersonChip({ person, picked, onPick }: { person: StripPerson; picked: b
 }
 
 // The picked person's card on their soft colour: their 52 px disc and name, how far they are, their pips, then what the part shows.
-function PersonCard({
+export function PersonCard({
   column,
   part,
   held,
@@ -128,20 +128,17 @@ function PersonCard({
 
 export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProps, 'timezone' | 'view' | 'routines'>) {
   const { loaded, settled, failed, problems, columns, done, toggle } = routines;
-  const celebration = useCelebration(routines);
   const { shown, held, pick } = useChartPart(routines);
-  // The person picked: the first pick below, then whoever is tapped. State, so a tick that finishes someone never moves the card.
+  // The person picked: the first pick, then whoever is tapped. State, so a tick that finishes someone never moves the card.
   const [picked, setPicked] = useState<string | null>(null);
+  const showing = pickedPerson({ picked, columns, done, part: shown, settled, failed });
+  if (showing !== picked && showing !== null) setPicked(showing);
+  // A burst belongs to the card on the screen: the one for a person left behind is gone, so it never plays again on the way back.
+  const celebration = useCelebration({ date: routines.date, finished: new Set(showing !== null && routines.finished.has(showing) ? [showing] : []) });
 
   if (!timezone) return <BeforeHousehold label="Routines" failed={view.failed} words="Could not load routines. Check your connection." />;
 
-  let column = columns.find(({ profile }) => profile.id === picked);
-  // The first pick waits for today's ticks to be read, since it looks for what is left. A person who has left the chart is picked again.
-  if (!column && settled && columns.length > 0) {
-    const id = firstPick(columns, done, shown);
-    column = columns.find(({ profile }) => profile.id === id);
-    setPicked(id);
-  }
+  const column = columns.find(({ profile }) => profile.id === showing);
   const people = stripPeople(
     columns.map(({ profile }) => profile),
     columns,
@@ -154,13 +151,14 @@ export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProp
         Routines
       </h2>
       {!loaded && !failed && <EmptyWords>Loading</EmptyWords>}
-      {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
-      {failed && !loaded && (
+      {/* Whatever has been read stays on screen over a lost connection, and the header says so. With nothing read for today (at the
+          start, or just after Household midnight) the words say so rather than leave "Loading" for ever. */}
+      {failed && !settled && (
         <p role="alert" className="text-base">
           Could not load routines. Check your connection.
         </p>
       )}
-      {loaded && columns.length === 0 && <EmptyWords>No routines yet. Add some on your phone.</EmptyWords>}
+      {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
       {columns.length > 0 && (
         <>
           <SideScroll label="People">
@@ -171,6 +169,7 @@ export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProp
           <Segmented label="Part of the day" options={PARTS_OF_THE_DAY} value={shown} onChange={pick} />
           {column ? (
             <PersonCard
+              key={column.profile.id}
               column={column}
               part={shown}
               held={held}
@@ -182,7 +181,7 @@ export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProp
               onLand={(id) => celebration.land(column.profile.id, id)}
             />
           ) : (
-            <EmptyWords>Loading</EmptyWords>
+            !failed && <EmptyWords>Loading</EmptyWords>
           )}
         </>
       )}
