@@ -111,3 +111,20 @@ Settled on 2026-10-06 when the owner approved the phone drawings on the design c
 - **The month and agenda views** dropped from v1 are both now in: Month since v2, and the phone's Home and one-day Week are the agenda.
 - **Sheets rise from the foot** on a phone.
 - **No new data**: no migration.
+
+## v5: iPhone calendars
+
+Settled on 2026-10-06 when the owner chose, of four ways to bring the family's iPhone calendars to the Wall, the iCloud public link. The spec is [0005](specs/0005-iphone-calendars.md); the choice is [ADR 0003](adr/0003-icloud-by-public-link.md). It takes iCloud off the "still dropped" lists above; Microsoft and two-way sync stay dropped.
+
+### Decisions
+
+- **iCloud by its public link**: the owner makes a calendar a Public Calendar on the iPhone and pastes its link into Settings. The link is a secret in Vault; only links on Apple's iCloud hosts are accepted or followed.
+- **Same mirror**: an iCloud calendar is a Calendar Account of provider `icloud` with one Mirrored Calendar, attributed and drawn exactly as a Google calendar. Read-only; polled every five minutes; a whole read each time, skipped when unchanged.
+- **Repeats expanded by Nidus** for this source, with `ical.js`, inside the same rolling window.
+- **Deploy order**: as v2. One additive migration, pushed immediately before the pull request that reads it is merged; the Edge Functions are deployed with it.
+
+### Tables
+
+```
+calendar_accounts     + provider (google|icloud, default google), google_email nullable (required for google), + feed_key (unique per Household, icloud only)
+```
