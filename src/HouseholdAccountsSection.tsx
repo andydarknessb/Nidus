@@ -2,7 +2,8 @@ import { ChevronDown, ChevronRight, Plus, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, helpClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { formatDate } from '@/lib/calendar-occurrences';
+import { useConnection } from '@/lib/change-feed';
+import { formatDate, formatDateWithYear } from '@/lib/calendar-occurrences';
 import {
   cancelHouseholdInvite,
   createHouseholdInvite,
@@ -13,21 +14,14 @@ import {
   type HouseholdAccountRow,
   type HouseholdInvite,
 } from '@/lib/household-invites';
+import { CANCEL_SAID, MAKE_SAID, inviteViewOf, sharePayload, type InviteView } from '@/lib/household-accounts';
 import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
-
-// What the invite is, for the screen: none waiting, a link just made (the only time it can be shown: the database keeps its hash
-// and nothing else), or one waiting that was made before this screen was opened.
-export type InviteView = { kind: 'none' } | { kind: 'made'; link: string; expiresAt: Date } | { kind: 'waiting'; expiresAt: Date };
 
 // What the status line says: nothing, or what the last tap did.
 export type InviteStatus = 'idle' | 'copied' | 'cancelled';
 
 const statusWords: Record<InviteStatus, string> = { idle: '', copied: 'Copied', cancelled: 'Invite cancelled.' };
 
-export const SHARE_TEXT = 'Join our household on Nidus';
-
-// What an invite that could not be made or cancelled says: the Wall's two sentences with the verb that fits.
-const INVITE_SAID = { failed: 'Could not update the invite. Try again.', offline: 'No internet, so that did not go through. Try again soon.' };
 const COPY_FAILED = 'Could not copy. Press and hold the link to copy it.';
 const SHARE_FAILED = 'Could not share. Use Copy instead.';
 
@@ -99,7 +93,7 @@ export function HouseholdAccountsView(props: ViewProps) {
       <ul className="flex flex-col gap-2">
         {accounts?.map((account) => {
           const id = account.authUserId;
-          const since = date(account.createdAt);
+          const since = formatDateWithYear(account.createdAt.getTime(), timezone);
           if (id === userId) {
             return (
               <li key={id} className={`${rowClass} flex items-center bg-muted`}>
@@ -204,6 +198,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   const [status, setStatus] = useState<InviteStatus>('idle');
   // A trouble reading, kept apart from what a write said of itself, as in the tablets section.
   const [loadProblem, setLoadProblem] = useState<string | null>(null);
+  const readFailed = useRef(false);
   const problems = useWriteProblem();
   const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
   // One write at a time: the ref is the guard, the state is what is drawn (`aria-disabled`, never `disabled`).
@@ -224,7 +219,9 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       setAccounts(list);
       setStored(waiting);
       setLoadProblem(null);
+      readFailed.current = false;
     } catch {
+      readFailed.current = true;
       setLoadProblem('Could not load who can sign in. Check your connection.');
     }
   }, [householdId]);
@@ -233,8 +230,14 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
     void refresh();
   }, [refresh]);
 
-  // One write, alone: `place` is where it says so when it fails, `done` what changes once it landed.
-  async function write(place: string, run: () => Promise<void>, done: () => void) {
+  // A read that failed is made again when the connection comes back, not on a timer.
+  const connection = useConnection();
+  useEffect(() => {
+    if (connection === 'online' && readFailed.current) void refresh();
+  }, [connection, refresh]);
+
+  // One write, alone: `place` is where it says so when it fails (in `said`'s words, or the default ones), `done` what changes once it landed.
+  async function write(place: string, run: () => Promise<void>, done: () => void, said?: { failed: string; offline: string }) {
     if (working.current) return;
     working.current = true;
     setBusy(true);
@@ -242,7 +245,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       await run();
       problems.clear(place);
     } catch (error) {
-      problems.fail(place, error, { said: INVITE_SAID });
+      problems.fail(place, error, said ? { said } : {});
       working.current = false;
       setBusy(false);
       return;
@@ -264,20 +267,29 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
         setStatus('idle');
         setFocusNext(INVITE_MAIN);
       },
+      MAKE_SAID,
     );
 
   const cancelInvite = () =>
-    void write(INVITE, cancelHouseholdInvite, () => {
-      setMade(null);
-      setStatus('cancelled');
-      setFocusNext(INVITE_MAIN);
-    });
+    void write(
+      INVITE,
+      cancelHouseholdInvite,
+      () => {
+        setMade(null);
+        // At once, so that the cancelled invite is not drawn while the read is on its way, and focus lands on Invite someone.
+        setStored(null);
+        setStatus('cancelled');
+        setFocusNext(INVITE_MAIN);
+      },
+      CANCEL_SAID,
+    );
 
   const remove = (id: string) =>
     void write(
       removePlace(id),
       () => removeHouseholdAccount(id),
       () => {
+        setAccounts((list) => list && list.filter((account) => account.authUserId !== id));
         setOpen(null);
         setFocusNext(INVITE_MAIN);
       },
@@ -298,7 +310,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   async function share() {
     if (!made) return;
     try {
-      await navigator.share({ url: made.link, text: SHARE_TEXT });
+      await navigator.share(sharePayload(made.link));
       problems.clear(INVITE);
     } catch (error) {
       // Closing the share sheet is not a failure.
@@ -307,12 +319,10 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
     }
   }
 
-  const invite: InviteView | null = made ? { kind: 'made', ...made } : stored === undefined ? null : stored ? { kind: 'waiting', expiresAt: stored.expiresAt } : { kind: 'none' };
-
   return (
     <HouseholdAccountsView
       accounts={accounts}
-      invite={invite}
+      invite={inviteViewOf(made, stored)}
       userId={userId}
       timezone={timezone}
       canShare={typeof navigator !== 'undefined' && typeof navigator.share === 'function'}
