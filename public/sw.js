@@ -1,4 +1,4 @@
-// Nidus's service worker, for push only: it caches nothing and has no fetch handler, so it never touches a page load.
+// Nidus's service worker, for push only: it caches no pages (its one cache entry is the rotation marker below) and has no fetch handler, so it never touches a page load.
 // An iPhone revokes a subscription whose push shows no notification, so every push shows one, even a malformed one.
 
 const ICON = '/icons/icon-192.png';
@@ -25,6 +25,25 @@ self.addEventListener('push', (event) => {
     options.renotify = true;
   }
   event.waitUntil(self.registration.showNotification(text(data.title) || 'Nidus', options));
+});
+
+// The push service rotated this phone's endpoint. The worker has no session to save the new one with, so it subscribes again with the
+// same key and leaves the two endpoints in a cache of its own; the page saves the new one the next time it reads the phone's state
+// (readPushState in src/lib/push.ts, which shares this cache name and key).
+self.addEventListener('pushsubscriptionchange', (event) => {
+  const key = event.oldSubscription && event.oldSubscription.options && event.oldSubscription.options.applicationServerKey;
+  if (!key) return;
+  event.waitUntil(
+    self.registration.pushManager
+      .subscribe({ userVisibleOnly: true, applicationServerKey: key })
+      .then(async (subscription) => {
+        const cache = await self.caches.open('nidus-push-rotation');
+        // A second rotation before the page has healed the first keeps the first marker's old endpoint: that is the row to inherit from.
+        const earlier = await cache.match('/push-rotation').then((hit) => (hit ? hit.json() : null), () => null);
+        const old = earlier && earlier.new === event.oldSubscription.endpoint ? earlier.old : event.oldSubscription.endpoint;
+        await cache.put('/push-rotation', new Response(JSON.stringify({ old, new: subscription.endpoint })));
+      }),
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {

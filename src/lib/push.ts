@@ -58,12 +58,49 @@ async function rowOf(endpoint: string): Promise<PushState> {
   return data ? stateOf(data) : { kind: 'off' };
 }
 
+// What public/sw.js leaves when the push service rotates this phone's endpoint (its cache name and key are repeated there).
+const ROTATION_CACHE = 'nidus-push-rotation';
+const ROTATION_KEY = '/push-rotation';
+
+async function rotationMarker(): Promise<{ old: string; new: string } | null> {
+  try {
+    const hit = await (await caches.open(ROTATION_CACHE)).match(ROTATION_KEY);
+    return hit ? await hit.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveSubscription(subscription: PushSubscription): Promise<void> {
+  const { endpoint, keys } = subscription.toJSON();
+  const { error } = await supabase.rpc('save_push_subscription', { p_endpoint: endpoint, p_p256dh: keys?.['p256dh'], p_auth: keys?.['auth'] });
+  if (error) throw error;
+}
+
+// The worker has already subscribed again; this saves the new endpoint as the signed-in account, with the old row's preferences when
+// that row is still there (the sender deletes it on the first 410, and then the defaults apply). Every step can be run again, and the
+// marker is cleared last, so a failure anywhere leaves the marker and the next open finishes the heal.
+async function healRotation(subscription: PushSubscription, from: string): Promise<PushState> {
+  const before = await rowOf(from);
+  await saveSubscription(subscription);
+  const saved = await rowOf(subscription.endpoint);
+  const inherited = saved.kind === 'on' && before.kind === 'on' ? { ...saved, preferences: before.preferences } : saved;
+  if (inherited.kind === 'on' && inherited !== saved) await savePushPreferences(inherited.id, inherited.preferences);
+  const { error } = await supabase.from('push_subscriptions').delete().eq('endpoint', from);
+  if (error) throw error;
+  await (await caches.open(ROTATION_CACHE)).delete(ROTATION_KEY);
+  return inherited;
+}
+
 // This browser's subscription and its row. A browser that cannot, or has not, subscribed is off.
 export async function readPushState(): Promise<PushState> {
   if (pushSupport() !== 'supported') return { kind: 'off' };
   if (Notification.permission === 'denied') return { kind: 'denied' };
   const subscription = await currentSubscription();
   if (!subscription) return { kind: 'off' };
+  // A subscription the worker made when the push service rotated the endpoint is healed, row or no row, until the marker is cleared.
+  const marker = await rotationMarker();
+  if (marker?.new === subscription.endpoint) return healRotation(subscription, marker.old);
   const state = await rowOf(subscription.endpoint);
   if (state.kind === 'off') {
     // The browser holds a subscription this account has no row for (a turn-off at sign-out that failed): it is dropped, best effort.
@@ -92,9 +129,7 @@ export async function turnOnNotifications(): Promise<PushState> {
   // Any subscription the browser already holds goes first, so that a dead endpoint, or one made with another key, is never saved again.
   await (await registration.pushManager.getSubscription())?.unsubscribe();
   const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
-  const { endpoint, keys } = subscription.toJSON();
-  const { error } = await supabase.rpc('save_push_subscription', { p_endpoint: endpoint, p_p256dh: keys?.['p256dh'], p_auth: keys?.['auth'] });
-  if (error) throw error;
+  await saveSubscription(subscription);
   return rowOf(subscription.endpoint);
 }
 
