@@ -10,7 +10,9 @@ import { useSyncExternalStore } from 'react';
 // `phone` is the Wall laid out for a phone (docs/specs/0004): below 768 px wide, by the width alone, never by the height, the
 // device, the user agent or the text size. A width of 0 (a window that has not been laid out yet) is not a phone. At 768 px and
 // wider nothing about the Wall changes at 16 px text.
-export type HomeLayout = { days: 5 | 4 | 3; tiles: 3 | 2 | 1; phone: boolean };
+// `portrait` is a tablet hung upright (docs/specs/0009): at 768 px and wider, a viewport taller than it is wide, by the viewport
+// alone. A phone is never portrait, whatever its height; a square viewport is landscape; a width of 0 is neither.
+export type HomeLayout = { days: 5 | 4 | 3; tiles: 3 | 2 | 1; phone: boolean; portrait: boolean };
 
 // The least width of a tablet: below it the Wall is a phone.
 const PHONE_BELOW = 768;
@@ -32,7 +34,8 @@ export function homeLayout({ width, height, rem = 16 }: { width: number; height:
   const room = width * scale;
   const days = room >= 1200 ? 5 : rem > 16 && room < THREE_DAYS_BELOW ? 3 : 4;
   const tall = Math.max(height, WALL_MIN_REM * rem) * scale;
-  return { days, tiles: tall < 760 ? (rem > 16 && tall < ONE_TILE_BELOW ? 1 : 2) : 3, phone: width > 0 && width < PHONE_BELOW };
+  const phone = width > 0 && width < PHONE_BELOW;
+  return { days, tiles: tall < 760 ? (rem > 16 && tall < ONE_TILE_BELOW ? 1 : 2) : 3, phone, portrait: !phone && width > 0 && height > width };
 }
 
 function subscribe(onChange: () => void) {
@@ -54,5 +57,6 @@ export function useHomeLayout(): HomeLayout {
     days: useSyncExternalStore(subscribe, () => size().days),
     tiles: useSyncExternalStore(subscribe, () => size().tiles),
     phone: useSyncExternalStore(subscribe, () => size().phone),
+    portrait: useSyncExternalStore(subscribe, () => size().portrait),
   };
 }

@@ -134,6 +134,16 @@ Below 768 px of viewport width the Wall is laid out for a phone ([0004](specs/00
 - **A Month grid** on a phone is headed by the weekdays' three letters at 14 in `--muted-foreground`. **A Month cell** is a 58 tall button: the date (Young Serif 18, out-of-month dates `--muted-foreground`) over up to three 7 px dots, a person's strong colour or `--primary` for the whole Household. Its name says the date and how many events it has.
 - **A sheet** rises from the foot: full width, 24 round at the top only, a 40 by 4 px handle in `--input` at its top, its foot clear of the safe area.
 
+## Portrait
+
+At 768 px and wider, a viewport taller than it is wide is a tablet in portrait ([0009](specs/0009-the-wall-in-portrait.md)): the Lenovo Tab P12 hung upright, about 920 to 1080 px wide and 1470 to 1730 tall. The chrome, the tokens, the type, the parts and their sizes are the same as in landscape; what changes is how three screens use the height.
+
+- **Home.** The days across the top, as many as the width holds by the rule in "Larger text" (four at the P12's widths), and under them Up next at the left, 20 rem wide, with the Pinned List beside it taking the rest. The lower row is as tall as Up next, and the Pinned List scrolls with its More foot (Overflow); the calendar takes the rest of the height.
+- **Week.** Seven rows, one a day, 12 apart, in the card the columns fill in landscape. A row is its heading at the left (the column's heading: the weekday, the date, today's disc, the weather line) in a 9.6 rem column, then the day's pills to its right, 220 wide and at least 52 tall, 8 apart, wrapping, in time order. Today's row has the `--muted` ground. An empty day says nothing. When seven rows do not fit, the card scrolls as a column with the More foot.
+- **Meals.** Turned: the slots' names across the top, the days down the side, each cell the same button, at least 48 tall and never under 3 rem wide; the rows share the height.
+- **Everything else** keeps its landscape form, narrower and taller, and gives way by its own rule: a Month line's title gives way and its discs never shrink; the Routines chart's columns and the Lists screen's cards scroll sideways with More; the Add event sheet is one column below 960 px wide and two from it.
+- **Landscape** changes nothing, at 1280 by 800 or at the P12's 1470 to 1730 by 920 to 1080: five days and three tiles.
+
 ## Larger text
 
 The tablet's text size sets the root font size, and every rem in the Wall grows with it (issue #69). What is held at 130 percent (a root of 20.8 px) is that the Wall still looks like itself, and at 200 percent (32 px) that nothing is lost or out of reach.

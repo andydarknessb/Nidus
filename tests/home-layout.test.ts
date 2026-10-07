@@ -15,6 +15,26 @@ describe('homeLayout', () => {
   });
 });
 
+// A tablet hung upright (docs/specs/0009): at 768 px and wider, a viewport taller than it is wide, by the viewport alone.
+describe('homeLayout, portrait', () => {
+  it('is portrait on the Lenovo Tab P12 upright, at either Display size, and holds four days and three tiles', () => {
+    expect(homeLayout({ width: 920, height: 1472 })).toEqual({ days: 4, tiles: 3, phone: false, portrait: true });
+    expect(homeLayout({ width: 1082, height: 1732 })).toEqual({ days: 4, tiles: 3, phone: false, portrait: true });
+  });
+
+  it('is landscape on the P12 on its side, where nothing changes: five days and three tiles', () => {
+    expect(homeLayout({ width: 1472, height: 920 })).toEqual({ days: 5, tiles: 3, phone: false, portrait: false });
+    expect(homeLayout({ width: 1732, height: 1082 })).toEqual({ days: 5, tiles: 3, phone: false, portrait: false });
+  });
+
+  it('is portrait from 768 px wide, a phone below it whatever the height, landscape when square, and neither at 0', () => {
+    expect(homeLayout({ width: 768, height: 1024 }).portrait).toBe(true);
+    expect(homeLayout({ width: 767, height: 1024 })).toMatchObject({ phone: true, portrait: false });
+    expect(homeLayout({ width: 1000, height: 1000 }).portrait).toBe(false);
+    expect(homeLayout({ width: 0, height: 0 })).toMatchObject({ phone: false, portrait: false });
+  });
+});
+
 // Below 768 px of width the Wall is laid out for a phone; the width alone decides, whatever the height is.
 describe('homeLayout, the phone', () => {
   it('is a phone at 767 px wide and not at 768', () => {
@@ -36,9 +56,9 @@ describe('homeLayout, the phone', () => {
   });
 
   it('leaves the days and the tiles as they were on a tablet, at the widths they were tested at', () => {
-    expect(homeLayout({ width: 1024, height: 768 })).toEqual({ days: 4, tiles: 3, phone: false });
-    expect(homeLayout({ width: 768, height: 720 })).toEqual({ days: 4, tiles: 2, phone: false });
-    expect(homeLayout({ width: 1280, height: 800 })).toEqual({ days: 5, tiles: 3, phone: false });
+    expect(homeLayout({ width: 1024, height: 768 })).toEqual({ days: 4, tiles: 3, phone: false, portrait: false });
+    expect(homeLayout({ width: 768, height: 720 })).toEqual({ days: 4, tiles: 2, phone: false, portrait: false });
+    expect(homeLayout({ width: 1280, height: 800 })).toEqual({ days: 5, tiles: 3, phone: false, portrait: false });
   });
 });
 
@@ -48,15 +68,15 @@ describe('homeLayout, the phone', () => {
 describe('homeLayout, larger text', () => {
   it('is the same at 16 px text, whether or not the size is given', () => {
     expect(homeLayout({ width: 1280, height: 800, rem: 16 })).toEqual(homeLayout({ width: 1280, height: 800 }));
-    expect(homeLayout({ width: 1024, height: 768, rem: 16 })).toEqual({ days: 4, tiles: 3, phone: false });
+    expect(homeLayout({ width: 1024, height: 768, rem: 16 })).toEqual({ days: 4, tiles: 3, phone: false, portrait: false });
   });
 
   it('gives up a day and an Up next tile at 130 percent', () => {
-    expect(homeLayout({ width: 1280, height: 800, rem: 20.8 })).toEqual({ days: 4, tiles: 2, phone: false });
+    expect(homeLayout({ width: 1280, height: 800, rem: 20.8 })).toEqual({ days: 4, tiles: 2, phone: false, portrait: false });
   });
 
   it('holds three days and one tile at 200 percent', () => {
-    expect(homeLayout({ width: 1280, height: 800, rem: 32 })).toEqual({ days: 3, tiles: 1, phone: false });
+    expect(homeLayout({ width: 1280, height: 800, rem: 32 })).toEqual({ days: 3, tiles: 1, phone: false, portrait: false });
   });
 
   it('never holds one tile at 16 px text, however short the screen is', () => {
