@@ -2,7 +2,7 @@ import { cn } from 'cn';
 import { ArrowDown, ArrowUp, Star, type LucideIcon } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type Ref } from 'react';
 import { EmptyWords } from './components/EmptyWords';
-import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
+import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, MAX_PIPS, PersonDisc, Pips, Tick } from './components/people';
 import { Problem } from './components/phone';
 import { Button } from './components/ui/button';
@@ -279,7 +279,7 @@ export function DoneEarlier({ view, color }: { view: PartView; color: string }) 
 // One Profile's column of the chart: its disc, name and how far it is today, then the part of the day that is showing
 // (or every part), then the foot line for what was done earlier. It is as tall as what it holds, and the tiles scroll on
 // their own when they do not fit, with a "More" button at their foot that says so (OverflowButton). A Profile with nothing
-// today has the column and says so.
+// today has the column and says so. In portrait (docs/specs/0009) it is its natural height, with no foot of its own: the chart scrolls.
 function Column({
   profile,
   routines,
@@ -291,6 +291,7 @@ function Column({
   burst,
   onFinish,
   onLand,
+  portrait,
 }: {
   profile: Profile;
   routines: Routine[];
@@ -305,6 +306,7 @@ function Column({
   // A tap on a Routine here finished the Profile, `at` px down the column; the burst's last piece has landed.
   onFinish: (at: number) => void;
   onLand: (id: number) => void;
+  portrait: boolean;
 }) {
   const { done: count, total } = routineProgress(routines, done);
   const finished = total > 0 && count === total;
@@ -330,7 +332,7 @@ function Column({
     <section
       ref={column}
       aria-labelledby={`routines-${profile.id}`}
-      className="person relative flex max-h-full min-h-0 max-w-md min-w-[17rem] flex-1 flex-col gap-2.5 rounded-3xl bg-person-soft p-3"
+      className={`person relative flex ${portrait ? '' : 'max-h-full '}min-h-0 max-w-md min-w-[17rem] flex-1 flex-col gap-2.5 rounded-3xl bg-person-soft p-3`}
       style={personStyle(profile.color)}
     >
       <div className="flex min-h-14 flex-none items-center gap-3">
@@ -367,12 +369,12 @@ function Column({
         // The scrolling box has no padding, so the "More" button at its foot sticks flush with its end; the padding inside it is room for
         // a tile's focus ring, which the box would otherwise clip. At rest a tile may sit partly under the button; one that takes the
         // keyboard's focus is scrolled clear of it.
-        <div ref={more.scroller} className={cn('-m-1 min-h-0 overflow-y-auto', FOOT_CLEARANCE)}>
+        <div ref={portrait ? undefined : more.scroller} className={portrait ? '-m-1' : cn('-m-1 min-h-0 overflow-y-auto', FOOT_CLEARANCE)}>
           <div className="flex flex-col gap-2.5 p-1">
             <PartGroups profile={profile} routines={routines} done={done} part={part} view={view} finished={finished} onTap={tap} />
           </div>
           {/* The tiles are 4 px in from the box, so the button is. */}
-          <OverflowButton control={more} of={`${profile.name}'s routines`} surface="person" className="px-1" />
+          {!portrait && <OverflowButton control={more} of={`${profile.name}'s routines`} surface="person" className="px-1" />}
         </div>
       )}
       {view !== null && <DoneEarlier view={view} color={profile.color} />}
@@ -390,16 +392,36 @@ function Column({
 // Routine on any day, side by side in the Profiles' order. It opens on the part it is now, and moves to a new part when
 // that part begins; a part picked by hand holds until then. Only when there are more Profiles than fit at a readable
 // width does the row scroll sideways, and the heading row then holds a "More people" button that says so.
-export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
+// `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). The columns then
+// wrap, each its natural height, and the chart scrolls as one column with the shared "More" foot; there is no sideways "More".
+export function RoutinesChart({ routines, portrait = false }: { routines: RoutinesToday; portrait?: boolean }) {
   const { loaded, failed, problems, columns, done, toggle } = routines;
   const celebration = useCelebration(routines);
-  // The row of columns, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row.
-  const row = useOverflow('x');
+  // The row of columns, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row;
+  // in portrait the box is the chart's column and the button is its foot.
+  const row = useOverflow(portrait ? 'y' : 'x', portrait ? 'over' : undefined);
   // Focus goes to the page's title on arrival, as on the calendar pages, rather than staying on the navigation rail.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
 
   const { shown, held, pick } = useChartPart(routines);
+
+  const people = columns.map(({ profile, routines: today }) => (
+    <Column
+      key={profile.id}
+      profile={profile}
+      routines={today}
+      done={done}
+      part={shown}
+      held={held}
+      problem={problems[profile.id]}
+      onToggle={toggle}
+      burst={celebration.bursts[profile.id]}
+      onFinish={(at) => celebration.start(profile.id, at)}
+      onLand={(id) => celebration.land(profile.id, id)}
+      portrait={portrait}
+    />
+  ));
 
   return (
     <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-4">
@@ -426,7 +448,7 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
             ))}
           </div>
           {/* More columns than fit is not a screen with fewer people on it: this says there are more, and moves on to them. */}
-          <OverflowButton control={row} of="people" className="h-12" />
+          {!portrait && <OverflowButton control={row} of="people" className="h-12" />}
         </div>
       </div>
       {!loaded && !failed && <EmptyWords>Loading</EmptyWords>}
@@ -437,23 +459,19 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
         </p>
       )}
       {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
-      <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
-        {columns.map(({ profile, routines: today }) => (
-          <Column
-            key={profile.id}
-            profile={profile}
-            routines={today}
-            done={done}
-            part={shown}
-            held={held}
-            problem={problems[profile.id]}
-            onToggle={toggle}
-            burst={celebration.bursts[profile.id]}
-            onFinish={(at) => celebration.start(profile.id, at)}
-            onLand={(id) => celebration.land(profile.id, id)}
-          />
-        ))}
-      </div>
+      {portrait ? (
+        // The columns wrap, 12 apart across and 16 under one another, each its natural height; the chart scrolls as one column, and its foot
+        // is the shared button. A tile or field that takes the focus is scrolled clear of the foot.
+        <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
+          <div className={cn('flex flex-wrap items-start gap-x-3 gap-y-4', BODY_CLEARANCE)}>{people}</div>
+          <OverflowButton control={row} of="the routines" />
+        </div>
+      ) : (
+        <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
+          {/* The same wrapper as portrait's, so turning the tablet keeps each column (and its read) instead of mounting it again. */}
+          <div className="contents">{people}</div>
+        </div>
+      )}
     </section>
   );
 }

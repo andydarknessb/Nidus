@@ -29,7 +29,7 @@ import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from 
 import { useOverflow } from './lib/use-overflow';
 import { unnamed } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
-import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
+import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, Tick } from './components/people';
 import { Problem } from './components/phone';
 import { Button } from './components/ui/button';
@@ -126,8 +126,9 @@ export function PinnedMark() {
 // One Shared List as a card: its picture, name and how many items are left to get, whether it is the Pinned List, the field
 // that adds an item, then its items, which scroll inside the card when the card is shorter than the list, with a "More" button
 // at their foot that says so (OverflowButton). A card is as tall as its items, up to the height of the screen. Items are crossed
-// off here and cleared; reordering is for the phone.
-function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
+// off here and cleared; reordering is for the phone. In portrait (docs/specs/0009) it is its natural height, every item, with no foot of
+// its own: the screen scrolls.
+function ListCard({ list, pinned, portrait }: { list: SharedList; pinned: boolean; portrait: boolean }) {
   const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
   const left = withoutCrossed(items).length;
   const crossed = items.length - left;
@@ -136,7 +137,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
   const more = useOverflow('y', 'over');
 
   return (
-    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className="flex max-h-full w-(--card-w) shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3">
+    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className={`flex ${portrait ? '' : 'max-h-full '}w-(--card-w) shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3`}>
       <div className="flex min-h-13 shrink-0 items-center gap-3">
         {/* One picture for every list: there is no picture on a Shared List to choose. */}
         <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -167,7 +168,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
       {loaded && items.length === 0 && <EmptyWords className="shrink-0">Nothing on this list.</EmptyWords>}
       {items.length > 0 && (
         // At rest an item may sit partly under the "More" button at their foot; one that takes the focus, or is added, is scrolled clear of it.
-        <div ref={more.scroller} className={`min-h-0 overflow-y-auto ${FOOT_CLEARANCE}`}>
+        <div ref={portrait ? undefined : more.scroller} className={portrait ? undefined : `min-h-0 overflow-y-auto ${FOOT_CLEARANCE}`}>
           <ul ref={rows} className="flex flex-col gap-2">
             {items.map((item) => (
               <li key={item.id} className="shrink-0">
@@ -175,7 +176,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
               </li>
             ))}
           </ul>
-          <OverflowButton control={more} of={list.name} />
+          {!portrait && <OverflowButton control={more} of={list.name} />}
         </div>
       )}
       {/* What did not save is said at the card's foot, where "Clear crossed off" sits, and never above the rows: a line over them would
@@ -206,15 +207,29 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
 // The Wall's Lists screen: every Shared List as a card, the Pinned List first. Three cards fill the screen's width. With more,
 // the fourth shows in part and the row scrolls sideways, and the heading row holds a "More lists" button that says so, so a list
 // is never left off the screen with no sign of it; each card still scrolls its own items up and down.
-export function ListsScreen() {
+// `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). A card is then never
+// under 17 rem, as at larger text, so the title of a list is not left with 75 px of a 227 px card. The cards then wrap, as many to a row as fit,
+// 16 apart, each its natural height, and the screen scrolls as one column with the shared "More" foot; there is no sideways "More".
+export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
   const { read, failed } = useLists();
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
-  // The row of cards, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row.
-  const row = useOverflow('x');
+  // The row of cards, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row;
+  // in portrait the box is the screen's column and the button is its foot.
+  const row = useOverflow(portrait ? 'y' : 'x', portrait ? 'over' : undefined);
   // Focus goes to the screen's title on arrival, as on the Routines chart and the calendar pages, rather than falling to the page when
   // the link that opened this (Home's list card) goes with the screen it was on.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
+
+  // Three cards fill the width, or 3.2 with more. Never under 17 rem in portrait; in landscape, from larger text (as master drew it).
+  const cardSize = portrait
+    ? cards.length > 3
+      ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%))]'
+      : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%))]'
+    : cards.length > 3
+      ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%,calc((1rem_-_16px)*1000)))]'
+      : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]';
+  const shown = cards.map((list) => <ListCard key={list.id} list={list} pinned={list.id === read?.pinnedId} portrait={portrait} />);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -225,7 +240,7 @@ export function ListsScreen() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <p className="text-[15px] text-muted-foreground">The owner adds lists in Settings.</p>
           {/* The heading row is 48 px, and the button is the row's height. */}
-          <OverflowButton control={row} of="lists" className="h-12" />
+          {!portrait && <OverflowButton control={row} of="lists" className="h-12" />}
         </div>
       </div>
       {failed && read === null && (
@@ -234,14 +249,17 @@ export function ListsScreen() {
         </p>
       )}
       {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
-      <div
-        ref={row.scroller}
-        className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cards.length > 3 ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%,calc((1rem_-_16px)*1000)))]' : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]'}`}
-      >
-        {cards.map((list) => (
-          <ListCard key={list.id} list={list} pinned={list.id === read?.pinnedId} />
-        ))}
-      </div>
+      {portrait ? (
+        <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
+          <div className={`flex flex-wrap items-start gap-4 ${BODY_CLEARANCE} ${cardSize}`}>{shown}</div>
+          <OverflowButton control={row} of="the lists" />
+        </div>
+      ) : (
+        <div ref={row.scroller} className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cardSize}`}>
+          {/* The same wrapper as portrait's, so turning the tablet keeps each card (and its read) instead of mounting it again. */}
+          <div className="contents">{shown}</div>
+        </div>
+      )}
     </div>
   );
 }

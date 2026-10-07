@@ -215,7 +215,7 @@ describe('an event line', () => {
   it('stays one line, cut short with an ellipsis, and can never push its cell wider', () => {
     const title = 'x'.repeat(200);
     const html = cell('2026-10-01', { occurrences: [native(title, ['p-ava'])] });
-    expect(spanWith(html, title)).toEqual(expect.arrayContaining(['truncate', 'min-w-0']));
+    expect(spanWith(html, title)).toEqual(expect.arrayContaining(['truncate', 'min-w-[1.25em]']));
     expect(classesOf(lineTag(html))).toEqual(expect.arrayContaining(['flex', 'min-w-0', 'overflow-hidden', 'h-5.5']));
     expect(html).not.toContain('line-clamp');
     expect(html).not.toContain('whitespace-normal');
@@ -302,7 +302,20 @@ describe('who an event line is for, at its end', () => {
       const end = /<span class="([^"]*\bml-auto\b[^"]*)">/.exec(html)?.[1]?.split(' ') ?? [];
       expect(end, ids.join()).toEqual(expect.arrayContaining(['ml-auto', 'shrink-0']));
     }
-    expect(spanWith(lineOf(['p-ava']), 'Standup')).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
+    expect(spanWith(lineOf(['p-ava']), 'Standup')).toEqual(expect.arrayContaining(['min-w-[1.25em]', 'truncate']));
+  });
+
+  it('hides the pin in a cell under 7 rem wide, cuts the end of the time when it must, and never a disc', () => {
+    const html = cell('2026-10-01', { occurrences: [native('Plumber coming', ['p-ava', 'p-cory'])] });
+    expect(classesOf(/<button[^>]*>/.exec(html)?.[0] ?? '')).toContain('@container');
+    expect(classesOf(lineTag(html))).toContain('@max-[7rem]:gap-0.5');
+    expect(spanWith(html, '9 AM')).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
+    expect(spanWith(html, '9 AM')).not.toContain('shrink-0');
+    // The title takes no part in the shrinking, so the time is not cut while the title can still give way.
+    // It keeps 1.25 em, room for its ellipsis, so a cut title always shows its ellipsis.
+    expect(spanWith(html, 'Plumber coming')).toEqual(expect.arrayContaining(['min-w-[1.25em]', 'max-w-max', 'flex-1', 'truncate']));
+    expect(/<svg[^>]*data-testid="native-mark"[^>]*>/.exec(html)?.[0]).toMatch(/class="[^"]*\bshrink-0\b[^"]*@max-\[7rem\]:hidden/);
+    expect(/<span class="([^"]*\bml-auto\b[^"]*)">/.exec(html)?.[1]).toContain('shrink-0');
   });
 
   it('keeps the line 22 px tall, with the pin and the time before the title', () => {
