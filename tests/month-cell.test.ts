@@ -305,14 +305,14 @@ describe('who an event line is for, at its end', () => {
     expect(spanWith(lineOf(['p-ava']), 'Standup')).toEqual(expect.arrayContaining(['min-w-[1.25em]', 'truncate']));
   });
 
-  it('lets the pin go first in a cell under 7 rem wide, then the end of the time, and never a disc', () => {
+  it('hides the pin in a cell under 7 rem wide, cuts the end of the time when it must, and never a disc', () => {
     const html = cell('2026-10-01', { occurrences: [native('Plumber coming', ['p-ava', 'p-cory'])] });
     expect(classesOf(/<button[^>]*>/.exec(html)?.[0] ?? '')).toContain('@container');
     expect(classesOf(lineTag(html))).toContain('@max-[7rem]:gap-0.5');
     expect(spanWith(html, '9 AM')).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
     expect(spanWith(html, '9 AM')).not.toContain('shrink-0');
     // The title takes no part in the shrinking, so the time is not cut while the title can still give way.
-    // It keeps 1.25 em, room for its ellipsis, so a cut title never reads as a stray letter or an initial: the time's end goes before that.
+    // It keeps 1.25 em, room for its ellipsis, so a cut title always shows its ellipsis.
     expect(spanWith(html, 'Plumber coming')).toEqual(expect.arrayContaining(['min-w-[1.25em]', 'max-w-max', 'flex-1', 'truncate']));
     expect(/<svg[^>]*data-testid="native-mark"[^>]*>/.exec(html)?.[0]).toMatch(/class="[^"]*\bshrink-0\b[^"]*@max-\[7rem\]:hidden/);
     expect(/<span class="([^"]*\bml-auto\b[^"]*)">/.exec(html)?.[1]).toContain('shrink-0');

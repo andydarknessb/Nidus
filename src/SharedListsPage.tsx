@@ -209,7 +209,7 @@ function ListCard({ list, pinned, portrait }: { list: SharedList; pinned: boolea
 // is never left off the screen with no sign of it; each card still scrolls its own items up and down.
 // `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). A card is then never
 // under 17 rem, as at larger text, so the title of a list is not left with 75 px of a 227 px card. The cards then wrap, as many to a row as fit,
-// 16 apart, each its natural height, and the screen scrolls as one column with the shared "More lists" foot; there is no sideways "More".
+// 16 apart, each its natural height, and the screen scrolls as one column with the shared "More" foot; there is no sideways "More".
 export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
   const { read, failed } = useLists();
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
@@ -252,11 +252,12 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
       {portrait ? (
         <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
           <div className={`flex flex-wrap items-start gap-4 ${BODY_CLEARANCE} ${cardSize}`}>{shown}</div>
-          <OverflowButton control={row} of="lists" />
+          <OverflowButton control={row} of="the lists" />
         </div>
       ) : (
         <div ref={row.scroller} className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cardSize}`}>
-          {shown}
+          {/* The same wrapper as portrait's, so turning the tablet keeps each card (and its read) instead of mounting it again. */}
+          <div className="contents">{shown}</div>
         </div>
       )}
     </div>

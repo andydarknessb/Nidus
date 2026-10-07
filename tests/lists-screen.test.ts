@@ -80,7 +80,7 @@ describe('the Lists screen', () => {
     expect(portrait).toContain('[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%))]');
     // The row as it was before portrait: master's own class string, character for character.
     expect(landscape).toContain(
-      '<div class="flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto [--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]">',
+      '<div class="flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto [--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]"><div class="contents">',
     );
   });
 

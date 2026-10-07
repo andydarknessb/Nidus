@@ -147,9 +147,11 @@ describe('the chart in portrait', () => {
   it('leaves landscape as it was: the columns side by side in a row that scrolls sideways, each scrolling its own tiles', () => {
     const landscape = chart(today());
     expect(landscape).toBe(renderToStaticMarkup(createElement(RoutinesChart, { routines: today(), portrait: false })));
-    expect(landscape).toContain('<div class="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">');
+    expect(landscape).toContain('<div class="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto"><div class="contents">');
     expect(landscape).toContain('class="-m-1 min-h-0 overflow-y-auto [&amp;_li]:scroll-mb-18 [&amp;_li_button]:scroll-mb-18"');
-    for (const classes of columnClasses(landscape)) expect(classes).toContain('max-h-full');
+    // Master's own class string for a column, character for character, and not the code path portrait derives from.
+    const master = 'person relative flex max-h-full min-h-0 max-w-md min-w-[17rem] flex-1 flex-col gap-2.5 rounded-3xl bg-person-soft p-3';
+    for (const classes of columnClasses(landscape)) expect(classes.join(' ')).toBe(master);
     expect(landscape).not.toContain('flex-wrap items-start');
   });
 });

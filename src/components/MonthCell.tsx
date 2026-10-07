@@ -116,8 +116,8 @@ export function DayCell({
 // event is, as two people can share a colour to the eye and four of five draw the same three bands as three. A timed event that
 // began on an earlier day only continues, so it shows no time, as in the week view. The words are --foreground, on a fill that
 // holds 7:1 for them. It is one line and never wider than its cell: the title gives way first (flex-1 with a basis of 0, max-w-max), and the discs
-// never shrink. In a cell under 7 rem wide (the cell is the container) the pin is hidden as well and the gaps close up; then the end of
-// the time is cut (an ellipsis), never a disc. A cell with room is as it was. The title starts where it starts, whichever way
+// never shrink. In a cell under 7 rem wide (the cell is the container) the pin is hidden and the gaps close up; the end of
+// the time is cut (an ellipsis) when it must be, never a disc. The title keeps 1.25 em, so a cut title always shows its ellipsis. A cell with room is as it was. The title starts where it starts, whichever way
 // it is written (dir="auto"), so a right-to-left one is cut at its end.
 function EventLine({ occurrence, day, timezone, people }: { occurrence: Occurrence; day: WallDay; timezone: string; people: PillPeople }) {
   const start = Date.parse(occurrence.starts_at);

@@ -18,7 +18,7 @@ The decisions:
 4. **Week is seven rows.** Each day a row: its heading at the left, its events as pills that wrap to the right of it. The week scrolls as a column, with the Wall's More button at its foot, when seven rows do not fit.
 5. **Meals turns.** The days as rows, the four slots as columns, the slots' names across the top.
 6. **Routines and Lists wrap.** The chart's columns and the Lists screen's cards keep their landscape widths and wrap into rows, each at its natural height, and the screen scrolls as one column with the More foot, as Week does. The sideways More goes.
-7. **Month, Day and the sheets keep their form.** Their columns are narrower and taller, and give way by the rules they already have (a Month line's title gives way first, then, in a cell under 7 rem wide, its pin, then the end of its time, and its discs are never shrunk or cut). What is cut or under 48 px at the P12's two portrait sizes is fixed; nothing else moves.
+7. **Month, Day and the sheets keep their form.** Their columns are narrower and taller, and give way by the rules they already have (a Month line's title gives way first, to its ellipsis; in a cell under 7 rem wide its pin is hidden; the end of its time is cut when it must be; its discs are never shrunk or cut). What is cut or under 48 px at the P12's two portrait sizes is fixed; nothing else moves.
 8. **Landscape changes nothing**, at 1280 by 800 or at the P12's 1470 to 1730 by 920 to 1080.
 9. **The orientation is the kiosk's.** Fully Kiosk's Screen Orientation setting decides whether the tablet turns; the manifest asks for no orientation and the app never locks one.
 10. **No new data**: no migration, no table, no column.
@@ -63,7 +63,7 @@ The decisions:
 
 ### The other screens
 
-- Month: the grid keeps seven columns. At the P12's narrow width a Month line shows its time, its discs and what is left of its title, by the line's rule; the title gives way first, down to its ellipsis (1.25 em, so a cut title never reads as a stray letter or an initial); in a cell under 7 rem wide (a container query on the cell, so larger text gets the same) the pin is hidden as well, then the end of the time is cut, and a disc is never cut (`src/components/MonthCell.tsx`).
+- Month: the grid keeps seven columns. At the P12's narrow width a Month line shows its time, its discs and what is left of its title, by the line's rule; the title gives way first, down to its ellipsis (1.25 em, so a cut title always shows its ellipsis); in a cell under 7 rem wide (a container query on the cell, so larger text gets the same) the pin is hidden; the end of the time is cut when it must be, and a disc is never cut (`src/components/MonthCell.tsx`).
 - Day: one column, unchanged.
 - Routines and Lists (`src/RoutinesPage.tsx`, `src/SharedListsPage.tsx`): in portrait the row of people's columns and the row of list cards wrap (`flex-wrap`), as many to a row as fit at their landscape widths (a column at least 17 rem and at most `max-w-md`, a card at least 17 rem), the rows 16 apart. A column or a card is its natural height, with no More foot of its own, and the chart or the screen scrolls as one column with the shared More foot named "routines" or "lists". The heading row's sideways More is not drawn. Landscape is unchanged class for class. Ticket #168.
 - Sheets: the Add event sheet is one column below 960 px wide and two from it, as now; a portrait P12 is on either side of that line depending on its Display size, and both are right. Every other sheet is the same card on the scrim.
