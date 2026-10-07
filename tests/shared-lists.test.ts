@@ -10,6 +10,7 @@ import {
   loadItems,
   loadLists,
   loadPinnedListId,
+  loadPinnedListName,
   movedIds,
   nextSortOrder,
   renameList,
@@ -339,6 +340,15 @@ describe('shared lists', () => {
 
       expect(await loadPinnedListId(phone)).toBe(chores.id);
       expect(await loadPinnedListId(wall)).toBe(chores.id);
+    });
+
+    it('names the pinned list, and names nothing when none is pinned', async () => {
+      const { phone } = await household('The Andersons');
+      expect(await loadPinnedListName(phone)).toBe('Groceries');
+
+      await deleteList(phone, await pinnedListOf(phone));
+
+      expect(await loadPinnedListName(phone)).toBeNull();
     });
 
     it('a Device cannot change the pinned list', async () => {

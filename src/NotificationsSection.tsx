@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { EmptyRing, Tick } from '@/components/people';
-import { Card, Field, Problem, fieldClass, helpClass } from '@/components/phone';
+import { Card, Field, Problem, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { REMINDER_MINUTES, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
+import { PushGoneError, REMINDER_MINUTES, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
 import { loadPinnedListName } from '@/lib/shared-lists';
 import { supabase } from '@/lib/supabase';
 import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
@@ -10,7 +10,13 @@ import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
 // What the status line says: nothing, or what the last tap did.
 export type NotificationsStatus = 'idle' | 'saved' | 'test';
 
-const statusWords: Record<NotificationsStatus, string> = { idle: '', saved: 'Saved', test: 'Test sent' };
+const statusWords: Record<NotificationsStatus, string> = { idle: '', saved: 'Saved.', test: 'Test sent' };
+
+// The controls focus goes to once the one it was on is gone: the first switch after turning on, Turn on notifications after turning
+// off, the line that says it is blocked after a refusal.
+const FIRST_SWITCH = 'notifications-first-switch';
+const TURN_ON = 'notifications-turn-on';
+const DENIED = 'notifications-denied';
 
 export const UNSUPPORTED_WORDS = 'This browser cannot show notifications from Nidus.';
 export const HOME_SCREEN_WORDS = 'On iPhone, notifications need Nidus on your Home Screen. In Safari, tap Share, then Add to Home Screen, then open Nidus from the new icon and come back here.';
@@ -28,10 +34,11 @@ const TEST_SAID = { failed: 'Could not send a test. Try again.', offline: 'No in
 
 // A row of the card: the whole row is a labelled checkbox, 48 tall at least, drawn as the app's own tick or empty ring. A change
 // while a write is on its way is ignored, and the row says so with `aria-disabled`, never `disabled`.
-function Switch({ label, checked, busy, onChange }: { label: string; checked: boolean; busy: boolean; onChange: (checked: boolean) => void }) {
+function Switch({ id, label, checked, busy, onChange }: { id?: string; label: string; checked: boolean; busy: boolean; onChange: (checked: boolean) => void }) {
   return (
     <label className="relative flex min-h-12 items-center gap-3 rounded-lg text-[17px] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring">
       <input
+        id={id}
         type="checkbox"
         className="absolute inset-0 size-full cursor-pointer opacity-0"
         checked={checked}
@@ -81,16 +88,20 @@ export function NotificationsView({ support, state, listName, busy, status, load
       {support === 'supported' && state?.kind === 'off' && (
         <>
           <p className="text-base">{OFF_WORDS}</p>
-          <Button variant="primary" size="phone" className="w-full" aria-disabled={busy || undefined} onClick={guarded(onTurnOn)}>
+          <Button id={TURN_ON} variant="primary" size="phone" className="w-full" aria-disabled={busy || undefined} onClick={guarded(onTurnOn)}>
             Turn on notifications
           </Button>
         </>
       )}
-      {support === 'supported' && state?.kind === 'denied' && <p className="text-base">{DENIED_WORDS}</p>}
+      {support === 'supported' && state?.kind === 'denied' && (
+        <p id={DENIED} tabIndex={-1} className="text-base">
+          {DENIED_WORDS}
+        </p>
+      )}
       {support === 'supported' && state?.kind === 'on' && (
         <>
           <div className="flex flex-col gap-2">
-            <Switch label="Event reminders" checked={state.preferences.eventReminders} busy={busy} onChange={(eventReminders) => change(state.preferences, { eventReminders })} />
+            <Switch id={FIRST_SWITCH} label="Event reminders" checked={state.preferences.eventReminders} busy={busy} onChange={(eventReminders) => change(state.preferences, { eventReminders })} />
             <Field label="How long before">
               <select
                 className={fieldClass}
@@ -121,7 +132,7 @@ export function NotificationsView({ support, state, listName, busy, status, load
         </>
       )}
       <Problem id="problem-notifications" problem={problem} />
-      <p role="status" className="min-h-6 text-base">
+      <p role="status" className={statusLineClass}>
         {statusWords[status]}
       </p>
     </Card>
@@ -140,6 +151,14 @@ export function NotificationsSection() {
   // One write at a time: the ref is the guard, the state is what is drawn (`aria-disabled`, never `disabled`).
   const working = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [focusNext, setFocusNext] = useState<string | null>(null);
+
+  // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
+  useEffect(() => {
+    if (focusNext === null) return;
+    document.getElementById(focusNext)?.focus();
+    setFocusNext(null);
+  }, [focusNext]);
 
   useEffect(() => {
     if (support !== 'supported') return;
@@ -148,6 +167,15 @@ export function NotificationsSection() {
       (read) => live && setState(read),
       () => live && setLoadProblem(LOAD_FAILED),
     );
+    // Back on the page after the phone's settings: what was blocked may be allowed now. A write on its way is let finish first.
+    const again = () => {
+      if (document.visibilityState !== 'visible' || working.current) return;
+      readPushState().then(
+        (read) => live && !working.current && setState(read),
+        () => undefined,
+      );
+    };
+    document.addEventListener('visibilitychange', again);
     // The name only words one line; without it the card says "the shopping list".
     loadPinnedListName(supabase).then(
       (name) => live && setListName(name),
@@ -155,6 +183,7 @@ export function NotificationsSection() {
     );
     return () => {
       live = false;
+      document.removeEventListener('visibilitychange', again);
     };
   }, [support]);
 
@@ -163,13 +192,16 @@ export function NotificationsSection() {
     if (working.current) return;
     working.current = true;
     setBusy(true);
+    // What was said of the last write is old, so that a repeat is said again.
+    setStatus('idle');
     try {
       const result = await run();
       problems.clear(PLACE);
       done(result);
     } catch (error) {
-      setStatus('idle');
       problems.fail(PLACE, error, said ? { said } : {});
+      // The subscription is gone from the server: the card says what is so, not what it was.
+      if (error instanceof PushGoneError) readPushState().then(setState, () => undefined);
     } finally {
       working.current = false;
       setBusy(false);
@@ -191,7 +223,8 @@ export function NotificationsSection() {
           turnOnNotifications,
           (next) => {
             setState(next);
-            setStatus('idle');
+            if (next.kind === 'on') setFocusNext(FIRST_SWITCH);
+            if (next.kind === 'denied') setFocusNext(DENIED);
           },
           TURN_ON_SAID,
         )
@@ -201,7 +234,7 @@ export function NotificationsSection() {
           turnOffNotifications,
           () => {
             setState({ kind: 'off' });
-            setStatus('idle');
+            setFocusNext(TURN_ON);
           },
           TURN_OFF_SAID,
         )
