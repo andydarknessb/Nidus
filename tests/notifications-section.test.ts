@@ -130,6 +130,9 @@ describe('the Notifications card', () => {
     expect(render({ status: 'saved' })).toMatch(/<p role="status"[^>]*>Saved\.<\/p>/);
     expect(on({ status: 'test' })).toMatch(/<p role="status"[^>]*>Test sent<\/p>/);
     expect(render()).toMatch(/<p role="status"[^>]*><\/p>/);
+    // On the page from the first draw, and out of the layout while empty, as every Settings status line is (#130).
+    expect(render()).toMatch(/<p role="status" class="[^"]*\bempty:sr-only\b[^"]*"><\/p>/);
+    expect(render()).not.toContain('min-h-6');
     const failed = render({ problem: { place: 'notifications', words: 'Could not turn on notifications. Try again.', n: 1, refused: false } });
     expect(failed).toMatch(/<p[^>]*role="alert"[^>]*>Could not turn on notifications\. Try again\.<\/p>/);
     expect(render({ loadProblem: 'Could not check notifications on this phone. Check your connection.' })).toMatch(/role="alert"[^>]*>Could not check/);

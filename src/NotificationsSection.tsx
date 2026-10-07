@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { EmptyRing, Tick } from '@/components/people';
-import { Card, Field, Problem, fieldClass, helpClass } from '@/components/phone';
+import { Card, Field, Problem, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { PushGoneError, REMINDER_MINUTES, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
 import { loadPinnedListName } from '@/lib/shared-lists';
@@ -132,7 +132,7 @@ export function NotificationsView({ support, state, listName, busy, status, load
         </>
       )}
       <Problem id="problem-notifications" problem={problem} />
-      <p role="status" className="min-h-6 text-base">
+      <p role="status" className={statusLineClass}>
         {statusWords[status]}
       </p>
     </Card>
