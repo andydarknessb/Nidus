@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MEAL_SLOTS, loadMeals, mealGrid, setMeal, type Meal, type MealSlot } from '../src/lib/meals';
+import { MEAL_SLOTS, loadMeals, mealGrid, setMeal, withMeal, type Meal, type MealSlot } from '../src/lib/meals';
 import { openChangeFeed, type ChangeFeed } from '../src/lib/realtime';
 import {
   asAnonymous,
@@ -15,7 +15,6 @@ import {
   type Tablet,
 } from './support/supabase';
 import { startSyncedRead } from '../src/lib/synced-read';
-import { withMeal } from '../src/lib/use-meals';
 
 let households: HouseholdAccount[] = [];
 let tablets: Tablet[] = [];

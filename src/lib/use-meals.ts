@@ -1,6 +1,6 @@
 import { Cookie, Moon, Sun, Sunrise, type LucideIcon } from 'lucide-react';
 import { WEEKDAYS } from './routines';
-import { loadMeals, setMeal, type Meal, type MealSlot } from './meals';
+import { loadMeals, setMeal, withMeal, type Meal, type MealSlot } from './meals';
 import { supabase } from './supabase';
 import { useSyncedRead } from './synced-read';
 import type { WallDay } from './calendar-occurrences';
@@ -13,13 +13,6 @@ const MEAL_TABLES = ['meals'] as const;
 
 // The picture each slot is marked with, in the plan's rows and on the header's button.
 export const SLOT_PICTURES: Record<MealSlot, LucideIcon> = { breakfast: Sunrise, lunch: Sun, dinner: Moon, snack: Cookie };
-
-// What one cell holds once `title` is saved in it: its Meal, or none for a blank title. A Meal not stored yet has an id that says so.
-export function withMeal(meals: Meal[], date: string, slot: MealSlot, title: string): Meal[] {
-  const others = meals.filter((meal) => meal.meal_date !== date || meal.slot !== slot);
-  const kept = title.trim();
-  return kept === '' ? others : [...others, { id: `pending-${date}-${slot}`, meal_date: date, slot, title: kept }];
-}
 
 // The Meals from `from` to `to` (Household dates), through the synced read: read again when a Meal changes anywhere in the Household,
 // after each save made here, every 30 seconds, and 5 seconds after a failed read. `meals` is null until a read has landed; a failed
