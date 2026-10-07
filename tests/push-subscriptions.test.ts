@@ -5,6 +5,7 @@ import {
   asDevice,
   asHouseholdAccount,
   asServiceRole,
+  asTablet,
   createHousehold,
   createSignedUpAccount,
   destroyHousehold,
@@ -30,7 +31,7 @@ const READABLE = 'id, auth_user_id, endpoint, event_reminders, reminder_minutes,
 let counter = 0;
 function endpoint(): string {
   counter += 1;
-  return `https://push.example.test/send/${Date.now().toString(36)}-${counter}`;
+  return `https://fcm.googleapis.com/fcm/send/${Date.now().toString(36)}-${counter}`;
 }
 
 const save = (client: SupabaseClient, url: string, keys = { p256dh: 'p256dh-key', auth: 'auth-secret' }) =>
@@ -133,20 +134,51 @@ describe('push subscriptions', () => {
       expect(row?.auth).toBe('new-auth');
     });
 
-    it('the same endpoint saved by another Household Account moves to it', async () => {
-      const { arranged, phone } = await household();
+    it('the same endpoint saved by another Household Account gets a fresh row, and the old row and its deliveries go', async () => {
+      const { phone } = await household();
       const other = await household();
       const url = endpoint();
-      const id = await saved(phone, url);
+      const oldId = await saved(phone, url);
+      const admin = asServiceRole();
+      const tuned = await phone
+        .from('push_subscriptions')
+        .update({ event_reminders: false, reminder_minutes: 60, morning_summary: false, routines_nudge: false, list_additions: false })
+        .eq('id', oldId);
+      expect(tuned.error).toBeNull();
+      await admin.from('push_deliveries').insert({ subscription_id: oldId, key: 'morning:2026-10-21' });
 
       const moved = await save(other.phone, url);
 
       expect(moved.error).toBeNull();
-      expect(moved.data).toBe(id);
-      expect((await stored(id))?.auth_user_id).toBe(other.arranged.authUserId);
+      expect(moved.data).not.toBe(oldId);
+      expect(await stored(oldId)).toBeNull();
+      expect((await admin.from('push_deliveries').select('key').eq('subscription_id', oldId)).data).toEqual([]);
       expect((await phone.from('push_subscriptions').select('id').eq('endpoint', url)).data).toEqual([]);
-      expect((await other.phone.from('push_subscriptions').select('id').eq('endpoint', url)).data).toEqual([{ id }]);
-      expect((await stored(id))?.auth_user_id).not.toBe(arranged.authUserId);
+      const fresh = await other.phone
+        .from('push_subscriptions')
+        .select('id, auth_user_id, event_reminders, reminder_minutes, morning_summary, routines_nudge, list_additions')
+        .eq('endpoint', url);
+      expect(fresh.data).toEqual([
+        {
+          id: moved.data,
+          auth_user_id: other.arranged.authUserId,
+          event_reminders: true,
+          reminder_minutes: 15,
+          morning_summary: true,
+          routines_nudge: true,
+          list_additions: true,
+        },
+      ]);
+    });
+
+    it('keeps at most 10 subscriptions per account, the newest', async () => {
+      const { arranged, phone } = await household();
+      const urls = Array.from({ length: 11 }, () => endpoint());
+      for (const url of urls) await saved(phone, url);
+
+      const { data } = await asServiceRole().from('push_subscriptions').select('endpoint').eq('auth_user_id', arranged.authUserId);
+
+      expect(data?.map((row) => row.endpoint).sort()).toEqual(urls.slice(1).sort());
     });
 
     it('one Household Account cannot see or change another\'s, even in the same Household', async () => {
@@ -179,14 +211,37 @@ describe('push subscriptions', () => {
       expect(read.error).toBeNull();
       expect(read.data).toEqual([]);
       const changed = await wall.client.from('push_subscriptions').update({ event_reminders: false }).eq('id', id).select('id');
-      expect(changed.data ?? []).toEqual([]);
+      expect(changed.error).toBeNull();
+      expect(changed.data).toEqual([]);
       const deleted = await wall.client.from('push_subscriptions').delete().eq('id', id).select('id');
-      expect(deleted.data ?? []).toEqual([]);
+      expect(deleted.error).toBeNull();
+      expect(deleted.data).toEqual([]);
       const inserted = await wall.client.from('push_subscriptions').insert({ auth_user_id: wall.authUserId, endpoint: endpoint(), p256dh: 'k', auth: 'a' });
       expect(inserted.error?.code).toBe(REFUSED);
 
       const row = await stored(id);
       expect(row?.event_reminders).toBe(true);
+    });
+
+    it('an unpaired anonymous sign-in, which is not a Device, cannot save or insert and sees and changes nothing', async () => {
+      const { phone } = await household();
+      const id = await saved(phone);
+      const unpaired = await asTablet();
+      tablets.push(unpaired);
+
+      expect((await save(unpaired.client, endpoint())).error?.code).toBe(REFUSED);
+      const inserted = await unpaired.client.from('push_subscriptions').insert({ auth_user_id: unpaired.authUserId, endpoint: endpoint(), p256dh: 'k', auth: 'a' });
+      expect(inserted.error?.code).toBe(REFUSED);
+      const read = await unpaired.client.from('push_subscriptions').select('id');
+      expect(read.error).toBeNull();
+      expect(read.data).toEqual([]);
+      const changed = await unpaired.client.from('push_subscriptions').update({ event_reminders: false }).eq('id', id).select('id');
+      expect(changed.error).toBeNull();
+      expect(changed.data).toEqual([]);
+      const deleted = await unpaired.client.from('push_subscriptions').delete().eq('id', id).select('id');
+      expect(deleted.error).toBeNull();
+      expect(deleted.data).toEqual([]);
+      expect((await stored(id))?.event_reminders).toBe(true);
     });
 
     it('an anonymous visitor cannot save, read, update or delete', async () => {
@@ -259,18 +314,38 @@ describe('push subscriptions', () => {
       expect(await stored(id)).toBeNull();
     });
 
-    it('refuses an endpoint that is not https, is empty or is longer than 2048 characters', async () => {
+    it('refuses an endpoint that is not https, is empty, is longer than 2048 characters or is not on a known push service', async () => {
       const { phone } = await household();
-      const longest = `https://push.example.test/${'a'.repeat(2048 - 'https://push.example.test/'.length)}`;
+      const prefix = 'https://fcm.googleapis.com/';
+      const longest = `${prefix}${'a'.repeat(2048 - prefix.length)}`;
       expect(longest).toHaveLength(2048);
 
-      for (const bad of ['http://push.example.test/x', 'ftp://push.example.test/x', 'push.example.test/x', '', 'https://', 'https://push.example.test/a b', `${longest}a`]) {
+      for (const bad of [
+        'http://fcm.googleapis.com/x',
+        'ftp://fcm.googleapis.com/x',
+        'fcm.googleapis.com/x',
+        '',
+        'https://',
+        'https://fcm.googleapis.com/a b',
+        `${longest}a`,
+        'https://push.example.test/x',
+        'https://fcm.googleapis.com@evil.example/x',
+        'https://evil.example/@fcm.googleapis.com/x',
+        'https://fcm.googleapis.com.evil.example/x',
+        'https://fcm.googleapis.com:8443/x',
+        'https://evil.example/x?host=fcm.googleapis.com',
+        'https://notify.windows.com.evil.example/x',
+        'https://evilnotify.windows.com/x',
+      ]) {
         const refused = await save(phone, bad);
-        expect(refused.error?.code, bad.slice(0, 40)).toBe(INVALID);
+        expect(refused.error?.code, bad.slice(0, 60)).toBe(INVALID);
       }
       expect((await phone.rpc('save_push_subscription', { p_endpoint: null, p_p256dh: 'k', p_auth: 'a' })).error?.code).toBe(INVALID);
-      expect((await save(phone, longest)).error).toBeNull();
-      expect((await phone.from('push_subscriptions').select('id')).data).toHaveLength(1);
+      expect((await phone.from('push_subscriptions').select('id')).data).toEqual([]);
+
+      for (const good of [longest, 'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://web.push.apple.com/x', 'https://db5p.notify.windows.com/?token=x']) {
+        expect((await save(phone, good)).error, good.slice(0, 60)).toBeNull();
+      }
     });
 
     it('refuses empty, missing and over-long keys, and takes 200 characters', async () => {
@@ -324,6 +399,16 @@ describe('push subscriptions', () => {
       expect(await stored(mine)).not.toBeNull();
       const { data: deliveries } = await admin.from('push_deliveries').select('subscription_id').in('subscription_id', [mine, theirs]);
       expect(deliveries).toEqual([{ subscription_id: mine }]);
+    });
+
+    it('a removed Household Account\'s session can no longer save a subscription', async () => {
+      const { arranged, phone } = await household();
+      const partner = await colleague(arranged);
+      expect((await phone.rpc('remove_household_account', { p_auth_user_id: partner.arranged.authUserId })).data).toBe(true);
+
+      const { error } = await save(partner.phone, endpoint());
+
+      expect(error?.code).toBe(REFUSED);
     });
   });
 
@@ -417,6 +502,7 @@ describe('push subscriptions', () => {
   });
 
   describe('the minute\'s schedule', () => {
+    // Assumes no push_notify_* Vault secrets exist, which holds on CI's fresh stack.
     it('invoke_push_notify does nothing while the Vault secrets are missing, and no client can call it', async () => {
       const { arranged, phone } = await household();
       const wall = await device(arranged);
