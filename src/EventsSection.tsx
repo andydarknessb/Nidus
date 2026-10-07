@@ -1,5 +1,5 @@
 import { Pin, Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EventDiscs } from './components/EventPill';
 import { Card } from './components/phone';
 import { Button } from './components/ui/button';
@@ -10,10 +10,11 @@ import { loadUpcomingNativeEvents } from './lib/native-events';
 import { loadProfiles, type Profile } from './lib/profiles';
 import { listNames, pillPeople } from './lib/schedule';
 import { supabase } from './lib/supabase';
-import { useRefetchOn } from './lib/change-feed';
+import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 const EVENT_TABLES = ['native_events', 'native_event_profiles', 'profiles'] as const;
+const NO_PROFILES: Profile[] = [];
 
 // One event of the list: its title with the pin of a Native Event, when it is, and who it is for as the discs of the Wall's own
 // pill (the house for the whole Household, a disc for one or two people, a disc and "+N" for more), which a screen reader hears
@@ -38,30 +39,22 @@ export function EventRow({ event, profiles, timezone, onOpen }: { event: Occurre
 // The phone's Native Events: what is coming up, to add, edit or delete from anywhere. The same sheet as the Wall's. Native Events
 // are invisible in Google Calendar (ADR 0002), so the phone shows them here, on the Calendars page.
 export function EventsSection({ household }: { household: Household }) {
-  const [events, setEvents] = useState<Occurrence[] | null>(null);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [failed, setFailed] = useState(false);
+  // Read through the synced read: every 30 seconds, 5 after a failure, and when an event or a Profile changes.
+  const read = useSyncedRead(
+    async () => {
+      const [events, profiles] = await Promise.all([loadUpcomingNativeEvents(supabase, new Date()), loadProfiles(supabase)]);
+      return { events, profiles };
+    },
+    EVENT_TABLES,
+    'events',
+  );
+  const events = read.data?.events ?? null;
+  const profiles = read.data?.profiles ?? NO_PROFILES;
   // The sheet: a new event, or the one being edited.
   const [sheet, setSheet] = useState<{ occurrence?: Occurrence } | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   // How many times the sheet has closed on a write and the list been read again since.
   const [settled, setSettled] = useState(0);
-
-  const refresh = useCallback(async () => {
-    try {
-      const [found, people] = await Promise.all([loadUpcomingNativeEvents(supabase, new Date()), loadProfiles(supabase)]);
-      setEvents(found);
-      setProfiles(people);
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  useRefetchOn(EVENT_TABLES, () => void refresh());
 
   // The sheet gives the focus back to what opened it, and an event that was deleted took that row with it when the list was read
   // again: focus never falls to the page, it goes to Add event.
@@ -78,9 +71,9 @@ export function EventsSection({ household }: { household: Household }) {
         <Plus aria-hidden />
         Add event
       </Button>
-      {failed && (
+      {read.failed && (
         <p role="alert" className="text-base">
-          Could not load events. Check your connection.
+          {couldNotLoad('events')}
         </p>
       )}
       {events?.length === 0 && <p className="text-base">Nothing coming up.</p>}
@@ -100,7 +93,7 @@ export function EventsSection({ household }: { household: Household }) {
           onClose={() => setSheet(null)}
           onSaved={() => {
             setSheet(null);
-            void refresh().then(() => setSettled((count) => count + 1));
+            void read.readBack().then(() => setSettled((count) => count + 1));
           }}
         />
       )}

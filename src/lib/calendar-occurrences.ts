@@ -33,18 +33,30 @@ export type Occurrence = {
 export const occurrenceColumns =
   'source, id, calendar_id, calendar_name, title, description, location, starts_at, ends_at, is_all_day, profile_id, profile_ids';
 
-// Household Account or Device. Everything that overlaps [from, to), in start order.
+// What one request returns at most: the API stops there without saying so.
+const PAGE = 1000;
+
+// Household Account or Device. Everything that overlaps [from, to), in start order, read a page at a time until a page comes back
+// short, so a month of a busy Household is all there however many occurrences it holds. An occurrence that moves between two pages'
+// requests is kept once.
 export async function loadOccurrences(client: SupabaseClient, from: Date, to: Date): Promise<Occurrence[]> {
-  const { data, error } = await client
-    .from('calendar_occurrences')
-    .select(occurrenceColumns)
-    .lt('starts_at', to.toISOString())
-    // Inclusive so an event of no length at `from` is kept; dayOccurrences is the exact overlap test.
-    .gte('ends_at', from.toISOString())
-    .order('starts_at')
-    .order('id');
-  if (error) throw error;
-  return data as Occurrence[];
+  const found = new Map<string, Occurrence>();
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await client
+      .from('calendar_occurrences')
+      .select(occurrenceColumns)
+      .lt('starts_at', to.toISOString())
+      // Inclusive so an event of no length at `from` is kept; dayOccurrences is the exact overlap test.
+      .gte('ends_at', from.toISOString())
+      .order('starts_at')
+      .order('source')
+      .order('id')
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const page = data as Occurrence[];
+    for (const occurrence of page) found.set(`${occurrence.source} ${occurrence.id}`, occurrence);
+    if (page.length < PAGE) return [...found.values()];
+  }
 }
 
 // ---- Household Timezone arithmetic ------------------------------------------------

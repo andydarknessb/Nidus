@@ -1,10 +1,10 @@
 import { cn } from 'cn';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { canOpenDay, describeCell, pagingWindow, type Occurrence, type WallDay } from '../lib/calendar-occurrences';
-import { focusElement, focusEvent } from '../lib/focus';
+import { focusElement } from '../lib/focus';
 import type { Profile } from '../lib/profiles';
 import { dayHeadingName, headingLabel, pillPeople, pillsToShow, scheduleColumns, type ScheduleColumn } from '../lib/schedule';
-import { useOccurrences } from '../lib/wall-hooks';
+import { useDayEvents } from '../lib/wall-hooks';
 import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
 import { EventPill } from './EventPill';
 import { EventSheets, type OpenEvent } from './EventSheets';
@@ -176,19 +176,17 @@ export function Schedule({
   profiles: Profile[] | null;
 }) {
   const [open, setOpen] = useState<OpenEvent>(null);
-  // An edit made here counts into `version`, so it reads again like an event added around the calendar.
-  const [edits, setEdits] = useState(0);
-  const { occurrences, failed } = useOccurrences(days, version + edits);
+  const events = useDayEvents(days, version, profiles);
   const pageWindow = pagingWindow(timezone, now);
-  const columns = scheduleColumns(profiles === null ? [] : (occurrences ?? []), days, now);
+  const columns = scheduleColumns(events.occurrences ?? [], days, now);
   // The day of the column the event that a sheet is open for was tapped in: where focus goes if that event is not on the screen any more.
   const openedOn = useRef(days[0]!.date);
 
   return (
     <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col rounded-3xl bg-card p-2">
-      {failed && occurrences === null && (
+      {events.problem && (
         <p role="alert" className="p-4 text-xl">
-          Could not load the calendar. Check your connection.
+          {events.problem}
         </p>
       )}
       <div style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-x-1.5">
@@ -213,12 +211,9 @@ export function Schedule({
         timezone={timezone}
         date={days[0]!.date}
         profiles={profiles ?? []}
-        occurrences={occurrences}
-        onEdited={() => setEdits((count) => count + 1)}
-        // After an event is deleted from its sheet, or moved by an edit: to its pill if it is still in a column, else the heading of its day.
-        returnFocus={(occurrence) => {
-          if (!focusEvent(occurrence.id)) focusElement(document.querySelector<HTMLElement>(`[data-day="${openedOn.current}"]`));
-        }}
+        events={events}
+        // After an event is deleted from its sheet, or moved by an edit, and is in no column: the heading of its day.
+        focusPlace={() => focusElement(document.querySelector<HTMLElement>(`[data-day="${openedOn.current}"]`))}
       />
     </section>
   );

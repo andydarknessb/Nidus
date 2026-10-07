@@ -14,11 +14,11 @@ import {
   type WallDay,
 } from '../lib/calendar-occurrences';
 import { aboveLabel, emptyRowWords, HOUR_REM, hoursThatFit, planDay } from '../lib/day-view';
-import { focusEvent, focusTitleIfLost } from '../lib/focus';
+import { focusTitleIfLost } from '../lib/focus';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { useOverflow } from '../lib/use-overflow';
-import { useNow, useOccurrences } from '../lib/wall-hooks';
+import { useDayEvents, useNow } from '../lib/wall-hooks';
 import { forecastDay, type Forecast } from '../lib/weather';
 import { HourGrid, PillRow } from './DayGrid';
 import { EventSheets, type OpenEvent } from './EventSheets';
@@ -230,12 +230,11 @@ export function DayView({
   profiles: Profile[] | null;
   focusHeading: () => void;
 }) {
-  // The event tapped and the sheet it opened, and a count of the edits made here, so the read runs again after one.
+  // The event tapped and the sheet it opened.
   const [open, setOpen] = useState<OpenEvent>(null);
-  const [edits, setEdits] = useState(0);
-  // An edit made here counts into `version`, so it reads again like an event added around the calendar.
-  const { occurrences, failed } = useOccurrences([day], version + edits);
-  const loaded = profiles !== null && occurrences !== null;
+  const events = useDayEvents([day], version, profiles);
+  const occurrences = events.occurrences;
+  const loaded = occurrences !== null;
   const people = profiles ?? [];
 
   // The room for the grid is what is left between the row above it and the row below it, which keep their height: the hours that
@@ -268,9 +267,9 @@ export function DayView({
       aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`}
       className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card p-3 max-[768px]:rounded-[22px]"
     >
-      {failed && occurrences === null && (
+      {events.problem && (
         <p role="alert" className="px-4 py-2 text-xl">
-          Could not load the calendar. Check your connection.
+          {events.problem}
         </p>
       )}
       <PillRow
@@ -311,12 +310,9 @@ export function DayView({
         timezone={timezone}
         date={day.date}
         profiles={people}
-        occurrences={occurrences}
-        onEdited={() => setEdits((count) => count + 1)}
-        // After an event is deleted from its sheet, or moved by an edit: to its new pill or block if it is still on the day, else the title.
-        returnFocus={(occurrence) => {
-          if (!focusEvent(occurrence.id)) focusHeading();
-        }}
+        events={events}
+        // After an event is deleted from its sheet, or moved by an edit, and is not on the day any more: the title.
+        focusPlace={focusHeading}
       />
     </section>
   );
