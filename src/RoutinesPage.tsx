@@ -330,7 +330,7 @@ function Column({
     <section
       ref={column}
       aria-labelledby={`routines-${profile.id}`}
-      className="person relative flex max-h-full min-h-0 max-w-md min-w-[17rem] flex-1 flex-col gap-2.5 rounded-3xl bg-person-soft p-3.5"
+      className="person relative flex max-h-full min-h-0 max-w-md min-w-[17rem] flex-1 flex-col gap-2.5 rounded-3xl bg-person-soft p-3"
       style={personStyle(profile.color)}
     >
       <div className="flex min-h-14 flex-none items-center gap-3">

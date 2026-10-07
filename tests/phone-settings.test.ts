@@ -100,6 +100,27 @@ describe('time zones, listed by name', () => {
     expect(timezoneName('UTC')).toBe('Coordinated Universal Time');
   });
 
+  it('name an old area-and-name id (US/Central) for the city of the zone it stands for, not for its own last word', () => {
+    expect(timezoneName('US/Central')).toBe('Central Time (Chicago)');
+    expect(timezoneName('US/Pacific')).toBe('Pacific Time (Los Angeles)');
+  });
+
+  it("list a stored zone once, in the place of the browser's spelling of it", () => {
+    // `Asia/Kolkata` and `Asia/Calcutta` are one zone, as are `US/Central` and `America/Chicago`: the stored id is the one listed, so
+    // there is no second "India Standard Time" beside it, and the one shown as chosen is the one stored.
+    for (const [stored, same] of [
+      ['Asia/Kolkata', 'Asia/Calcutta'],
+      ['US/Central', 'America/Chicago'],
+    ] as const) {
+      const options = timezoneOptions(stored);
+      expect(options.filter((option) => option.id === stored), stored).toHaveLength(1);
+      expect(options.some((option) => option.id === same), `${stored} beside ${same}`).toBe(false);
+      const name = timezoneName(stored);
+      expect(options.filter((option) => option.name === name), stored).toHaveLength(1);
+    }
+    expect(timezoneName('Asia/Kolkata')).toMatch(/^India Standard Time \(/);
+  });
+
   it('give a zone the browser does not know as it was stored', () => {
     expect(timezoneName('Mars/Olympus_Mons')).toBe('Mars/Olympus_Mons');
   });
@@ -450,6 +471,20 @@ describe("the phone's pages, as they are first drawn", () => {
     expect(headings(markup)).toEqual(['Google calendars', 'iPhone calendars', 'Events added in Nidus']);
     expect(words(markup)).toContain('Connect a Google calendar');
     expect(words(markup)).toContain('Add event');
+  });
+
+  it('keep each "Saved." line on the page from the first draw, so a screen reader has it, and out of the layout while it is empty', () => {
+    // A line that held a line of its own (a minimum height) made the cards end 16 to 48 px under their last line.
+    for (const [name, markup] of [['Household', householdPage()], ['Calendars', calendarsPage()]] as const) {
+      const lines = [...markup.matchAll(/<p role="status"([^>]*)>/g)].map(([, attributes]) => /class="([^"]*)"/.exec(attributes ?? '')?.[1]?.split(' ') ?? []);
+      expect(lines.length, name).toBeGreaterThan(0);
+      for (const classes of lines) {
+        expect(classes, name).toContain('empty:sr-only');
+        expect(classes, name).not.toContain('min-h-6');
+      }
+      // Nothing wraps the empty line in a box of its own that would be a gap in the card.
+      expect(markup, name).not.toMatch(/<div class="min-h-6/);
+    }
   });
 
   it('start the Routines page where the Lists page starts: its status line is on the page from the first draw, and takes no room while it is empty', () => {

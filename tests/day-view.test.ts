@@ -3,7 +3,7 @@ import { offsetMs } from '../supabase/functions/_shared/zoned-time.ts';
 import { addDays, dayStartMs, pageDays, type Occurrence, type WallDay } from '../src/lib/calendar-occurrences';
 import type { Profile } from '../src/lib/profiles';
 import { pillPeople } from '../src/lib/schedule';
-import { blockTime, emptyRowWords, hourWindow, hourWords, hoursThatFit, planDay, whoWords, type DayPlan } from '../src/lib/day-view';
+import { aboveLabel, blockTime, emptyRowWords, hourWindow, hourWords, hoursThatFit, planDay, whoWords, type DayPlan } from '../src/lib/day-view';
 
 // The Day view's rules, all pure: how many hours fit, which of them the grid shows, which events go in the row above it (all
 // day, then what ended before its first hour), which in the row below (what starts after its last), where each block sits and
@@ -767,6 +767,17 @@ describe('the words', () => {
     expect(blockTime(at('x', TODAY, '00:00', '01:00'), dayOf(TODAY, CHICAGO, NOW))).toBe('12:00 to 1:00 AM');
   });
 
+  it('say the zones on the night the clocks go back, when the end of an event reads as its start or before it', () => {
+    // Sun 2026-11-01 in Chicago: 1:00 AM CDT is 06:00Z and the same 1:00 AM on the clock again, as CST, is 07:00Z.
+    const day = dayOf('2026-11-01', CHICAGO, new Date('2026-11-01T18:00:00Z'));
+    const word = (from: string, to: string) => blockTime(make('x', Date.parse(from), Date.parse(to)), day);
+    expect(word('2026-11-01T06:00:00Z', '2026-11-01T07:00:00Z')).toBe('1:00 AM CDT to 1:00 AM CST');
+    expect(word('2026-11-01T06:30:00Z', '2026-11-01T07:15:00Z')).toBe('1:30 AM CDT to 1:15 AM CST');
+    // Either side of it the words are as they always are.
+    expect(word('2026-11-01T05:00:00Z', '2026-11-01T06:30:00Z')).toBe('12:00 to 1:30 AM');
+    expect(word('2026-11-01T07:00:00Z', '2026-11-01T08:00:00Z')).toBe('1:00 to 2:00 AM');
+  });
+
   it('say it in the Household Timezone, whatever the instant is in UTC', () => {
     // 9:00 AM to 9:30 AM in Auckland and in London, which are the evening before and the morning in UTC.
     expect(blockTime(at('x', TOMORROW, '09:00', '09:30', AUCKLAND), dayOf(TOMORROW, AUCKLAND, NOW))).toBe('9:00 to 9:30 AM');
@@ -785,6 +796,16 @@ describe('the words', () => {
 
   it('label an hour of the grid', () => {
     expect([0, 1, 11, 12, 13, 16, 23, 24].map(hourWords)).toEqual(['12 AM', '1 AM', '11 AM', '12 PM', '1 PM', '4 PM', '11 PM', '12 AM']);
+  });
+
+  it('name the row above the grid for what is in it: all day events, what ended before the grid, or both', () => {
+    const day = dayOf(TODAY, CHICAGO, NOW);
+    const [holiday] = view([allDay('Holiday', TODAY, TODAY)]).above;
+    const [breakfast] = view([at('Breakfast', TODAY, '08:00', '09:00')]).above;
+    expect(aboveLabel([], day)).toBe('Earlier');
+    expect(aboveLabel([holiday!], day)).toBe('All day');
+    expect(aboveLabel([breakfast!], day)).toBe('Earlier');
+    expect(aboveLabel([holiday!, breakfast!], day)).toBe('All day, earlier');
   });
 
   it('say what an empty row holds', () => {

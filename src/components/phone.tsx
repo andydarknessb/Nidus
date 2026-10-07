@@ -34,6 +34,10 @@ export function Card({ title, children }: { title: string; children: ReactNode }
   );
 }
 
+// A status line (role="status") that is on the page from the first draw, so a screen reader has it before it speaks, and takes no room
+// while it is empty: out of the layout (and out of its parent's gap), but still in the accessibility tree.
+export const statusLineClass = 'text-base empty:sr-only';
+
 // A field's label sits above it, 15 px, in the secondary words; the field itself is drawn by the base rule in index.css, 56 tall.
 export const labelClass = 'text-[15px] leading-5 text-muted-foreground break-words';
 export const fieldClass = 'h-14 w-full text-[17px]';

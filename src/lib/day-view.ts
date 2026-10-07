@@ -1,4 +1,4 @@
-import { dayOccurrences, formatClock, nowHour, wallHour, type Occurrence, type WallDay } from './calendar-occurrences';
+import { clocksRepeat, dayOccurrences, formatClock, formatClockWithZone, nowHour, wallHour, type Occurrence, type WallDay } from './calendar-occurrences';
 import { listNames, pillTime, saysAllDay, scheduleColumns, type Pill, type PillPeople } from './schedule';
 
 // The Day view (docs/look.md; spec 0003, Day view): the one view that keeps the hour grid. An hour is 3 rem, 48 px at the
@@ -268,6 +268,8 @@ export function blockTime(occurrence: Occurrence, day: WallDay): string {
   const start = Date.parse(occurrence.starts_at);
   const end = Date.parse(occurrence.ends_at);
   if (start < day.startMs || end > day.endMs || end <= start) return pillTime(occurrence, day);
+  // The night the clocks go back, an hour is on the clock twice: "1:00 to 1:00 AM" says nothing, so the zones tell the two apart.
+  if (clocksRepeat(start, end, day.timezone)) return `${formatClockWithZone(start, day.timezone)} to ${formatClockWithZone(end, day.timezone)}`;
   const [from = '', fromPeriod = ''] = formatClock(start, day.timezone).split(/\s+/);
   const [to = '', toPeriod = ''] = formatClock(end, day.timezone).split(/\s+/);
   return fromPeriod === toPeriod ? `${from} to ${to} ${toPeriod}` : `${from} ${fromPeriod} to ${to} ${toPeriod}`;
@@ -281,6 +283,14 @@ export function hourWords(hour: number): string {
 // What an empty row says: "Nothing later today" (just "Nothing later" on another day).
 export function emptyRowWords(row: 'earlier' | 'later', isToday: boolean): string {
   return `Nothing ${row}${isToday ? ' today' : ''}`;
+}
+
+// The word at the left end of the row above the grid, which holds the day's all-day events and then what ended before the window: "All day"
+// when it holds only the first, "Earlier" when only the second (and when it is empty), both when it holds both.
+export function aboveLabel(pills: readonly Pill[], day: WallDay): string {
+  const allDay = pills.some((pill) => saysAllDay(pill.occurrence, day));
+  const earlier = pills.some((pill) => !saysAllDay(pill.occurrence, day));
+  return allDay ? (earlier ? 'All day, earlier' : 'All day') : 'Earlier';
 }
 
 // Who an event is for, in the words of its details: "Everyone" for the whole Household, else every name ("Ava and Ben",
