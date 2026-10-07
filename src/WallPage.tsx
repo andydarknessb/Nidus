@@ -377,7 +377,7 @@ function HomeShell({ owner }: { owner: boolean }) {
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
           timezone ? (
-            <RoutinesChart routines={routines} />
+            <RoutinesChart routines={routines} portrait={home.portrait} />
           ) : (
             // The chart before the Household is read: a frame that says "Loading", or that the read failed, as Up next does.
             <section aria-label="Routines" className="rounded-3xl bg-card p-4">

@@ -40,6 +40,7 @@ function routinesToday(profiles: Profile[], routines: Routine[], more: Partial<R
     ...more,
   };
 }
+const words = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 const chart = (today: RoutinesToday) => renderToStaticMarkup(createElement(RoutinesChart, { routines: today }));
 
 describe("a person's column", () => {
@@ -110,5 +111,45 @@ describe("the chart's heading row", () => {
     const buttons = [...html().matchAll(/<button [^>]*class="([^"]*)"[^>]*aria-pressed=/g)].map(([, classes]) => classes?.split(' ') ?? []);
     expect(buttons).toHaveLength(4);
     for (const classes of buttons) expect(classes).toEqual(expect.arrayContaining(['h-12', 'min-w-12']));
+  });
+});
+
+// A tablet hung upright (docs/specs/0009, decision 6): the columns wrap, each its natural height, and the chart scrolls as one column.
+// The "More routines" foot is drawn by the browser's measure, only while the chart holds more than it shows, so a static render shows the
+// box it is the foot of, and that nothing else scrolls or says "More".
+describe('the chart in portrait', () => {
+  const today = () => routinesToday([profile('p-ava', 'Ava', 0), profile('p-ben', 'Ben', 1)], [routine('r-1', 'p-ava', 'Brush teeth'), routine('r-2', 'p-ben', 'Pack bag')]);
+  const portrait = () => renderToStaticMarkup(createElement(RoutinesChart, { routines: today(), portrait: true }));
+  const columnClasses = (html: string) => [...html.matchAll(/<section aria-labelledby="routines-p-[^"]*" class="([^"]*)"/g)].map(([, classes]) => classes?.split(' ') ?? []);
+
+  it('wraps the columns, 12 across and 16 under one another, in a box that scrolls up and down and not sideways', () => {
+    const html = portrait();
+    expect(html).toContain('<div class="min-h-0 flex-1 overflow-y-auto"><div class="flex flex-wrap items-start gap-x-3 gap-y-4 [&amp;_*]:scroll-mb-18">');
+    expect(html).not.toContain('overflow-x-auto');
+  });
+
+  it('keeps the columns between 17 rem and max-w-md, at their natural height with no scrolling box of their own', () => {
+    const columns = columnClasses(portrait());
+    expect(columns).toHaveLength(2);
+    for (const classes of columns) {
+      expect(classes).toEqual(expect.arrayContaining(['min-w-[17rem]', 'max-w-md', 'flex-1']));
+      expect(classes).not.toContain('max-h-full');
+    }
+    // The tiles' box is the column's own height, not a box of its own, so it has no foot to measure.
+    expect(portrait()).not.toMatch(/<div class="[^"]*overflow-y-auto[^"]*">\s*<div class="flex flex-col gap-2\.5 p-1">/);
+    expect(portrait()).toContain('<div class="-m-1"><div class="flex flex-col gap-2.5 p-1">');
+  });
+
+  it('has no "More people" in the heading row, and none of any kind until the chart holds more than it shows', () => {
+    expect(words(portrait())).not.toContain('More');
+  });
+
+  it('leaves landscape as it was: the columns side by side in a row that scrolls sideways, each scrolling its own tiles', () => {
+    const landscape = chart(today());
+    expect(landscape).toBe(renderToStaticMarkup(createElement(RoutinesChart, { routines: today(), portrait: false })));
+    expect(landscape).toContain('<div class="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">');
+    expect(landscape).toContain('class="-m-1 min-h-0 overflow-y-auto [&amp;_li]:scroll-mb-18 [&amp;_li_button]:scroll-mb-18"');
+    for (const classes of columnClasses(landscape)) expect(classes).toContain('max-h-full');
+    expect(landscape).not.toContain('flex-wrap items-start');
   });
 });
