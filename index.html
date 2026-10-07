@@ -10,7 +10,7 @@
       // right from there. The Wall paints the mode it last resolved (light when it has none). The phone's pages,
       // under /settings, and the join page, under /join, and the Wall below 768 px wide or 544 px tall (src/lib/home-layout.ts, the phone layout) paint what the phone
       // prefers and never what the Wall stored. A small window is also told it is a phone (data-phone, the `phone:` styles) at
-      // the same rule, for the pages the Wall's useHomeLayout does not reach (/settings' sheets). The two metas follow, so a dark
+      // the same rule, for the pages the Wall's useHomeLayout does not reach (/settings' sheets); the Wall's hook keeps it from there. The two metas follow, so a dark
       // reload shows no light browser bar until React mounts; their colours are the page colours of src/lib/look.ts
       // (tests/mode.test.ts holds them equal). If anything throws, such as blocked localStorage, nothing more is set
       // and the page is light, which is what index.css draws with no mode.

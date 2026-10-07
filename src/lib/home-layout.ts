@@ -109,11 +109,15 @@ export function useHomeLayout(): HomeLayout {
     return homeLayout({ ...room, rem: rootFontSize() });
   };
   const phone = useSyncExternalStore(subscribe, () => read().phone);
-  // The document says when it is a phone, before the paint, so the phone's styles swap with the layout and never on a rule of their own.
+  // A phone on its side: the room (never the keyboard's viewport) is under 544 px tall. `read` has set the room.
+  const side = useSyncExternalStore(subscribe, () => read().phone && (room as Viewport).height < PHONE_SHORTER_THAN);
+  // The document says when it is a phone, before the paint, so the phone's styles swap with the layout and never on a rule of their
+  // own; "side" says it is on its side, so PhoneShell keeps the column's right clear of Add event, held through the keyboard like the rest.
   useLayoutEffect(() => {
-    document.documentElement.toggleAttribute('data-phone', phone);
+    if (phone) document.documentElement.setAttribute('data-phone', side ? 'side' : '');
+    else document.documentElement.removeAttribute('data-phone');
     return () => document.documentElement.removeAttribute('data-phone');
-  }, [phone]);
+  }, [phone, side]);
   return {
     days: useSyncExternalStore(subscribe, () => read().days),
     tiles: useSyncExternalStore(subscribe, () => read().tiles),
