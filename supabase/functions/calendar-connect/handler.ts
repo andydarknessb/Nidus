@@ -228,31 +228,41 @@ async function icloud(request: Request, deps: ConnectDeps): Promise<Response> {
   return json(200, { id, name });
 }
 
-// The state if it is genuine, unexpired and its account is still a Household Account of its Household.
-async function liveState(token: string | null, deps: ConnectDeps, now: number): Promise<State | null> {
+const expired = () => page(400, 'Link expired', 'This link is no longer valid. Ask for a new one from Nidus settings.');
+
+// The state if it is genuine, unexpired and its account is still a Household Account of its Household;
+// otherwise the page to send: Link expired, or a 500 when the lookup itself failed.
+async function liveState(token: string | null, deps: ConnectDeps, now: number): Promise<State | Response> {
   const state = await verifyState(deps.env.stateSecret, token, now);
-  if (!state) return null;
-  const { data } = await deps.admin
+  if (!state) return expired();
+  const { data, error } = await deps.admin
     .from('household_accounts')
     .select('auth_user_id')
     .eq('household_id', state.household_id)
     .eq('auth_user_id', state.auth_user_id)
     .maybeSingle();
-  return data ? state : null;
+  if (error) {
+    console.error('calendar-connect: household_accounts lookup failed', error);
+    return page(500, 'Calendar not connected', 'Something went wrong on our side. Please try again.');
+  }
+  return data ? state : expired();
 }
 
 // GET consent: the shareable link. Nothing but the state proves anything: its signature, its expiry and its account still being a Household Account.
 async function consent(url: URL, deps: ConnectDeps, now: number): Promise<Response> {
   const stateParam = url.searchParams.get('state');
+  if (!stateParam) return expired();
   const state = await liveState(stateParam, deps, now);
-  if (!state || !stateParam) return page(400, 'Link expired', 'This link is no longer valid. Ask for a new one from Nidus settings.');
+  if (state instanceof Response) return state;
   return new Response(null, { status: 302, headers: { Location: consentUrl(deps.env, stateParam) } });
 }
 
 // GET callback: code for tokens, tokens into Vault, calendars into Mirrored Calendars (unselected).
 async function callback(url: URL, deps: ConnectDeps, now: number): Promise<Response> {
+  // Accepted limits (the #125 Ruling): a removal that commits during the Google round trips below still lands
+  // (the calendars arrive unselected), and a removed-then-reinvited account's unexpired links work again.
   const state = await liveState(url.searchParams.get('state'), deps, now);
-  if (!state) return page(400, 'Link expired', 'This link is no longer valid. Ask for a new one from Nidus settings.');
+  if (state instanceof Response) return state;
   if (url.searchParams.get('error')) {
     return page(400, 'Calendar not connected', 'Calendar access was not granted, so nothing was connected. You can close this tab.');
   }

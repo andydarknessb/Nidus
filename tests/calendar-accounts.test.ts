@@ -335,6 +335,8 @@ describe('the shareable consent link', () => {
     const link = await startFlow(joiner, 'link', d);
     const state = new URL(link).searchParams.get('state')!;
     expect((await ownerClient.rpc('remove_household_account', { p_auth_user_id: joiner.authUserId })).error).toBeNull();
+    // The removed account now holds a Household Account row in a new Household: the state's own Household is what counts.
+    expect((await (await signInAs(joiner)).rpc('ensure_household', { display_name: 'Elsewhere', browser_timezone: 'UTC' })).error).toBeNull();
 
     const consent = await handleCalendarConnect(new Request(link), d);
     expect(consent.status).toBe(400);
@@ -357,12 +359,12 @@ describe('the shareable consent link', () => {
     newcomers.push(joiner);
     const ownerClient = await asHouseholdAccount(owner);
     const invite = await ownerClient.rpc('create_household_invite').single<{ token: string }>();
-    await (await signInAs(joiner)).rpc('accept_household_invite', { p_token: invite.data!.token });
+    expect((await (await signInAs(joiner)).rpc('accept_household_invite', { p_token: invite.data!.token })).error).toBeNull();
 
     const google = fakeGoogle({ email: 'partner@example.com' });
     const d = deps(google);
     const state = stateOf(await startFlow(joiner, 'settings', d));
-    await ownerClient.rpc('remove_household_account', { p_auth_user_id: joiner.authUserId });
+    expect((await ownerClient.rpc('remove_household_account', { p_auth_user_id: joiner.authUserId })).error).toBeNull();
     expect((await handleCalendarConnect(callbackFor(state), d)).status).toBe(400);
 
     // What a link made before this shipped looks like: genuine, unexpired, and no account in it.
