@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CALENDAR_SCOPE,
   GOOGLE_CALENDAR_LIST_URL,
@@ -13,6 +13,7 @@ import {
 import {
   SYNC_STALE_MS,
   calendarsOfAccount,
+  chooseCalendar,
   formatAge,
   lastSyncedText,
   loadCalendarAccounts,
@@ -39,6 +40,7 @@ import {
   type SignedUpAccount,
   type Tablet,
 } from './support/supabase';
+import { startSyncedRead } from '../src/lib/synced-read';
 
 const STATE_SECRET = 'test-state-secret-that-is-long-enough-to-sign-with';
 const env = {
@@ -473,6 +475,52 @@ describe('Mirrored Calendar selection', () => {
     await updateMirroredCalendar(phone, target.id, { selected: true, profile_id: null });
     expect(await setColor(phone, target.id, null)).toBeNull();
     expect((await loadMirroredCalendars(phone)).find((calendar) => calendar.id === target.id)).toMatchObject({ profile_id: null, color: null });
+  });
+
+  it('shows each choice at once, writes a calendar’s choices in the order made, and ends where two quick toggles started', async () => {
+    const { phone, calendars } = await arrangeWithCalendars();
+    const target = calendars.find((calendar) => calendar.name === 'Family')!;
+    expect(target.selected).toBe(false);
+    const shown: (MirroredCalendar[] | null)[] = [];
+    const read = startSyncedRead({ load: async () => ({ calendars: await loadMirroredCalendars(phone) }), onChange: (state) => shown.push(state.data?.calendars ?? null) });
+    const selectedShown = () => shown.at(-1)?.find((calendar) => calendar.id === target.id)?.selected;
+    try {
+      await vi.waitFor(() => expect(selectedShown()).toBe(false));
+      const queues: Record<string, Promise<void>> = {};
+      // On, then off again, before either has answered.
+      const on = chooseCalendar(read, queues, phone, target.id, { selected: true });
+      expect(selectedShown()).toBe(true);
+      const off = chooseCalendar(read, queues, phone, target.id, { selected: false });
+      expect(selectedShown()).toBe(false);
+      await Promise.all([on, off]);
+      await read.readBack();
+      expect(selectedShown()).toBe(false);
+      expect((await loadMirroredCalendars(phone)).find((calendar) => calendar.id === target.id)?.selected).toBe(false);
+    } finally {
+      read.stop();
+    }
+  });
+
+  it('takes back only a choice whose write failed, keeping the one made after it', async () => {
+    const { phone, calendars } = await arrangeWithCalendars();
+    const stranger = await arrange();
+    const foreign = await createProfile(await asHouseholdAccount(stranger), stranger.household.id, { name: 'Other', color: PROFILE_PALETTE[2].hex, avatar_url: null }, 0);
+    const target = calendars[0]!;
+    let shown: MirroredCalendar[] | null = null;
+    const read = startSyncedRead({ load: async () => ({ calendars: await loadMirroredCalendars(phone) }), onChange: (state) => (shown = state.data?.calendars ?? null) });
+    const row = () => (shown as MirroredCalendar[] | null)?.find((calendar) => calendar.id === target.id);
+    try {
+      await vi.waitFor(() => expect(row()).toBeDefined());
+      const queues: Record<string, Promise<void>> = {};
+      const refused = chooseCalendar(read, queues, phone, target.id, { profile_id: foreign.id });
+      const kept = chooseCalendar(read, queues, phone, target.id, { selected: true });
+      await expect(refused).rejects.toBeTruthy();
+      await kept;
+      await read.readBack();
+      expect(row()).toMatchObject({ selected: true, profile_id: null });
+    } finally {
+      read.stop();
+    }
   });
 
   it('lists the account’s selected calendars first', async () => {

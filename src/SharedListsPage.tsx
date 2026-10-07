@@ -22,7 +22,6 @@ import {
 } from './lib/shared-lists';
 import { rootFontSize } from './lib/home-layout';
 import type { Household } from './lib/household';
-import { useRefetchOn } from './lib/change-feed';
 import { focusElement } from './lib/focus';
 import { useStatusLine } from './lib/status-line';
 import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
@@ -33,6 +32,7 @@ import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, Tick } from './components/people';
 import { Problem } from './components/phone';
 import { Button } from './components/ui/button';
+import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
 // ---- The wall ------------------------------------------------------------------------
 
@@ -479,9 +479,20 @@ function ItemsEditor({ listId, listName }: { listId: string; listName: string })
 }
 
 export function SharedListsPage({ household }: { household: Household }) {
-  const [lists, setLists] = useState<SharedList[] | null>(null);
-  const [pinnedId, setPinnedId] = useState<string | null>(null);
-  const [problem, setProblem] = useState('');
+  // Read through the synced read; a change is written through it, then read back before the page moves on.
+  const read = useSyncedRead(
+    async () => {
+      const [lists, pinnedId] = await Promise.all([loadLists(supabase), loadPinnedListId(supabase)]);
+      return { lists, pinnedId };
+    },
+    LIST_TABLES,
+    'lists',
+  );
+  const lists = read.data?.lists ?? null;
+  const pinnedId = read.data?.pinnedId ?? null;
+  // What the last change said when it failed, else that the page could not be read.
+  const [changeProblem, setProblem] = useState('');
+  const problem = changeProblem || (read.failed ? couldNotLoad('lists') : '');
   const [newName, setNewName] = useState('');
   // How many times each form was asked to save with no name, which it says in its own line (a rename counts with the rename, so it
   // starts again with each).
@@ -492,32 +503,17 @@ export function SharedListsPage({ household }: { household: Household }) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const [found, pinned] = await Promise.all([loadLists(supabase), loadPinnedListId(supabase)]);
-      setLists(found);
-      setPinnedId(pinned);
-    } catch {
-      setProblem('Could not load lists. Check your connection.');
-    }
-  }, []);
-  useRefetchOn(LIST_TABLES, () => void refresh());
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
   // Runs one change, then reloads so the screen shows what the database holds. Says whether it was made.
   async function change(work: () => Promise<void>, failure: string): Promise<boolean> {
     let made = true;
     try {
-      await work();
+      await read.write(work);
       setProblem('');
     } catch {
       setProblem(failure);
       made = false;
     }
-    await refresh();
+    await read.readBack();
     return made;
   }
 

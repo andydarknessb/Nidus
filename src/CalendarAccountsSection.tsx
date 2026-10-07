@@ -1,31 +1,28 @@
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { EmptyRing, Tick } from '@/components/people';
 import { Card, Confirm, Field, Problem, fieldClass, helpClass, labelClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { useRefetchOn } from '@/lib/change-feed';
 import {
   accountStatusText,
   addIphoneCalendar,
   pressAdd,
   calendarsOfAccount,
+  chooseCalendar,
   lastSyncedText,
   loadCalendarAccounts,
   loadMirroredCalendars,
   removeCalendarAccount,
-  shownCalendar,
   startCalendarConnect,
-  stillPending,
-  updateMirroredCalendar,
   type CalendarAccount,
   type MirroredCalendar,
-  type PendingChoice,
 } from '@/lib/calendar-accounts';
 import { loadProfiles, type Profile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 import { useWriteProblem } from '@/lib/use-write-problem';
 import { useStatusLine } from '@/lib/status-line';
 import { type Said } from '@/lib/write-failure';
+import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
 
 const CALENDAR_TABLES = ['calendar_accounts', 'mirrored_calendars', 'profiles'] as const;
 
@@ -252,13 +249,25 @@ export function IphoneCalendarForm({
 
 // Settings, phone only: connect a Google account, choose which of its calendars are mirrored and whose they are, and remove an
 // account. A Device never gets this screen.
+const NONE: MirroredCalendar[] = [];
+const NO_PROFILES: Profile[] = [];
+
 export function CalendarAccountsSection() {
-  const [accounts, setAccounts] = useState<CalendarAccount[] | null>(null);
-  const [calendars, setCalendars] = useState<MirroredCalendar[]>([]);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  // A trouble reading, which a read that works takes away. What a write said of itself is kept apart (useWriteProblem): a good read,
-  // each minute, says nothing of whether a write did.
-  const [loadProblem, setLoadProblem] = useState<string | null>(null);
+  // Read through the synced read. A choice of calendar or person is a pending change on it: it shows at once, goes back if its write
+  // fails, and choices stay in the order they were made. A trouble reading, which a read that works takes away, is kept apart from
+  // what a write said of itself (useWriteProblem): a good read says nothing of whether a write did.
+  const read = useSyncedRead(
+    async () => {
+      const [accounts, calendars, profiles] = await Promise.all([loadCalendarAccounts(supabase), loadMirroredCalendars(supabase), loadProfiles(supabase)]);
+      return { accounts, calendars, profiles };
+    },
+    CALENDAR_TABLES,
+    'calendars',
+  );
+  const accounts = read.data?.accounts ?? null;
+  const calendars = read.data?.calendars ?? NONE;
+  const profiles = read.data?.profiles ?? NO_PROFILES;
+  const loadProblem = read.failed ? couldNotLoad('your calendars') : null;
   const problems = useWriteProblem();
   const [notice, setNotice] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
@@ -270,29 +279,11 @@ export function CalendarAccountsSection() {
   const addState = useRef({ adding: false });
   const iphoneLinkNow = useRef('');
   const say = useStatusLine();
-  // What has been asked of each calendar and not answered yet, laid over what is stored so that a tick shows at once; and, for each
-  // calendar, the writes in the order they were asked, so that the last asked is the last written.
-  const [pending, setPending] = useState<Record<string, PendingChoice>>({});
+  // For each calendar, its writes in the order they were asked, so that the last asked is the last written.
   const writes = useRef<Record<string, Promise<void>>>({});
   const [focusNext, setFocusNext] = useState<string | null>(null);
   // Ticks each minute so "last synced N minutes ago" keeps up without a reload.
   const [now, setNow] = useState(() => Date.now());
-
-  const refresh = useCallback(async () => {
-    try {
-      const [nextAccounts, nextCalendars, nextProfiles] = await Promise.all([
-        loadCalendarAccounts(supabase),
-        loadMirroredCalendars(supabase),
-        loadProfiles(supabase),
-      ]);
-      setAccounts(nextAccounts);
-      setCalendars(nextCalendars);
-      setProfiles(nextProfiles);
-      setLoadProblem(null);
-    } catch {
-      setLoadProblem('Could not load your calendars. Check your connection.');
-    }
-  }, []);
 
   // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
   useEffect(() => {
@@ -302,17 +293,9 @@ export function CalendarAccountsSection() {
   }, [focusNext]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  useRefetchOn(CALENDAR_TABLES, () => void refresh());
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      setNow(Date.now());
-      void refresh();
-    }, 60_000);
+    const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
-  }, [refresh]);
+  }, []);
 
   async function connect() {
     setNotice(null);
@@ -355,33 +338,19 @@ export function CalendarAccountsSection() {
   // is stored, and says so under that row (what an earlier try of that row said stays until this one answers). Writes to one
   // calendar go in the order they were asked.
   function choose(calendar: MirroredCalendar, change: { selected: boolean } | { profile_id: string | null }) {
-    const id = calendar.id;
-    setPending((all) => ({ ...all, [id]: { ...all[id], ...change } }));
-    writes.current[id] = (writes.current[id] ?? Promise.resolve()).then(async () => {
-      try {
-        await updateMirroredCalendar(supabase, id, change);
-        setCalendars((rows) => rows.map((row) => (row.id === id ? { ...row, ...change } : row)));
-        problems.clear(calendarPlace(id));
-      } catch (error) {
-        problems.fail(calendarPlace(id), error);
-      }
-      setPending((all) => {
-        const next = { ...all };
-        const left = stillPending(all[id], change);
-        if (left === undefined) delete next[id];
-        else next[id] = left;
-        return next;
-      });
-      void refresh();
-    });
+    chooseCalendar(read, writes.current, supabase, calendar.id, change).then(
+      () => problems.clear(calendarPlace(calendar.id)),
+      (error: unknown) => problems.fail(calendarPlace(calendar.id), error),
+    );
   }
+
 
   async function remove(account: CalendarAccount) {
     if (removing) return;
     setRemoving(true);
     let failed = false;
     try {
-      await removeCalendarAccount(supabase, account.id);
+      await read.write(() => removeCalendarAccount(supabase, account.id));
       problems.clear(removePlace(account.id));
       if (account.provider === 'icloud') say('iPhone calendar removed.');
       else setNotice('Account removed.');
@@ -395,21 +364,19 @@ export function CalendarAccountsSection() {
       setConfirming(null);
       setFocusNext(account.provider === 'icloud' ? IPHONE_LINK : 'connect-google');
     }
-    void refresh();
   }
 
   // Adds the pasted link as an iPhone calendar (pressAdd says what each answer comes to). The route's own words are said under the
   // field when it refuses; any other failure is worded as every write on this page is.
   async function addIphone() {
     setAdding(true);
-    const result = await pressAdd({ link: iphoneLink, state: addState.current, current: () => iphoneLinkNow.current, add: (url) => addIphoneCalendar(supabase, url) });
+    const result = await pressAdd({ link: iphoneLink, state: addState.current, current: () => iphoneLinkNow.current, add: (url) => read.write(() => addIphoneCalendar(supabase, url)) });
     if (result.kind === 'ignored') return;
     setAdding(false);
     if (result.kind === 'added') {
       problems.clear(ADD_IPHONE);
       if (result.clear) changeIphoneLink('');
       say(result.say);
-      void refresh();
     } else if (result.kind === 'refused') problems.say(ADD_IPHONE, result.words);
     else problems.fail(ADD_IPHONE, result.error);
   }
@@ -422,7 +389,7 @@ export function CalendarAccountsSection() {
     <AccountBlock
       key={account.id}
       account={account}
-      calendars={calendarsOfAccount(calendars, account.id).map((calendar) => shownCalendar(calendar, pending[calendar.id]))}
+      calendars={calendarsOfAccount(calendars, account.id)}
       profiles={profiles}
       now={now}
       confirming={confirming === account.id}

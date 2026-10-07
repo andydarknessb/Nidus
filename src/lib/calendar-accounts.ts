@@ -1,4 +1,5 @@
 import { FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
+import type { SyncedRead } from './synced-read';
 
 // Calendar Accounts and Mirrored Calendars (CONTEXT.md). Every function takes the
 // client so the same code runs in the app and in tests against the local stack.
@@ -121,30 +122,31 @@ export async function updateMirroredCalendar(
   if (error) throw error;
 }
 
+// A calendar's switch or its person, through the synced read that shows the calendars: shown at once, gone back if the write fails,
+// and written in the order asked for that calendar (`queues` holds each calendar's last write), so the last asked is the last
+// written. Rejects as the write does.
+export function chooseCalendar<T extends { calendars: MirroredCalendar[] }>(
+  read: Pick<SyncedRead<T>, 'write'>,
+  queues: Record<string, Promise<void>>,
+  client: SupabaseClient,
+  id: string,
+  choice: MirroredCalendarChoice,
+): Promise<void> {
+  const turn = (queues[id] ?? Promise.resolve()).then(() => updateMirroredCalendar(client, id, choice));
+  queues[id] = turn.then(
+    () => undefined,
+    () => undefined,
+  );
+  return read.write(
+    () => turn,
+    (shown) => ({ ...shown, calendars: shown.calendars.map((row) => (row.id === id ? { ...row, ...choice } : row)) }),
+  );
+}
+
 // Deletes the account; the database drops its Vault secret and its Mirrored Calendars with it.
 export async function removeCalendarAccount(client: SupabaseClient, id: string): Promise<void> {
   const { error } = await client.from('calendar_accounts').delete().eq('id', id);
   if (error) throw error;
-}
-
-// What the screen has asked of a calendar that has not been answered yet (one field, or both asked at different moments).
-export type PendingChoice = { selected?: boolean; profile_id?: string | null };
-
-// A calendar as the screen shows it while its changes are on their way: what is stored with what was asked laid over it, so that a
-// tick shows at once and a person chosen shows at once.
-export function shownCalendar(calendar: MirroredCalendar, pending: PendingChoice | undefined): MirroredCalendar {
-  return pending === undefined ? calendar : { ...calendar, ...pending };
-}
-
-// What is still pending of a calendar once `answered` has been answered, whether it landed or failed: a field that is still what
-// that change asked for is no longer pending (it is stored, or it goes back to what is stored), and a field asked for again since,
-// which has an answer of its own to wait for, stays. Nothing left is undefined.
-export function stillPending(pending: PendingChoice | undefined, answered: PendingChoice): PendingChoice | undefined {
-  if (pending === undefined) return undefined;
-  const left: PendingChoice = { ...pending };
-  if ('selected' in answered && left.selected === answered.selected) delete left.selected;
-  if ('profile_id' in answered && left.profile_id === answered.profile_id) delete left.profile_id;
-  return Object.keys(left).length === 0 ? undefined : left;
 }
 
 // The account's calendars, selected ones first, the way the screen lists them.

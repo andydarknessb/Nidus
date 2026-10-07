@@ -12,7 +12,7 @@ import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '..
 import { Confirm } from '../src/components/phone';
 import { Button } from '../src/components/ui/button';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
-import { ICLOUD_TRUNCATED_WORDS, UPDATE_FAILED_WORDS, accountStatusText, shownCalendar, stillPending, type CalendarAccount, type MirroredCalendar } from '../src/lib/calendar-accounts';
+import { ICLOUD_TRUNCATED_WORDS, UPDATE_FAILED_WORDS, accountStatusText, type CalendarAccount, type MirroredCalendar } from '../src/lib/calendar-accounts';
 import { seenWords } from '../src/lib/device-format';
 import type { Household } from '../src/lib/household';
 import { TOKENS } from '../src/lib/look';
@@ -819,33 +819,6 @@ describe('the phone forms that ask for a name', () => {
     expect(markup).toMatch(/<form[^>]*\bnoValidate=""[^>]*>[\s\S]*?Add list/);
     expect(markup).not.toContain('role="alert"');
     expect(words(markup)).not.toContain(giveName('list'));
-  });
-});
-
-// A calendar's switch and its person are sent one at a time, shown at once, and put back if the write fails.
-describe("a calendar's choices, one field at a time", () => {
-  const family = { id: 'c1', calendar_account_id: 'a1', google_calendar_id: 'g1', name: 'Family', color: null, profile_id: null, selected: true };
-
-  it('are shown at once, laid over what is stored', () => {
-    expect(shownCalendar(family, undefined)).toBe(family);
-    expect(shownCalendar(family, { selected: false })).toEqual({ ...family, selected: false });
-    expect(shownCalendar(family, { profile_id: 'p1' })).toEqual({ ...family, profile_id: 'p1' });
-    expect(shownCalendar(family, { selected: false, profile_id: 'p1' })).toEqual({ ...family, selected: false, profile_id: 'p1' });
-  });
-
-  it('stop being pending when they are answered, whether they landed or failed', () => {
-    expect(stillPending({ selected: false }, { selected: false })).toBeUndefined();
-    expect(stillPending({ profile_id: 'p1' }, { profile_id: 'p1' })).toBeUndefined();
-    expect(stillPending({ selected: false, profile_id: 'p1' }, { selected: false })).toEqual({ profile_id: 'p1' });
-  });
-
-  it('stay pending for a field that was asked for again since: it has an answer of its own to wait for', () => {
-    expect(stillPending({ selected: true }, { selected: false })).toEqual({ selected: true });
-    expect(stillPending({ profile_id: null }, { profile_id: 'p1' })).toEqual({ profile_id: null });
-  });
-
-  it('are nothing to answer for a calendar with nothing pending', () => {
-    expect(stillPending(undefined, { selected: true })).toBeUndefined();
   });
 });
 
