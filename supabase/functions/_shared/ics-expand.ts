@@ -444,18 +444,24 @@ function expand(
         const emit = emitterFor(s);
         // A rule's first occurrence is DTSTART.
         if (!emit(s.layout.start)) continue;
-        // Before the iterator is made or its first step taken: a series that starts with the run out of
-        // steps or time cannot be read, however long the one before it left the clock.
-        if (run.remaining <= 0 || outOfTime()) throw new FeedTooLargeError();
-        const lengthBound = s.layout.isAllDay ? s.layout.lengthDays * DAY_MS : s.layout.lengthMs;
-        const steps: { next(): ICAL.Time | null | undefined } =
-          (run.noFastForward ? null : fastForwarded(s.ev, s.layout.start, lengthBound, windowStartMs)) ?? s.ev.iterator();
         const rule = s.ev.component.getFirstPropertyValue('rrule');
         // A monthly BYSETPOS step costs 0.7 ms, so its walk is cut at what an admitted series needs (the
         // steps of the age limit and the window, with a margin) however it is reached: a series with an
         // occurrence years long, moved to a month before the window, would otherwise step to the row cap.
         // (A test that turns the skip off reads the plain walk whole.)
         const setpos = rule instanceof ICAL.Recur && rule.freq === 'MONTHLY' && rule.parts['BYSETPOS'] !== undefined && !run.noFastForward;
+        // The feed's BYSETPOS steps are spent: this series is cut before its iterator is made, which
+        // would itself cost a step's time for every one of however many such series the feed holds.
+        if (setpos && setposBudget <= 0) {
+          truncated = true;
+          continue;
+        }
+        // Before the iterator is made or its first step taken: a series that starts with the run out of
+        // steps or time cannot be read, however long the one before it left the clock.
+        if (run.remaining <= 0 || outOfTime()) throw new FeedTooLargeError();
+        const lengthBound = s.layout.isAllDay ? s.layout.lengthDays * DAY_MS : s.layout.lengthMs;
+        const steps: { next(): ICAL.Time | null | undefined } =
+          (run.noFastForward ? null : fastForwarded(s.ev, s.layout.start, lengthBound, windowStartMs)) ?? s.ev.iterator();
         const cap = setpos ? Math.min(MAX_STEPS_PER_EVENT, MAX_SETPOS_STEPS + Math.ceil((windowEndMs - windowStartMs) / (28 * DAY_MS)) + SETPOS_MARGIN) : MAX_STEPS_PER_EVENT;
         let n = 0;
         for (let next = steps.next(); next; next = steps.next()) {

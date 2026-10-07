@@ -501,9 +501,23 @@ describe('expandFeed: the time limit of a run', () => {
       event(`DTSTART:200709${day}T140000Z\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=600`, `s${day}`);
     const { rows, truncated } = read(feed(dentist, ...[11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(series)), run);
     expect(ids(rows)).toContain('dentist');
-    // Newest start first: the two newest are walked to the window and have its six months.
+    // Newest start first: the two newest are walked to the window and have its six months; the rest are cut.
     expect(ids(rows).filter((id) => id === 's20')).toHaveLength(6);
     expect(ids(rows).filter((id) => id === 's19')).toHaveLength(6);
+    expect(rows).toHaveLength(13);
+    expect(truncated).toBe(true);
+    expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+  });
+
+  it('does not start a monthly BYSETPOS series once the feed has spent its steps, however many there are', () => {
+    // Starting a series reads the clock before its iterator is made and again at its first step.
+    let t = 0;
+    const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0, now: () => (t += 0.7) };
+    const many = Array.from({ length: 600 }, (_, i) =>
+      event('DTSTART:20070901T140000Z\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=600', `m${String(i).padStart(3, '0')}`),
+    );
+    const { rows, truncated } = read(feed(dentist, ...many), run);
+    expect(ids(rows)).toContain('dentist');
     expect(truncated).toBe(true);
     expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
   });
