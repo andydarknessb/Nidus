@@ -492,6 +492,22 @@ describe('expandFeed: the time limit of a run', () => {
     expect(run.spentMs).toBeGreaterThanOrEqual(MAX_EXPANSION_MS - 1);
   });
 
+  it('cuts the monthly BYSETPOS series of a feed at a step budget, so the feed syncs rather than running out the clock', () => {
+    // A clock that moves 0.7 ms a read: a monthly BYSETPOS step costs about that. Ten series that each
+    // need about 235 steps (walked from DTSTART, 19 years before the window) would spend 1.6 s together.
+    let t = 0;
+    const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0, now: () => (t += 0.7) };
+    const series = (day: number) =>
+      event(`DTSTART:200709${day}T140000Z\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=600`, `s${day}`);
+    const { rows, truncated } = read(feed(dentist, ...[11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(series)), run);
+    expect(ids(rows)).toContain('dentist');
+    // Newest start first: the two newest are walked to the window and have its six months.
+    expect(ids(rows).filter((id) => id === 's20')).toHaveLength(6);
+    expect(ids(rows).filter((id) => id === 's19')).toHaveLength(6);
+    expect(truncated).toBe(true);
+    expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+  });
+
   it('does not stop a walk while the time is within the limit', () => {
     const run = budget();
     // Daily since mid-2025, to the end of the window: the 181 days of it are rows.

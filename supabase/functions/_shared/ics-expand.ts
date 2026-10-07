@@ -124,6 +124,10 @@ const MAX_INTERVAL = 999;
 
 const MAX_SETPOS_STEPS = 240;
 const SETPOS_MARGIN = 24;
+// A monthly BYSETPOS step costs about 0.7 ms, so one feed may spend only this many of them across all its
+// series (about 420 ms): a feed of several series near MAX_SETPOS_STEPS is cut and synced, not left to
+// run out the clock, which stores nothing.
+const MAX_SETPOS_STEPS_PER_FEED = 600;
 
 const BARE_DAY = /^(SU|MO|TU|WE|TH|FR|SA)$/;
 const ORDINAL_DAY = /^([+-]?\d{1,2})(SU|MO|TU|WE|TH|FR|SA)$/;
@@ -430,6 +434,7 @@ function expand(
     const fixed = new Set(rows.keys());
 
     let budget = MAX_STEPS_PER_FEED;
+    let setposBudget = MAX_SETPOS_STEPS_PER_FEED;
     for (const s of repeating) {
       if (rows.size >= MAX_PER_FEED) {
         truncated = true;
@@ -454,7 +459,7 @@ function expand(
         const cap = setpos ? Math.min(MAX_STEPS_PER_EVENT, MAX_SETPOS_STEPS + Math.ceil((windowEndMs - windowStartMs) / (28 * DAY_MS)) + SETPOS_MARGIN) : MAX_STEPS_PER_EVENT;
         let n = 0;
         for (let next = steps.next(); next; next = steps.next()) {
-          if (n >= cap || budget <= 0) {
+          if (n >= cap || budget <= 0 || (setpos && setposBudget <= 0)) {
             truncated = true;
             break;
           }
@@ -462,6 +467,7 @@ function expand(
           if (run.remaining <= 0 || outOfTime()) throw new FeedTooLargeError();
           n += 1;
           budget -= 1;
+          if (setpos) setposBudget -= 1;
           run.remaining -= 1;
           if (!emit(next)) break;
         }
