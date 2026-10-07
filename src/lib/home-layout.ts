@@ -38,10 +38,12 @@ export function homeLayout({ width, height, rem = 16 }: { width: number; height:
   return { days, tiles: tall < 760 ? (rem > 16 && tall < ONE_TILE_BELOW ? 1 : 2) : 3, phone, portrait: !phone && width > 0 && height > width };
 }
 
-// Home's grid: the days and the rail side by side, or in portrait the days over the rail, which takes the height Up next needs.
+// Home's grid: the days and the rail side by side, or in portrait the days over the rail, which takes the height Up next needs but
+// never less than three tiles' worth: 21 rem is Up next's card with three tiles (24 padding + 48 heading + 8 gap + 3 x 80 tiles + 2 x 8 gaps =
+// 336 px, UpNext.tsx), so the Pinned List's card keeps its rows and the calendar does not jump when tiles come and go.
 export const homeGrid = (portrait: boolean) =>
   portrait
-    ? 'grid min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] gap-4'
+    ? 'grid min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_minmax(21rem,auto)] gap-4'
     : 'grid min-h-0 grid-cols-[minmax(0,1fr)_min(20rem,max(320px,27vw))] gap-4';
 
 function subscribe(onChange: () => void) {
