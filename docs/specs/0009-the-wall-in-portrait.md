@@ -63,9 +63,9 @@ The decisions:
 
 ### The other screens
 
-- Month: the grid keeps seven columns. At the P12's narrow width a Month line shows its time, its discs and what is left of its title, by the line's rule; on a line too narrow for its pin, its time and its discs (a container query on the line, so larger text gets the same) the pin gives way first and the time's end last, and a disc is never cut ().
+- Month: the grid keeps seven columns. At the P12's narrow width a Month line shows its time, its discs and what is left of its title, by the line's rule; on a line too narrow for its pin, its time and its discs (a container query on the line, so larger text gets the same) the pin gives way first and the time's end last, and a disc is never cut (`src/components/MonthCell.tsx`).
 - Day: one column, unchanged.
-- Routines and Lists (, ): in portrait the row of people's columns and the row of list cards wrap (), as many to a row as fit at their landscape widths (a column at least 17 rem and at most , a card at least 17 rem), the rows 16 apart. A column or a card is its natural height, with no More foot of its own, and the chart or the screen scrolls as one column with the shared More foot named "routines" or "lists". The heading row's sideways More is not drawn. Landscape is unchanged class for class. Ticket #168.
+- Routines and Lists (`src/RoutinesPage.tsx`, `src/SharedListsPage.tsx`): in portrait the row of people's columns and the row of list cards wrap (`flex-wrap`), as many to a row as fit at their landscape widths (a column at least 17 rem and at most `max-w-md`, a card at least 17 rem), the rows 16 apart. A column or a card is its natural height, with no More foot of its own, and the chart or the screen scrolls as one column with the shared More foot named "routines" or "lists". The heading row's sideways More is not drawn. Landscape is unchanged class for class. Ticket #168.
 - Sheets: the Add event sheet is one column below 960 px wide and two from it, as now; a portrait P12 is on either side of that line depending on its Display size, and both are right. Every other sheet is the same card on the scrim.
 - At 920 by 1472 and 1082 by 1732, in both modes, every screen is checked by eye and by measure: nothing cut, nothing under 48 px, nothing under the 14 px floor. What is found is fixed in the ticket that finds it.
 
