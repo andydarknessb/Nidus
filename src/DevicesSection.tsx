@@ -1,11 +1,11 @@
 import { ChevronDown, ChevronRight, Plus, Tablet } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { useRefetchOn } from '@/lib/change-feed';
-import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice, type Device } from '@/lib/device';
+import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice } from '@/lib/device';
 import { seenWords } from '@/lib/device-format';
 import { useWriteProblem } from '@/lib/use-write-problem';
+import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
 
 const DEVICE_TABLES = ['devices'] as const;
 
@@ -34,11 +34,13 @@ const problemId = (place: string) => `problem-${place}`;
 // Settings, phone only: the Wall tablets (Devices). Pair one with the code it shows, see when each was last seen, and unpair one
 // (revoke its Device), which sends it back to asking for a code. A Device never gets this screen.
 export function DevicesSection() {
-  const [devices, setDevices] = useState<Device[] | null>(null);
-  const [now, setNow] = useState(() => new Date());
-  // A trouble reading, which a read that works takes away, every 30 seconds. What a write said of itself is kept apart: a good read
-  // says nothing of whether the unpairing did, so its words stay while its question is open.
-  const [loadProblem, setLoadProblem] = useState<string | null>(null);
+  // Read through the synced read: every 30 seconds keeps "last seen" honest while the page stays open, and a read follows each
+  // write. A trouble reading, which a read that works takes away, is kept apart from what a write said of itself: a good read says
+  // nothing of whether the unpairing did, so its words stay while its question is open.
+  const read = useSyncedRead(async () => ({ devices: await listDevices(), now: new Date() }), DEVICE_TABLES, 'devices');
+  const devices = read.data?.devices ?? null;
+  const now = read.data?.now ?? new Date();
+  const loadProblem = read.failed ? couldNotLoad('tablets') : null;
   const problems = useWriteProblem();
   const [pairing, setPairing] = useState<{ code: string; name: string } | null>(null);
   const [pairStatus, setPairStatus] = useState<PairStatus>('idle');
@@ -57,24 +59,6 @@ export function DevicesSection() {
     setFocusNext(null);
   }, [focusNext]);
 
-  const refresh = useCallback(async () => {
-    try {
-      setDevices(await listDevices());
-      setNow(new Date());
-      setLoadProblem(null);
-    } catch {
-      setLoadProblem('Could not load tablets. Check your connection.');
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-    // Keeps "last seen" honest while the page stays open.
-    const id = setInterval(() => void refresh(), 30_000);
-    return () => clearInterval(id);
-  }, [refresh]);
-  useRefetchOn(DEVICE_TABLES, () => void refresh());
-
   async function pair(event: FormEvent) {
     event.preventDefault();
     if (!pairing || working.current) return;
@@ -82,7 +66,7 @@ export function DevicesSection() {
     setBusy(true);
     setPairStatus('pairing');
     try {
-      await claimPairingCode(pairing.code, pairing.name);
+      await read.write(() => claimPairingCode(pairing.code, pairing.name));
       problems.clear(PAIR);
     } catch (error) {
       setPairStatus('idle');
@@ -98,7 +82,6 @@ export function DevicesSection() {
     setFocusNext(PAIR_ID);
     working.current = false;
     setBusy(false);
-    await refresh();
   }
 
   async function unpair(id: string) {
@@ -106,7 +89,7 @@ export function DevicesSection() {
     working.current = true;
     setBusy(true);
     try {
-      await revokeDevice(id);
+      await read.write(() => revokeDevice(id));
       problems.clear(unpairPlace(id));
     } catch (error) {
       problems.fail(unpairPlace(id), error);
@@ -118,7 +101,6 @@ export function DevicesSection() {
     setFocusNext(PAIR_ID);
     working.current = false;
     setBusy(false);
-    await refresh();
   }
 
   const pairProblem = problems.at(PAIR);

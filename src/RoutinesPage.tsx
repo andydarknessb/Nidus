@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import { ArrowDown, ArrowUp, Star, type LucideIcon } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type Ref } from 'react';
+import { Fragment, useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type Ref } from 'react';
 import { EmptyWords } from './components/EmptyWords';
 import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, MAX_PIPS, PersonDisc, Pips, Tick } from './components/people';
@@ -34,14 +34,13 @@ import {
   type TimeOfDay,
 } from './lib/routines';
 import { PictureField, RoutinePicture } from './lib/routine-pictures';
-import { useRefetchOn } from './lib/change-feed';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
 import { CHART_CHOICES, PART_ICON, WORDS, timeWord, useChartPart } from './lib/routine-chart';
 import { useOverflow } from './lib/use-overflow';
 import { useCelebration, type RoutinesToday } from './lib/use-routines-today';
 import { unnamed } from './lib/write-failure';
-import { couldNotLoad } from './lib/synced-read';
+import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
 // ---- The wall: the Routines chart, and the tile that Up next shares --------------------------------
 
@@ -616,10 +615,23 @@ export function RoutineForm({
   );
 }
 
+const NO_ROUTINES: Routine[] = [];
+
 export function RoutinesPage({ household }: { household: Household }) {
-  const [profiles, setProfiles] = useState<Profile[] | null>(null);
-  const [routines, setRoutines] = useState<Routine[]>([]);
-  const [problem, setProblem] = useState('');
+  // Read through the synced read; a change is written through it, then read back before the page moves on.
+  const read = useSyncedRead(
+    async () => {
+      const [profiles, routines] = await Promise.all([loadProfiles(supabase), loadRoutines(supabase)]);
+      return { profiles, routines };
+    },
+    ROUTINE_TABLES,
+    'routines',
+  );
+  const profiles = read.data?.profiles ?? null;
+  const routines = read.data?.routines ?? NO_ROUTINES;
+  // What the last change said when it failed, else that the page could not be read.
+  const [changeProblem, setProblem] = useState('');
+  const problem = changeProblem || (read.failed ? couldNotLoad('routines') : '');
   const [confirming, setConfirming] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   // Which Routine's form is open right now. A save that finishes late looks here, not at the render it began in.
@@ -633,33 +645,18 @@ export function RoutinesPage({ household }: { household: Household }) {
     setFocusNext(null);
   }, [focusNext]);
 
-  const refresh = useCallback(async () => {
-    try {
-      const [foundProfiles, foundRoutines] = await Promise.all([loadProfiles(supabase), loadRoutines(supabase)]);
-      setProfiles(foundProfiles);
-      setRoutines(foundRoutines);
-    } catch {
-      setProblem('Could not load routines. Check your connection.');
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  useRefetchOn(ROUTINE_TABLES, () => void refresh());
-
   // Runs one change, then reloads so the screen shows what the database holds. A failure is said in
   // the status line; a form that says so itself, beside its Save, passes no failure.
   async function change(work: () => Promise<void>, failure = ''): Promise<boolean> {
     let ok = true;
     try {
-      await work();
+      await read.write(work);
       setProblem('');
     } catch {
       setProblem(failure);
       ok = false;
     }
-    await refresh();
+    await read.readBack();
     return ok;
   }
 

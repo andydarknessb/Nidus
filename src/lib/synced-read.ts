@@ -15,18 +15,22 @@ import { keepIfSame } from './same-data';
 //   of what is shown. A failed write takes back only its own change; a saved one stays shown until
 //   the read after it lands, and that read replaces everything.
 // - A failed read keeps what is shown. `unread` is a failure with nothing ever loaded: the only
-//   time a screen says it could not load.
+//   time a Wall screen says it could not load. `error` is what the last read failed with, for a
+//   screen whose words depend on it.
 
 export const REFRESH_MS = 30_000;
 export const RETRY_MS = 5_000;
 
-export type SyncedState<T> = { data: T | null; failed: boolean; unread: boolean };
+export type SyncedState<T> = { data: T | null; failed: boolean; unread: boolean; error: unknown };
 
 export interface SyncedRead<T> {
   // A change notice: read now, or once more after the read in flight. Waits for writes in flight.
   poke(): void;
-  // Runs `work`, showing `change` until it fails or the read after it lands. Rejects as `work` does.
-  write<R>(work: () => Promise<R>, change?: (shown: T) => T): Promise<R>;
+  // Runs `work`, showing `change` until it fails or the read after it lands, and what `landed` makes of its result from when it
+  // lands until that read (none, when it gives nothing). Rejects as `work` does.
+  write<R>(work: () => Promise<R>, change?: (shown: T) => T, landed?: (result: R) => ((shown: T) => T) | undefined): Promise<R>;
+  // Settles once a read begun after every write so far has settled, worked or not: a form that closes on a save reads it back first.
+  readBack(): Promise<void>;
   // Nothing is shown or read after this.
   stop(): void;
 }
@@ -35,7 +39,7 @@ export function startSyncedRead<T>(options: { load: () => Promise<T>; onChange: 
   const { load, onChange } = options;
   let live = true;
   let read: T | null = null;
-  let failed = false;
+  let error: unknown = null;
   let pending: { change: (shown: T) => T }[] = [];
   let writes = 0;
   // Counts reads started and writes begun or ended: a read from before the latest of either is stale.
@@ -44,11 +48,15 @@ export function startSyncedRead<T>(options: { load: () => Promise<T>; onChange: 
   let poked = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let said: SyncedState<T> | null = null;
+  // Who is waiting on readBack: told when a read that was not stale settles.
+  let waiting: (() => void)[] = [];
 
   const notify = () => {
     const data = read === null ? null : pending.reduce<T>((shown, entry) => entry.change(shown), read);
-    const state = { data, failed, unread: failed && read === null };
-    if (said && said.data === state.data && said.failed === state.failed && said.unread === state.unread) return;
+    const failed = error !== null;
+    const state = { data, failed, unread: failed && read === null, error };
+    // A read that fails again, or finds what is shown, says nothing new: an offline screen is not drawn again every few seconds.
+    if (said && said.data === state.data && said.failed === state.failed) return;
     said = state;
     onChange(state);
   };
@@ -64,17 +72,24 @@ export function startSyncedRead<T>(options: { load: () => Promise<T>; onChange: 
       if (live && epoch === started && writes === 0) {
         read = keepIfSame(read, value);
         pending = [];
-        failed = false;
+        error = null;
         notify();
       }
-    } catch {
+    } catch (failure) {
       delay = RETRY_MS;
       if (live && epoch === started) {
-        failed = true;
+        // Never null, so a read that failed is told from one that did not.
+        error = failure ?? new Error('read failed');
         notify();
       }
     }
     reading = false;
+    // No write began or ended while it ran (a write in flight makes epoch move when it ends): a read back.
+    if (epoch === started && writes === 0) {
+      const told = waiting;
+      waiting = [];
+      for (const tell of told) tell();
+    }
     if (!live || writes > 0) return;
     if (poked) void run();
     else timer = setTimeout(() => void run(), delay);
@@ -89,7 +104,7 @@ export function startSyncedRead<T>(options: { load: () => Promise<T>; onChange: 
   void run();
   return {
     poke,
-    async write(work, change) {
+    async write(work, change, landed) {
       writes += 1;
       epoch += 1;
       const entry = change ? { change } : null;
@@ -98,7 +113,13 @@ export function startSyncedRead<T>(options: { load: () => Promise<T>; onChange: 
         notify();
       }
       try {
-        return await work();
+        const result = await work();
+        const after = landed?.(result);
+        if (after) {
+          pending = [...pending, { change: after }];
+          notify();
+        }
+        return result;
       } catch (error) {
         if (entry) {
           pending = pending.filter((other) => other !== entry);
@@ -111,9 +132,19 @@ export function startSyncedRead<T>(options: { load: () => Promise<T>; onChange: 
         poke();
       }
     },
+    readBack() {
+      return new Promise<void>((resolve) => {
+        if (!live) return resolve();
+        waiting.push(resolve);
+        // In flight with no write since it began, it counts; with writes in flight, the read after the last one will.
+        if (!reading && writes === 0) void run();
+      });
+    },
     stop() {
       live = false;
       clearTimeout(timer);
+      for (const tell of waiting) tell();
+      waiting = [];
     },
   };
 }
@@ -130,8 +161,8 @@ export function useSyncedRead<T>(
   load: () => Promise<T>,
   tables: readonly WatchedTable[],
   key: string | null,
-): SyncedState<T> & { write: <R>(work: () => Promise<R>, change?: (shown: T) => T) => Promise<R> } {
-  const [state, setState] = useState<SyncedState<T>>({ data: null, failed: false, unread: false });
+): SyncedState<T> & Pick<SyncedRead<T>, 'write' | 'readBack'> & { refresh: () => void } {
+  const [state, setState] = useState<SyncedState<T>>({ data: null, failed: false, unread: false, error: null });
   const latest = useRef(load);
   useEffect(() => {
     latest.current = load;
@@ -149,6 +180,8 @@ export function useSyncedRead<T>(
     };
   }, [key]);
   useRefetchOn(tables, () => current.current?.poke());
-  const write = useCallback(<R,>(work: () => Promise<R>, change?: (shown: T) => T) => (current.current ? current.current.write(work, change) : work()), []);
-  return { ...state, write };
+  const write = useCallback<SyncedRead<T>['write']>((work, change, landed) => (current.current ? current.current.write(work, change, landed) : work()), []);
+  const refresh = useCallback(() => current.current?.poke(), []);
+  const readBack = useCallback(() => current.current?.readBack() ?? Promise.resolve(), []);
+  return { ...state, write, refresh, readBack };
 }

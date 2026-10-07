@@ -13,9 +13,8 @@ import { PeopleStrip } from './components/PeopleStrip';
 import { PhoneShell } from './components/PhoneShell';
 import { StatusLineProvider } from './components/StatusLine';
 import { WallHeader, WallTime } from './components/WallHeader';
-import { useChangeTick } from './lib/change-feed';
 import { mealsPath, onCalendarScreen, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
-import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
+import { loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { deviceStorage, gateWords, recallHousehold, rememberHousehold } from './lib/remembered-household';
 import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
@@ -32,17 +31,13 @@ import { PhoneWall } from './PhoneWall';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
 import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
-import { couldNotLoad } from './lib/synced-read';
+import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
 const HEARTBEAT_MS = 30_000;
 // While showing a code, ask often so a claim is noticed within seconds.
 const CLAIM_POLL_MS = 3_000;
 const RETRY_MS = 5_000;
-// Same cadence as the Routines read, so a changed Household Timezone reaches the wall within a read.
-const HOUSEHOLD_REFRESH_MS = 30_000;
-// After a failed Household read, retry sooner.
-const HOUSEHOLD_RETRY_MS = 5_000;
 
 // What the Household read listens to: a change to this table reads it again.
 const HOUSEHOLD_TABLES = ['households'] as const;
@@ -226,8 +221,6 @@ const VIEW_TITLES: Record<WallRoute['view'], string> = { home: 'Home', day: 'Day
 // the next meal, on every screen but Meals.
 function HomeShell({ owner }: { owner: boolean }) {
   const [route, openView, openHome, openMeals, openRoutines, openLists] = useWallRoute();
-  // The Household Timezone decides which day Up next and the Routines chart show; none until it is read.
-  const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   // Each view names itself in the document's title.
   useDocumentTitle(VIEW_TITLES[route.view]);
   // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
@@ -249,31 +242,18 @@ function HomeShell({ owner }: { owner: boolean }) {
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(0);
-  const householdChanges = useChangeTick(HOUSEHOLD_TABLES);
-  useEffect(() => {
-    let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function read() {
-      let outcome: { household: Household } | { failed: true };
-      try {
-        outcome = { household: await loadHousehold() };
-      } catch {
-        outcome = { failed: true };
-      }
-      if (!live) return;
-      if ('household' in outcome) rememberHousehold(deviceStorage(), outcome.household);
-      setView((prev) => householdViewAfter(prev, outcome));
-      // After a failed read retry sooner, so Up next appears once the connection is back.
-      timer = setTimeout(() => void read(), 'household' in outcome ? HOUSEHOLD_REFRESH_MS : HOUSEHOLD_RETRY_MS);
-    }
-
-    void read();
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [householdChanges]);
+  // The Household, read through the synced read (every 30 seconds, 5 after a failure, and at once when it changes). The Household
+  // Timezone decides which day Up next and the Routines chart show; none until it is read. Each read is remembered on the tablet.
+  const household = useSyncedRead<Household>(
+    async () => {
+      const read = await loadHousehold();
+      rememberHousehold(deviceStorage(), read);
+      return read;
+    },
+    HOUSEHOLD_TABLES,
+    'household',
+  );
+  const view = useMemo<HouseholdView>(() => ({ household: household.data, failed: household.failed }), [household.data, household.failed]);
   const timezone = view.household?.timezone ?? null;
   // How many days and Up next tiles Home holds at this screen's size, and whether the screen is a phone (below 768 px wide), which
   // swaps the chrome below and follows the phone's own light or dark setting.

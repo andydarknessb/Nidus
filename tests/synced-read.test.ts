@@ -92,15 +92,16 @@ describe('startSyncedRead', () => {
       const { read, reads, last } = harness();
       reads[0]!.reject(new Error('offline'));
       await settle();
-      expect(last()).toEqual({ data: null, failed: true, unread: true });
+      expect(last()).toMatchObject({ data: null, failed: true, unread: true });
+      expect(last()!.error).toEqual(new Error('offline'));
       read.poke();
       reads[1]!.resolve(['a']);
       await settle();
-      expect(last()).toEqual({ data: ['a'], failed: false, unread: false });
+      expect(last()).toEqual({ data: ['a'], failed: false, unread: false, error: null });
       read.poke();
       reads[2]!.reject(new Error('offline'));
       await settle();
-      expect(last()).toEqual({ data: ['a'], failed: true, unread: false });
+      expect(last()).toMatchObject({ data: ['a'], failed: true, unread: false });
     });
 
     it('keeps the shown object when a read finds the same data, and says nothing new', async () => {
@@ -109,6 +110,31 @@ describe('startSyncedRead', () => {
       await settle();
       read.poke();
       reads[1]!.resolve(['a']);
+      await settle();
+      expect(states).toHaveLength(1);
+    });
+
+    it('keeps the shown object when the read after a failure finds the same data', async () => {
+      const { read, reads, states } = harness();
+      reads[0]!.resolve(['a']);
+      await settle();
+      const shown = states[0]!.data;
+      read.poke();
+      reads[1]!.reject(new Error('offline'));
+      await settle();
+      read.poke();
+      reads[2]!.resolve(['a']);
+      await settle();
+      expect(states.map((state) => state.failed)).toEqual([false, true, false]);
+      expect(states.every((state) => state.data === shown)).toBe(true);
+    });
+
+    it('says nothing new when a read fails again, so an offline screen is not drawn every few seconds', async () => {
+      const { reads, states } = harness();
+      reads[0]!.reject(new Error('offline'));
+      await settle();
+      await vi.advanceTimersByTimeAsync(5_000);
+      reads[1]!.reject(new Error('offline'));
       await settle();
       expect(states).toHaveLength(1);
     });
@@ -205,6 +231,63 @@ describe('startSyncedRead', () => {
       expect(shown()[shown().length - 1]).toEqual(['a', 'b', 'c']);
     });
 
+    it('reads back after a write: readBack waits for the read that follows it, not one that began before', async () => {
+      const { read, reads } = harness();
+      const write = deferred<void>();
+      const writing = read.write(() => write.promise);
+      let back = false;
+      const backing = read.readBack().then(() => {
+        back = true;
+      });
+      // The first read began before the write: it is stale and does not count.
+      reads[0]!.resolve(['stale']);
+      await settle();
+      expect(back).toBe(false);
+      write.resolve();
+      await writing;
+      expect(reads).toHaveLength(2);
+      await settle();
+      expect(back).toBe(false);
+      reads[1]!.resolve(['fresh']);
+      await backing;
+      // One read after the write, not two.
+      expect(reads).toHaveLength(2);
+    });
+
+    it('reads back at once when idle, and settles on a failed read too', async () => {
+      const { read, reads } = harness();
+      reads[0]!.resolve([]);
+      await settle();
+      const backing = read.readBack();
+      expect(reads).toHaveLength(2);
+      reads[1]!.reject(new Error('offline'));
+      await expect(backing).resolves.toBeUndefined();
+    });
+
+    it('shows what a write landed with, from its result, until the read after it lands', async () => {
+      const { read, reads, shown } = harness();
+      reads[0]!.resolve(['a', 'b']);
+      await settle();
+      const write = deferred<string>();
+      const writing = read.write(() => write.promise, undefined, (gone) => (items) => items.filter((item) => item !== gone));
+      expect(shown()).toEqual([['a', 'b']]);
+      write.resolve('b');
+      await expect(writing).resolves.toBe('b');
+      expect(shown()[shown().length - 1]).toEqual(['a']);
+      reads[1]!.resolve(['a', 'c']);
+      await settle();
+      expect(shown()[shown().length - 1]).toEqual(['a', 'c']);
+    });
+
+    it('shows nothing landed when the result says nothing changed, or the write fails', async () => {
+      const { read, reads, states } = harness();
+      reads[0]!.resolve(['a']);
+      await settle();
+      await read.write(async () => false, undefined, (removed) => (removed ? () => [] : undefined));
+      await expect(read.write(() => Promise.reject(new Error('no')), undefined, () => () => [])).rejects.toThrow('no');
+      expect(states).toHaveLength(1);
+    });
+
     it('takes back only the change whose write failed, keeping one made after it', async () => {
       // Offline: Ava's tick, then Ben's. Ava's save fails; Ben's lands.
       const { read, reads, shown } = harness();
@@ -233,7 +316,7 @@ describe('startSyncedRead', () => {
       await read.write(async () => undefined, (done) => [...done, 'ava']);
       reads[1]!.reject(new Error('offline'));
       await settle();
-      expect(last()).toEqual({ data: ['ava'], failed: true, unread: false });
+      expect(last()).toMatchObject({ data: ['ava'], failed: true, unread: false });
     });
   });
 });

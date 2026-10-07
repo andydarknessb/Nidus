@@ -1,14 +1,14 @@
 import { ArrowDown, ArrowUp, Pencil, Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { DeletePerson, PersonFields, type PersonDraft } from '@/components/PersonEditor';
 import { PersonDisc } from '@/components/people';
 import { Card, Problem, buttonHalf, buttonRow } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { useRefetchOn } from '@/lib/change-feed';
-import { createProfile, deleteProfile, firstFreeColor, loadProfiles, movedIds, nextSortOrder, reorderProfiles, updateProfile, type Profile } from '@/lib/profiles';
+import { createProfile, deleteProfile, firstFreeColor, loadProfiles, movedIds, nextSortOrder, reorderProfiles, updateProfile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 import { useWriteProblem } from '@/lib/use-write-problem';
 import { giveName } from '@/lib/write-failure';
+import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
 
 const PROFILE_TABLES = ['profiles'] as const;
 
@@ -42,9 +42,11 @@ function FormTitle({ draft, title }: { draft: PersonDraft; title: string }) {
 // name and colour, move them up or down, or delete them; a new person starts on the first colour nobody has. A Device reads
 // Profiles but never gets this screen.
 export function ProfilesSection({ householdId }: { householdId: string }) {
-  const [profiles, setProfiles] = useState<Profile[] | null>(null);
-  // A trouble reading, which a read that works takes away. What a write said of itself is kept apart: a good read says nothing of it.
-  const [loadProblem, setLoadProblem] = useState<string | null>(null);
+  // Read through the synced read. A trouble reading, which a read that works takes away, is kept apart from what a write said of
+  // itself: a good read says nothing of it.
+  const read = useSyncedRead(() => loadProfiles(supabase), PROFILE_TABLES, 'profiles');
+  const profiles = read.data;
+  const loadProblem = read.failed ? couldNotLoad('people') : null;
   const problems = useWriteProblem();
   const [adding, setAdding] = useState<PersonDraft | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -60,20 +62,6 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
     setFocusNext(null);
   }, [focusNext]);
 
-  const refresh = useCallback(async () => {
-    try {
-      setProfiles(await loadProfiles(supabase));
-      setLoadProblem(null);
-    } catch {
-      setLoadProblem('Could not load people. Check your connection.');
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  useRefetchOn(PROFILE_TABLES, () => void refresh());
-
   // Runs a write. While it is on its way the buttons are `aria-disabled` and do nothing, never `disabled`: a button that is
   // disabled while it has focus drops it to the page. What an earlier try said stays where it is until this one answers, so that
   // nothing moves under the finger. A write that fails says so at once, in `place`, and the screen is read again in its own time
@@ -84,16 +72,15 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
     working.current = true;
     setBusy(true);
     try {
-      await write();
+      await read.write(write);
       problems.clear(place);
     } catch (error) {
       problems.fail(place, error, refusal === undefined ? {} : { refusal });
       working.current = false;
       setBusy(false);
-      void refresh();
       return false;
     }
-    await refresh();
+    await read.readBack();
     working.current = false;
     setBusy(false);
     return true;

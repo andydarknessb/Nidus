@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { EmptyRing, Tick } from '@/components/people';
 import { Card, Field, Problem, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { PushGoneError, REMINDER_MINUTES, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
+import { REMINDER_MINUTES, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
 import { loadPinnedListName } from '@/lib/shared-lists';
 import { supabase } from '@/lib/supabase';
 import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
+import { useSyncedRead } from '@/lib/synced-read';
 
 // What the status line says: nothing, or what the last tap did.
 export type NotificationsStatus = 'idle' | 'saved' | 'test';
@@ -139,14 +140,18 @@ export function NotificationsView({ support, state, listName, busy, status, load
   );
 }
 
-// Settings, phone only: this phone's notifications. Whether this browser can, and has, is read once; each write (turning on or
-// off, a change of what is sent, a test) is alone, and the card says what it did.
+// Settings, phone only: this phone's notifications. Whether this browser can is read once; whether it has is read through the synced
+// read (every 30 seconds, 5 after a failure, after each write, and again on coming back to the page); each write (turning on or off,
+// a change of what is sent, a test) is alone, and the card says what it did.
+const NO_TABLES = [] as const;
+
 export function NotificationsSection() {
   const [support] = useState<PushSupport>(() => (typeof window === 'undefined' ? 'unsupported' : pushSupport()));
-  const [state, setState] = useState<PushState | null>(null);
+  const read = useSyncedRead<PushState>(readPushState, NO_TABLES, support === 'supported' ? 'push' : null);
+  const state = read.data;
   const [listName, setListName] = useState<string | null>(null);
   const [status, setStatus] = useState<NotificationsStatus>('idle');
-  const [loadProblem, setLoadProblem] = useState<string | null>(null);
+  const loadProblem = read.failed ? LOAD_FAILED : null;
   const problems = useWriteProblem();
   // One write at a time: the ref is the guard, the state is what is drawn (`aria-disabled`, never `disabled`).
   const working = useRef(false);
@@ -163,17 +168,9 @@ export function NotificationsSection() {
   useEffect(() => {
     if (support !== 'supported') return;
     let live = true;
-    readPushState().then(
-      (read) => live && setState(read),
-      () => live && setLoadProblem(LOAD_FAILED),
-    );
     // Back on the page after the phone's settings: what was blocked may be allowed now. A write on its way is let finish first.
     const again = () => {
-      if (document.visibilityState !== 'visible' || working.current) return;
-      readPushState().then(
-        (read) => live && !working.current && setState(read),
-        () => undefined,
-      );
+      if (document.visibilityState === 'visible') read.refresh();
     };
     document.addEventListener('visibilitychange', again);
     // The name only words one line; without it the card says "the shopping list".
@@ -185,23 +182,23 @@ export function NotificationsSection() {
       live = false;
       document.removeEventListener('visibilitychange', again);
     };
-  }, [support]);
+  }, [support, read.refresh]);
 
-  // One write, alone: what it did is the status; what it could not do, in `said`'s words, is under the buttons.
-  async function write<T>(run: () => Promise<T>, done: (result: T) => void, said?: { failed: string; offline: string }) {
+  // One write, alone: what it did is the status; what it could not do, in `said`'s words, is under the buttons. `landed` is what the
+  // card shows from its result until the read that follows it, which also says what is so after one that failed (a subscription gone
+  // from the server is off).
+  async function write<T>(run: () => Promise<T>, done: (result: T) => void, said?: { failed: string; offline: string }, landed?: (result: T) => PushState) {
     if (working.current) return;
     working.current = true;
     setBusy(true);
     // What was said of the last write is old, so that a repeat is said again.
     setStatus('idle');
     try {
-      const result = await run();
+      const result = await read.write(run, undefined, landed && ((result) => () => landed(result)));
       problems.clear(PLACE);
       done(result);
     } catch (error) {
       problems.fail(PLACE, error, said ? { said } : {});
-      // The subscription is gone from the server: the card says what is so, not what it was.
-      if (error instanceof PushGoneError) readPushState().then(setState, () => undefined);
     } finally {
       working.current = false;
       setBusy(false);
@@ -222,21 +219,19 @@ export function NotificationsSection() {
         void write(
           turnOnNotifications,
           (next) => {
-            setState(next);
             if (next.kind === 'on') setFocusNext(FIRST_SWITCH);
             if (next.kind === 'denied') setFocusNext(DENIED);
           },
           TURN_ON_SAID,
+          (next) => next,
         )
       }
       onTurnOff={() =>
         void write(
           turnOffNotifications,
-          () => {
-            setState({ kind: 'off' });
-            setFocusNext(TURN_ON);
-          },
+          () => setFocusNext(TURN_ON),
           TURN_OFF_SAID,
+          () => ({ kind: 'off' }),
         )
       }
       onTest={() => void write(sendTestNotification, () => setStatus('test'), TEST_SAID)}
@@ -244,10 +239,9 @@ export function NotificationsSection() {
         if (state?.kind !== 'on') return;
         void write(
           () => savePushPreferences(state.id, preferences),
-          () => {
-            setState({ kind: 'on', id: state.id, preferences });
-            setStatus('saved');
-          },
+          () => setStatus('saved'),
+          undefined,
+          () => ({ kind: 'on', id: state.id, preferences }),
         );
       }}
     />
