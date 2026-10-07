@@ -399,9 +399,9 @@ describe("the phone's pages, as they are first drawn", () => {
   // What the glossary calls things, which is for code, tests and tickets: the family reads people, tablets, time zone, lists, unpair.
   const GLOSSARY = /\b(Profiles?|Devices?|Household Timezone|Shared Lists?|Revoke|Calendar Accounts?|Mirrored Calendars?|Native Events?)\b/;
 
-  it('hold Household, Appearance, Weather, People, Wall tablets and Who can sign in, in that order, then Sign out', () => {
+  it('hold Household, Appearance, Weather, People, Wall tablets, Who can sign in and Notifications on this phone, in that order, then Sign out', () => {
     const markup = householdPage();
-    expect(headings(markup)).toEqual(['Household', 'Appearance', 'Weather', 'People', 'Wall tablets', 'Who can sign in']);
+    expect(headings(markup)).toEqual(['Household', 'Appearance', 'Weather', 'People', 'Wall tablets', 'Who can sign in', 'Notifications on this phone']);
     expect(buttons(markup).at(-1)?.name).toBe('Sign out');
   });
 
@@ -950,7 +950,7 @@ describe("the phone's list of events", () => {
 // Nothing the phone's pages draw that has, or may have, the focus is ever `disabled`: a button that is disabled while it has focus
 // drops it to the page. A busy one is `aria-disabled` and its handler ignores the press (the Button draws both the same).
 describe("the phone's buttons", () => {
-  const files = ['AdminApp', 'SettingsPage', 'ProfilesSection', 'WeatherSection', 'DevicesSection', 'HouseholdAccountsSection', 'CalendarAccountsSection', 'EventsSection', 'components/phone', 'components/PersonEditor'];
+  const files = ['AdminApp', 'SettingsPage', 'ProfilesSection', 'WeatherSection', 'DevicesSection', 'HouseholdAccountsSection', 'NotificationsSection', 'CalendarAccountsSection', 'EventsSection', 'components/phone', 'components/PersonEditor'];
   const source = (file: string) => readFileSync(new URL(`../src/${file}.tsx`, import.meta.url), 'utf8').replace(/\s+/g, ' ');
 
   it('are never `disabled` where the person has pressed them', () => {
