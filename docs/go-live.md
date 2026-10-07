@@ -39,7 +39,7 @@ pnpm supabase db push
 
 ## 5. Secrets
 
-Function secrets, the five values the two functions read (see `supabase/.env.example`):
+Function secrets, the five values the two calendar functions read (see `supabase/.env.example`; the notification secrets are in step 12):
 
 ```sh
 pnpm supabase secrets set \
@@ -65,6 +65,8 @@ Until both Vault secrets exist, the `calendar-sync` job does nothing.
 pnpm supabase functions deploy calendar-connect
 pnpm supabase functions deploy calendar-sync
 ```
+
+`push-notify` is deployed in step 12, after its secrets are set.
 
 ## 7. Check both cron jobs
 
@@ -103,7 +105,7 @@ To confirm the second, `supabase.auth.signInWithPassword` against the hosted pro
 
 ## 10. Installability
 
-Lighthouse no longer has a Progressive Web App category, so check installability in Chrome. Open `https://<site>`, DevTools, Application, Manifest: the Installability section lists no errors, and the manifest shows the name, start URL, `display: standalone` and the 192 px and 512 px icons. Chrome's address bar also offers an Install button. There is no service worker and no offline support, by design.
+Lighthouse no longer has a Progressive Web App category, so check installability in Chrome. Open `https://<site>`, DevTools, Application, Manifest: the Installability section lists no errors, and the manifest shows the name, start URL, `display: standalone` and the 192 px and 512 px icons. Chrome's address bar also offers an Install button. The only service worker is `/sw.js`, registered when a phone turns notifications on (step 12); the Wall's tablets never register it. There is still no offline support, by design.
 
 ## 11. Pair the tablet
 
@@ -111,3 +113,60 @@ Lighthouse no longer has a Progressive Web App category, so check installability
 2. The wall shows a six-character Pairing Code.
 3. On a phone, open `https://<site>/settings`, go to Wall tablets and Pair a tablet, enter the code and a name for the tablet, and pair it.
 4. The wall switches to the home screen within seconds.
+
+## 12. Notifications
+
+Spec 0007. Until the two Vault secrets exist the minute's job does nothing, so the order up to the last step is safe; do the steps in this order, then merge.
+
+1. Push the migration: `pnpm supabase db push` (already done if you came through step 4).
+2. Make the VAPID key pair and set the three function secrets in one go, in Git Bash. The pair is made once: changing it later ends every phone's subscription, so keep `push.env` in your password manager before deleting it. `PUSH_NOTIFY_SECRET` is random, 32+ characters (`openssl` makes one); `VAPID_SUBJECT` is `mailto:` your address. This needs Deno: on Windows, `winget install DenoLand.Deno`, then reopen Git Bash so it is on the path. Then:
+
+   ```sh
+   PUSH_SECRET=$(openssl rand -hex 32)
+   VAPID=$(deno eval 'import * as w from "jsr:@negrel/webpush@0.5.0"; console.log(JSON.stringify(await w.exportVapidKeys(await w.generateVapidKeys({ extractable: true }))))')
+   printf "PUSH_NOTIFY_SECRET=%s\nVAPID_KEYS='%s'\nVAPID_SUBJECT=%s\n" "$PUSH_SECRET" "$VAPID" "mailto:<your address>" > push.env
+   echo "$PUSH_SECRET"   # the Vault secret in step 6 is this same value
+   ```
+
+3. Set them from the file, so the JSON's quotes reach Supabase untouched, then delete it:
+
+   ```sh
+   pnpm supabase secrets set --env-file push.env
+   rm push.env
+   ```
+
+4. Deploy the function:
+
+   ```sh
+   pnpm supabase functions deploy push-notify
+   ```
+
+5. Check it answers: `curl https://<project-ref>.supabase.co/functions/v1/push-notify/key` prints a long base64url string (the application server key), nothing else. That also confirms the key pair was read, because the function does not start with a broken `VAPID_KEYS`.
+6. Add the two Vault secrets in the SQL editor (the second is the same value as `PUSH_NOTIFY_SECRET`):
+
+   ```sql
+   select vault.create_secret('https://<project-ref>.supabase.co/functions/v1/push-notify', 'push_notify_url');
+   select vault.create_secret('<the same value as PUSH_NOTIFY_SECRET>', 'push_notify_secret');
+   ```
+
+7. After a minute or two, check the job ran:
+
+   ```sql
+   select d.status, d.return_message, d.start_time
+   from cron.job_run_details as d join cron.job as j using (jobid)
+   where j.jobname = 'push-notify' order by d.start_time desc limit 5;
+   ```
+
+   `succeeded` only says the request was queued. For the function's own answer, look at what came back:
+
+   ```sql
+   select status_code, content, created from net._http_response order by created desc limit 5;
+   ```
+
+   Read the newest rows after the job has run a few times:
+   - No responses at all: a Vault secret is missing (`push_notify_url` or `push_notify_secret`), so the job does nothing.
+   - A 401 with the body `{"error":"not allowed"}`: `push_notify_secret` does not match `PUSH_NOTIFY_SECRET`.
+   - A body starting `{"subscriptions"`, such as `{"subscriptions":0,"event":0,...,"errors":[]}` with `status_code` 200: it ran, and is healthy.
+
+   The calendar sync's responses land in the same table. The job also shows in `select jobname, schedule, active from cron.job;` as `* * * * *`.
+8. On a real phone (Android Chrome, and an iPhone with Nidus on the Home Screen), open Settings, turn on notifications and tap "Send a test".

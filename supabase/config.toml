@@ -411,6 +411,14 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/calendar-sync/index.ts"
 
+# pg_cron posts here every minute (public.invoke_push_notify). There is no user session, so the
+# gateway cannot demand a JWT; the function checks the x-push-secret header itself. /key is public
+# and /test checks the caller's Bearer token itself.
+[functions.push-notify]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/push-notify/index.ts"
+
 [analytics]
 enabled = true
 port = 54327
