@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { BeforeHousehold as BeforeHouseholdType, PairingScreen as PairingScreenType, WallFrame as WallFrameType } from '../src/WallPage';
-import { WallHeader } from '../src/components/WallHeader';
+import type { WallHeader as WallHeaderType } from '../src/components/WallHeader';
 
 // The two screens the Wall draws before it has a Household: the frame that stands in for a screen until the Household is read, and the
 // pairing screen of a tablet that has no Household yet. Rendered to markup, so that what is asserted is what the browser is given. The
@@ -12,12 +12,14 @@ import { WallHeader } from '../src/components/WallHeader';
 let BeforeHousehold: typeof BeforeHouseholdType;
 let PairingScreen: typeof PairingScreenType;
 let WallFrame: typeof WallFrameType;
+let WallHeader: typeof WallHeaderType;
 beforeAll(async () => {
   vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
   // The pairing screen says where to go from the address the tablet is at.
   vi.stubGlobal('window', { location: { origin: 'https://nidus.example' } });
   ({ BeforeHousehold, PairingScreen, WallFrame } = await import('../src/WallPage'));
+  ({ WallHeader } = await import('../src/components/WallHeader'));
 });
 afterAll(() => {
   vi.unstubAllGlobals();
