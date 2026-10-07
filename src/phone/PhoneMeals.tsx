@@ -5,6 +5,7 @@ import { EmptyWords } from '../components/EmptyWords';
 import { InBody } from '../components/InBody';
 import { Button } from '../components/ui/button';
 import { dayStartMs, describeCell, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay, type WallRoute } from '../lib/calendar-occurrences';
+import { focusTitleIfLost } from '../lib/focus';
 import { mealGrid, mealsPickedDay, slotRowName, type Meal } from '../lib/meals';
 import { pageWords } from '../lib/phone-calendar';
 import { useHouseholdDay } from '../lib/wall-hooks';
@@ -62,15 +63,19 @@ function MealsWeek({ timezone, date, onNavigate }: { timezone: string; date: str
   const { previous, next } = paging('week', anchor, pagingWindowAround(today));
   const open = (week: string) => onNavigate(mealsPageDate(week, today));
 
-  // Paging may disable the button that was pressed: put focus on the pager's words instead of losing it. Only after the week has changed,
-  // never when the screen opens (which would scroll the page), StrictMode's second run of the effect included: the anchor it saw last is kept.
+  // Paging may disable the button that was pressed: put focus on the pager's words instead of losing it (and only if it was lost: paging by keyboard stays on the button pressed). Only after the week the person
+  // chose has changed (`date`, never the computed `anchor`, which also moves by itself at the week's turn while the page follows this
+  // week), never when the screen opens (which would scroll the page), StrictMode's second run of the effect included: the date it saw last is kept.
   const heading = useRef<HTMLHeadingElement>(null);
-  const seen = useRef(anchor);
+  const seen = useRef(date);
   useEffect(() => {
-    if (seen.current === anchor) return;
-    seen.current = anchor;
-    heading.current?.focus({ preventScroll: true });
-  }, [anchor]);
+    if (seen.current === date) return;
+    seen.current = date;
+    focusTitleIfLost(heading.current, { preventScroll: true });
+  }, [date]);
+  // The week's card is keyed on the anchor, so when it moves by itself (the week turning) it is new and focus inside it is gone: it goes
+  // to the pager's words then, and focus that is anywhere else is left alone.
+  useEffect(() => focusTitleIfLost(heading.current, { preventScroll: true }), [anchor]);
 
   return (
     <div className="flex flex-col gap-3">

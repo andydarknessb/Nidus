@@ -9,7 +9,7 @@ One look in two modes: light by day, dark at night. This file is the source for 
 - **Surfaces are told apart by fill, not by an outline.** Outlines are for fields and empty rings.
 - **AAA in both modes.** Words on their ground are 7:1 or better. A shape that carries meaning (a ring, an outline, a picture, a progress pip) is 3:1 or better.
 - **Sized for the room, then for the hand.** The clock and the date are read from across the room. Everything else is read at arm's length and is never under 14 px.
-- **Touch.** Anything tappable is at least 48 px in both directions and 8 px from its neighbour, 56 for a main action, 80 for a tile a child taps.
+- **Touch.** Anything tappable is at least 48 px in both directions and 8 px from its neighbour, 56 for a main action, 80 for a tile a child taps. A grid of days is the exception, where 8 px between targets would break the grid: the Wall's Month cells touch and are told apart by a hairline, as the phone's Day chips do (below), with every fill and ring drawn inside the cell.
 
 ## Modes
 

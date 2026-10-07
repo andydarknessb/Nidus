@@ -22,6 +22,7 @@ import {
 } from './lib/shared-lists';
 import type { Household } from './lib/household';
 import { useRefetchOn } from './lib/change-feed';
+import { focusElement } from './lib/focus';
 import { useStatusLine } from './lib/status-line';
 import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
 import { useOverflow } from './lib/use-overflow';
@@ -134,7 +135,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
   const more = useOverflow('y', 'over');
 
   return (
-    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className="flex max-h-full w-(--card-w) shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3.5">
+    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className="flex max-h-full w-(--card-w) shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3">
       <div className="flex h-13 shrink-0 items-center gap-3">
         {/* One picture for every list: there is no picture on a Shared List to choose. */}
         <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -422,6 +423,7 @@ const CARD_TITLE = 'font-display text-[22px] leading-7';
 const ACTION = 'h-12 px-4';
 // Where a form says it was asked to save with no name: each is tied to the field it is about.
 const NEW_LIST_PROBLEM = 'new-list-problem';
+const NEW_LIST_TITLE = 'new-list-title';
 const RENAME_PROBLEM = 'rename-list-problem';
 const ICON_ACTION = 'size-12 rounded-full px-0';
 
@@ -504,15 +506,18 @@ export function SharedListsPage({ household }: { household: Household }) {
     void refresh();
   }, [refresh]);
 
-  // Runs one change, then reloads so the screen shows what the database holds.
-  async function change(work: () => Promise<void>, failure: string) {
+  // Runs one change, then reloads so the screen shows what the database holds. Says whether it was made.
+  async function change(work: () => Promise<void>, failure: string): Promise<boolean> {
+    let made = true;
     try {
       await work();
       setProblem('');
     } catch {
       setProblem(failure);
+      made = false;
     }
     await refresh();
+    return made;
   }
 
   async function create(event: FormEvent) {
@@ -548,18 +553,23 @@ export function SharedListsPage({ household }: { household: Household }) {
     await change(() => reorderLists(supabase, ids), 'Could not reorder lists. Try again.');
   }
 
+  // The Delete that was pressed goes with its list: focus goes at once to the title of the list beside it, or to "New list" when it was
+  // the only one, so it never falls to the page; and back to this list's Delete if the delete did not go through.
   async function remove(id: string) {
+    const ids = (lists ?? []).map((list) => list.id);
+    const beside = ids[ids.indexOf(id) + 1] ?? ids[ids.indexOf(id) - 1];
     setConfirming(null);
     if (open === id) setOpen(null);
-    await change(() => deleteList(supabase, id), 'Could not delete that list. Try again.');
+    focusElement(document.getElementById(beside === undefined ? NEW_LIST_TITLE : titleId(beside)));
+    if (!(await change(() => deleteList(supabase, id), 'Could not delete that list. Try again.'))) focusElement(document.getElementById(`delete-${id}`));
   }
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-3 px-4 pt-2 pb-6">
       <h1 className="sr-only">Lists</h1>
 
-      <section aria-labelledby="new-list-title" className={CARD}>
-        <h2 id="new-list-title" className={CARD_TITLE}>
+      <section aria-labelledby={NEW_LIST_TITLE} className={CARD}>
+        <h2 id={NEW_LIST_TITLE} tabIndex={-1} className={CARD_TITLE}>
           New list
         </h2>
         <form onSubmit={(event) => void create(event)} noValidate className="flex flex-col gap-4">

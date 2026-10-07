@@ -5,7 +5,7 @@ import { offsetMs } from '../supabase/functions/_shared/zoned-time.ts';
 import { ClusterList } from '../src/components/ClusterList';
 import { HourGrid, PillRow } from '../src/components/DayGrid';
 import { addDays, dayStartMs, pageDays, type Occurrence } from '../src/lib/calendar-occurrences';
-import { planDay, type DayPlan } from '../src/lib/day-view';
+import { aboveLabel, planDay, type DayPlan } from '../src/lib/day-view';
 import type { Profile } from '../src/lib/profiles';
 import type { OverflowControl } from '../src/lib/use-overflow';
 import { scrollers } from './support/markup';
@@ -76,6 +76,10 @@ describe('the grid', () => {
     expect(html).toContain('style="height:24rem"');
     expect(count(html, 'h-px bg-border')).toBe(7);
     for (const rem of [3, 6, 9, 12, 15, 18, 21]) expect(html).toContain(`top:${rem}rem`);
+    // Every label is centred on its line, the first on the grid's top edge as the others are on theirs (the labels are 18 px tall).
+    expect(html).toContain('top:calc(0rem - 9px)');
+    expect(html).toContain('top:calc(3rem - 9px)');
+    expect(html).not.toContain('top:0"');
     expect(html).not.toContain('top:24rem');
     for (const label of ['4 PM', '5 PM', '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM']) expect(html).toContain(`>${label}<`);
     expect(html).not.toContain('>12 AM<');
@@ -364,6 +368,8 @@ describe('the rows above and below the grid', () => {
     const html = row({ label: 'Earlier', name: 'All day and earlier', pills: above });
     expect(html).toContain('aria-label="All day and earlier"');
     expect(html).toContain('>Earlier<');
+    // The word at the row's left end is what it holds: all day events are not "Earlier".
+    expect(row({ label: aboveLabel(plan([event('Photo day', OCT1, '00:00', '00:00', [], { is_all_day: true, starts_at: new Date(dayStartMs(OCT1, CHICAGO)).toISOString(), ends_at: new Date(dayStartMs(OCT2, CHICAGO)).toISOString() })]).above, dayOf(OCT1)), name: 'All day and earlier', pills: [] })).toContain('>All day<');
     expect(count(html, 'w-[220px] flex-none')).toBe(2);
     expect(count(html, 'line-clamp-1')).toBe(2);
     expect(html).not.toContain('line-clamp-2');

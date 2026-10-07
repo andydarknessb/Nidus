@@ -13,8 +13,8 @@ import {
   type CalendarView,
   type WallDay,
 } from '../lib/calendar-occurrences';
-import { emptyRowWords, HOUR_REM, hoursThatFit, planDay } from '../lib/day-view';
-import { focusEvent } from '../lib/focus';
+import { aboveLabel, emptyRowWords, HOUR_REM, hoursThatFit, planDay } from '../lib/day-view';
+import { focusEvent, focusTitleIfLost } from '../lib/focus';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { householdDay } from '../lib/routines';
@@ -109,10 +109,23 @@ export function PagedCalendar({
   const days = view === 'month' ? null : pageDays(view, anchor, timezone, now);
   const day = view === 'day' ? days?.[0] : undefined;
   const { previous, next } = paging(view, anchor, window);
-  // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it. It is also
-  // where focus goes on the Day view when the event it would return to has been deleted.
+  // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it, but only when it was
+  // lost (focusTitleIfLost), so paging by keyboard stays on the button that was pressed. Arriving on another view (from the navigation
+  // rail, or a day opened from the week or the month) puts it on the title, as on the other screens. It is also where focus goes on the
+  // Day view when the event it would return to has been deleted. It runs on what the person chose (the view and the date they opened),
+  // never on `anchor`, which also moves by itself while the page follows today (at Household midnight, at the start of a week or a
+  // month) and would take focus from whatever they were on.
   const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => heading.current?.focus(), [view, anchor]);
+  const shown = useRef<CalendarView | null>(null);
+  useEffect(() => {
+    if (shown.current !== view) {
+      shown.current = view;
+      heading.current?.focus();
+    } else focusTitleIfLost(heading.current);
+  }, [view, date]);
+  // The page's contents are keyed on the anchor, so when it moves by itself (Household midnight, a week or a month turning) they are
+  // new and whatever had focus in them is gone: it goes to the title then, and focus that is anywhere else is left alone.
+  useEffect(() => focusTitleIfLost(heading.current), [anchor]);
 
   return (
     <div className="flex min-h-0 flex-col gap-4" onPointerDownCapture={touch}>
@@ -253,7 +266,7 @@ export function DayView({
   return (
     <section
       aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`}
-      className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card py-3 pr-3 pl-2 max-[768px]:rounded-[22px] max-[768px]:pl-3"
+      className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card p-3 max-[768px]:rounded-[22px]"
     >
       {failed && occurrences === null && (
         <p role="alert" className="px-4 py-2 text-xl">
@@ -261,7 +274,7 @@ export function DayView({
         </p>
       )}
       <PillRow
-        label="Earlier"
+        label={aboveLabel(plan.above, day)}
         name="All day and earlier"
         of="earlier events"
         control={earlierRow}
