@@ -63,7 +63,7 @@ The decisions:
 
 ### The other screens
 
-- Month: the grid keeps seven columns. At the P12's narrow width a Month line shows its time, its discs and what is left of its title, by the line's rule; the title gives way first; in a cell under 7 rem wide (a container query on the cell, so larger text gets the same) the pin is hidden as well, then the end of the time is cut, and a disc is never cut (`src/components/MonthCell.tsx`).
+- Month: the grid keeps seven columns. At the P12's narrow width a Month line shows its time, its discs and what is left of its title, by the line's rule; the title gives way first, down to its ellipsis (1.25 em, so a cut title never reads as a stray letter or an initial); in a cell under 7 rem wide (a container query on the cell, so larger text gets the same) the pin is hidden as well, then the end of the time is cut, and a disc is never cut (`src/components/MonthCell.tsx`).
 - Day: one column, unchanged.
 - Routines and Lists (`src/RoutinesPage.tsx`, `src/SharedListsPage.tsx`): in portrait the row of people's columns and the row of list cards wrap (`flex-wrap`), as many to a row as fit at their landscape widths (a column at least 17 rem and at most `max-w-md`, a card at least 17 rem), the rows 16 apart. A column or a card is its natural height, with no More foot of its own, and the chart or the screen scrolls as one column with the shared More foot named "routines" or "lists". The heading row's sideways More is not drawn. Landscape is unchanged class for class. Ticket #168.
 - Sheets: the Add event sheet is one column below 960 px wide and two from it, as now; a portrait P12 is on either side of that line depending on its Display size, and both are right. Every other sheet is the same card on the scrim.

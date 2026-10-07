@@ -127,7 +127,7 @@ function EventLine({ occurrence, day, timezone, people }: { occurrence: Occurren
       <EventFill people={people} />
       {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="relative size-3.5 shrink-0 @max-[7rem]:hidden" />}
       {time && <span className="relative min-w-0 truncate text-sm font-medium tabular-nums">{time}</span>}
-      <span dir="auto" className="relative min-w-0 max-w-max flex-1 truncate text-[0.9375rem] leading-5 font-semibold">
+      <span dir="auto" className="relative min-w-[1.25em] max-w-max flex-1 truncate text-[0.9375rem] leading-5 font-semibold">
         {occurrence.title}
       </span>
       <span className="relative ml-auto flex shrink-0">
