@@ -393,7 +393,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : route.view === 'meals' ? (
           // Meals is a screen of its own, not a calendar view: it takes the same slot, and before the Household is read it is an empty frame, or says it could not be read.
           timezone ? (
-            <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} />
+            <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} portrait={home.portrait} />
           ) : (
             <BeforeHousehold label="Meals" failed={view.failed} words="Could not load meals. Check your connection." />
           )
