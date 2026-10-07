@@ -3,6 +3,7 @@ import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { AppearanceSection } from '@/AppearanceSection';
 import { DevicesSection } from '@/DevicesSection';
 import { HouseholdAccountsSection } from '@/HouseholdAccountsSection';
+import { NotificationsSection } from '@/NotificationsSection';
 import { ProfilesSection } from '@/ProfilesSection';
 import { WeatherSection } from '@/WeatherSection';
 import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass } from '@/components/phone';
@@ -14,7 +15,7 @@ import { useWriteProblem } from '@/lib/use-write-problem';
 type Props = { household: Household; userId: string; onSaved: (household: Household) => void; onSignOut: () => void };
 
 // The phone's Household page (/settings): the Household's name and time zone, how the Wall looks, the weather, the people and the
-// Wall tablets and who can sign in, then Sign out. The Calendar Accounts and the events added in Nidus are on the Calendars page.
+// Wall tablets, who can sign in and notifications on this phone, then Sign out. The Calendar Accounts and the events added in Nidus are on the Calendars page.
 export function SettingsPage({ household, userId, onSaved, onSignOut }: Props) {
   const [name, setName] = useState(household.name);
   const [timezone, setTimezone] = useState(household.timezone);
@@ -111,6 +112,7 @@ export function SettingsPage({ household, userId, onSaved, onSignOut }: Props) {
       <ProfilesSection householdId={household.id} />
       <DevicesSection />
       <HouseholdAccountsSection householdId={household.id} timezone={household.timezone} userId={userId} />
+      <NotificationsSection />
       <Button variant="quiet" className="h-12 w-full" onClick={onSignOut}>
         <LogOut aria-hidden className="size-[22px]" />
         Sign out
