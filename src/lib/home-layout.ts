@@ -38,6 +38,12 @@ export function homeLayout({ width, height, rem = 16 }: { width: number; height:
   return { days, tiles: tall < 760 ? (rem > 16 && tall < ONE_TILE_BELOW ? 1 : 2) : 3, phone, portrait: !phone && width > 0 && height > width };
 }
 
+// Home's grid: the days and the rail side by side, or in portrait the days over the rail, which takes the height Up next needs.
+export const homeGrid = (portrait: boolean) =>
+  portrait
+    ? 'grid min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] gap-4'
+    : 'grid min-h-0 grid-cols-[minmax(0,1fr)_min(20rem,max(320px,27vw))] gap-4';
+
 function subscribe(onChange: () => void) {
   window.addEventListener('resize', onChange);
   return () => window.removeEventListener('resize', onChange);

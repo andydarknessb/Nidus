@@ -22,7 +22,7 @@ import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/
 import { supabase } from './lib/supabase';
 import { useStatusLine } from './lib/status-line';
 import { localStore, writeLastMode } from './lib/mode';
-import { useHomeLayout } from './lib/home-layout';
+import { homeGrid, useHomeLayout } from './lib/home-layout';
 import { useForecast } from './lib/use-forecast';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useLightMode, useWallMode } from './lib/use-mode';
@@ -278,7 +278,7 @@ function HomeShell({ owner }: { owner: boolean }) {
   // swaps the chrome below and follows the phone's own light or dark setting.
   const home = useHomeLayout();
   // The Add event sheet is the layout's, so it closes when the layout swaps (a window resized across 768 px).
-  useEffect(() => setAdding(false), [home.phone]);
+  useEffect(() => setAdding(false), [home.phone, home.portrait]);
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
   // `sun` is what the mode goes on besides the Household: the forecast's sunrise and sunset.
@@ -407,13 +407,13 @@ function HomeShell({ owner }: { owner: boolean }) {
           // under a navigation rail entry that marks Day, Week or Month.
           <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
         ) : (
-        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_min(20rem,max(320px,27vw))] gap-4">
+        <div className={homeGrid(home.portrait)}>
           {timezone ? (
             <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
           ) : (
             <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
           )}
-          <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} onOpenRoutines={openRoutines} onOpenLists={openLists} />
+          <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} row={home.portrait} onOpenRoutines={openRoutines} onOpenLists={openLists} />
         </div>
         )}
         {sheet}
