@@ -9,7 +9,7 @@ import { useSyncExternalStore } from 'react';
 // The Wall is never shorter than WALL_MIN_REM (WallPage.tsx): a screen shorter than that scrolls, so the room it has is that much.
 // `phone` is the Wall laid out for a phone (docs/specs/0004): below 768 px wide, by the width alone, never by the height, the
 // device, the user agent or the text size. A width of 0 (a window that has not been laid out yet) is not a phone. At 768 px and
-// wider nothing about the Wall changes at 16 px text.
+// wider nothing about the Wall changes at 16 px text, except that a viewport taller than it is wide is `portrait` (below).
 // `portrait` is a tablet hung upright (docs/specs/0009): at 768 px and wider, a viewport taller than it is wide, by the viewport
 // alone. A phone is never portrait, whatever its height; a square viewport is landscape; a width of 0 is neither.
 export type HomeLayout = { days: 5 | 4 | 3; tiles: 3 | 2 | 1; phone: boolean; portrait: boolean };
@@ -38,15 +38,24 @@ export function homeLayout({ width, height, rem = 16 }: { width: number; height:
   return { days, tiles: tall < 760 ? (rem > 16 && tall < ONE_TILE_BELOW ? 1 : 2) : 3, phone, portrait: !phone && width > 0 && height > width };
 }
 
-// Home's grid: the days and the rail side by side, or in portrait the days over the rail, which takes the height Up next needs.
+// Home's grid: the days and the rail side by side, or in portrait the days over the rail, which takes the height Up next needs but
+// never less than three tiles' worth: 21 rem is Up next's card with three tiles (24 padding + 48 heading + 8 gap + 3 x 80 tiles + 2 x 8 gaps =
+// 336 px, UpNext.tsx), so the Pinned List's card keeps its rows and the calendar does not jump when tiles come and go.
 export const homeGrid = (portrait: boolean) =>
   portrait
-    ? 'grid min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] gap-4'
+    ? 'grid min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_minmax(21rem,auto)] gap-4'
     : 'grid min-h-0 grid-cols-[minmax(0,1fr)_min(20rem,max(320px,27vw))] gap-4';
 
+// A resize or leaving a field reads the layout again. Leaving one is read after the next field has the focus (a tap from field to field),
+// so the layout is not read in between, with the keyboard still up.
 function subscribe(onChange: () => void) {
+  const afterFocusOut = () => setTimeout(onChange);
   window.addEventListener('resize', onChange);
-  return () => window.removeEventListener('resize', onChange);
+  window.addEventListener('focusout', afterFocusOut);
+  return () => {
+    window.removeEventListener('resize', onChange);
+    window.removeEventListener('focusout', afterFocusOut);
+  };
 }
 
 // The root font size now, 16 where the browser gives none (and on the server, where a test draws markup).
@@ -54,15 +63,24 @@ export function rootFontSize(): number {
   return typeof document === 'undefined' ? 16 : parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
 }
 
-// Home's layout at the window's size now, drawn again when the window is resized. Each part is read on its own, so a resize that
-// changes none of them is no render. A change of the text size reloads the page on the tablet, so the root font size is read
-// with the size and needs no listener of its own.
+// The layout last read, which a field with the focus holds: an Android keyboard resizes the viewport, and on a portrait tablet (920 by
+// 1472) a 600 px keyboard makes it wider than tall, so portrait would flip under the field being typed in, Home would lay out again, Meals
+// would remount every cell and the focus would be lost.
+let held: HomeLayout | null = null;
+const typing = () => document.activeElement?.matches('input, textarea, select, [contenteditable]') ?? false;
+
+// Home's layout at the window's size now, drawn again when the window is resized or a field is left, and held as it was while a field
+// has the focus. Each part is read on its own, so a resize that changes none of them is no render. A change of the text size reloads the
+// page on the tablet, so the root font size is read with the size and needs no listener of its own.
 export function useHomeLayout(): HomeLayout {
-  const size = () => homeLayout({ width: window.innerWidth, height: window.innerHeight, rem: rootFontSize() });
+  const read = () => {
+    if (held && typing()) return held;
+    return (held = homeLayout({ width: window.innerWidth, height: window.innerHeight, rem: rootFontSize() }));
+  };
   return {
-    days: useSyncExternalStore(subscribe, () => size().days),
-    tiles: useSyncExternalStore(subscribe, () => size().tiles),
-    phone: useSyncExternalStore(subscribe, () => size().phone),
-    portrait: useSyncExternalStore(subscribe, () => size().portrait),
+    days: useSyncExternalStore(subscribe, () => read().days),
+    tiles: useSyncExternalStore(subscribe, () => read().tiles),
+    phone: useSyncExternalStore(subscribe, () => read().phone),
+    portrait: useSyncExternalStore(subscribe, () => read().portrait),
   };
 }

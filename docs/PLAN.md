@@ -103,7 +103,7 @@ Settled on 2026-10-06 when the owner approved the phone drawings on the design c
 
 ### Decisions
 
-- **The Wall is not only for a tablet**: "one or two Android tablets in landscape" above stays the Devices' setting, and the Household Account may open the Wall on a phone. Below 768 px of viewport width it is laid out for a phone; at 768 px and wider nothing changes. The width alone decides, never the user agent or a per-Device setting.
+- **The Wall is not only for a tablet**: "one or two Android tablets in landscape" above stays the Devices' setting, and the Household Account may open the Wall on a phone. Below 768 px of viewport width it is laid out for a phone; at 768 px and wider nothing changes (until v9's portrait). The width alone decides, never the user agent or a per-Device setting.
 - **Five tabs**: Home, Calendar (Day, Week and Month behind one control), Routines, Meals, Lists, at the foot. Add event is a round button above them. Settings is a gear in the header, for the owner only.
 - **No clock** in the phone's header: the date, the weather and the gear.
 - **The phone's mode is the phone's**: it follows `prefers-color-scheme`. The Household's Appearance and the switch are for the Wall's tablets.
@@ -178,6 +178,6 @@ Settled on 2026-10-07 when the owner asked for the Wall to fit the Lenovo Tab P1
 
 - **Portrait is the tablet's second form**: at 768 px and wider, a viewport taller than it is wide, by the viewport alone. Below 768 px it is a phone whatever its height. Landscape changes nothing, at any size.
 - **The chrome is the Wall's**: the rail at the left, the header, the people strip, the switch, the Household's Appearance. No tabs, no gear.
-- **Three screens use the height**: Home puts the days across the top and Up next beside the Pinned List under them; Week is seven rows; Meals turns, days down and slots across; the Routines chart and the Lists screen wrap. Month, Day and the sheets keep their form and give way by their own rules.
+- **Five screens use the height**: Home puts the days across the top and Up next beside the Pinned List under them; Week is seven rows; Meals turns, days down and slots across; the Routines chart and the Lists screen wrap. Month, Day and the sheets keep their form and give way by their own rules.
 - **The orientation is the kiosk's**: Fully Kiosk's Screen Orientation setting; the manifest asks for none and the app never locks one.
 - **No new data**: no migration.

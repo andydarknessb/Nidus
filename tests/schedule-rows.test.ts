@@ -71,7 +71,7 @@ describe('Week as rows', () => {
     expect(thursday!.inside).toContain('class="flex min-w-0 flex-1 flex-wrap content-start gap-2"');
     expect(pillTitles(thursday!.inside)).toEqual([expect.stringContaining('Standup'), expect.stringContaining('Piano')]);
     expect(pillTitles(saturday!.inside)).toEqual([expect.stringContaining('Soccer')]);
-    expect(thursday!.inside.match(/<div class="w-\[220px\] flex-none">/g)).toHaveLength(2);
+    expect(thursday!.inside.match(/<div class="flex w-\[220px\] flex-none">/g)).toHaveLength(2);
     expect(thursday!.inside).toContain('min-h-13');
   });
 

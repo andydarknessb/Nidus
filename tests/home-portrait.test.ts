@@ -32,9 +32,9 @@ describe('Home grid', () => {
     expect(homeGrid(false)).toBe('grid min-h-0 grid-cols-[minmax(0,1fr)_min(20rem,max(320px,27vw))] gap-4');
   });
 
-  it('is the days over the rail in portrait: the days take what is left of the height and the rail is as tall as Up next', () => {
+  it('is the days over the rail in portrait: the days take what is left of the height and the rail is as tall as Up next, and never under three tiles (21 rem)', () => {
     const classes = homeGrid(true).split(' ');
-    expect(classes).toEqual(expect.arrayContaining(['grid', 'min-h-0', 'grid-cols-[minmax(0,1fr)]', 'grid-rows-[minmax(0,1fr)_auto]', 'gap-4']));
+    expect(classes).toEqual(expect.arrayContaining(['grid', 'min-h-0', 'grid-cols-[minmax(0,1fr)]', 'grid-rows-[minmax(0,1fr)_minmax(21rem,auto)]', 'gap-4']));
     expect(classes.some((name) => name.startsWith('grid-cols-[minmax(0,1fr)_'))).toBe(false);
   });
 });
