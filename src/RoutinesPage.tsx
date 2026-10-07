@@ -393,7 +393,7 @@ function Column({
 // that part begins; a part picked by hand holds until then. Only when there are more Profiles than fit at a readable
 // width does the row scroll sideways, and the heading row then holds a "More people" button that says so.
 // `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). The columns then
-// wrap, each its natural height, and the chart scrolls as one column with the shared "More routines" foot; there is no sideways "More".
+// wrap, each its natural height, and the chart scrolls as one column with the shared "More" foot; there is no sideways "More".
 export function RoutinesChart({ routines, portrait = false }: { routines: RoutinesToday; portrait?: boolean }) {
   const { loaded, failed, problems, columns, done, toggle } = routines;
   const celebration = useCelebration(routines);
@@ -464,7 +464,7 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
         // is the shared button. A tile or field that takes the focus is scrolled clear of the foot.
         <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
           <div className={cn('flex flex-wrap items-start gap-x-3 gap-y-4', BODY_CLEARANCE)}>{people}</div>
-          <OverflowButton control={row} of="routines" />
+          <OverflowButton control={row} of="the routines" />
         </div>
       ) : (
         <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
