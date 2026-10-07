@@ -191,7 +191,7 @@ export function DayRows({
             <DayHeading day={day} onOpenDay={canOpenDay(day.date, pageWindow) ? onOpenDay : null} weather={forecastDay(forecast, day.date)} room={weatherOn} className="w-[9.6rem] flex-none" />
             <div className="flex min-w-0 flex-1 flex-wrap content-start gap-2">
               {pills.map((pill) => (
-                <div key={pill.occurrence.id} className="w-[220px] flex-none">
+                <div key={pill.occurrence.id} className="flex w-[220px] flex-none">
                   <EventPill pill={pill} day={day} people={pillPeople(pill.occurrence, profiles)} onOpen={(occurrence) => onOpen(occurrence, day.date)} />
                 </div>
               ))}
