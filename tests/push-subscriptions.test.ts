@@ -336,6 +336,15 @@ describe('push subscriptions', () => {
         'https://evil.example/x?host=fcm.googleapis.com',
         'https://notify.windows.com.evil.example/x',
         'https://evilnotify.windows.com/x',
+        'https://evilgoogle.com/x',
+        'https://google.com.evil.com/x',
+        'https://jmt17.google.com.evil.com/x',
+        'https://push.apple.com.evil.com/x',
+        'https://web.push.apple.com.evil.com/x',
+        'https://evilpush.apple.com/x',
+        'https://web.push.apple.com@evil.example/x',
+        'https://jmt17.google.com:8443/x',
+        'https://android.googleapis.com.evil.example/x',
       ]) {
         const refused = await save(phone, bad);
         expect(refused.error?.code, bad.slice(0, 60)).toBe(INVALID);
@@ -343,7 +352,11 @@ describe('push subscriptions', () => {
       expect((await phone.rpc('save_push_subscription', { p_endpoint: null, p_p256dh: 'k', p_auth: 'a' })).error?.code).toBe(INVALID);
       expect((await phone.from('push_subscriptions').select('id')).data).toEqual([]);
 
-      for (const good of [longest, 'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://web.push.apple.com/x', 'https://db5p.notify.windows.com/?token=x']) {
+      for (const good of [longest, 'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://jmt17.google.com/fcm/send/x',
+        'https://android.googleapis.com/gcm/send/x',
+        'https://web.push.apple.com/x',
+        'https://api.push.apple.com/x',
+        'https://db5p.notify.windows.com/?token=x']) {
         expect((await save(phone, good)).error, good.slice(0, 60)).toBeNull();
       }
     });

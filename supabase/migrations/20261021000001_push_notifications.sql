@@ -78,7 +78,7 @@ begin
   end if;
   -- The host runs from after https:// to the first slash, so userinfo (a@b), a port, or a longer
   -- host that merely starts with a good one (fcm.googleapis.com.evil.example) never matches.
-  if p_endpoint !~ '^https://(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|web\.push\.apple\.com|([a-z0-9-]+\.)+notify\.windows\.com)/' then
+  if p_endpoint !~ '^https://(fcm\.googleapis\.com|android\.googleapis\.com|[a-z0-9-]+\.google\.com|updates\.push\.services\.mozilla\.com|([a-z0-9-]+\.)*push\.apple\.com|([a-z0-9-]+\.)+notify\.windows\.com)/' then
     raise exception 'the push endpoint is not on a known push service' using errcode = '22023';
   end if;
   if p_p256dh is null or char_length(p_p256dh) not between 1 and 200

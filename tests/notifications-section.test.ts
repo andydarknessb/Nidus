@@ -128,7 +128,7 @@ describe('the Notifications card', () => {
 
   it('says what the last tap did, in the status line, and what failed in an alert', () => {
     expect(render({ status: 'saved' })).toMatch(/<p role="status"[^>]*>Saved\.<\/p>/);
-    expect(on({ status: 'test' })).toMatch(/<p role="status"[^>]*>Test sent<\/p>/);
+    expect(on({ status: 'test' })).toMatch(/<p role="status"[^>]*>Test sent.<\/p>/);
     expect(render()).toMatch(/<p role="status"[^>]*><\/p>/);
     // On the page from the first draw, and out of the layout while empty, as every Settings status line is (#130).
     expect(render()).toMatch(/<p role="status" class="[^"]*\bempty:sr-only\b[^"]*"><\/p>/);

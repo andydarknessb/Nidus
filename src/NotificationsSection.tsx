@@ -10,7 +10,7 @@ import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
 // What the status line says: nothing, or what the last tap did.
 export type NotificationsStatus = 'idle' | 'saved' | 'test';
 
-const statusWords: Record<NotificationsStatus, string> = { idle: '', saved: 'Saved.', test: 'Test sent' };
+const statusWords: Record<NotificationsStatus, string> = { idle: '', saved: 'Saved.', test: 'Test sent.' };
 
 // The controls focus goes to once the one it was on is gone: the first switch after turning on, Turn on notifications after turning
 // off, the line that says it is blocked after a refusal.

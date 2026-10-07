@@ -46,7 +46,7 @@ Android phones can turn this on from the browser. iPhones need iOS 16.4 or later
 - **Signing out ends it on that phone**: Settings' Sign out turns notifications off on the phone first (best effort, never blocking the sign-out), so the next person on that browser does not get this Household's notifications.
 - **A phone that moves to another Household Account starts fresh**: its old row, preferences and claimed keys go, and the new account starts with every kind on.
 - **At most 10 phones per Household Account**: saving an eleventh drops the oldest.
-- **Only real push services**: an endpoint must be on `fcm.googleapis.com`, `updates.push.services.mozilla.com`, `web.push.apple.com` or a `*.notify.windows.com` host, so the sender never posts anywhere else.
+- **Only real push services**: an endpoint must be on `fcm.googleapis.com`, `android.googleapis.com`, a `*.google.com` host (Chrome's `jmt17.google.com`), `updates.push.services.mozilla.com`, `push.apple.com` or a `*.push.apple.com` host (`web.push.apple.com`), or a `*.notify.windows.com` host, with the host followed directly by `/`, so the sender never posts anywhere else.
 - **A dead subscription is deleted** when the push service answers 404 or 410.
 - **Words on the lock screen**: notifications carry event titles, meal names and item text, which show on the lock screen. That is the point of them; the card says so in one line.
 - **No email, no SMS, no app store app.** Web Push only.
@@ -105,7 +105,7 @@ export async function sendTestNotification(): Promise<void>;             // POST
   - `off`: "Get reminders and updates on this phone, even when Nidus is closed." and a primary "Turn on notifications".
   - `denied`: "Notifications are blocked for Nidus on this phone. Allow them in the phone's settings, then come back here."
   - `on`: four switches, each a labelled checkbox row: "Event reminders" with a select "How long before" (5, 10, 15, 30, 60 minutes), "Morning summary at 7 AM", "Routines not done at 7 PM", "Added to the shopping list" (the Pinned List's name if it has one). Each change saves at once. Then "Send a test", then a quiet "Turn off notifications". The line "Notifications can show event names on your lock screen."
-  - Status line as the other sections ("Saved", "Test sent"); failures in their own words.
+  - Status line as the other sections ("Saved.", "Test sent."); failures in their own words.
 
 ### Testing Decisions
 

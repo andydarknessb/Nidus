@@ -118,8 +118,8 @@ Lighthouse no longer has a Progressive Web App category, so check installability
 
 Spec 0007. Until the two Vault secrets exist the minute's job does nothing, so the order up to the last step is safe; do the steps in this order, then merge.
 
-1. The migration is already pushed (step 4: `pnpm supabase db push`).
-2. Make the VAPID key pair and set the three function secrets in one go, in Git Bash. The pair is made once: changing it later ends every phone's subscription, so keep `push.env` in your password manager before deleting it. `PUSH_NOTIFY_SECRET` is random, 32+ characters (`openssl` makes one); `VAPID_SUBJECT` is `mailto:` your address. With Deno installed:
+1. Push the migration: `pnpm supabase db push` (already done if you came through step 4).
+2. Make the VAPID key pair and set the three function secrets in one go, in Git Bash. The pair is made once: changing it later ends every phone's subscription, so keep `push.env` in your password manager before deleting it. `PUSH_NOTIFY_SECRET` is random, 32+ characters (`openssl` makes one); `VAPID_SUBJECT` is `mailto:` your address. This needs Deno: on Windows, `winget install DenoLand.Deno`, then reopen Git Bash so it is on the path. Then:
 
    ```sh
    PUSH_SECRET=$(openssl rand -hex 32)
@@ -157,11 +157,16 @@ Spec 0007. Until the two Vault secrets exist the minute's job does nothing, so t
    where j.jobname = 'push-notify' order by d.start_time desc limit 5;
    ```
 
-   `succeeded` only says the request was queued. For the function's own answer, look for a row whose body starts `{"subscriptions"`:
+   `succeeded` only says the request was queued. For the function's own answer, look at what came back:
 
    ```sql
-   select status_code, content, created from net._http_response where content like '{"subscriptions"%' order by created desc limit 5;
+   select status_code, content, created from net._http_response order by created desc limit 5;
    ```
 
-   `status_code` 200 with a body like `{"subscriptions":0,"event":0,...,"errors":[]}` is healthy. A 401 means `push_notify_secret` does not match `PUSH_NOTIFY_SECRET`; no `succeeded` rows at all means a Vault secret is missing. The job also shows in `select jobname, schedule, active from cron.job;` as `* * * * *`.
+   Read the newest rows after the job has run a few times:
+   - No responses at all: a Vault secret is missing (`push_notify_url` or `push_notify_secret`), so the job does nothing.
+   - A 401 with the body `{"error":"not allowed"}`: `push_notify_secret` does not match `PUSH_NOTIFY_SECRET`.
+   - A body starting `{"subscriptions"`, such as `{"subscriptions":0,"event":0,...,"errors":[]}` with `status_code` 200: it ran, and is healthy.
+
+   The calendar sync's responses land in the same table. The job also shows in `select jobname, schedule, active from cron.job;` as `* * * * *`.
 8. On a real phone (Android Chrome, and an iPhone with Nidus on the Home Screen), open Settings, turn on notifications and tap "Send a test".

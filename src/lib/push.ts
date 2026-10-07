@@ -63,26 +63,19 @@ export async function readPushState(): Promise<PushState> {
   if (pushSupport() !== 'supported') return { kind: 'off' };
   if (Notification.permission === 'denied') return { kind: 'denied' };
   const subscription = await currentSubscription();
-  return subscription ? rowOf(subscription.endpoint) : { kind: 'off' };
+  if (!subscription) return { kind: 'off' };
+  const state = await rowOf(subscription.endpoint);
+  if (state.kind === 'off') {
+    // The browser holds a subscription this account has no row for (a turn-off at sign-out that failed): it is dropped, best effort.
+    await subscription.unsubscribe().catch(() => undefined);
+  }
+  return state;
 }
 
 // base64url, as the key comes and as the push service wants it: the bytes.
 function bytesOfBase64Url(text: string): Uint8Array<ArrayBuffer> {
   const padded = text.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(text.length / 4) * 4, '=');
   return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
-}
-
-// Subscribes. A browser that still holds a subscription made with another key refuses with InvalidStateError: that one is dropped
-// and the subscribe made once more.
-async function subscribeOnce(registration: ServiceWorkerRegistration, applicationServerKey: Uint8Array<ArrayBuffer>): Promise<PushSubscription> {
-  const options = { userVisibleOnly: true, applicationServerKey };
-  try {
-    return await registration.pushManager.subscribe(options);
-  } catch (error) {
-    if ((error as { name?: unknown } | null)?.name !== 'InvalidStateError') throw error;
-    await (await registration.pushManager.getSubscription())?.unsubscribe();
-    return registration.pushManager.subscribe(options);
-  }
 }
 
 // Call from a tap: iOS asks for permission only from one, so the request is the first thing done, before anything is awaited.
@@ -96,7 +89,9 @@ export async function turnOnNotifications(): Promise<PushState> {
   const response = await fetch(`${supabaseUrl}/functions/v1/push-notify/key`);
   if (!response.ok) throw new Error(`push key: ${response.status}`);
   const applicationServerKey = bytesOfBase64Url((await response.text()).trim());
-  const subscription = await subscribeOnce(registration, applicationServerKey);
+  // Any subscription the browser already holds goes first, so that a dead endpoint, or one made with another key, is never saved again.
+  await (await registration.pushManager.getSubscription())?.unsubscribe();
+  const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
   const { endpoint, keys } = subscription.toJSON();
   const { error } = await supabase.rpc('save_push_subscription', { p_endpoint: endpoint, p_p256dh: keys?.['p256dh'], p_auth: keys?.['auth'] });
   if (error) throw error;

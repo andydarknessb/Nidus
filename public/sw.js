@@ -19,7 +19,11 @@ self.addEventListener('push', (event) => {
   const body = text(data.body);
   if (body) options.body = body;
   const tag = text(data.tag);
-  if (tag) options.tag = tag;
+  // A tag replaces the earlier notification of its kind, and renotify makes that replacement buzz; never renotify without a tag.
+  if (tag) {
+    options.tag = tag;
+    options.renotify = true;
+  }
   event.waitUntil(self.registration.showNotification(text(data.title) || 'Nidus', options));
 });
 

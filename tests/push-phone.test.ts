@@ -137,7 +137,7 @@ describe('public/sw.js', () => {
   it('shows the notification a push carries, with its tag, url and icon', async () => {
     const w = worker();
     expect(await w.push({ json: () => ({ title: 'Swim', body: 'At 8:30 AM, in 15 minutes', url: '/day?date=2026-10-07', tag: 'event:1' }) })).toBe(1);
-    expect(w.shown).toEqual([{ title: 'Swim', options: { body: 'At 8:30 AM, in 15 minutes', tag: 'event:1', icon: '/icons/icon-192.png', data: { url: '/day?date=2026-10-07' } } }]);
+    expect(w.shown).toEqual([{ title: 'Swim', options: { body: 'At 8:30 AM, in 15 minutes', tag: 'event:1', renotify: true, icon: '/icons/icon-192.png', data: { url: '/day?date=2026-10-07' } } }]);
   });
 
   it.each([
