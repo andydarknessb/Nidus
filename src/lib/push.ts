@@ -13,6 +13,9 @@ export type PushPreferences = {
 };
 export type PushState = { kind: 'off' } | { kind: 'denied' } | { kind: 'on'; id: string; preferences: PushPreferences };
 
+// What the server says when the subscription is not there to be changed or tested (its row is gone, or the push service has dropped it).
+export class PushGoneError extends Error {}
+
 export const REMINDER_MINUTES = [5, 10, 15, 30, 60] as const;
 
 // What a phone gets before it chooses: everything on, the reminder 15 minutes ahead (the database's own defaults).
@@ -69,6 +72,19 @@ function bytesOfBase64Url(text: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
 }
 
+// Subscribes. A browser that still holds a subscription made with another key refuses with InvalidStateError: that one is dropped
+// and the subscribe made once more.
+async function subscribeOnce(registration: ServiceWorkerRegistration, applicationServerKey: Uint8Array<ArrayBuffer>): Promise<PushSubscription> {
+  const options = { userVisibleOnly: true, applicationServerKey };
+  try {
+    return await registration.pushManager.subscribe(options);
+  } catch (error) {
+    if ((error as { name?: unknown } | null)?.name !== 'InvalidStateError') throw error;
+    await (await registration.pushManager.getSubscription())?.unsubscribe();
+    return registration.pushManager.subscribe(options);
+  }
+}
+
 // Call from a tap: iOS asks for permission only from one, so the request is the first thing done, before anything is awaited.
 // Asking and answering "no" is { kind: 'denied' }; closing the question without an answer leaves it off.
 export async function turnOnNotifications(): Promise<PushState> {
@@ -80,7 +96,7 @@ export async function turnOnNotifications(): Promise<PushState> {
   const response = await fetch(`${supabaseUrl}/functions/v1/push-notify/key`);
   if (!response.ok) throw new Error(`push key: ${response.status}`);
   const applicationServerKey = bytesOfBase64Url((await response.text()).trim());
-  const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+  const subscription = await subscribeOnce(registration, applicationServerKey);
   const { endpoint, keys } = subscription.toJSON();
   const { error } = await supabase.rpc('save_push_subscription', { p_endpoint: endpoint, p_p256dh: keys?.['p256dh'], p_auth: keys?.['auth'] });
   if (error) throw error;
@@ -110,10 +126,11 @@ export async function savePushPreferences(id: string, preferences: PushPreferenc
     .select('id');
   if (error) throw error;
   // A row that is not this account's is not updated, and says nothing.
-  if (!data?.length) throw new Error('push preferences: no row saved');
+  if (!data?.length) throw new PushGoneError('push preferences: no row saved');
 }
 
-// Sends this browser a test notification: only to its own subscription, as the signed-in account.
+// Sends this browser a test notification: only to its own subscription, as the signed-in account. A raw fetch, not the client's: the
+// Edge Function is called by address, with the session's token.
 export async function sendTestNotification(): Promise<void> {
   const subscription = await currentSubscription();
   if (!subscription) throw new Error('push test: not subscribed');
@@ -123,5 +140,14 @@ export async function sendTestNotification(): Promise<void> {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` },
     body: JSON.stringify({ endpoint: subscription.endpoint }),
   });
+  if (response.status === 404 || response.status === 410) throw new PushGoneError(`push test: ${response.status}`);
   if (!response.ok) throw new Error(`push test: ${response.status}`);
+}
+
+// Signing out first ends this phone's notifications, so that a phone that has left stops receiving. Best effort: it never throws and
+// never holds sign-out for more than a few seconds.
+export async function turnOffBeforeSignOut(): Promise<void> {
+  if (typeof window === 'undefined' || pushSupport() !== 'supported') return;
+  const patience = new Promise<void>((resolve) => setTimeout(resolve, 3000));
+  await Promise.race([turnOffNotifications().catch(() => undefined), patience]);
 }

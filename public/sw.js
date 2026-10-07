@@ -3,6 +3,9 @@
 
 const ICON = '/icons/icon-192.png';
 
+// A page opened before the worker was installed is taken over at once, so that a tap's focus and navigate reach it.
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -37,7 +40,14 @@ self.addEventListener('notificationclick', (event) => {
       const open = windows.find((client) => 'focus' in client);
       if (!open) return self.clients.openWindow(url);
       await open.focus();
-      if (open.url !== url && 'navigate' in open) await open.navigate(url);
+      if (open.url === url) return undefined;
+      try {
+        if (!('navigate' in open)) throw new Error('no navigate');
+        await open.navigate(url);
+      } catch (error) {
+        // A window that cannot be sent there is not left on the wrong page: the url opens in a window of its own.
+        return self.clients.openWindow(url);
+      }
       return undefined;
     }),
   );

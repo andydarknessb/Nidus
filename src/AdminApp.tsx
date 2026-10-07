@@ -12,6 +12,7 @@ import { StatusLineProvider } from './components/StatusLine';
 import { Button } from './components/ui/button';
 import { isDeviceSession } from './lib/device';
 import { ensureHousehold, signInWithGoogle, type Household } from './lib/household';
+import { turnOffBeforeSignOut } from './lib/push';
 import { SETTINGS_TABS, settingsLabelOf, settingsPathNow, settingsTabOf, type SettingsTab } from './lib/settings-tabs';
 import { supabase } from './lib/supabase';
 import { useDocumentTitle } from './lib/use-document-title';
@@ -152,7 +153,8 @@ export function AdminApp() {
             onSaved={setHousehold}
             onSignOut={() => {
               setHousehold(null);
-              void supabase.auth.signOut();
+              // This phone's notifications end first, while the session can still delete their row; a failure never holds sign-out.
+              void turnOffBeforeSignOut().then(() => supabase.auth.signOut());
             }}
           />
         )}

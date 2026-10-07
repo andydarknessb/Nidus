@@ -50,6 +50,16 @@ describe('pushSupport', () => {
     expect(pushSupport(nav({ userAgent: IPHONE, platform: 'iPhone', maxTouchPoints: 5 }), win({ notification: true }))).toBe('needs-home-screen');
   });
 
+  it('needs the Home Screen in Chrome on an iPhone, which is Safari underneath', () => {
+    const chrome = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0.6478.153 Mobile/15E148 Safari/604.1';
+    expect(pushSupport(nav({ userAgent: chrome, platform: 'iPhone', maxTouchPoints: 5 }), win({ notification: true }))).toBe('needs-home-screen');
+  });
+
+  it('is supported on an iPad Home Screen app that says it is a Mac, and on an installed Android app', () => {
+    expect(pushSupport(nav({ userAgent: MAC_SAFARI, platform: 'MacIntel', maxTouchPoints: 5, standalone: true }), win())).toBe('supported');
+    expect(pushSupport(nav({ userAgent: ANDROID, platform: 'Linux armv81', maxTouchPoints: 5 }), win({ push: true, notification: true, displayStandalone: true }))).toBe('supported');
+  });
+
   it('needs the Home Screen in an iPad tab that says it is a Mac, and not on a Mac without a touch screen', () => {
     expect(pushSupport(nav({ userAgent: MAC_SAFARI, platform: 'MacIntel', maxTouchPoints: 5 }), win({ notification: true }))).toBe('needs-home-screen');
     expect(pushSupport(nav({ userAgent: MAC_SAFARI, platform: 'MacIntel', maxTouchPoints: 0 }), win())).toBe('supported');
@@ -72,6 +82,7 @@ const SCOPE = 'https://nidus.example/';
 
 type Listener = (event: unknown) => void;
 type FakeClient = { url: string; focus: ReturnType<typeof vi.fn>; navigate?: ReturnType<typeof vi.fn> };
+const claim = vi.fn(() => Promise.resolve());
 
 function worker(clients: FakeClient[] = []) {
   const listeners = new Map<string, Listener>();
@@ -87,6 +98,7 @@ function worker(clients: FakeClient[] = []) {
       },
     },
     clients: {
+      claim,
       matchAll: () => Promise.resolve(clients),
       openWindow: (url: string) => {
         opened.push(url);
@@ -107,13 +119,19 @@ function worker(clients: FakeClient[] = []) {
     const close = vi.fn();
     return fire('notificationclick', { notification: { close, data: url === undefined ? undefined : { url } } }).then(() => close);
   };
-  return { listeners, shown, opened, push, click };
+  return { listeners, shown, opened, fire, push, click };
 }
 
 describe('public/sw.js', () => {
-  it('listens for push and for a tap, and for nothing else: no fetch handler, so it never touches a page load', () => {
-    expect([...worker().listeners.keys()].sort()).toEqual(['notificationclick', 'push']);
+  it('listens for activation, push and a tap, and for nothing else: no fetch handler, so it never touches a page load', () => {
+    expect([...worker().listeners.keys()].sort()).toEqual(['activate', 'notificationclick', 'push']);
     expect(source).not.toMatch(/['"]fetch['"]/);
+  });
+
+  it('takes over the open pages when it activates', async () => {
+    claim.mockClear();
+    expect(await worker().fire('activate', {})).toBe(1);
+    expect(claim).toHaveBeenCalledOnce();
   });
 
   it('shows the notification a push carries, with its tag, url and icon', async () => {
@@ -148,6 +166,19 @@ describe('public/sw.js', () => {
     expect(open.focus).toHaveBeenCalledOnce();
     expect(open.navigate).toHaveBeenCalledWith(`${SCOPE}routines`);
     expect(w.opened).toEqual([]);
+  });
+
+  it('opens the url in a window of its own when the open one cannot navigate, or fails to', async () => {
+    const cannot: FakeClient = { url: SCOPE, focus: vi.fn().mockResolvedValue(undefined) };
+    const w = worker([cannot]);
+    await w.click('/lists');
+    expect(w.opened).toEqual([`${SCOPE}lists`]);
+
+    const fails: FakeClient = { url: SCOPE, focus: vi.fn().mockResolvedValue(undefined), navigate: vi.fn().mockRejectedValue(new Error('refused')) };
+    const v = worker([fails]);
+    await v.click('/meals');
+    expect(fails.navigate).toHaveBeenCalledWith(`${SCOPE}meals`);
+    expect(v.opened).toEqual([`${SCOPE}meals`]);
   });
 
   it('only focuses a window that is already at the url', async () => {

@@ -127,7 +127,7 @@ describe('the Notifications card', () => {
   });
 
   it('says what the last tap did, in the status line, and what failed in an alert', () => {
-    expect(render({ status: 'saved' })).toMatch(/<p role="status"[^>]*>Saved<\/p>/);
+    expect(render({ status: 'saved' })).toMatch(/<p role="status"[^>]*>Saved\.<\/p>/);
     expect(on({ status: 'test' })).toMatch(/<p role="status"[^>]*>Test sent<\/p>/);
     expect(render()).toMatch(/<p role="status"[^>]*><\/p>/);
     const failed = render({ problem: { place: 'notifications', words: 'Could not turn on notifications. Try again.', n: 1, refused: false } });
