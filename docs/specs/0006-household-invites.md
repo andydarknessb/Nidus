@@ -111,5 +111,5 @@ Any other failure throws, as the existing `src/lib/device.ts` functions do.
 ## Further Notes
 
 - The Wall is untouched: a Device's rights, the Pairing Code and the tablet screens do not change.
-- Known limits: an invited person who opens `/settings` before tapping Join gets an empty Household of their own (`ensure_household`); since #126 that Household is given up when they join. A calendar-connect link made before someone was removed stays usable for its 7 days; its calendars arrive unselected. Both are follow-up issues.
+- Known limits: an invited person who opens `/settings` before tapping Join gets an empty Household of their own (`ensure_household`); since #126 that Household is given up when they join. Since #125 a calendar-connect link names the account that made it and stops working once that account is removed.
 - Built in parallel with v5 (iPhone calendars, spec 0005). They meet in CONTEXT.md, PLAN.md and CLAUDE.md only; whichever merges second rebases those lines.

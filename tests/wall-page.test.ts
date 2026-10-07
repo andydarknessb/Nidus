@@ -1,7 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { BeforeHousehold as BeforeHouseholdType, PairingScreen as PairingScreenType } from '../src/WallPage';
+import type { BeforeHousehold as BeforeHouseholdType, PairingScreen as PairingScreenType, WallFrame as WallFrameType } from '../src/WallPage';
+import type { WallHeader as WallHeaderType } from '../src/components/WallHeader';
 
 // The two screens the Wall draws before it has a Household: the frame that stands in for a screen until the Household is read, and the
 // pairing screen of a tablet that has no Household yet. Rendered to markup, so that what is asserted is what the browser is given. The
@@ -10,12 +11,15 @@ import type { BeforeHousehold as BeforeHouseholdType, PairingScreen as PairingSc
 
 let BeforeHousehold: typeof BeforeHouseholdType;
 let PairingScreen: typeof PairingScreenType;
+let WallFrame: typeof WallFrameType;
+let WallHeader: typeof WallHeaderType;
 beforeAll(async () => {
   vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
   // The pairing screen says where to go from the address the tablet is at.
   vi.stubGlobal('window', { location: { origin: 'https://nidus.example' } });
-  ({ BeforeHousehold, PairingScreen } = await import('../src/WallPage'));
+  ({ BeforeHousehold, PairingScreen, WallFrame } = await import('../src/WallPage'));
+  ({ WallHeader } = await import('../src/components/WallHeader'));
 });
 afterAll(() => {
   vi.unstubAllGlobals();
@@ -71,5 +75,53 @@ describe('the pairing screen', () => {
 
   it('is drawn in tokens: no colour of its own', () => {
     expect(screen()).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(|\bbg-\w+-\d{2,3}\b|\btext-\w+-\d{2,3}\b/);
+  });
+});
+
+describe("the Wall's frame", () => {
+  const frame = () =>
+    renderToStaticMarkup(
+      createElement(WallFrame, {
+        rail: createElement('nav', { 'aria-label': 'Wall sections' }),
+        header: createElement(WallHeader, { household: null, today: null, forecast: null, onMeals: null }),
+        children: createElement('section', { 'aria-label': 'Calendar' }),
+      }),
+    );
+
+  it('has its header outside the one main, so the header is the page banner (a header inside a main is not)', () => {
+    const html = frame();
+    expect(html.match(/<main[ >]/g)).toHaveLength(1);
+    expect(html.match(/<header[ >]/g)).toHaveLength(1);
+    // The header is complete before the main opens, and the main holds the screen and not the rail.
+    expect(html.indexOf('</header>')).toBeLessThan(html.indexOf('<main'));
+    const main = html.slice(html.indexOf('<main'), html.indexOf('</main>'));
+    expect(main).toContain('aria-label="Calendar"');
+    expect(main).not.toContain('<header');
+    expect(main).not.toContain('Wall sections');
+  });
+
+  it('puts the people strip in a region of its own, outside the banner and the main, so it is in a landmark', () => {
+    const html = renderToStaticMarkup(
+      createElement(WallFrame, {
+        rail: createElement('nav'),
+        header: createElement(WallHeader, { household: null, today: null, forecast: null, onMeals: null }),
+        strip: createElement('div', { role: 'group', 'aria-label': 'Show events for' }),
+        children: createElement('section', { 'aria-label': 'Calendar' }),
+      }),
+    );
+    const region = html.slice(html.indexOf('<section aria-label="People">'), html.indexOf('</section>'));
+    expect(region).toContain('aria-label="Show events for"');
+    expect(html.indexOf('</header>')).toBeLessThan(html.indexOf('<section aria-label="People">'));
+    expect(html.indexOf('</section>')).toBeLessThan(html.indexOf('<main'));
+    // Screens with no strip draw no empty region.
+    expect(frame()).not.toContain('aria-label="People"');
+  });
+
+  it('draws as it did: the rail, the header and the screen are grid items, the main having no box of its own', () => {
+    const html = frame();
+    expect(html).toMatch(/^<div class="grid h-svh min-h-\[34rem\] grid-cols-\[min\(6rem,max\(96px,12vw\)\)_minmax\(0,1fr\)\] grid-rows-\[auto_minmax\(0,1fr\)\] gap-4 p-4">/);
+    expect(html).toMatch(/<main class="contents">/);
+    expect(html.indexOf('Wall sections')).toBeLessThan(html.indexOf('<header'));
+    expect(html.indexOf('<header')).toBeLessThan(html.indexOf('<main'));
   });
 });

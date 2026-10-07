@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Plus, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, helpClass } from '@/components/phone';
+import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { useConnection } from '@/lib/change-feed';
 import { formatDate, formatDateWithYear } from '@/lib/calendar-occurrences';
@@ -179,7 +179,7 @@ export function HouseholdAccountsView(props: ViewProps) {
           <Problem id={problemId(INVITE)} problem={problemAt(INVITE)} />
         </div>
       )}
-      <p role="status" className="min-h-6 text-base">
+      <p role="status" className={statusLineClass}>
         {statusWords[status]}
       </p>
     </Card>

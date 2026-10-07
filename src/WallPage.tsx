@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
@@ -352,23 +352,28 @@ function HomeShell({ owner }: { owner: boolean }) {
   }
 
   return (
-    <main className="grid h-svh min-h-[34rem] grid-cols-[min(6rem,max(96px,12vw))_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
-      <NavigationRail
-        owner={owner}
-        route={route}
-        timezone={timezone}
-        onOpen={openView}
-        onHome={openHome}
-        onRoutines={openRoutines}
-        onMeals={() => openMeals(null)}
-        onLists={openLists}
-        onAdd={() => setAdding(true)}
-        onToggleMode={toggleMode}
-      />
-      <div className="flex min-w-0 flex-col gap-3">
-        <WallHeader household={view.household} today={today} forecast={forecast} onMeals={route.view === 'meals' ? null : () => openMeals(null)} />
-        {strip}
-      </div>
+    <WallFrame
+      rail={
+        <NavigationRail
+          owner={owner}
+          route={route}
+          timezone={timezone}
+          onOpen={openView}
+          onHome={openHome}
+          onRoutines={openRoutines}
+          onMeals={() => openMeals(null)}
+          onLists={openLists}
+          onAdd={() => setAdding(true)}
+          onToggleMode={toggleMode}
+        />
+      }
+      header={
+        <>
+          <WallHeader household={view.household} today={today} forecast={forecast} onMeals={route.view === 'meals' ? null : () => openMeals(null)} />
+        </>
+      }
+      strip={strip}
+    >
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
           timezone ? (
@@ -413,6 +418,23 @@ function HomeShell({ owner }: { owner: boolean }) {
         )}
         {sheet}
       </ProfileFilterContext.Provider>
-    </main>
+    </WallFrame>
+  );
+}
+
+// The Wall's frame: the navigation rail at the left, the header over the screen, and the screen (the one <main>) in the grid's second row.
+// The header is outside the main, so it is the page's banner (a <header> inside a <main> is not one), and the people strip under it is a region. The main takes no box of its own
+// (`contents`), so what it holds is laid out by the grid as if it were not there.
+export function WallFrame({ rail, header, strip, children }: { rail: ReactNode; header: ReactNode; strip?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="grid h-svh min-h-[34rem] grid-cols-[min(6rem,max(96px,12vw))_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
+      {rail}
+      <div className="flex min-w-0 flex-col gap-3">
+        {header}
+        {/* The people strip, on the calendar screens, is a region of its own: outside the banner and the main it would be in no landmark. */}
+        {strip && <section aria-label="People">{strip}</section>}
+      </div>
+      <main className="contents">{children}</main>
+    </div>
   );
 }

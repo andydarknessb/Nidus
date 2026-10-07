@@ -51,7 +51,7 @@ export function PillRow({
 }) {
   return (
     <div ref={ref} role="group" aria-label={name} className="flex h-13 flex-none gap-2">
-      <span aria-hidden className="flex w-15 flex-none items-center justify-end text-sm text-muted-foreground">
+      <span aria-hidden className="flex w-15 flex-none items-center justify-end text-right text-sm leading-[18px] text-muted-foreground">
         {label}
       </span>
       <div ref={control.scroller} className="flex min-w-0 flex-1 gap-2 overflow-x-auto overflow-y-hidden px-1.5 [scrollbar-width:none]">
@@ -92,8 +92,8 @@ export function HourGrid({
   return (
     <div className="flex flex-none gap-2" style={{ height: `${hours.length * HOUR_REM}rem` }}>
       <div aria-hidden className="relative w-15 flex-none text-sm leading-[18px] text-muted-foreground">
-        {hours.map((hour, index) => (
-          <span key={hour} className="absolute right-0" style={{ top: index === 0 ? 0 : `calc(${at(hour)} - 9px)` }}>
+        {hours.map((hour) => (
+          <span key={hour} className="absolute right-0" style={{ top: `calc(${at(hour)} - 9px)` }}>
             {hourWords(hour)}
           </span>
         ))}

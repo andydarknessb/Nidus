@@ -1,5 +1,6 @@
 import { Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
+import { statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import type { Appearance } from '@/lib/mode';
@@ -60,12 +61,16 @@ export function AppearanceControl({
         <p id="appearance-help" className="text-sm leading-5 text-muted-foreground">
           {weatherOn ? AUTO_WORDS.sun : AUTO_WORDS.hours}
         </p>
-        {/* The status line is there from the start, as in the Weather section, so a screen reader has it before it speaks; the
-            line it keeps is one line tall whichever of the two says something, so nothing below moves. */}
-        <div className="min-h-6 text-base">
-          <p role="status">{status === 'saved' && 'Saved.'}</p>
-          {status === 'failed' && <p role="alert">{words}</p>}
-        </div>
+        {/* The status line is there from the start, as in the Weather section, so a screen reader has it before it speaks, and takes
+            no room until it says something. */}
+        <p role="status" className={statusLineClass}>
+          {status === 'saved' && 'Saved.'}
+        </p>
+        {status === 'failed' && (
+          <p role="alert" className="text-base">
+            {words}
+          </p>
+        )}
       </div>
     </section>
   );

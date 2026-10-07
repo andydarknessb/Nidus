@@ -19,9 +19,11 @@
 //   GET  callback  Google returns here with a code. Exchanges it, stores the refresh
 //                  token in Vault, upserts the Calendar Account and lists its calendars.
 //
-// The signed `state` parameter binds the flow to a Household: an HMAC over the Household
-// id and an expiry, so a callback can only ever attach the account to the Household that
-// started the flow, and a forged or tampered state is refused.
+// The signed `state` parameter binds the flow to a Household and to the Household Account that
+// started it: an HMAC over both ids and an expiry, so a callback can only ever attach the account
+// to the Household that started the flow, and a forged or tampered state is refused. consent and
+// callback also refuse a state whose account is no longer a Household Account of that Household
+// (a link outlives the person who made it by up to 7 days); a state with no account is refused too.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { feedCalendarName, fetchFeed, normaliseFeedUrl } from '../_shared/feed.ts';
 
@@ -55,7 +57,7 @@ export const SETTINGS_STATE_SECONDS = 30 * 60;
 export const LINK_STATE_SECONDS = 7 * 24 * 60 * 60;
 
 type FlowKind = 'settings' | 'link';
-type State = { household_id: string; kind: FlowKind; exp: number };
+type State = { household_id: string; auth_user_id: string; kind: FlowKind; exp: number };
 
 const encoder = new TextEncoder();
 
@@ -104,13 +106,14 @@ export async function verifyState(secret: string, token: string | null, nowMs: n
     const state = JSON.parse(new TextDecoder().decode(bytes)) as Partial<State>;
     if (
       typeof state.household_id !== 'string' ||
+      typeof state.auth_user_id !== 'string' ||
       (state.kind !== 'settings' && state.kind !== 'link') ||
       typeof state.exp !== 'number' ||
       state.exp * 1000 <= nowMs
     ) {
       return null;
     }
-    return { household_id: state.household_id, kind: state.kind, exp: state.exp };
+    return { household_id: state.household_id, auth_user_id: state.auth_user_id, kind: state.kind, exp: state.exp };
   } catch {
     return null;
   }
@@ -165,7 +168,7 @@ async function listCalendars(deps: ConnectDeps, accessToken: string): Promise<Go
 }
 
 // Who is asking, for the routes only a Household Account may use: its Household, or the answer to send.
-async function householdOf(request: Request, deps: ConnectDeps): Promise<{ householdId: string } | Response> {
+async function householdOf(request: Request, deps: ConnectDeps): Promise<{ householdId: string; authUserId: string } | Response> {
   const token = /^Bearer (.+)$/i.exec(request.headers.get('Authorization') ?? '')?.[1];
   if (!token) return json(401, { error: 'sign in first' });
   const { data: session } = await deps.admin.auth.getUser(token);
@@ -175,8 +178,8 @@ async function householdOf(request: Request, deps: ConnectDeps): Promise<{ house
     .select('household_id')
     .eq('auth_user_id', session.user.id)
     .maybeSingle<{ household_id: string }>();
-  if (!account) return json(403, { error: 'only the Household Account connects a Calendar Account' });
-  return { householdId: account.household_id };
+  if (!account) return json(403, { error: 'only a Household Account connects a Calendar Account' });
+  return { householdId: account.household_id, authUserId: session.user.id };
 }
 
 // POST start: who is asking must be a Household Account, and the state carries its Household.
@@ -188,6 +191,7 @@ async function start(request: Request, deps: ConnectDeps, now: number): Promise<
   const seconds = kind === 'link' ? LINK_STATE_SECONDS : SETTINGS_STATE_SECONDS;
   const state = await signState(deps.env.stateSecret, {
     household_id: who.householdId,
+    auth_user_id: who.authUserId,
     kind,
     exp: Math.floor(now / 1000) + seconds,
   });
@@ -224,18 +228,41 @@ async function icloud(request: Request, deps: ConnectDeps): Promise<Response> {
   return json(200, { id, name });
 }
 
-// GET consent: the shareable link. Nothing but the state proves anything, and that is enough.
+const expired = () => page(400, 'Link expired', 'This link is no longer valid. Ask for a new one from Nidus settings.');
+
+// The state if it is genuine, unexpired and its account is still a Household Account of its Household;
+// otherwise the page to send: Link expired, or a 500 when the lookup itself failed.
+async function liveState(token: string | null, deps: ConnectDeps, now: number): Promise<State | Response> {
+  const state = await verifyState(deps.env.stateSecret, token, now);
+  if (!state) return expired();
+  const { data, error } = await deps.admin
+    .from('household_accounts')
+    .select('auth_user_id')
+    .eq('household_id', state.household_id)
+    .eq('auth_user_id', state.auth_user_id)
+    .maybeSingle();
+  if (error) {
+    console.error('calendar-connect: household_accounts lookup failed', error);
+    return page(500, 'Calendar not connected', 'Something went wrong on our side. Please try again.');
+  }
+  return data ? state : expired();
+}
+
+// GET consent: the shareable link. Nothing but the state proves anything: its signature, its expiry and its account still being a Household Account.
 async function consent(url: URL, deps: ConnectDeps, now: number): Promise<Response> {
   const stateParam = url.searchParams.get('state');
-  const state = await verifyState(deps.env.stateSecret, stateParam, now);
-  if (!state || !stateParam) return page(400, 'Link expired', 'This link is no longer valid. Ask for a new one from Nidus settings.');
+  if (!stateParam) return expired();
+  const state = await liveState(stateParam, deps, now);
+  if (state instanceof Response) return state;
   return new Response(null, { status: 302, headers: { Location: consentUrl(deps.env, stateParam) } });
 }
 
 // GET callback: code for tokens, tokens into Vault, calendars into Mirrored Calendars (unselected).
 async function callback(url: URL, deps: ConnectDeps, now: number): Promise<Response> {
-  const state = await verifyState(deps.env.stateSecret, url.searchParams.get('state'), now);
-  if (!state) return page(400, 'Link expired', 'This link is no longer valid. Ask for a new one from Nidus settings.');
+  // Accepted limits (the #125 Ruling): a removal that commits during the Google round trips below still lands
+  // (the calendars arrive unselected), and a removed-then-reinvited account's unexpired links work again.
+  const state = await liveState(url.searchParams.get('state'), deps, now);
+  if (state instanceof Response) return state;
   if (url.searchParams.get('error')) {
     return page(400, 'Calendar not connected', 'Calendar access was not granted, so nothing was connected. You can close this tab.');
   }

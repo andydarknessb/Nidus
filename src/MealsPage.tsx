@@ -5,6 +5,7 @@ import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
 import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
 import { dialogKeys } from './lib/dialog';
+import { focusTitleIfLost } from './lib/focus';
 import { appBehind, holdBackground } from './lib/inert-behind';
 import { mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
 import { householdDay, WEEKDAYS } from './lib/routines';
@@ -30,9 +31,22 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
   const days = pageDays('week', anchor, timezone, now);
   const { previous, next } = paging('week', anchor, pagingWindowAround(today));
   const open = (week: string) => onNavigate(mealsPageDate(week, today));
-  // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it.
+  // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it, but only when it was lost
+  // (focusTitleIfLost), so paging by keyboard stays on the button that was pressed; on arrival it goes to the title, as on the other
+  // screens. It runs on the week the person chose (`date`), never on `anchor`, which also moves by itself at the week's turn while the
+  // page follows this week.
   const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => heading.current?.focus(), [anchor]);
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (arrived.current) focusTitleIfLost(heading.current);
+    else {
+      arrived.current = true;
+      heading.current?.focus();
+    }
+  }, [date]);
+  // The week's grid is keyed on the anchor, so when it moves by itself (the week turning) the grid is new and focus inside it is gone:
+  // it goes to the title then, and focus that is anywhere else is left alone.
+  useEffect(() => focusTitleIfLost(heading.current), [anchor]);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -95,7 +109,7 @@ function MealsGrid({ days }: { days: WallDay[] }) {
         </p>
       )}
       {/* The padding is on the scrolling grid, so a focus ring has room inside what it clips. */}
-      <div style={template} className="grid min-h-0 flex-1 gap-[8px] overflow-y-auto p-2.5">
+      <div style={template} className="grid min-h-0 flex-1 gap-[8px] overflow-y-auto p-2">
         {/* The first read's own line, in the corner so the grid does not shift when it lands. */}
         <div className="flex items-center px-3 text-sm text-muted-foreground">{!known && !failed ? 'Loading' : null}</div>
         {days.map((day) => (
