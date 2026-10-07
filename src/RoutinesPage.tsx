@@ -468,7 +468,8 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
         </div>
       ) : (
         <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
-          {people}
+          {/* The same wrapper as portrait's, so turning the tablet keeps each column (and its read) instead of mounting it again. */}
+          <div className="contents">{people}</div>
         </div>
       )}
     </section>

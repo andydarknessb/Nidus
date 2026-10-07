@@ -256,7 +256,8 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
         </div>
       ) : (
         <div ref={row.scroller} className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cardSize}`}>
-          {shown}
+          {/* The same wrapper as portrait's, so turning the tablet keeps each card (and its read) instead of mounting it again. */}
+          <div className="contents">{shown}</div>
         </div>
       )}
     </div>

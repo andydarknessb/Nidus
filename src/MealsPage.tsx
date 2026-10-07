@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { InBody } from './components/InBody';
 import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
@@ -159,29 +159,16 @@ function MealsGrid({ days, portrait }: { days: WallDay[]; portrait: boolean }) {
       <div style={template} className="grid min-h-0 flex-1 gap-[8px] overflow-y-auto p-2">
         {/* The first read's own line, in the corner so the grid does not shift when it lands. */}
         <div className="flex items-center px-3 text-sm text-muted-foreground">{!known && !failed ? 'Loading' : null}</div>
-        {portrait ? (
-          <>
-            {rows.map(slotHeading)}
-            {days.map((day, index) => (
-              <Fragment key={day.date}>
-                <DayHeading day={day} />
-                {rows.map((row) => cell(row, index))}
-              </Fragment>
-            ))}
-          </>
-        ) : (
-          <>
-            {days.map((day) => (
-              <DayHeading key={day.date} day={day} />
-            ))}
-            {rows.map((row) => (
-              <Fragment key={row.slot}>
-                {slotHeading(row)}
-                {row.cells.map((_, index) => cell(row, index))}
-              </Fragment>
-            ))}
-          </>
-        )}
+        {/* Both forms are one flat list of keyed headings and cells, so turning the tablet moves them and keeps each cell. */}
+        {portrait
+          ? [
+              ...rows.map(slotHeading),
+              ...days.flatMap((day, index) => [<DayHeading key={day.date} day={day} />, ...rows.map((row) => cell(row, index))]),
+            ]
+          : [
+              ...days.map((day) => <DayHeading key={day.date} day={day} />),
+              ...rows.flatMap((row) => [slotHeading(row), ...row.cells.map((_, index) => cell(row, index))]),
+            ]}
       </div>
       {editing && (
         // Drawn in the body, outside the page it holds inert while it is open (InBody).
