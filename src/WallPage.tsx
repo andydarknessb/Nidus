@@ -370,9 +370,9 @@ function HomeShell({ owner }: { owner: boolean }) {
       header={
         <>
           <WallHeader household={view.household} today={today} forecast={forecast} onMeals={route.view === 'meals' ? null : () => openMeals(null)} />
-          {strip}
         </>
       }
+      strip={strip}
     >
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
@@ -423,13 +423,17 @@ function HomeShell({ owner }: { owner: boolean }) {
 }
 
 // The Wall's frame: the navigation rail at the left, the header over the screen, and the screen (the one <main>) in the grid's second row.
-// The header is outside the main, so it is the page's banner: a <header> inside a <main> is not one. The main takes no box of its own
+// The header is outside the main, so it is the page's banner (a <header> inside a <main> is not one), and the people strip under it is a region. The main takes no box of its own
 // (`contents`), so what it holds is laid out by the grid as if it were not there.
-export function WallFrame({ rail, header, children }: { rail: ReactNode; header: ReactNode; children: ReactNode }) {
+export function WallFrame({ rail, header, strip, children }: { rail: ReactNode; header: ReactNode; strip?: ReactNode; children: ReactNode }) {
   return (
     <div className="grid h-svh grid-cols-[6rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
       {rail}
-      <div className="flex min-w-0 flex-col gap-3">{header}</div>
+      <div className="flex min-w-0 flex-col gap-3">
+        {header}
+        {/* The people strip, on the calendar screens, is a region of its own: outside the banner and the main it would be in no landmark. */}
+        {strip && <section aria-label="People">{strip}</section>}
+      </div>
       <main className="contents">{children}</main>
     </div>
   );

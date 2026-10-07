@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { BeforeHousehold } from '../components/BeforeHousehold';
 import { DayView } from '../components/FiveDayCalendar';
+import { statusLineClass } from '../components/phone';
 import {
   canOpenDay,
   describeMonth,
@@ -85,6 +86,9 @@ function Calendar({
     seen.current = page;
     focusTitleIfLost(heading.current, { preventScroll: true });
   }, [page]);
+  // The page's contents are keyed on the anchor, so when it moves by itself (Household midnight, a week or a month turning) they are
+  // new and focus inside them is gone: it goes to the page's words then, and focus that is anywhere else is left alone.
+  useEffect(() => focusTitleIfLost(heading.current, { preventScroll: true }), [anchor]);
 
   return (
     // A touch anywhere in the calendar keeps the Profile filter open.
@@ -99,7 +103,7 @@ function Calendar({
         onNext={next === null ? null : () => openView(calendarView, next)}
       />
       {/* Always mounted, so a screen reader announces the text when it appears. */}
-      <p role="status" className="text-base text-muted-foreground empty:hidden">
+      <p role="status" className={`${statusLineClass} text-muted-foreground`}>
         {previous === null
           ? 'This is as far back as the calendar goes. It keeps one month of past events.'
           : next === null

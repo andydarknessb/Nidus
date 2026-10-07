@@ -123,6 +123,9 @@ export function PagedCalendar({
       heading.current?.focus();
     } else focusTitleIfLost(heading.current);
   }, [view, date]);
+  // The page's contents are keyed on the anchor, so when it moves by itself (Household midnight, a week or a month turning) they are
+  // new and whatever had focus in them is gone: it goes to the title then, and focus that is anywhere else is left alone.
+  useEffect(() => focusTitleIfLost(heading.current), [anchor]);
 
   return (
     <div className="flex min-h-0 flex-col gap-4" onPointerDownCapture={touch}>

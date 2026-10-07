@@ -100,6 +100,23 @@ describe("the Wall's frame", () => {
     expect(main).not.toContain('Wall sections');
   });
 
+  it('puts the people strip in a region of its own, outside the banner and the main, so it is in a landmark', () => {
+    const html = renderToStaticMarkup(
+      createElement(WallFrame, {
+        rail: createElement('nav'),
+        header: createElement(WallHeader, { household: null, today: null, forecast: null, onMeals: null }),
+        strip: createElement('div', { role: 'group', 'aria-label': 'Show events for' }),
+        children: createElement('section', { 'aria-label': 'Calendar' }),
+      }),
+    );
+    const region = html.slice(html.indexOf('<section aria-label="People">'), html.indexOf('</section>'));
+    expect(region).toContain('aria-label="Show events for"');
+    expect(html.indexOf('</header>')).toBeLessThan(html.indexOf('<section aria-label="People">'));
+    expect(html.indexOf('</section>')).toBeLessThan(html.indexOf('<main'));
+    // Screens with no strip draw no empty region.
+    expect(frame()).not.toContain('aria-label="People"');
+  });
+
   it('draws as it did: the rail, the header and the screen are grid items, the main having no box of its own', () => {
     const html = frame();
     expect(html).toMatch(/^<div class="grid h-svh grid-cols-\[6rem_minmax\(0,1fr\)\] grid-rows-\[auto_minmax\(0,1fr\)\] gap-4 p-4">/);

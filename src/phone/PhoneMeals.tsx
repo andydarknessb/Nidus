@@ -73,6 +73,9 @@ function MealsWeek({ timezone, date, onNavigate }: { timezone: string; date: str
     seen.current = date;
     focusTitleIfLost(heading.current, { preventScroll: true });
   }, [date]);
+  // The week's card is keyed on the anchor, so when it moves by itself (the week turning) it is new and focus inside it is gone: it goes
+  // to the pager's words then, and focus that is anywhere else is left alone.
+  useEffect(() => focusTitleIfLost(heading.current, { preventScroll: true }), [anchor]);
 
   return (
     <div className="flex flex-col gap-3">

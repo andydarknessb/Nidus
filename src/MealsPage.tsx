@@ -44,6 +44,9 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
       heading.current?.focus();
     }
   }, [date]);
+  // The week's grid is keyed on the anchor, so when it moves by itself (the week turning) the grid is new and focus inside it is gone:
+  // it goes to the title then, and focus that is anywhere else is left alone.
+  useEffect(() => focusTitleIfLost(heading.current), [anchor]);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">

@@ -15,6 +15,8 @@ const names = new Map<string, string>();
 
 // The zone an id stands for, as the browser spells it: `US/Central` and `America/Chicago` are one zone, and so are `Asia/Kolkata` and
 // `Asia/Calcutta`, whichever of the two the browser keeps. An id the browser does not know stands for itself.
+// ponytail: relies on resolvedOptions().timeZone canonicalising aliases (true in Chromium today); an engine that adopts the newer ECMA-402
+// behaviour, which keeps the alias as given, would list the browser's own spelling beside the stored one again. Upgrade path: a small alias table.
 function canonical(id: string): string {
   try {
     return new Intl.DateTimeFormat('en-US', { timeZone: id }).resolvedOptions().timeZone;
