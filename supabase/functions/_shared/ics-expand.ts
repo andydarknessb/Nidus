@@ -123,6 +123,7 @@ function excludedStarts(ev: ICAL.Event, timezone: string): Set<number> {
 const MAX_INTERVAL = 999;
 
 const MAX_SETPOS_STEPS = 240;
+const SETPOS_MARGIN = 24;
 
 const BARE_DAY = /^(SU|MO|TU|WE|TH|FR|SA)$/;
 const ORDINAL_DAY = /^([+-]?\d{1,2})(SU|MO|TU|WE|TH|FR|SA)$/;
@@ -145,7 +146,8 @@ const ordinal = (n: number) => (n >= 1 && n <= 5) || n === -1;
 // (the fifth Monday of a 28-day February, every 4 years) sends ical.js searching inside one step; and a
 // monthly BYSETPOS costs about 0.7 ms a step, so one that is walked from DTSTART (it has COUNT, or
 // `fastForwarded` cannot move it: `moves` says) is walked only when DTSTART is at most
-// MAX_SETPOS_STEPS of its steps before the window (`monthsToWindow`, in months).
+// MAX_SETPOS_STEPS of its steps before the window (`monthsToWindow`, in months). Whatever its path, a
+// monthly BYSETPOS walk is also cut at that many steps plus the window's length in months (see `cap`).
 function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boolean): boolean {
   const parts = rule.parts as Record<string, unknown[] | undefined>;
   const names = Object.keys(parts).sort().join(',');
@@ -443,9 +445,16 @@ function expand(
         const lengthBound = s.layout.isAllDay ? s.layout.lengthDays * DAY_MS : s.layout.lengthMs;
         const steps: { next(): ICAL.Time | null | undefined } =
           (run.noFastForward ? null : fastForwarded(s.ev, s.layout.start, lengthBound, windowStartMs)) ?? s.ev.iterator();
+        const rule = s.ev.component.getFirstPropertyValue('rrule');
+        // A monthly BYSETPOS step costs 0.7 ms, so its walk is cut at what an admitted series needs (the
+        // steps of the age limit and the window, with a margin) however it is reached: a series with an
+        // occurrence years long, moved to a month before the window, would otherwise step to the row cap.
+        // (A test that turns the skip off reads the plain walk whole.)
+        const setpos = rule instanceof ICAL.Recur && rule.freq === 'MONTHLY' && rule.parts['BYSETPOS'] !== undefined && !run.noFastForward;
+        const cap = setpos ? Math.min(MAX_STEPS_PER_EVENT, MAX_SETPOS_STEPS + Math.ceil((windowEndMs - windowStartMs) / (28 * DAY_MS)) + SETPOS_MARGIN) : MAX_STEPS_PER_EVENT;
         let n = 0;
         for (let next = steps.next(); next; next = steps.next()) {
-          if (n >= MAX_STEPS_PER_EVENT || budget <= 0) {
+          if (n >= cap || budget <= 0) {
             truncated = true;
             break;
           }

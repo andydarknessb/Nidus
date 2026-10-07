@@ -921,6 +921,44 @@ RRULE:${rule}`, 'missing')), windowStart, windowEnd);
     expect(truncated).toBe(true);
   });
 
+  it('syncs a feed with two series it cannot move, each shown as its first occurrence', () => {
+    const long = (uid: string) => event('DTSTART:19000115T090000Z\nDURATION:P73000D\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1', uid);
+    const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0 };
+    const { rows, truncated } = expandFeed(feed(long('a'), long('b')), HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+    expect(rows).toHaveLength(2);
+    expect(truncated).toBe(true);
+  });
+
+  it('stops a monthly BYSETPOS walk after the steps an admitted series needs, and says it was cut, however long each occurrence lasts', () => {
+    const rule = 'RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1';
+    // Each of these can be moved to a month before the window, but the occurrences overlapping the window are years of them.
+    for (const lines of [
+      `DTSTART:19000115T090000Z\nDURATION:P36525D\n${rule}`,
+      `DTSTART:16000115T090000Z\nDURATION:P109575D\n${rule}`,
+      `DTSTART:00010115T090000Z\nDURATION:P800000D\n${rule}`,
+    ]) {
+      const run = budget();
+      const { rows, truncated } = expandFeed(feed(event(lines, 'huge')), HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+      expect(truncated, lines).toBe(true);
+      expect(rows.length, lines).toBeGreaterThan(0);
+      expect(MAX_STEPS_PER_RUN - run.remaining, lines).toBeLessThan(400);
+    }
+  });
+
+  it('reads in full a monthly BYSETPOS series just inside the age limit, and one of any age that is moved', () => {
+    // 2006-09 to the window's 2026-09 is 240 months, the most that is walked from DTSTART.
+    const last = (start: string, end: string) => feed(event(`DTSTART:${start}T090000Z\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1${end}`, 'last'));
+    for (const text of [last('20060915', ';COUNT=400'), last('20060915', ''), last('19700115', '')]) {
+      const walked = expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, { ...budget(), noFastForward: true });
+      const run = budget();
+      const { rows, truncated } = expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+      expect(truncated).toBe(false);
+      expect(rows).toHaveLength(6);
+      expect(walked.truncated).toBe(false);
+      expect(walked.rows).toEqual(rows);
+    }
+  });
+
   it('leaves to the plain walk a series whose moved start is the one ical.js gives up on', () => {
     // The 31st every 5 months from January 2000: alive from DTSTART, but dead from a start moved to a month 5 periods before the next 31st.
     const text = feed(event('DTSTART:20000115T090000Z\nRRULE:FREQ=MONTHLY;BYMONTHDAY=31;INTERVAL=5', 'dead-moved'));
