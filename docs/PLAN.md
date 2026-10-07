@@ -149,3 +149,24 @@ Settled on 2026-10-06 when the owner asked for an invite feature so that another
 household_invites     household_id (pk), token_hash (unique), created_at, expires_at
 household_accounts    grants narrowed to select; removal by remove_household_account (locks the Household, cancels its invite)
 ```
+
+## v7: notifications on the phone
+
+Settled on 2026-10-06 when the owner chose all four kinds of notification, each phone opting in. The spec is [0007](specs/0007-push-notifications.md). It replaces v2's "Reminders per event: Skip, a wall has nobody to notify": a phone has somebody.
+
+### Decisions
+
+- **Web Push, per phone, opt-in**: a Push Subscription is one browser signed in as a Household Account. Android from the browser; iPhone from the Home Screen app, iOS 16.4 or later. No app store app, no email.
+- **Four kinds, each a switch per phone**: event reminders (5 to 60 minutes ahead, 15 by default, timed events only), a morning summary at 7:00, Routines not done at 19:00, additions to the Pinned List by someone else. Fixed times in the Household Timezone; late ones are skipped, not sent.
+- **One sender**: Edge Function `push-notify`, run every minute by pg_cron, sends with `jsr:@negrel/webpush`. Every notification's key is claimed in `push_deliveries` before it is sent: at most once, never retried.
+- **The push service is faked like the other outside HTTP** in tests, injected as `sendPush` beside Google's HTTP API and the iCloud feed.
+- **A service worker at last**: `public/sw.js`, push and click only, no caching. Registered only when a phone turns notifications on.
+
+### Tables
+
+```
+push_subscriptions    id, auth_user_id (-> household_accounts, cascade), endpoint (unique), p256dh, auth, event_reminders, reminder_minutes, morning_summary, routines_nudge, list_additions, created_at
+push_deliveries       subscription_id, key (pk together), sent_at
+list_items            + added_by (default auth.uid())
+```
+

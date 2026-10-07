@@ -125,6 +125,15 @@ export async function loadPinnedListId(client: SupabaseClient): Promise<string |
   return (data as { pinned_list_id: string | null }).pinned_list_id;
 }
 
+// The pinned list's name, or null when none is pinned.
+export async function loadPinnedListName(client: SupabaseClient): Promise<string | null> {
+  const id = await loadPinnedListId(client);
+  if (id === null) return null;
+  const { data, error } = await client.from('shared_lists').select('name').eq('id', id).maybeSingle<{ name: string }>();
+  if (error) throw error;
+  return data?.name ?? null;
+}
+
 export async function setPinnedList(client: SupabaseClient, householdId: string, listId: string): Promise<void> {
   const { error } = await client.from('households').update({ pinned_list_id: listId }).eq('id', householdId);
   if (error) throw error;

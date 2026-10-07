@@ -1,0 +1,58 @@
+// Nidus's service worker, for push only: it caches nothing and has no fetch handler, so it never touches a page load.
+// An iPhone revokes a subscription whose push shows no notification, so every push shows one, even a malformed one.
+
+const ICON = '/icons/icon-192.png';
+
+// A page opened before the worker was installed is taken over at once, so that a tap's focus and navigate reach it.
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    const parsed = event.data ? event.data.json() : null;
+    if (parsed && typeof parsed === 'object') data = parsed;
+  } catch (error) {
+    // Not JSON: it still shows "Nidus".
+  }
+  const text = (value) => (typeof value === 'string' && value !== '' ? value : undefined);
+  const options = { icon: ICON, data: { url: text(data.url) || '/' } };
+  const body = text(data.body);
+  if (body) options.body = body;
+  const tag = text(data.tag);
+  // A tag replaces the earlier notification of its kind, and renotify makes that replacement buzz; never renotify without a tag.
+  if (tag) {
+    options.tag = tag;
+    options.renotify = true;
+  }
+  event.waitUntil(self.registration.showNotification(text(data.title) || 'Nidus', options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  // Only a place in Nidus: anything else opens its front door.
+  const scope = self.registration.scope;
+  let target = new URL('/', scope);
+  try {
+    const wanted = new URL((event.notification.data && event.notification.data.url) || '/', scope);
+    if (wanted.origin === target.origin) target = wanted;
+  } catch (error) {
+    // A url that does not parse opens the front door.
+  }
+  const url = target.href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
+      const open = windows.find((client) => 'focus' in client);
+      if (!open) return self.clients.openWindow(url);
+      await open.focus();
+      if (open.url === url) return undefined;
+      try {
+        if (!('navigate' in open)) throw new Error('no navigate');
+        await open.navigate(url);
+      } catch (error) {
+        // A window that cannot be sent there is not left on the wrong page: the url opens in a window of its own.
+        return self.clients.openWindow(url);
+      }
+      return undefined;
+    }),
+  );
+});

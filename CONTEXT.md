@@ -30,6 +30,10 @@ _Avoid_: PIN, token, invite
 The single-use link a Household Account makes so another grown-up can sign in with their own Google account and become a Household Account of the same Household. Lasts 7 days; one at a time per Household, so making a new one ends the old.
 _Avoid_: Pairing Code, share code, membership
 
+**Push Subscription**:
+One browser on one phone, signed in as a Household Account, that has turned on notifications. It holds the browser's Web Push endpoint and which of the four kinds that phone gets (event reminders, morning summary, Routines not done, added to the list). It belongs to its Household Account and goes when that account is removed. A Device never has one.
+_Avoid_: device (a Device is a tablet), token, registration
+
 **Household Timezone**:
 The one timezone stored on the Household. All display, rollover and reset logic uses it; source calendar timezones are converted on ingest.
 
