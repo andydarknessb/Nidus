@@ -31,11 +31,15 @@ export function offsetMs(timestamp: number, timezone: string): number {
 }
 
 // The instant the wall clock in `timezone` reads `wall` (the clock's fields taken as a UTC
-// timestamp, e.g. Date.UTC(2026, 2, 8, 9, 0)), correct across daylight saving changes. A time
-// that never happens (the hour skipped in spring) reads as the instant an hour later.
+// timestamp, e.g. Date.UTC(2026, 2, 8, 9, 0)), by RFC 5545 3.3.5. The offsets a day either side
+// give the two candidates: a time that happens twice (clocks going back) is the earlier, and a
+// time that never happens (clocks going forward) takes the offset from before the gap, so it moves
+// on by the skipped time, never back.
 export function wallClockMs(wall: number, timezone: string): number {
-  const first = wall - offsetMs(wall, timezone);
-  return wall - offsetMs(first, timezone);
+  const before = wall - offsetMs(wall - 86_400_000, timezone);
+  const after = wall - offsetMs(wall + 86_400_000, timezone);
+  const real = [before, after].filter((candidate) => candidate + offsetMs(candidate, timezone) === wall);
+  return real.length > 0 ? Math.min(...real) : before;
 }
 
 // The instant a Household day begins: local midnight of `date` ('YYYY-MM-DD') in `timezone`,
