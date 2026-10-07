@@ -96,6 +96,12 @@ describe('words', () => {
     expect(describeWhen(event('x', '2026-09-30T23:00:00Z', '2026-10-01T00:30:00Z'), CHICAGO)).toBe('Wed, Sep 30, 6:00 PM to 7:30 PM');
     expect(describeWhen(event('x', '2026-09-30T03:00:00Z', '2026-09-30T13:00:00Z'), CHICAGO)).toBe('Tue, Sep 29, 10:00 PM to Wed, Sep 30, 8:00 AM');
     expect(describeWhen(event('x', '2026-10-01T05:00:00Z', '2026-10-02T05:00:00Z', true), CHICAGO)).toBe('Thu, Oct 1, all day');
+    // The night the clocks go back (Sun Nov 1, 2026: 2:00 AM CDT is 1:00 AM CST again), 1:00 AM is on the clock twice: the zones say which.
+    expect(describeWhen(event('x', '2026-11-01T06:00:00Z', '2026-11-01T07:00:00Z'), CHICAGO)).toBe('Sun, Nov 1, 1:00 AM CDT to 1:00 AM CST');
+    expect(describeWhen(event('x', '2026-11-01T06:30:00Z', '2026-11-01T07:15:00Z'), CHICAGO)).toBe('Sun, Nov 1, 1:30 AM CDT to 1:15 AM CST');
+    // An event that does not repeat the clock says nothing of zones, that night or any other.
+    expect(describeWhen(event('x', '2026-11-01T05:00:00Z', '2026-11-01T06:30:00Z'), CHICAGO)).toBe('Sun, Nov 1, 12:00 AM to 1:30 AM');
+    expect(describeWhen(event('x', '2026-11-01T08:00:00Z', '2026-11-01T09:00:00Z'), CHICAGO)).toBe('Sun, Nov 1, 2:00 AM to 3:00 AM');
     expect(describeWhen(event('x', '2026-09-30T05:00:00Z', '2026-10-03T05:00:00Z', true), CHICAGO)).toBe('Wed, Sep 30 to Fri, Oct 2, all day');
   });
 });
