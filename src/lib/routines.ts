@@ -491,24 +491,3 @@ export async function uncompleteRoutine(client: SupabaseClient, routineId: strin
 }
 
 // ---- Optimistic updates ----------------------------------------------------------
-
-type Publish = (update: (checked: Set<string>) => Set<string>) => void;
-
-// Shows the tick (or untick) at once, then asks the server. If the server says no,
-// only that Routine goes back; other changes made meanwhile stay. Returns whether it stuck.
-export async function tickOptimistically(publish: Publish, routineId: string, checked: boolean, write: () => Promise<void>): Promise<boolean> {
-  const set = (value: boolean) => (current: Set<string>) => {
-    const next = new Set(current);
-    if (value) next.add(routineId);
-    else next.delete(routineId);
-    return next;
-  };
-  publish(set(checked));
-  try {
-    await write();
-    return true;
-  } catch {
-    publish(set(!checked));
-    return false;
-  }
-}

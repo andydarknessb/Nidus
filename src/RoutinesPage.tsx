@@ -41,6 +41,7 @@ import { CHART_CHOICES, PART_ICON, WORDS, timeWord, useChartPart } from './lib/r
 import { useOverflow } from './lib/use-overflow';
 import { useCelebration, type RoutinesToday } from './lib/use-routines-today';
 import { unnamed } from './lib/write-failure';
+import { couldNotLoad } from './lib/synced-read';
 
 // ---- The wall: the Routines chart, and the tile that Up next shares --------------------------------
 
@@ -433,7 +434,7 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
       {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
       {failed && !loaded && (
         <p role="alert" className="text-base">
-          Could not load routines. Check your connection.
+          {couldNotLoad('routines')}
         </p>
       )}
       {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
