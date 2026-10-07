@@ -105,7 +105,7 @@ To confirm the second, `supabase.auth.signInWithPassword` against the hosted pro
 
 ## 10. Installability
 
-Lighthouse no longer has a Progressive Web App category, so check installability in Chrome. Open `https://<site>`, DevTools, Application, Manifest: the Installability section lists no errors, and the manifest shows the name, start URL, `display: standalone` and the 192 px and 512 px icons. Chrome's address bar also offers an Install button. There is no service worker and no offline support, by design.
+Lighthouse no longer has a Progressive Web App category, so check installability in Chrome. Open `https://<site>`, DevTools, Application, Manifest: the Installability section lists no errors, and the manifest shows the name, start URL, `display: standalone` and the 192 px and 512 px icons. Chrome's address bar also offers an Install button. The only service worker is `/sw.js`, registered when a phone turns notifications on (step 12); the Wall's tablets never register it. There is still no offline support, by design.
 
 ## 11. Pair the tablet
 
@@ -119,17 +119,20 @@ Lighthouse no longer has a Progressive Web App category, so check installability
 Spec 0007. Until the two Vault secrets exist the minute's job does nothing, so the order up to the last step is safe; do the steps in this order, then merge.
 
 1. The migration is already pushed (step 4: `pnpm supabase db push`).
-2. Make the VAPID key pair, once. Changing it later ends every phone's subscription. In a scratch directory, with Deno installed:
+2. Make the VAPID key pair and set the three function secrets in one go, in Git Bash. The pair is made once: changing it later ends every phone's subscription, so keep `push.env` in your password manager before deleting it. `PUSH_NOTIFY_SECRET` is random, 32+ characters (`openssl` makes one); `VAPID_SUBJECT` is `mailto:` your address. With Deno installed:
 
    ```sh
-   deno eval 'import * as w from "jsr:@negrel/webpush@0.5.0"; console.log(JSON.stringify(await w.exportVapidKeys(await w.generateVapidKeys({ extractable: true }))))'
+   PUSH_SECRET=$(openssl rand -hex 32)
+   VAPID=$(deno eval 'import * as w from "jsr:@negrel/webpush@0.5.0"; console.log(JSON.stringify(await w.exportVapidKeys(await w.generateVapidKeys({ extractable: true }))))')
+   printf "PUSH_NOTIFY_SECRET=%s\nVAPID_KEYS='%s'\nVAPID_SUBJECT=%s\n" "$PUSH_SECRET" "$VAPID" "mailto:<your address>" > push.env
+   echo "$PUSH_SECRET"   # the Vault secret in step 6 is this same value
    ```
 
-   Keep the one line of JSON it prints (the pair's only copy is in your password manager and the function secret).
-3. Set the three function secrets. `PUSH_NOTIFY_SECRET` is random, 32+ characters; `VAPID_SUBJECT` is `mailto:` your address:
+3. Set them from the file, so the JSON's quotes reach Supabase untouched, then delete it:
 
    ```sh
-   pnpm supabase secrets set      PUSH_NOTIFY_SECRET=<random, 32+ characters>      VAPID_KEYS='<the JSON from step 2>'      VAPID_SUBJECT=mailto:<your address>
+   pnpm supabase secrets set --env-file push.env
+   rm push.env
    ```
 
 4. Deploy the function:
@@ -138,7 +141,7 @@ Spec 0007. Until the two Vault secrets exist the minute's job does nothing, so t
    pnpm supabase functions deploy push-notify
    ```
 
-5. Check it answers: `curl https://<project-ref>.supabase.co/functions/v1/push-notify/key` prints a long base64url string (the application server key), nothing else.
+5. Check it answers: `curl https://<project-ref>.supabase.co/functions/v1/push-notify/key` prints a long base64url string (the application server key), nothing else. That also confirms the key pair was read, because the function does not start with a broken `VAPID_KEYS`.
 6. Add the two Vault secrets in the SQL editor (the second is the same value as `PUSH_NOTIFY_SECRET`):
 
    ```sql
@@ -146,11 +149,19 @@ Spec 0007. Until the two Vault secrets exist the minute's job does nothing, so t
    select vault.create_secret('<the same value as PUSH_NOTIFY_SECRET>', 'push_notify_secret');
    ```
 
-7. After a minute, read the function's answer:
+7. After a minute or two, check the job ran:
 
    ```sql
-   select status_code, content, created from net._http_response order by created desc limit 5;
+   select d.status, d.return_message, d.start_time
+   from cron.job_run_details as d join cron.job as j using (jobid)
+   where j.jobname = 'push-notify' order by d.start_time desc limit 5;
    ```
 
-   `status_code` 200 with a body like `{"subscriptions":0,"event":0,...,"errors":[]}` is healthy. A 401 means `push_notify_secret` does not match `PUSH_NOTIFY_SECRET`; no rows at all means a Vault secret is missing. The `push-notify` job also shows in `select jobname, schedule, active from cron.job;` as `* * * * *`.
+   `succeeded` only says the request was queued. For the function's own answer, look for a row whose body starts `{"subscriptions"`:
+
+   ```sql
+   select status_code, content, created from net._http_response where content like '{"subscriptions"%' order by created desc limit 5;
+   ```
+
+   `status_code` 200 with a body like `{"subscriptions":0,"event":0,...,"errors":[]}` is healthy. A 401 means `push_notify_secret` does not match `PUSH_NOTIFY_SECRET`; no `succeeded` rows at all means a Vault secret is missing. The job also shows in `select jobname, schedule, active from cron.job;` as `* * * * *`.
 8. On a real phone (Android Chrome, and an iPhone with Nidus on the Home Screen), open Settings, turn on notifications and tap "Send a test".

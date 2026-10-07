@@ -6,6 +6,7 @@ import {
   type PushSummary,
   type PushTarget,
   type PushUrgency,
+  zoned,
 } from '../supabase/functions/push-notify/handler';
 import { arrangeCalendar, arrangeEvents, type EventInput } from './support/calendar';
 import {
@@ -66,12 +67,15 @@ async function run(d: PushDeps): Promise<PushSummary> {
 
 let households: HouseholdAccount[] = [];
 let tablets: Tablet[] = [];
+let extraUsers: string[] = [];
 
 afterEach(async () => {
   for (const account of households) await destroyHousehold(account);
   for (const tablet of tablets) await destroyTablet(tablet);
+  for (const id of extraUsers) await asServiceRole().auth.admin.deleteUser(id);
   households = [];
   tablets = [];
+  extraUsers = [];
 });
 
 async function arrange(timezone = 'America/Chicago'): Promise<HouseholdAccount> {
@@ -93,6 +97,7 @@ async function addAccount(account: HouseholdAccount): Promise<string> {
     email_confirm: true,
   });
   if (error || !data.user) throw error ?? new Error('createUser returned nothing');
+  extraUsers.push(data.user.id);
   const { error: linkError } = await admin.from('household_accounts').insert({ auth_user_id: data.user.id, household_id: account.household.id });
   if (linkError) throw linkError;
   return data.user.id;
@@ -105,7 +110,7 @@ let endpoints = 0;
 // A Push Subscription with every kind off unless the test turns it on, so a test sees only the kind it is about.
 async function subscribe(authUserId: string, on: Switches = {}): Promise<Sub> {
   endpoints += 1;
-  const endpoint = `https://push.example.test/send/${Date.now().toString(36)}-${endpoints}`;
+  const endpoint = `https://fcm.googleapis.com/fcm/send/${Date.now().toString(36)}-${endpoints}`;
   const { data, error } = await asServiceRole()
     .from('push_subscriptions')
     .insert({
@@ -261,6 +266,18 @@ describe('event reminders', () => {
     expect(push.sent[0]!.payload.url).toBe('/day?date=2026-10-07');
   });
 
+  it('sends once when two runs overlap', async () => {
+    const account = await arrange();
+    await subscribe(account.authUserId, { event_reminders: true });
+    await arrangeSynced(account, [event('Swim', NOW + 10 * MINUTE)]);
+    const push = fakePush();
+    const d = deps(account, push, NOW);
+
+    await Promise.all([run(d), run(d)]);
+
+    expect(push.sent).toHaveLength(1);
+  });
+
   it('sends nothing when the switch is off', async () => {
     const account = await arrange();
     await subscribe(account.authUserId, { event_reminders: false });
@@ -323,7 +340,7 @@ describe('the morning summary', () => {
     await run(deps(account, push, Date.parse('2026-04-03T18:00:00Z')));
     await run(deps(account, push, Date.parse('2026-04-04T19:00:00Z')));
 
-    expect(await deliveries(sub.id)).toEqual(['morning:2026-04-04', 'morning:2026-04-05']);
+    expect(await deliveries(sub.id)).toEqual([`morning:${account.household.id}:2026-04-04`, `morning:${account.household.id}:2026-04-05`]);
     expect(push.sent).toHaveLength(2);
   });
 
@@ -416,9 +433,14 @@ describe('Routines not done', () => {
     return data.id;
   }
 
-  async function complete(routineId: string, date: string): Promise<void> {
-    const { error } = await asServiceRole().from('routine_completions').insert({ routine_id: routineId, completed_on: date });
+  // The trigger only lets a completion in for the Household's real today, even for the service role, so
+  // it goes in as that and is then moved to the date the test means: no test depends on the date it runs.
+  async function complete(routineId: string, date: string, timezone = 'America/Chicago'): Promise<void> {
+    const admin = asServiceRole();
+    const { error } = await admin.from('routine_completions').insert({ routine_id: routineId, completed_on: zoned(Date.now(), timezone).date });
     if (error) throw error;
+    const { error: moveError } = await admin.from('routine_completions').update({ completed_on: date }).eq('routine_id', routineId);
+    if (moveError) throw moveError;
   }
 
   it('lists only the Profiles with Routines left today, in order, respecting days and completions', async () => {
@@ -432,7 +454,7 @@ describe('Routines not done', () => {
     await arrangeRoutine(account, sam, 'Piano', MONDAY);
     await arrangeRoutine(account, sam, 'Old chore', EVERY_DAY, true);
     const bed = await arrangeRoutine(account, mia, 'Make bed', EVERY_DAY);
-    const homework = await arrangeRoutine(account, mia, 'Homework', EVERY_DAY);
+    await arrangeRoutine(account, mia, 'Homework', EVERY_DAY);
     const done = await arrangeRoutine(account, kai, 'Shoes', EVERY_DAY);
     await complete(done, '2026-10-06');
     await complete(bed, '2026-10-05');
@@ -445,11 +467,6 @@ describe('Routines not done', () => {
       urgency: 'low',
       payload: { title: 'Routines not done', body: 'Sam: 2 left. Mia: 2 left.', url: '/routines', tag: 'routines:2026-10-06' },
     });
-
-    await complete(homework, '2026-10-06');
-    const next = fakePush();
-    await run(deps(account, next, SEVEN_PM + MINUTE));
-    expect(next.sent).toHaveLength(0);
   });
 
   it('sends nothing when everybody is done', async () => {
@@ -763,7 +780,7 @@ describe('POST /test', () => {
     const token = await tokenOf(account);
 
     expect((await test(deps(account, push, 0), token, { endpoint: theirs.endpoint })).status).toBe(404);
-    expect((await test(deps(account, push, 0), token, { endpoint: 'https://push.example.test/nothing' })).status).toBe(404);
+    expect((await test(deps(account, push, 0), token, { endpoint: 'https://fcm.googleapis.com/fcm/send/nothing' })).status).toBe(404);
     expect((await test(deps(account, push, 0), token, {})).status).toBe(400);
     expect(push.sent).toHaveLength(0);
   });

@@ -112,21 +112,25 @@ export function reminderBody(startsAt: number, now: number, timezone: string, lo
   return `At ${clockWords(startsAt, timezone)}, ${when}${place ? `\n${place}` : ''}`;
 }
 
-export type DayEvent = { title: string; starts_at: string; is_all_day: boolean };
+export type DayEvent = { title: string; starts_at: string; ends_at: string; is_all_day: boolean };
 export type DayMeal = { slot: string; title: string };
 
 const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
 const slotWords = (slot: string): string => slot.charAt(0).toUpperCase() + slot.slice(1);
 
 // Today's events in order ("All day: Holiday", "8:30 AM Swim"), "and 3 more" past four, then
-// today's meals in slot order ("Dinner: Tacos"), one to a line. `dayStart` is the Household's
-// midnight: an event that began before it and runs on is all day today.
-export function morningBody(events: DayEvent[], meals: DayMeal[], dayStart: number, timezone: string): string {
+// today's meals in slot order ("Dinner: Tacos"), one to a line. `dayStart` and `dayEnd` are the
+// Household's midnights. A timed event that began before today and ends today reads "Until 12:30 AM
+// Title"; one that covers the whole day is all day.
+export function morningBody(events: DayEvent[], meals: DayMeal[], dayStart: number, dayEnd: number, timezone: string): string {
   const lines: string[] = [];
   const ordered = [...events].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
   for (const event of ordered.slice(0, MORNING_EVENTS)) {
     const startsAt = Date.parse(event.starts_at);
-    lines.push(event.is_all_day || startsAt < dayStart ? `All day: ${event.title}` : `${clockWords(startsAt, timezone)} ${event.title}`);
+    const endsAt = Date.parse(event.ends_at);
+    if (event.is_all_day || (startsAt < dayStart && endsAt >= dayEnd)) lines.push(`All day: ${event.title}`);
+    else if (startsAt < dayStart) lines.push(`Until ${clockWords(endsAt, timezone)} ${event.title}`);
+    else lines.push(`${clockWords(startsAt, timezone)} ${event.title}`);
   }
   if (ordered.length > MORNING_EVENTS) lines.push(`and ${ordered.length - MORNING_EVENTS} more`);
   if (ordered.length === 0) lines.push('Nothing on the calendar today.');
@@ -199,16 +203,16 @@ async function morning(deps: PushDeps, household: HouseholdRow, today: Zoned): P
       .lt('starts_at', iso(dayEnd))
       .gte('ends_at', iso(dayStart)),
     'calendar_occurrences',
-  ) as (DayEvent & { ends_at: string })[];
+  ) as DayEvent[];
   // An event that ends the instant the day begins belongs to yesterday (all-day ends are exclusive).
   const events = occurrences.filter((event) => Date.parse(event.ends_at) > dayStart || Date.parse(event.starts_at) >= dayStart);
   const meals = check(
     await deps.admin.from('meals').select('slot, title').eq('household_id', household.id).eq('meal_date', today.date),
     'meals',
   ) as DayMeal[];
-  const body = morningBody(events, meals, dayStart, timezone);
-  const key = `morning:${today.date}`;
-  return { kind: 'morning', keys: [key], urgency: 'low', payload: () => makePayload('Today', body, '/', key) };
+  const body = morningBody(events, meals, dayStart, dayEnd, timezone);
+  // The key carries the Household, so a phone that moves to another Household is not held back by its old claims.
+  return { kind: 'morning', keys: [`morning:${household.id}:${today.date}`], urgency: 'low', payload: () => makePayload('Today', body, '/', `morning:${today.date}`) };
 }
 
 async function routines(deps: PushDeps, household: HouseholdRow, today: Zoned): Promise<Notification | null> {
@@ -241,8 +245,12 @@ async function routines(deps: PushDeps, household: HouseholdRow, today: Zoned): 
     .map(({ id, name }) => ({ name, count: scheduled.filter((routine) => routine.profile_id === id && !done.has(routine.id)).length }))
     .filter(({ count }) => count > 0);
   if (left.length === 0) return null;
-  const key = `routines:${today.date}`;
-  return { kind: 'routines', keys: [key], urgency: 'low', payload: () => makePayload('Routines not done', routinesBody(left), '/routines', key) };
+  return {
+    kind: 'routines',
+    keys: [`routines:${household.id}:${today.date}`],
+    urgency: 'low',
+    payload: () => makePayload('Routines not done', routinesBody(left), '/routines', `routines:${today.date}`),
+  };
 }
 
 // What is due for one Household's subscriptions, loaded once per Household and only if some

@@ -118,21 +118,23 @@ describe('reminderBody', () => {
 describe('morningBody', () => {
   const zone = 'America/Chicago';
   const dayStart = Date.parse('2026-10-06T05:00:00Z');
+  const dayEnd = dayStart + 86_400_000;
   const at = (hour: number, minute = 0) => new Date(dayStart + (hour * 60 + minute) * 60_000).toISOString();
-  const timed = (title: string, hour: number, minute = 0) => ({ title, starts_at: at(hour, minute), is_all_day: false });
+  const timed = (title: string, hour: number, minute = 0) => ({ title, starts_at: at(hour, minute), ends_at: at(hour + 1, minute), is_all_day: false });
 
   it('says so when there is nothing on the calendar', () => {
-    expect(morningBody([], [], dayStart, zone)).toBe('Nothing on the calendar today.');
+    expect(morningBody([], [], dayStart, dayEnd, zone)).toBe('Nothing on the calendar today.');
   });
 
   it('lists events in order, all-day first by its start, then meals in slot order', () => {
     const body = morningBody(
-      [timed('Swim', 8, 30), { title: 'Holiday', starts_at: at(0), is_all_day: true }],
+      [timed('Swim', 8, 30), { title: 'Holiday', starts_at: at(0), ends_at: at(24), is_all_day: true }],
       [
         { slot: 'dinner', title: 'Tacos' },
         { slot: 'breakfast', title: 'Eggs' },
       ],
       dayStart,
+      dayEnd,
       zone,
     );
     expect(body).toBe('All day: Holiday\n8:30 AM Swim\nBreakfast: Eggs\nDinner: Tacos');
@@ -140,18 +142,24 @@ describe('morningBody', () => {
 
   it('shows four events and then "and N more"', () => {
     const events = [8, 9, 10, 11, 12, 13, 14].map((hour) => timed(`E${hour}`, hour));
-    expect(morningBody(events, [], dayStart, zone).split('\n')).toEqual(['8:00 AM E8', '9:00 AM E9', '10:00 AM E10', '11:00 AM E11', 'and 3 more']);
-    expect(morningBody(events.slice(0, 5), [], dayStart, zone).split('\n').at(-1)).toBe('and 1 more');
-    expect(morningBody(events.slice(0, 4), [], dayStart, zone)).not.toContain('more');
+    expect(morningBody(events, [], dayStart, dayEnd, zone).split('\n')).toEqual(['8:00 AM E8', '9:00 AM E9', '10:00 AM E10', '11:00 AM E11', 'and 3 more']);
+    expect(morningBody(events.slice(0, 5), [], dayStart, dayEnd, zone).split('\n').at(-1)).toBe('and 1 more');
+    expect(morningBody(events.slice(0, 4), [], dayStart, dayEnd, zone)).not.toContain('more');
   });
 
-  it('calls an event that began before today and runs on an all-day one', () => {
-    const body = morningBody([{ title: 'Camp', starts_at: new Date(dayStart - 86_400_000).toISOString(), is_all_day: false }], [], dayStart, zone);
-    expect(body).toBe('All day: Camp');
+  it('says "Until" for a timed event that began before today and ends today, and "All day" for one covering the whole day', () => {
+    const before = new Date(dayStart - 3_600_000).toISOString();
+    const untilHalfPastTwelve = { title: 'Sleepover', starts_at: before, ends_at: at(0, 30), is_all_day: false };
+    expect(morningBody([untilHalfPastTwelve], [], dayStart, dayEnd, zone)).toBe('Until 12:30 AM Sleepover');
+    const wholeDay = { title: 'Camp', starts_at: before, ends_at: new Date(dayEnd + 3_600_000).toISOString(), is_all_day: false };
+    expect(morningBody([wholeDay], [], dayStart, dayEnd, zone)).toBe('All day: Camp');
+    // Ending exactly at the next midnight still covers the whole day; a timed event starting today and running past it keeps its start.
+    expect(morningBody([{ ...wholeDay, ends_at: new Date(dayEnd).toISOString() }], [], dayStart, dayEnd, zone)).toBe('All day: Camp');
+    expect(morningBody([{ title: 'Night shift', starts_at: at(22), ends_at: at(30), is_all_day: false }], [], dayStart, dayEnd, zone)).toBe('10:00 PM Night shift');
   });
 
   it('writes no em-dashes', () => {
-    expect(morningBody([timed('Swim', 8)], [{ slot: 'snack', title: 'Fruit' }], dayStart, zone)).not.toContain(EM_DASH);
+    expect(morningBody([timed('Swim', 8)], [{ slot: 'snack', title: 'Fruit' }], dayStart, dayEnd, zone)).not.toContain(EM_DASH);
   });
 });
 
