@@ -85,7 +85,7 @@ The decisions:
 
 ## Out of Scope
 
-- A phone on its side wider than 768 px is still the tablet layout (0004, decision 8), and in landscape by this rule, since it is wider than tall.
+- A phone on its side wider than 768 px is still the tablet layout (0004, decision 8), and in landscape by this rule, since it is wider than tall. (Since #176 it is a phone: under 544 px tall. The rule here is unchanged: a phone is never portrait.)
 - A portrait form for Month or Day beyond what their rules give.
 - Any change to `/settings`, to the phone layout, or to the mode rules.
 - Locking the orientation from the app, or a per-Device orientation setting.

@@ -110,7 +110,7 @@ The eight decisions the owner approved:
 
 ## Out of Scope
 
-- A phone on its side wider than 768 px gets the tablet layout, as decision 8 says. If that proves cramped, a height rule is a follow-up.
+- A phone on its side wider than 768 px gets the tablet layout, as decision 8 says. If that proves cramped, a height rule is a follow-up. (It was: #176, 2026-10-07, makes a viewport under 544 px tall a phone, and binds the phone's styles to the document's `data-phone` instead of a media query.)
 - Swiping between days, weeks or tabs.
 - Changes to `/settings`, which is already a phone page.
 - An installable app prompt, push notifications, offline writes.

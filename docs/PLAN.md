@@ -103,7 +103,7 @@ Settled on 2026-10-06 when the owner approved the phone drawings on the design c
 
 ### Decisions
 
-- **The Wall is not only for a tablet**: "one or two Android tablets in landscape" above stays the Devices' setting, and the Household Account may open the Wall on a phone. Below 768 px of viewport width it is laid out for a phone; at 768 px and wider nothing changes (until v9's portrait). The width alone decides, never the user agent or a per-Device setting.
+- **The Wall is not only for a tablet**: "one or two Android tablets in landscape" above stays the Devices' setting, and the Household Account may open the Wall on a phone. Below 768 px of viewport width it is laid out for a phone; at 768 px and wider nothing changes (until v9's portrait). The width alone decides, never the user agent or a per-Device setting. Settled 2026-10-07 (#176): a phone on its side, wider than 768 px, is a phone too: below 544 px of height, the Wall's least height, which no tablet of the Wall's kind is under.
 - **Five tabs**: Home, Calendar (Day, Week and Month behind one control), Routines, Meals, Lists, at the foot. Add event is a round button above them. Settings is a gear in the header, for the owner only.
 - **No clock** in the phone's header: the date, the weather and the gear.
 - **The phone's mode is the phone's**: it follows `prefers-color-scheme`. The Household's Appearance and the switch are for the Wall's tablets.

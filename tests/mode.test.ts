@@ -710,11 +710,13 @@ function paint({
   storage = 'works',
   metas = 'present',
   width,
+  height,
 }: {
   path: string;
   stored?: string;
-  // The window's width; a page that has none (a test that never says) is a tablet.
+  // The window's width and height; a page that has none (a test that never says) is a tablet.
   width?: number;
+  height?: number;
   prefersDark?: boolean;
   storage?: 'works' | 'blocked';
   metas?: 'present' | 'missing';
@@ -723,6 +725,7 @@ function paint({
   const sandbox: Record<string, unknown> = {
     location: { pathname: path },
     ...(width === undefined ? {} : { innerWidth: width }),
+    ...(height === undefined ? {} : { innerHeight: height }),
     matchMedia: (query: string) => ({ matches: query === '(prefers-color-scheme: dark)' && prefersDark }),
     document: {
       documentElement: { setAttribute: (name: string, value: string) => void (name === 'data-mode' && (page.mode = value)) },
@@ -812,6 +815,13 @@ describe('the inline script in index.html', () => {
     expect(paint({ path: '/', width: 768, stored: 'dark', prefersDark: false }).mode).toBe('dark');
     expect(paint({ path: '/', width: 768, stored: 'light', prefersDark: true }).mode).toBe('light');
     expect(paint({ path: '/', width: 1280, stored: 'dark', prefersDark: false }).mode).toBe('dark');
+  });
+
+  it('takes a phone on its side, under 544 px tall, for a phone, and a short tablet of 544 for the Wall', () => {
+    expect(paint({ path: '/', width: 852, height: 393, stored: 'dark', prefersDark: false }).mode).toBe('light');
+    expect(paint({ path: '/', width: 852, height: 393, stored: 'light', prefersDark: true }).mode).toBe('dark');
+    expect(paint({ path: '/', width: 1024, height: 544, stored: 'dark', prefersDark: false }).mode).toBe('dark');
+    expect(paint({ path: '/', width: 1024, height: 0, stored: 'dark', prefersDark: false }).mode).toBe('dark');
   });
 
   it('does not take a window of no width for a phone', () => {

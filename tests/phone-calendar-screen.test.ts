@@ -85,7 +85,7 @@ describe('Day', () => {
     const card = /<section aria-label="Thursday, October 8, today" class="([^"]*)"/.exec(screen('day', '2026-10-08'));
     expect(card).not.toBeNull();
     const classes = card![1]!.split(' ');
-    expect(classes).toEqual(expect.arrayContaining(['max-[768px]:rounded-[22px]', 'rounded-3xl', 'p-3']));
+    expect(classes).toEqual(expect.arrayContaining(['phone:rounded-[22px]', 'rounded-3xl', 'p-3']));
     // One padding, so the card is even on the tablet too: nothing sets a side of it apart.
     expect(classes.filter((name) => /(^|:)p[xytblr]-/.test(name))).toEqual([]);
   });

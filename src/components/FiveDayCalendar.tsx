@@ -269,7 +269,7 @@ export function DayView({
   return (
     <section
       aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`}
-      className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card p-3 max-[768px]:rounded-[22px]"
+      className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card p-3 phone:rounded-[22px]"
     >
       {failed && occurrences === null && (
         <p role="alert" className="px-4 py-2 text-xl">
