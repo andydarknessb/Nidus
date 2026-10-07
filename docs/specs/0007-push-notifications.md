@@ -43,6 +43,10 @@ Android phones can turn this on from the browser. iPhones need iOS 16.4 or later
 - **Not your own**: a list addition is not sent to the Household Account that added it. Additions by a Device (the Wall) go to everyone.
 - **At most once**: every notification has a key, claimed in the database before it is sent; a claimed key is never sent again, even if the send fails. No retries.
 - **Removal ends it**: a Push Subscription references `household_accounts`, so removing a Household Account deletes its phones' subscriptions with it.
+- **Signing out ends it on that phone**: Settings' Sign out turns notifications off on the phone first (best effort, never blocking the sign-out), so the next person on that browser does not get this Household's notifications.
+- **A phone that moves to another Household Account starts fresh**: its old row, preferences and claimed keys go, and the new account starts with every kind on.
+- **At most 10 phones per Household Account**: saving an eleventh drops the oldest.
+- **Only real push services**: an endpoint must be on `fcm.googleapis.com`, `updates.push.services.mozilla.com`, `web.push.apple.com` or a `*.notify.windows.com` host, so the sender never posts anywhere else.
 - **A dead subscription is deleted** when the push service answers 404 or 410.
 - **Words on the lock screen**: notifications carry event titles, meal names and item text, which show on the lock screen. That is the point of them; the card says so in one line.
 - **No email, no SMS, no app store app.** Web Push only.
@@ -65,8 +69,8 @@ Android phones can turn this on from the browser. iPhones need iOS 16.4 or later
   - `POST /push-notify/test` with a Household Account's `Authorization: Bearer` (resolved with `admin.auth.getUser`, then `household_accounts`, as `calendar-connect` does) and body `{ endpoint }`: sends "Notifications are on" to that subscription only if it is the caller's. Not claimed in `push_deliveries`.
 - The run, for every subscription whose account is still a Household Account (a join to `household_accounts` gives the Household and its timezone):
   - **Event reminders** (`event_reminders`): rows of `calendar_occurrences` for the Household (it already shows only selected Mirrored Calendars and both kinds of event) with `is_all_day = false` and `now < starts_at <= now + reminder_minutes`. Key `event:<source>:<id>:<starts_at epoch>`. Title: the event title. Body: "At 8:30 AM, in 15 minutes" (the real minutes left, rounded, "now" under one minute), then the location if there is one, on a second line. Opens `/day?date=<its Household date>`.
-  - **Morning summary** (`morning_summary`): when the Household's local time is from 07:00 to before 10:00. Key `morning:<date>`. Title "Today". Body: up to four events in order ("All day: Holiday", "8:30 AM Swim"), "and 3 more" past four, then today's meals in slot order ("Dinner: Tacos"). "Nothing on the calendar today." when there are no events. Opens `/`.
-  - **Routines not done** (`routines_nudge`): from 19:00 to before 22:00. Key `routines:<date>`. For each Profile in order, the Routines scheduled today (`archived_at` null, today's weekday bit set in `days_of_week`) without a completion for today's date. Nothing is sent when nobody has any left. Title "Routines not done". Body "Sam: 2 left. Mia: 1 left." Opens `/routines`.
+  - **Morning summary** (`morning_summary`): when the Household's local time is from 07:00 to before 10:00. Key `morning:<household_id>:<date>`. Title "Today". Body: up to four events in order ("All day: Holiday", "8:30 AM Swim"), "and 3 more" past four, then today's meals in slot order ("Dinner: Tacos"). "Nothing on the calendar today." when there are no events. Opens `/`.
+  - **Routines not done** (`routines_nudge`): from 19:00 to before 22:00. Key `routines:<household_id>:<date>`. For each Profile in order, the Routines scheduled today (`archived_at` null, today's weekday bit set in `days_of_week`) without a completion for today's date. Nothing is sent when nobody has any left. Title "Routines not done". Body "Sam: 2 left. Mia: 1 left." Opens `/routines`.
   - **Added to the list** (`list_additions`): items of the Household's Pinned List, not crossed off, created more than 1 minute and at most 15 minutes ago (the minute lets a burst of typing arrive together), whose `added_by` is not this subscription's account. One key per item, `item:<id>`; the items claimed in one run go in one notification. Title "Added to {list name}". Body the items' text joined with ", ". Opens `/lists`.
 - Payload: JSON `{ title, body, url, tag }`, title at most 80 and body at most 300 characters (cut with "…"), well under the 2 KB iPhone limit. `tag` is the key's kind and date (or the event key), so a newer notification of the same kind replaces an older one.
 - Times in words use the Household Timezone (`_shared/zoned-time.ts`, `Intl.DateTimeFormat` with `timeZone`), never the machine's zone. No em-dashes.
@@ -127,5 +131,4 @@ export async function sendTestNotification(): Promise<void>;             // POST
 
 ## Further Notes
 
-- Apple does not offer Home Screen web apps in the EU since iOS 17.4, so iPhones there cannot get these notifications. Android is unaffected.
 - Built while other sessions work on accessibility (#67, #93), words (#69) and calendar follow-ups (#125, #127). They meet this work in `SettingsPage.tsx` and the docs; whichever merges second resolves those lines.
