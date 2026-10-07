@@ -25,20 +25,37 @@ const admin = createClient(required('SUPABASE_URL'), required('SUPABASE_SERVICE_
 
 // VAPID_KEYS is exportVapidKeys' JSON: { publicKey, privateKey } as JWKs.
 const vapidKeys = await importVapidKeys(JSON.parse(required('VAPID_KEYS')));
-const server = await ApplicationServer.new({ contactInformation: required('VAPID_SUBJECT'), vapidKeys });
+const contactInformation = required('VAPID_SUBJECT');
 const applicationServerKey = await exportApplicationServerKey(vapidKeys);
 
+// A push service that never answers must not hold up the minute's run.
+const SEND_TIMEOUT_MS = 10_000;
+
 const sendPush: SendPush = async (subscription, payload, urgency) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<'failed'>((resolve) => {
+    timer = setTimeout(() => resolve('failed'), SEND_TIMEOUT_MS);
+  });
+  const send = (async (): Promise<'sent' | 'gone' | 'failed'> => {
+    try {
+      // A new application server per message: ApplicationServer.new makes a fresh ECDH key pair
+      // each time, which RFC 8291 section 3.1 asks for. Only the VAPID keys are reused.
+      const server = await ApplicationServer.new({ contactInformation, vapidKeys });
+      await server.subscribe(subscription).pushTextMessage(JSON.stringify(payload), {
+        ttl: 3600,
+        urgency: urgency === 'normal' ? Urgency.Normal : Urgency.Low,
+      });
+      return 'sent';
+    } catch (error) {
+      // The library's own isGone() knows only 410; the push services answer 404 as well.
+      if (error instanceof PushMessageError && (error.response.status === 404 || error.response.status === 410)) return 'gone';
+      return 'failed';
+    }
+  })();
   try {
-    await server.subscribe(subscription).pushTextMessage(JSON.stringify(payload), {
-      ttl: 3600,
-      urgency: urgency === 'normal' ? Urgency.Normal : Urgency.Low,
-    });
-    return 'sent';
-  } catch (error) {
-    // The library's own isGone() knows only 410; the push services answer 404 as well.
-    if (error instanceof PushMessageError && (error.response.status === 404 || error.response.status === 410)) return 'gone';
-    return 'failed';
+    return await Promise.race([send, timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 };
 
