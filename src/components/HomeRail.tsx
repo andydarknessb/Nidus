@@ -9,8 +9,8 @@ import { UpNext } from './UpNext';
 //
 // Up next takes the height it needs and the pinned list takes the rest of the rail. Neither may be wider than the
 // rail: a long item or name gives way inside its card (the grid's one column may shrink to nothing). In the row the rail is as
-// tall as Up next: the list's card fills its cell without giving it any height, so a long list scrolls in the card and never
-// grows the row or pushes the days up.
+// tall as Up next (and the grid gives it three tiles' worth at least): the list's card fills its cell without giving it any height, so
+// a long list shows the rows that fit and says how many more, and never grows the row or pushes the days up.
 export function HomeRail({
   routines,
   failed,

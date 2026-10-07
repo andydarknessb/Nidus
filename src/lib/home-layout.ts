@@ -9,7 +9,7 @@ import { useSyncExternalStore } from 'react';
 // The Wall is never shorter than WALL_MIN_REM (WallPage.tsx): a screen shorter than that scrolls, so the room it has is that much.
 // `phone` is the Wall laid out for a phone (docs/specs/0004): below 768 px wide, by the width alone, never by the height, the
 // device, the user agent or the text size. A width of 0 (a window that has not been laid out yet) is not a phone. At 768 px and
-// wider nothing about the Wall changes at 16 px text.
+// wider nothing about the Wall changes at 16 px text, except that a viewport taller than it is wide is `portrait` (below).
 // `portrait` is a tablet hung upright (docs/specs/0009): at 768 px and wider, a viewport taller than it is wide, by the viewport
 // alone. A phone is never portrait, whatever its height; a square viewport is landscape; a width of 0 is neither.
 export type HomeLayout = { days: 5 | 4 | 3; tiles: 3 | 2 | 1; phone: boolean; portrait: boolean };

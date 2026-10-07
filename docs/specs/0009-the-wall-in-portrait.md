@@ -18,7 +18,7 @@ The decisions:
 4. **Week is seven rows.** Each day a row: its heading at the left, its events as pills that wrap to the right of it. The week scrolls as a column, with the Wall's More button at its foot, when seven rows do not fit.
 5. **Meals turns.** The days as rows, the four slots as columns, the slots' names across the top.
 6. **Routines and Lists wrap.** The chart's columns and the Lists screen's cards keep their landscape widths and wrap into rows, each at its natural height, and the screen scrolls as one column with the More foot, as Week does. The sideways More goes.
-7. **Month, Day and the sheets keep their form.** Their columns are narrower and taller, and give way by the rules they already have (a Month line's pin gives way on a narrow line, then its title, and its discs are never shrunk or cut). What is cut or under 48 px at the P12's two portrait sizes is fixed; nothing else moves.
+7. **Month, Day and the sheets keep their form.** Their columns are narrower and taller, and give way by the rules they already have (a Month line's title gives way first, then, in a cell under 7 rem wide, its pin, then the end of its time, and its discs are never shrunk or cut). What is cut or under 48 px at the P12's two portrait sizes is fixed; nothing else moves.
 8. **Landscape changes nothing**, at 1280 by 800 or at the P12's 1470 to 1730 by 920 to 1080.
 9. **The orientation is the kiosk's.** Fully Kiosk's Screen Orientation setting decides whether the tablet turns; the manifest asks for no orientation and the app never locks one.
 10. **No new data**: no migration, no table, no column.
@@ -45,8 +45,8 @@ The decisions:
 
 ### Home
 
-- `HomeShell` (`src/WallPage.tsx`) keeps one tree: Home's grid is `calendar | rail` in landscape and `calendar / rail` in portrait, chosen by `home.portrait` on the grid's classes. The calendar takes what is left of the height; the lower row is as tall as Up next needs for its tiles.
-- `HomeRail` (`src/components/HomeRail.tsx`) takes `row: boolean`: a column in landscape (Up next over the Pinned List, as now), a row in portrait (Up next at the left at its natural width, the Pinned List beside it taking the rest). In the row the Pinned List is as tall as Up next and scrolls with its More foot (Overflow), as it does in the column; a long list never pushes the calendar up.
+- `HomeShell` (`src/WallPage.tsx`) keeps one tree: Home's grid is `calendar | rail` in landscape and `calendar / rail` in portrait, chosen by `home.portrait` on the grid's classes. The calendar takes what is left of the height; the lower row is as tall as Up next needs for its tiles, and never shorter than three tiles' worth (21 rem: 24 padding, 48 heading, 8 gap, 3 tiles of 80 and 2 gaps of 8, 336 px), so the Pinned List's card keeps its rows when Up next is short ("Nothing scheduled today.") and the calendar does not jump as tiles come and go.
+- `HomeRail` (`src/components/HomeRail.tsx`) takes `row: boolean`: a column in landscape (Up next over the Pinned List, as now), a row in portrait (Up next at the left at its natural width, the Pinned List beside it taking the rest). In the row the Pinned List is as tall as the row and shows the rows that fit and says how many more ("3 more"), as it does in the column; a long list never pushes the calendar up.
 - Up next in the row is as wide as its tiles want, no more than half the row. The width it has now in the rail (20 rem) is its width in the row.
 
 ### Week
@@ -63,7 +63,7 @@ The decisions:
 
 ### The other screens
 
-- Month: the grid keeps seven columns. At the P12's narrow width a Month line shows its time, its discs and what is left of its title, by the line's rule; on a line too narrow for its pin, its time and its discs (a container query on the line, so larger text gets the same) the pin gives way first and the time's end last, and a disc is never cut (`src/components/MonthCell.tsx`).
+- Month: the grid keeps seven columns. At the P12's narrow width a Month line shows its time, its discs and what is left of its title, by the line's rule; the title gives way first; in a cell under 7 rem wide (a container query on the cell, so larger text gets the same) the pin is hidden as well, then the end of the time is cut, and a disc is never cut (`src/components/MonthCell.tsx`).
 - Day: one column, unchanged.
 - Routines and Lists (`src/RoutinesPage.tsx`, `src/SharedListsPage.tsx`): in portrait the row of people's columns and the row of list cards wrap (`flex-wrap`), as many to a row as fit at their landscape widths (a column at least 17 rem and at most `max-w-md`, a card at least 17 rem), the rows 16 apart. A column or a card is its natural height, with no More foot of its own, and the chart or the screen scrolls as one column with the shared More foot named "routines" or "lists". The heading row's sideways More is not drawn. Landscape is unchanged class for class. Ticket #168.
 - Sheets: the Add event sheet is one column below 960 px wide and two from it, as now; a portrait P12 is on either side of that line depending on its Display size, and both are right. Every other sheet is the same card on the scrim.
@@ -71,6 +71,7 @@ The decisions:
 
 ### Landscape and the tablet
 
+- The 7 rem rule on a Month line is a cell's, so it also applies to a landscape 1280 px Wall at 130 percent text, where a cell is narrower than 7 rem.
 - At 1472 by 920 and 1732 by 1082 (the P12 with its Display size one step larger, and at the default) Home holds five days and three tiles by the existing rule, and nothing moves. `tests/home-layout.test.ts` says so at those four sizes.
 - `docs/fully-kiosk.md` drops "has no portrait form" and gains the P12's set-up: Screen Orientation as the household likes it, Display size left at the default, Font size for larger text (`docs/look.md`, "Larger text").
 - The display is an LCD, so dark mode at night costs nothing and burn-in is no concern; the panel's own brightness, screen-off and screensaver stay Fully Kiosk's, as before.
