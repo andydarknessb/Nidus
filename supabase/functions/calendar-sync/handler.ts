@@ -26,7 +26,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { type EventRow, MAX_DESCRIPTION, MAX_LOCATION, MAX_TITLE } from '../_shared/event-row.ts';
 import { expandFeed, FeedTooLargeError, MAX_EXPANSION_MS, MAX_STEPS_PER_RUN, type StepBudget } from '../_shared/ics-expand.ts';
 import { fetchFeed } from '../_shared/feed.ts';
-import { dayStartMs } from '../_shared/zoned-time.ts';
+import { addDays, dayStartMs } from '../_shared/zoned-time.ts';
 
 export type SyncEnv = {
   // Shared with the pg_cron job (Vault secret calendar_sync_secret). Long and random.
@@ -88,11 +88,6 @@ type GoogleEvent = {
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
-function nextDay(date: string): string {
-  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
-  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
-}
-
 // One Google event as a row in the Household Timezone, or null when it is cancelled or has no
 // usable time. All-day events (`date`, the end exclusive) become Household midnights.
 export function toRow(event: GoogleEvent, timezone: string): EventRow | null {
@@ -103,7 +98,7 @@ export function toRow(event: GoogleEvent, timezone: string): EventRow | null {
   if (event.start?.date && DATE_ONLY.test(event.start.date)) {
     isAllDay = true;
     startsAt = dayStartMs(event.start.date, timezone);
-    endsAt = dayStartMs(event.end?.date && DATE_ONLY.test(event.end.date) ? event.end.date : nextDay(event.start.date), timezone);
+    endsAt = dayStartMs(event.end?.date && DATE_ONLY.test(event.end.date) ? event.end.date : addDays(event.start.date, 1), timezone);
   } else if (event.start?.dateTime) {
     startsAt = Date.parse(event.start.dateTime);
     endsAt = event.end?.dateTime ? Date.parse(event.end.dateTime) : startsAt;

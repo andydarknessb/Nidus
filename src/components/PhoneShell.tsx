@@ -2,13 +2,13 @@ import { CalendarDays, CircleCheck, House, List, Plus, Settings, Utensils, type 
 import { useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
 import { formatDate, navigationRailDate, type CalendarView, type WallRoute } from '../lib/calendar-occurrences';
 import type { Household } from '../lib/household';
-import { householdDay } from '../lib/routines';
 import { useNow } from '../lib/wall-hooks';
 import type { Forecast } from '../lib/weather';
 import { ConnectionBadge } from './ConnectionBadge';
 import { Button } from './ui/button';
 import { SyncBadge } from './WallHeader';
 import { WeatherNow } from './Weather';
+import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // The Wall on a phone (docs/specs/0004-the-wall-on-a-phone.md; docs/look.md, "The phone"): below 768 px wide the navigation
 // rail and the landscape grid give way to a header, one column that the document scrolls (no box inside it, so the phone's own

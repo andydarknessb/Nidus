@@ -20,12 +20,12 @@ import { focusTitleIfLost } from '../lib/focus';
 import { pageWords, pickedDay } from '../lib/phone-calendar';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
-import { householdDay } from '../lib/routines';
 import { useNow, useOccurrences } from '../lib/wall-hooks';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { DayEvents } from './DayEvents';
 import { DayChips, Pager, PhoneCard, Segmented } from './parts';
 import { PhoneMonth } from './PhoneMonth';
+import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // The phone's Calendar tab (docs/specs/0004-the-wall-on-a-phone.md, Screens, Calendar): under the people strip, which the shell draws,
 // a control of three (Day, Week, Month) and a pager, then the view for one day at a time. The control changes the address as the

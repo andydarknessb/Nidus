@@ -6,7 +6,6 @@ import {
   type PushSummary,
   type PushTarget,
   type PushUrgency,
-  zoned,
 } from '../supabase/functions/push-notify/handler';
 import { arrangeCalendar, arrangeEvents, type EventInput } from './support/calendar';
 import {
@@ -20,6 +19,7 @@ import {
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
+import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 // The sender (spec 0007, ticket #136) against the real local database, with a fake push service:
 // `sendPush` records what would have gone to a phone. Every run is scoped to the test's own
@@ -437,7 +437,7 @@ describe('Routines not done', () => {
   // it goes in as that and is then moved to the date the test means: no test depends on the date it runs.
   async function complete(routineId: string, date: string, timezone = 'America/Chicago'): Promise<void> {
     const admin = asServiceRole();
-    const { error } = await admin.from('routine_completions').insert({ routine_id: routineId, completed_on: zoned(Date.now(), timezone).date });
+    const { error } = await admin.from('routine_completions').insert({ routine_id: routineId, completed_on: householdDay(timezone).date });
     if (error) throw error;
     const { error: moveError } = await admin.from('routine_completions').update({ completed_on: date }).eq('routine_id', routineId);
     if (moveError) throw moveError;

@@ -18,7 +18,7 @@
 // Every date and time of day here is in the Household Timezone (_shared/zoned-time.ts), never the
 // machine's.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { dayStartMs, offsetMs } from '../_shared/zoned-time.ts';
+import { addDays, dayStartMs, householdTime, spanIsOn, type HouseholdTime } from '../_shared/zoned-time.ts';
 
 export type PushEnv = {
   // Shared with the pg_cron job (Vault secret push_notify_secret). Long and random.
@@ -81,23 +81,9 @@ export function makePayload(title: string, body: string, url: string, tag: strin
   return { title: cut(title, MAX_TITLE), body: cut(body, MAX_BODY), url, tag };
 }
 
-export type Zoned = { date: string; minutes: number; weekday: number };
-
-// The Household date ('YYYY-MM-DD'), the minutes since Household midnight and the weekday (Sunday 0)
-// at `ms`.
-export function zoned(ms: number, timezone: string): Zoned {
-  const local = new Date(ms + offsetMs(ms, timezone));
-  return { date: local.toISOString().slice(0, 10), minutes: local.getUTCHours() * 60 + local.getUTCMinutes(), weekday: local.getUTCDay() };
-}
-
-export function nextDate(date: string): string {
-  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
-  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
-}
-
 // "8:30 AM" on the Household's clock.
 export function clockWords(ms: number, timezone: string): string {
-  const { minutes } = zoned(ms, timezone);
+  const { minutes } = householdTime(ms, timezone);
   const hour = Math.floor(minutes / 60);
   return `${hour % 12 || 12}:${String(minutes % 60).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
 }
@@ -191,10 +177,10 @@ async function loadList(deps: PushDeps, household: HouseholdRow, now: number): P
   return { name: list.name, items };
 }
 
-async function morning(deps: PushDeps, household: HouseholdRow, today: Zoned): Promise<Notification> {
+async function morning(deps: PushDeps, household: HouseholdRow, today: HouseholdTime): Promise<Notification> {
   const timezone = household.timezone;
   const dayStart = dayStartMs(today.date, timezone);
-  const dayEnd = dayStartMs(nextDate(today.date), timezone);
+  const dayEnd = dayStartMs(addDays(today.date, 1), timezone);
   const occurrences = check(
     await deps.admin
       .from('calendar_occurrences')
@@ -204,8 +190,8 @@ async function morning(deps: PushDeps, household: HouseholdRow, today: Zoned): P
       .gte('ends_at', iso(dayStart)),
     'calendar_occurrences',
   ) as DayEvent[];
-  // An event that ends the instant the day begins belongs to yesterday (all-day ends are exclusive).
-  const events = occurrences.filter((event) => Date.parse(event.ends_at) > dayStart || Date.parse(event.starts_at) >= dayStart);
+  // The Wall's rule: an event that ends the instant the day begins belongs to yesterday (all-day ends are exclusive).
+  const events = occurrences.filter((event) => spanIsOn(Date.parse(event.starts_at), Date.parse(event.ends_at), { startMs: dayStart, endMs: dayEnd }));
   const meals = check(
     await deps.admin.from('meals').select('slot, title').eq('household_id', household.id).eq('meal_date', today.date),
     'meals',
@@ -215,7 +201,7 @@ async function morning(deps: PushDeps, household: HouseholdRow, today: Zoned): P
   return { kind: 'morning', keys: [`morning:${household.id}:${today.date}`], urgency: 'low', payload: () => makePayload('Today', body, '/', `morning:${today.date}`) };
 }
 
-async function routines(deps: PushDeps, household: HouseholdRow, today: Zoned): Promise<Notification | null> {
+async function routines(deps: PushDeps, household: HouseholdRow, today: HouseholdTime): Promise<Notification | null> {
   const profiles = check(
     await deps.admin
       .from('profiles')
@@ -257,7 +243,7 @@ async function routines(deps: PushDeps, household: HouseholdRow, today: Zoned): 
 // subscription wants it.
 async function dueFor(deps: PushDeps, household: HouseholdRow, subs: Subscription[], now: number) {
   const timezone = household.timezone;
-  const today = zoned(now, timezone);
+  const today = householdTime(now, timezone);
   const events: Occurrence[] = [];
   const reminderSubs = subs.filter((sub) => sub.event_reminders);
   if (reminderSubs.length > 0) {
@@ -297,7 +283,7 @@ function notificationsFor(sub: Subscription, due: Due, timezone: string, now: nu
         kind: 'event',
         keys: [key],
         urgency: 'normal',
-        payload: () => makePayload(event.title, reminderBody(startsAt, now, timezone, event.location), `/day?date=${zoned(startsAt, timezone).date}`, key),
+        payload: () => makePayload(event.title, reminderBody(startsAt, now, timezone, event.location), `/day?date=${householdTime(startsAt, timezone).date}`, key),
       });
     }
   }

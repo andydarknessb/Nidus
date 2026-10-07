@@ -5,8 +5,8 @@ import { watchHouseholdDay, watchMinute } from './household-day';
 import { filterOccurrences, ProfileFilterContext } from './profile-filter';
 import { startReadLoop, type ReadLoop } from './read-loop';
 import { OCCURRENCE_TABLES } from './realtime';
-import { householdDay, type HouseholdDay } from './routines';
 import { supabase } from './supabase';
+import { type HouseholdDay, householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // What the wall's screens share: the clock, the current Household day, and the one read every
 // calendar view makes of occurrences.

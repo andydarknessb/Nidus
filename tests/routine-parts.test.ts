@@ -3,8 +3,6 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as lucide from 'lucide-react';
 import { describe, expect, it } from 'vitest';
-import { dayStartMs } from '../src/lib/calendar-occurrences';
-import { wallMs } from '../src/lib/native-events';
 import type { Profile } from '../src/lib/profiles';
 import { PictureField, RoutinePicture } from '../src/lib/routine-pictures';
 import {
@@ -36,6 +34,7 @@ import {
   type TickedHere,
   type TimeOfDay,
 } from '../src/lib/routines';
+import { dayStartMs, instantAt } from '../supabase/functions/_shared/zoned-time.ts';
 
 // Everything here is pure: the Household Timezone is always an argument, and no test reads the machine's zone or
 // needs the local stack.
@@ -57,7 +56,7 @@ const ids = (rows: Routine[]) => rows.map((row) => row.id);
 
 describe('which part of the day it is', () => {
   // A Household wall-clock time as an instant, so every case reads as the clock on the wall.
-  const at = (date: string, time: string, timezone = CHICAGO) => new Date(wallMs(date, time, timezone));
+  const at = (date: string, time: string, timezone = CHICAGO) => new Date(instantAt(date, time, timezone));
   const partAt = (date: string, time: string, timezone = CHICAGO) => partOfDay(timezone, at(date, time, timezone));
 
   it('lists the parts in the order the day happens', () => {
@@ -109,7 +108,7 @@ describe('which part of the day it is', () => {
   });
 
   it('changes at the instant a part begins and not before', () => {
-    const noon = wallMs('2026-10-02', '12:00', CHICAGO);
+    const noon = instantAt('2026-10-02', '12:00', CHICAGO);
     expect(partOfDay(CHICAGO, new Date(noon - 1))).toBe('morning');
     expect(partOfDay(CHICAGO, new Date(noon))).toBe('afternoon');
     expect(partOfDay(CHICAGO, new Date(noon + 59_999))).toBe('afternoon');
@@ -119,7 +118,7 @@ describe('which part of the day it is', () => {
 // A screen looks at the part of the day every minute and keeps what it saw in state: it must keep the very same object while
 // nothing has changed, or it is drawn again every minute for nothing.
 describe('the part of the day a screen has seen', () => {
-  const at = (date: string, time: string, timezone = CHICAGO) => new Date(wallMs(date, time, timezone));
+  const at = (date: string, time: string, timezone = CHICAGO) => new Date(instantAt(date, time, timezone));
 
   it('says which part it is, and in which zone', () => {
     expect(seePart(null, CHICAGO, at('2026-10-02', '08:00'))).toEqual({ timezone: CHICAGO, part: 'morning' });

@@ -17,7 +17,6 @@ import { aboveLabel, emptyRowWords, HOUR_REM, hoursThatFit, planDay } from '../l
 import { focusEvent, focusTitleIfLost } from '../lib/focus';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
-import { householdDay } from '../lib/routines';
 import { useOverflow } from '../lib/use-overflow';
 import { useNow, useOccurrences } from '../lib/wall-hooks';
 import { forecastDay, type Forecast } from '../lib/weather';
@@ -27,6 +26,7 @@ import { MonthGrid } from './MonthGrid';
 import { Schedule } from './Schedule';
 import { Button } from './ui/button';
 import { DayWeather } from './Weather';
+import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // The wall's calendar views. Home (today and the next four days, or three) and Week (Sunday to Saturday) draw the schedule: a
 // column for each day with its events stacked as pills (Schedule.tsx). The Day view keeps the hour grid, at 3 rem an hour:

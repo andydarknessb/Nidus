@@ -1,14 +1,14 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { offsetMs } from '../supabase/functions/_shared/zoned-time.ts';
 import { ClusterList } from '../src/components/ClusterList';
 import { HourGrid, PillRow } from '../src/components/DayGrid';
-import { addDays, dayStartMs, pageDays, type Occurrence } from '../src/lib/calendar-occurrences';
+import { pageDays, type Occurrence } from '../src/lib/calendar-occurrences';
 import { aboveLabel, planDay, type DayPlan } from '../src/lib/day-view';
 import type { Profile } from '../src/lib/profiles';
 import type { OverflowControl } from '../src/lib/use-overflow';
 import { scrollers } from './support/markup';
+import { addDays, dayStartMs, offsetMs } from '../supabase/functions/_shared/zoned-time.ts';
 
 // What the Day view draws, rendered to markup (as tests/event-pill.test.ts does for the pill), so what is asserted is what the
 // browser is given: an hour is 3 rem, a block is never under one, the now line is drawn under the blocks, only the event that is on

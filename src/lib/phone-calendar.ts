@@ -1,7 +1,7 @@
 import { clampToWindow, describePage, pageStart, pagingWindowAround, type Occurrence, type WallDay } from './calendar-occurrences';
 import type { Profile } from './profiles';
-import { householdDay } from './routines';
 import { pillPeople } from './schedule';
+import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // What the phone's Calendar decides apart from what it draws (docs/specs/0004-the-wall-on-a-phone.md; docs/look.md, "The phone"):
 // the day Week and Month start on, and the dots of a Month cell. Both are pure, so they are tested without a screen

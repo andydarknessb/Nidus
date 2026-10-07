@@ -8,10 +8,10 @@ import { describeWhen, type Occurrence } from './lib/calendar-occurrences';
 import type { Household } from './lib/household';
 import { loadUpcomingNativeEvents } from './lib/native-events';
 import { loadProfiles, type Profile } from './lib/profiles';
-import { householdDay } from './lib/routines';
 import { listNames, pillPeople } from './lib/schedule';
 import { supabase } from './lib/supabase';
 import { useRefetchOn } from './lib/change-feed';
+import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 const EVENT_TABLES = ['native_events', 'native_event_profiles', 'profiles'] as const;
 

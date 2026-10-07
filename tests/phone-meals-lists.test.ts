@@ -3,12 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { pageDays } from '../src/lib/calendar-occurrences';
 import { mealsPickedDay, slotRowName, type Meal } from '../src/lib/meals';
-import { householdDay } from '../src/lib/routines';
 import { leftToGet, listChipName, pickedList, type SharedList } from '../src/lib/shared-lists';
 import type { ListChip as ListChipType, PhoneLists as PhoneListsType } from '../src/phone/PhoneLists';
 import type { PhoneMeals as PhoneMealsType, SlotRow as SlotRowType } from '../src/phone/PhoneMeals';
 import type { PhoneScreenProps } from '../src/PhoneWall';
 import type { sheetFor as sheetForType } from '../src/lib/use-meals';
+import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 // The phone's Meals and Lists tabs: the picked day and the picked list as pure rules, and a slot row and a list chip as markup. How they
 // sit in a 390 px column is looked at in a browser. Colours are tokens only, so the 7:1 pairs are look.test.ts's.

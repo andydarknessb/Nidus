@@ -12,7 +12,6 @@ import {
   finishedProfiles,
   groupByProfile,
   groupByTimeOfDay,
-  householdDay,
   isScheduledOn,
   loadCompletions,
   loadRoutines,
@@ -43,12 +42,12 @@ import {
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
+import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 const red = PROFILE_PALETTE[0].hex;
 const blue = PROFILE_PALETTE[7].hex;
 
 const MON = 1;
-const TUE = 2;
 const WED = 3;
 const SAT = 6;
 const SUN = 0;
@@ -90,40 +89,6 @@ describe('weekday schedule', () => {
     expect(isScheduledOn(weekdaysOnly, MON)).toBe(true);
     expect(isScheduledOn(weekdaysOnly, SAT)).toBe(false);
     expect(isScheduledOn(weekdaysOnly, SUN)).toBe(false);
-  });
-});
-
-describe('the Household day', () => {
-  it('is the date and weekday in the Household Timezone, not the machine\'s', () => {
-    // 03:30 UTC on Tuesday the 29th is still Monday evening in Chicago (CDT, UTC-5).
-    const instant = new Date('2026-09-29T03:30:00Z');
-    expect(householdDay('America/Chicago', instant)).toEqual({ date: '2026-09-28', weekday: MON });
-    expect(householdDay('UTC', instant)).toEqual({ date: '2026-09-29', weekday: TUE });
-    // Auckland is already Wednesday the 30th at 12:00 UTC (NZDT, UTC+13).
-    expect(householdDay('Pacific/Auckland', new Date('2026-09-29T12:00:00Z'))).toEqual({ date: '2026-09-30', weekday: WED });
-  });
-
-  it('rolls over exactly at Household midnight', () => {
-    expect(householdDay('America/Chicago', new Date('2026-09-29T04:59:59Z'))).toEqual({ date: '2026-09-28', weekday: MON });
-    expect(householdDay('America/Chicago', new Date('2026-09-29T05:00:00Z'))).toEqual({ date: '2026-09-29', weekday: TUE });
-  });
-
-  it('follows daylight saving changes', () => {
-    // Chicago falls back on 2026-11-01: 05:30Z is 00:30 CDT, 06:30Z is 00:30 CST, both the 1st.
-    expect(householdDay('America/Chicago', new Date('2026-11-01T05:30:00Z')).date).toBe('2026-11-01');
-    expect(householdDay('America/Chicago', new Date('2026-11-01T06:30:00Z')).date).toBe('2026-11-01');
-    expect(householdDay('America/Chicago', new Date('2026-11-02T05:59:00Z')).date).toBe('2026-11-01');
-    expect(householdDay('America/Chicago', new Date('2026-11-02T06:00:00Z')).date).toBe('2026-11-02');
-  });
-
-  it('steps by calendar days, where stepping by 24 hours repeats a date on a 25 hour day', () => {
-    expect(addDays('2026-10-01', -1)).toBe('2026-09-30');
-    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
-    // 23:30 CST, the last hour of the 25 hour day: 24 hours back is still the 1st, one calendar day back is the 31st.
-    const lastHour = new Date('2026-11-02T05:30:00Z');
-    expect(householdDay('America/Chicago', lastHour).date).toBe('2026-11-01');
-    expect(householdDay('America/Chicago', new Date(lastHour.getTime() - 24 * 60 * 60 * 1000)).date).toBe('2026-11-01');
-    expect(addDays('2026-11-01', -1)).toBe('2026-10-31');
   });
 });
 

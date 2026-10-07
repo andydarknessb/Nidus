@@ -1,8 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { dayStartMs, offsetMs } from '../../supabase/functions/_shared/zoned-time.ts';
-import { householdDay } from './routines';
+import { addDays, dayStartMs, householdDay, offsetMs, spanIsOn } from '../../supabase/functions/_shared/zoned-time.ts';
 
-export { dayStartMs };
 
 // Occurrences on the wall (CONTEXT.md: Synced Event, Native Event). The `calendar_occurrences`
 // view unions every source with the Profile it is attributed to; everything below is what the
@@ -52,12 +50,6 @@ export async function loadOccurrences(client: SupabaseClient, from: Date, to: Da
 // ---- Household Timezone arithmetic ------------------------------------------------
 
 const HOUR_MS = 60 * 60 * 1000;
-
-// `date` ('YYYY-MM-DD') moved by whole days. A calendar date does not depend on any zone.
-export function addDays(date: string, days: number): string {
-  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
-}
 
 export type WallDay = {
   date: string;
@@ -295,14 +287,6 @@ export function navigationRailDate(view: CalendarView, route: WallRoute, today: 
 
 function startOf(occurrence: Occurrence): number {
   return Date.parse(occurrence.starts_at);
-}
-
-// Whether the span from `start` to `end` is on `day`: it starts before the day ends and ends after the day
-// starts, so one ending exactly at midnight is not on the next day. A span of no length overlaps nothing,
-// so it is on the day its instant falls in.
-function spanIsOn(start: number, end: number, day: WallDay): boolean {
-  if (end <= start) return start >= day.startMs && start < day.endMs;
-  return start < day.endMs && end > day.startMs;
 }
 
 // Where the current time falls in `day`'s hour grid, as a wall-clock hour; null if `now` is not
