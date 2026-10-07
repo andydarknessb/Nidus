@@ -13,11 +13,12 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0004-the-wall-on-a-phone.md` is the v4 spec: the Wall below 768 px wide, with five tabs at the foot.
 - `docs/specs/0005-iphone-calendars.md` is the v5 spec: iPhone (iCloud) calendars mirrored from their public link.
 - `docs/specs/0006-household-invites.md` is the v6 spec: more than one Household Account, joined by a Household Invite link.
+- `docs/specs/0007-push-notifications.md` is the v7 spec: Web Push notifications to the grown-ups' phones, per phone, four kinds.
 
 ## Conventions
 
 - pnpm, TypeScript strict, Vitest. Supabase CLI with the local Docker stack; every schema change is a committed migration under `supabase/migrations/`.
-- Tests run through one seam: the Supabase JS client against the local stack, acting as a real principal (Household Account, Device, anonymous). The outside HTTP the Edge Functions make (Google's API, an iCloud calendar's feed) is the only fake, injected into the function. Never mock the database.
+- Tests run through one seam: the Supabase JS client against the local stack, acting as a real principal (Household Account, Device, anonymous). The outside HTTP the Edge Functions make (Google's API, an iCloud calendar's feed, the Web Push service) is the only fake, injected into the function. Never mock the database.
 - Row-level security on every table; `current_household_id()` is the one helper policies use. A Device may write only Native Events, Routine Completions, list items, Meals and its own heartbeat.
 - All date logic uses the Household Timezone. Never use the machine's local zone.
 - Two modes, light and dark, from one set of tokens (`docs/look.md`). The mode is the document's `data-mode`; no component branches on it for colour. WCAG AAA contrast in both, 48 px minimum touch targets, landscape 16:10 on the Wall, and a phone layout below 768 px wide (`docs/specs/0004-the-wall-on-a-phone.md`, `docs/look.md` "The phone").
