@@ -27,7 +27,7 @@ function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | n
   const date = Number(day.date.slice(8));
   const words = (
     <>
-      <span className={cn('text-sm leading-[18px]', day.isToday ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground')}>{headingLabel(day)}</span>
+      <span className={cn('text-sm leading-[1.2857]', day.isToday ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground')}>{headingLabel(day)}</span>
       {day.isToday ? (
         <span className="grid size-[38px] place-items-center rounded-full bg-primary font-display text-[21px] leading-none text-primary-foreground">{date}</span>
       ) : (

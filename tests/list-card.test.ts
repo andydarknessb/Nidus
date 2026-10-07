@@ -101,6 +101,16 @@ describe('homeWindow', () => {
     expect(homeWindow({ rows: items(3), room: 400 })).toEqual({ shown: 3, hidden: 0 });
     expect(homeWindow({ rows: items(9), room: null })).toEqual({ shown: 0, hidden: 9 });
   });
+
+  // A row on Home is 3 rem and rows are half a rem apart, so at 130 percent text (a root font size of 20.8 px) a row is 62.4 px and the
+  // gap 10.4: the room that holds five rows at 16 px holds only three, not the five it would if the rows were counted as 48 px.
+  it('counts the rows in rem: the room that holds five rows at 16 px holds three at 20.8 px, and two at 32 px', () => {
+    const room = 5 * ROW + 4 * GAP;
+    expect(homeWindow({ rows: items(9), room, rem: 16 })).toEqual({ shown: 5, hidden: 4 });
+    expect(homeWindow({ rows: items(9), room, rem: 20.8 })).toEqual({ shown: 3, hidden: 6 });
+    expect(homeWindow({ rows: items(9), room, rem: 32 })).toEqual({ shown: 2, hidden: 7 });
+    expect(homeWindow({ rows: items(9), room })).toEqual({ shown: 5, hidden: 4 });
+  });
 });
 
 describe('homeRows', () => {

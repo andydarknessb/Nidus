@@ -88,11 +88,24 @@ export function DayCell({
         day.isToday && 'bg-muted',
       )}
     >
-      {date}
+      {lines === 0 ? (
+        // A cell too short for a line under its date (isTightCell, at larger text): the date and, beside it, how many events the day holds. The
+        // count is a number, since the room is the date's row; the cell's name says it in words.
+        <span className="flex items-start justify-between gap-1">
+          {date}
+          {occurrences !== null && occurrences.length > 0 && (
+            <span aria-hidden data-testid="cell-count" className="pr-1 text-sm leading-[2.125rem] font-semibold text-muted-foreground">
+              {occurrences.length}
+            </span>
+          )}
+        </span>
+      ) : (
+        date
+      )}
       {shown.map((occurrence) => (
         <EventLine key={occurrence.id} occurrence={occurrence} day={day} timezone={timezone} people={pillPeople(occurrence, profiles)} />
       ))}
-      {more && <span className="h-6 shrink-0 px-1.5 text-sm leading-6 font-medium text-muted-foreground">{more}</span>}
+      {more && lines > 0 && <span className="h-6 shrink-0 px-1.5 text-sm leading-6 font-medium text-muted-foreground">{more}</span>}
     </Button>
   );
 }

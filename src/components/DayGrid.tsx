@@ -165,8 +165,8 @@ function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top:
         {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="mr-1 inline size-3.5 align-[-2px]" />}
         {occurrence.title}
       </span>
-      <span className="relative min-w-max flex-1 text-sm leading-[18px] max-[768px]:min-w-0 max-[768px]:truncate">{pill.time}</span>
-      {pill.onNow && <span className={cn('relative shrink-0 text-sm leading-[18px] font-semibold', block.lanes > 1 && 'max-[768px]:hidden')}>On now</span>}
+      <span className="relative min-w-max flex-1 text-sm leading-[1.2857] max-[768px]:min-w-0 max-[768px]:truncate">{pill.time}</span>
+      {pill.onNow && <span className={cn('relative shrink-0 text-sm leading-[1.2857] font-semibold', block.lanes > 1 && 'max-[768px]:hidden')}>On now</span>}
       <span className="relative flex shrink-0">
         <EventDiscs people={people} />
       </span>

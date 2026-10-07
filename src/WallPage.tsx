@@ -407,7 +407,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           // under a navigation rail entry that marks Day, Week or Month.
           <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
         ) : (
-        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_20rem] gap-4">
+        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_min(20rem,max(320px,27vw))] gap-4">
           {timezone ? (
             <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
           ) : (
@@ -427,7 +427,7 @@ function HomeShell({ owner }: { owner: boolean }) {
 // (`contents`), so what it holds is laid out by the grid as if it were not there.
 export function WallFrame({ rail, header, strip, children }: { rail: ReactNode; header: ReactNode; strip?: ReactNode; children: ReactNode }) {
   return (
-    <div className="grid h-svh grid-cols-[6rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
+    <div className="grid h-svh min-h-[34rem] grid-cols-[min(6rem,max(96px,12vw))_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
       {rail}
       <div className="flex min-w-0 flex-col gap-3">
         {header}

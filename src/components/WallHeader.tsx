@@ -35,7 +35,7 @@ export function WallTime({ name, timezone }: { name: string; timezone: string })
         <span className="text-[22px] font-medium text-muted-foreground">{period}</span>
       </p>
       <div className="flex flex-col gap-0.5">
-        <h1 className="line-clamp-1 text-sm leading-[18px] font-medium wrap-anywhere text-muted-foreground">{name}</h1>
+        <h1 className="line-clamp-1 text-sm leading-[1.2857] font-medium wrap-anywhere text-muted-foreground">{name}</h1>
         <p className="font-display text-[40px] leading-[44px] whitespace-nowrap">{formatDate(now, timezone)}</p>
       </div>
     </>
@@ -104,7 +104,7 @@ export function SyncBadge({ compact = false, initial }: { compact?: boolean; ini
 export function WallHeader({ household, today, forecast, onMeals }: { household: Household | null; today: string | null; forecast: Forecast | null; onMeals: (() => void) | null }) {
   const timezone = household?.timezone ?? null;
   return (
-    <header className="flex h-21 items-center gap-6">
+    <header className="flex min-h-[84px] items-center gap-6">
       {timezone && <WallTime name={household?.name ?? ''} timezone={timezone} />}
       {household && today && <WeatherNow forecast={forecast} unit={household.temperature_unit} today={today} />}
       <HeaderNextMeal timezone={timezone} onOpen={onMeals} />

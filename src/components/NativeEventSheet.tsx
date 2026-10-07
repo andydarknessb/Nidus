@@ -41,10 +41,10 @@ const pill = 'h-13 rounded-full font-medium';
 // A person's chip keeps their soft colour when pressed, so only its ring answers. It is never wider than its row: a long name
 // gives way inside it (the name is a truncating span).
 const chip = `${pill} max-w-full gap-2 pr-4 pl-2 selected:ring-[2.5px]`;
-const footerButton = 'h-14 text-[17px]';
+const footerButton = 'h-14 px-[24px] text-[17px]';
 // The footer's two buttons wrap as one, so on a narrow screen the note has a row (with Delete beside it) and the buttons the next.
 // On the Wall they are the drawing's: 190 wide at the least, and the note takes the rest.
-const answers = 'flex flex-auto items-center gap-3 min-[960px]:flex-none';
+const answers = 'flex max-w-full min-w-0 flex-auto items-center gap-3 min-[960px]:flex-none';
 const main = 'min-w-0 flex-1 min-[960px]:min-w-[190px] min-[960px]:flex-none';
 
 // How long a finger holds a stepper before it steps again, and how often it steps after that.
@@ -414,7 +414,7 @@ function EventSheetForm({
         <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2">
           {confirming && occurrence ? (
             <>
-              <p id="delete-question" className="min-w-48 flex-1 truncate text-[17px] font-medium">
+              <p id="delete-question" className="min-w-[min(12rem,100%)] flex-1 truncate text-[17px] font-medium">
                 Delete {occurrence.title}?
               </p>
               <div className={answers}>
@@ -437,7 +437,7 @@ function EventSheetForm({
             <>
               {/* A quiet button has no edge to line up with the fields, so its icon is what is brought to theirs. */}
               {editing && (
-                <Button variant="quiet" disabled={busy} className={`${footerButton} -ml-4 px-5 font-medium`} onClick={() => setConfirming(true)}>
+                <Button variant="quiet" disabled={busy} className={`${footerButton} -ml-4 px-[20px] font-medium`} onClick={() => setConfirming(true)}>
                   <Trash2 aria-hidden />
                   Delete
                 </Button>
@@ -445,18 +445,18 @@ function EventSheetForm({
               {problem ? (
                 // A problem has a row of its own on one column (with Delete above it, when editing), so a sentence as long as the
                 // clocks' one is read whole.
-                <p role="alert" className="flex min-w-48 grow basis-full items-center gap-2 text-[15px] font-medium min-[960px]:basis-0">
+                <p role="alert" className="flex min-w-[min(12rem,100%)] grow basis-full items-center gap-2 text-[15px] font-medium min-[960px]:basis-0">
                   <CircleAlert aria-hidden className="size-[18px] shrink-0" />
                   <span className="line-clamp-3 min-w-0 leading-5 min-[960px]:line-clamp-2">{problem}</span>
                 </p>
               ) : (
-                <p className="flex min-w-48 flex-1 items-center gap-2 text-[15px] text-muted-foreground">
+                <p className="flex min-w-[min(12rem,100%)] flex-1 items-center gap-2 text-[15px] text-muted-foreground">
                   <Pin aria-hidden className="size-[18px] shrink-0" />
                   <span className="line-clamp-2 min-w-0 leading-5">{editing ? 'Added here. Not in Google Calendar.' : 'Saved here only. It will not appear in Google Calendar.'}</span>
                 </p>
               )}
               <div className={answers}>
-                <Button variant="quiet" className={`${footerButton} px-6 font-medium`} onClick={onClose}>
+                <Button variant="quiet" className={`${footerButton} font-medium`} onClick={onClose}>
                   Cancel
                 </Button>
                 <Button type="submit" variant="primary" disabled={busy} className={`${footerButton} ${main}`}>

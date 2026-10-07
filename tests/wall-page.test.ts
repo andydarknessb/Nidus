@@ -119,7 +119,7 @@ describe("the Wall's frame", () => {
 
   it('draws as it did: the rail, the header and the screen are grid items, the main having no box of its own', () => {
     const html = frame();
-    expect(html).toMatch(/^<div class="grid h-svh grid-cols-\[6rem_minmax\(0,1fr\)\] grid-rows-\[auto_minmax\(0,1fr\)\] gap-4 p-4">/);
+    expect(html).toMatch(/^<div class="grid h-svh min-h-\[34rem\] grid-cols-\[min\(6rem,max\(96px,12vw\)\)_minmax\(0,1fr\)\] grid-rows-\[auto_minmax\(0,1fr\)\] gap-4 p-4">/);
     expect(html).toMatch(/<main class="contents">/);
     expect(html.indexOf('Wall sections')).toBeLessThan(html.indexOf('<header'));
     expect(html.indexOf('<header')).toBeLessThan(html.indexOf('<main'));

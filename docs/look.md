@@ -134,6 +134,17 @@ Below 768 px of viewport width the Wall is laid out for a phone ([0004](specs/00
 - **A Month grid** on a phone is headed by the weekdays' three letters at 14 in `--muted-foreground`. **A Month cell** is a 58 tall button: the date (Young Serif 18, out-of-month dates `--muted-foreground`) over up to three 7 px dots, a person's strong colour or `--primary` for the whole Household. Its name says the date and how many events it has.
 - **A sheet** rises from the foot: full width, 24 round at the top only, a 40 by 4 px handle in `--input` at its top, its foot clear of the safe area.
 
+## Larger text
+
+The tablet's text size sets the root font size, and every rem in the Wall grows with it (issue #69). What is held at 130 percent (a root of 20.8 px) is that the Wall still looks like itself, and at 200 percent (32 px) that nothing is lost or out of reach.
+
+- **Sizes are rem, minimums are px.** A box, a gap or a count that follows the text is rem, and a program that counts rows or lines measures the root font size, as the Month grid and the lists do, and never a px constant. What a finger needs (48 px, 8 px between targets, 64 px for a rail entry) is px: it does not grow with the text, so the rail's nine controls fit the height of the screen at 130 percent.
+- **The Wall is at least 34 rem tall.** At 16 px that is 544 px, under every screen the Wall is for, so nothing changes there. At larger text a screen that cannot fit is that tall and the page scrolls, with the rail's foot (the switch, Settings, Add event) at the foot of the page.
+- **Rails give way.** The navigation rail is 6 rem and no more than 12 percent of the screen's width, and Home's right rail 20 rem and no more than 27 percent of it, neither under what it is at 16 px.
+- **Home holds less.** Judged in rem, as at 16 px: five days from 1200 px wide, else four, and three when the text is larger and the room is under 800 px; three Up next tiles from 760 px tall, else two, and one when the text is larger and the room is under 560 px.
+- **A row or a heading row wraps** where it cannot fit, and the Day view's rows, the people strip, the Routines chart's columns and the Lists screen's cards scroll sideways with their "More" button, as they do at 16 px. The phone's tab bar scrolls sideways when its five words do not fit, and keeps the current tab in view.
+- **A week of the Month grid** is never shorter than its date and one line under it. A list card is at least 17 rem wide.
+
 ## Routine pictures
 
 The key stored in `routines.picture`, and the icon it draws (lucide names). Any other value, or none, draws a plain circle.
