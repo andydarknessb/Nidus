@@ -46,9 +46,16 @@ export const homeGrid = (portrait: boolean) =>
     ? 'grid min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_minmax(21rem,auto)] gap-4'
     : 'grid min-h-0 grid-cols-[minmax(0,1fr)_min(20rem,max(320px,27vw))] gap-4';
 
+// A resize or leaving a field reads the layout again. Leaving one is read after the next field has the focus (a tap from field to field),
+// so the layout is not read in between, with the keyboard still up.
 function subscribe(onChange: () => void) {
+  const afterFocusOut = () => setTimeout(onChange);
   window.addEventListener('resize', onChange);
-  return () => window.removeEventListener('resize', onChange);
+  window.addEventListener('focusout', afterFocusOut);
+  return () => {
+    window.removeEventListener('resize', onChange);
+    window.removeEventListener('focusout', afterFocusOut);
+  };
 }
 
 // The root font size now, 16 where the browser gives none (and on the server, where a test draws markup).
@@ -56,15 +63,24 @@ export function rootFontSize(): number {
   return typeof document === 'undefined' ? 16 : parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
 }
 
-// Home's layout at the window's size now, drawn again when the window is resized. Each part is read on its own, so a resize that
-// changes none of them is no render. A change of the text size reloads the page on the tablet, so the root font size is read
-// with the size and needs no listener of its own.
+// The layout last read, which a field with the focus holds: an Android keyboard resizes the viewport, and on a portrait tablet (920 by
+// 1472) a 600 px keyboard makes it wider than tall, so portrait would flip under the field being typed in, Home would lay out again, Meals
+// would remount every cell and the focus would be lost.
+let held: HomeLayout | null = null;
+const typing = () => document.activeElement?.matches('input, textarea, select, [contenteditable]') ?? false;
+
+// Home's layout at the window's size now, drawn again when the window is resized or a field is left, and held as it was while a field
+// has the focus. Each part is read on its own, so a resize that changes none of them is no render. A change of the text size reloads the
+// page on the tablet, so the root font size is read with the size and needs no listener of its own.
 export function useHomeLayout(): HomeLayout {
-  const size = () => homeLayout({ width: window.innerWidth, height: window.innerHeight, rem: rootFontSize() });
+  const read = () => {
+    if (held && typing()) return held;
+    return (held = homeLayout({ width: window.innerWidth, height: window.innerHeight, rem: rootFontSize() }));
+  };
   return {
-    days: useSyncExternalStore(subscribe, () => size().days),
-    tiles: useSyncExternalStore(subscribe, () => size().tiles),
-    phone: useSyncExternalStore(subscribe, () => size().phone),
-    portrait: useSyncExternalStore(subscribe, () => size().portrait),
+    days: useSyncExternalStore(subscribe, () => read().days),
+    tiles: useSyncExternalStore(subscribe, () => read().tiles),
+    phone: useSyncExternalStore(subscribe, () => read().phone),
+    portrait: useSyncExternalStore(subscribe, () => read().portrait),
   };
 }
