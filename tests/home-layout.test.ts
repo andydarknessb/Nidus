@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { homeLayout } from '../src/lib/home-layout';
+import { homeLayout, viewportToLayOut } from '../src/lib/home-layout';
 
 // Home gives up a day column below 1200 px wide and an Up next tile below 760 px tall, so the day columns and the list card keep room.
 describe('homeLayout', () => {
@@ -95,5 +95,28 @@ describe('homeLayout, larger text', () => {
     expect(homeLayout({ width: 767, height: 800, rem: 32 }).phone).toBe(true);
     expect(homeLayout({ width: 768, height: 800, rem: 32 }).phone).toBe(false);
     expect(homeLayout({ width: 768, height: 720 }).days).toBe(4);
+  });
+});
+
+// The keyboard hold: the same width and a smaller height, while a field is in play, is the keyboard and keeps the room.
+describe('viewportToLayOut', () => {
+  const room = { width: 920, height: 1472 };
+
+  it('keeps the room for the same width and a smaller height while a field is in play', () => {
+    expect(viewportToLayOut({ width: 920, height: 870, room, keyboardMayBeUp: true })).toBe(room);
+  });
+
+  it('takes the new size for a different width, even while a field is in play', () => {
+    expect(viewportToLayOut({ width: 1472, height: 920, room, keyboardMayBeUp: true })).toEqual({ width: 1472, height: 920 });
+  });
+
+  it('takes the new size for a height that is not smaller', () => {
+    expect(viewportToLayOut({ width: 920, height: 1472, room, keyboardMayBeUp: true })).toEqual({ width: 920, height: 1472 });
+    expect(viewportToLayOut({ width: 920, height: 1600, room, keyboardMayBeUp: true })).toEqual({ width: 920, height: 1600 });
+  });
+
+  it('takes the new size when no field is in play, and when there is no room yet', () => {
+    expect(viewportToLayOut({ width: 920, height: 870, room, keyboardMayBeUp: false })).toEqual({ width: 920, height: 870 });
+    expect(viewportToLayOut({ width: 920, height: 870, room: null, keyboardMayBeUp: true })).toEqual({ width: 920, height: 870 });
   });
 });

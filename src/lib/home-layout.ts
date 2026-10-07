@@ -46,15 +46,44 @@ export const homeGrid = (portrait: boolean) =>
     ? 'grid min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_minmax(21rem,auto)] gap-4'
     : 'grid min-h-0 grid-cols-[minmax(0,1fr)_min(20rem,max(320px,27vw))] gap-4';
 
-// A resize or leaving a field reads the layout again. Leaving one is read after the next field has the focus (a tap from field to field),
-// so the layout is not read in between, with the keyboard still up.
+// The keyboard hold. An Android keyboard shrinks the viewport, and on a portrait tablet (920 by 1472) a 600 px keyboard makes it wider
+// than tall, so the layout would flip to landscape under the field being typed in. So the Wall remembers `room`, the viewport last read
+// with no keyboard. A read that finds the same width and a smaller height, while a field has the focus or for half a second after one
+// lost it (the keyboard is still going down when a tap on a button blurs the field), is the keyboard, and the layout stays the room's.
+// Any other read (another width, a height that is not smaller, no field in play) is a new room. A field that keeps the focus after the
+// keyboard is hidden (Android's back button) holds nothing: the viewport grows, which is not smaller, so it is a new room.
+export type Viewport = { width: number; height: number };
+const KEYBOARD_MS = 500;
+const FIELD = 'input, textarea, select, [contenteditable]';
+
+// The size to lay the Wall out at: the room when this is the keyboard, else the viewport now.
+export function viewportToLayOut({
+  width,
+  height,
+  room,
+  keyboardMayBeUp,
+}: Viewport & { room: Viewport | null; keyboardMayBeUp: boolean }): Viewport {
+  return keyboardMayBeUp && room && room.width === width && height < room.height ? room : { width, height };
+}
+
+let room: Viewport | null = null;
+let fieldLeftAt = -Infinity;
+
+// A resize reads the layout again, and so does leaving a field, once the keyboard has had time to go (the layout catches up).
 function subscribe(onChange: () => void) {
-  const afterFocusOut = () => setTimeout(onChange);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const onFocusOut = (e: FocusEvent) => {
+    if (!(e.target instanceof Element && e.target.matches(FIELD))) return;
+    fieldLeftAt = Date.now();
+    clearTimeout(timer);
+    timer = setTimeout(onChange, KEYBOARD_MS + 50);
+  };
   window.addEventListener('resize', onChange);
-  window.addEventListener('focusout', afterFocusOut);
+  window.addEventListener('focusout', onFocusOut);
   return () => {
+    clearTimeout(timer);
     window.removeEventListener('resize', onChange);
-    window.removeEventListener('focusout', afterFocusOut);
+    window.removeEventListener('focusout', onFocusOut);
   };
 }
 
@@ -63,19 +92,16 @@ export function rootFontSize(): number {
   return typeof document === 'undefined' ? 16 : parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
 }
 
-// The layout last read, which a field with the focus holds: an Android keyboard resizes the viewport, and on a portrait tablet (920 by
-// 1472) a 600 px keyboard makes it wider than tall, so portrait would flip under the field being typed in, Home would lay out again, Meals
-// would remount every cell and the focus would be lost.
-let held: HomeLayout | null = null;
-const typing = () => document.activeElement?.matches('input, textarea, select, [contenteditable]') ?? false;
+const typing = () => document.activeElement?.matches(FIELD) ?? false;
 
-// Home's layout at the window's size now, drawn again when the window is resized or a field is left, and held as it was while a field
-// has the focus. Each part is read on its own, so a resize that changes none of them is no render. A change of the text size reloads the
-// page on the tablet, so the root font size is read with the size and needs no listener of its own.
+// Home's layout at the window's size now, drawn again when the window is resized or a field is left, and held at the room's size while
+// the keyboard may be up (above). Each part is read on its own, so a resize that changes none of them is no render. A change of the text
+// size reloads the page on the tablet, so the root font size is read with the size and needs no listener of its own.
 export function useHomeLayout(): HomeLayout {
   const read = () => {
-    if (held && typing()) return held;
-    return (held = homeLayout({ width: window.innerWidth, height: window.innerHeight, rem: rootFontSize() }));
+    const keyboardMayBeUp = typing() || Date.now() - fieldLeftAt < KEYBOARD_MS;
+    room = viewportToLayOut({ width: window.innerWidth, height: window.innerHeight, room, keyboardMayBeUp });
+    return homeLayout({ ...room, rem: rootFontSize() });
   };
   return {
     days: useSyncExternalStore(subscribe, () => read().days),
