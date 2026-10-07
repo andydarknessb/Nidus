@@ -96,6 +96,10 @@ function worker(clients: FakeClient[] = []) {
       open: (name: string) =>
         Promise.resolve({
           put: (request: string, response: Response) => response.text().then((text) => void marked.set(`${name} ${request}`, text)),
+          match: (request: string) => {
+            const text = marked.get(`${name} ${request}`);
+            return Promise.resolve(text === undefined ? undefined : new Response(text));
+          },
         }),
     },
     registration: {
@@ -103,7 +107,7 @@ function worker(clients: FakeClient[] = []) {
       pushManager: {
         subscribe: (options: unknown) => {
           subscribed.push(options);
-          return Promise.resolve({ endpoint: 'https://push.example/new' });
+          return Promise.resolve({ endpoint: `https://push.example/new${subscribed.length > 1 ? subscribed.length : ''}` });
         },
       },
       showNotification: (title: string, options: Record<string, unknown>) => {
@@ -143,8 +147,7 @@ describe('public/sw.js', () => {
   });
 
   describe('when the push service rotates the endpoint', () => {
-    const KEY = new Uint8Array([4, 1, 2, 3]).buffer;
-    const rotated = { oldSubscription: { endpoint: 'https://push.example/old', options: { applicationServerKey: KEY } } };
+    const KEY = new Uint8Array([4, 1, 2, 3]).buffer;    const rotated = { oldSubscription: { endpoint: 'https://push.example/old', options: { applicationServerKey: KEY } } };
 
     it('subscribes again with the old subscription\'s key and leaves a marker of the old and the new endpoint in a cache of its own', async () => {
       const w = worker();
@@ -152,6 +155,20 @@ describe('public/sw.js', () => {
       expect(w.subscribed).toEqual([{ userVisibleOnly: true, applicationServerKey: KEY }]);
       expect([...w.marked.values()].map((text) => JSON.parse(text))).toEqual([{ old: 'https://push.example/old', new: 'https://push.example/new' }]);
       expect([...w.marked.keys()]).toEqual(['nidus-push-rotation /push-rotation']);
+    });
+
+    it('chains a second rotation before the page has healed the first: the marker keeps the first old endpoint', async () => {
+      const w = worker();
+      await w.fire('pushsubscriptionchange', rotated);
+      await w.fire('pushsubscriptionchange', { oldSubscription: { endpoint: 'https://push.example/new', options: { applicationServerKey: KEY } } });
+      expect([...w.marked.values()].map((text) => JSON.parse(text))).toEqual([{ old: 'https://push.example/old', new: 'https://push.example/new2' }]);
+    });
+
+    it('starts a fresh marker when the earlier one is for an unrelated endpoint', async () => {
+      const w = worker();
+      await w.fire('pushsubscriptionchange', rotated);
+      await w.fire('pushsubscriptionchange', { oldSubscription: { endpoint: 'https://push.example/elsewhere', options: { applicationServerKey: KEY } } });
+      expect([...w.marked.values()].map((text) => JSON.parse(text))).toEqual([{ old: 'https://push.example/elsewhere', new: 'https://push.example/new2' }]);
     });
 
     it.each([
