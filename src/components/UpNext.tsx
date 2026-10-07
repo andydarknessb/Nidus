@@ -7,6 +7,7 @@ import { useCelebration, type RoutinesToday } from '../lib/use-routines-today';
 import { Confetti, RoutineTile } from '../RoutinesPage';
 import { EmptyWords } from './EmptyWords';
 import { Button } from './ui/button';
+import { couldNotLoad } from '../lib/synced-read';
 
 // Up next, at the top of Home's right rail (docs/look.md, spec 0003): a tile for each of the first three people (two on a
 // screen under 760 px tall, so the Pinned List keeps a row; home-layout.ts) with
@@ -95,7 +96,7 @@ export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEX
           {!failed && !routines.failed && <EmptyWords className="px-1">Loading</EmptyWords>}
           {(failed || routines.failed) && (
             <p role="alert" className="px-1 text-base">
-              Could not load routines. Check your connection.
+              {couldNotLoad('routines')}
             </p>
           )}
         </div>

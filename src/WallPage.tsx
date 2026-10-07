@@ -32,6 +32,7 @@ import { PhoneWall } from './PhoneWall';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
 import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { couldNotLoad } from './lib/synced-read';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
 const HEARTBEAT_MS = 30_000;
@@ -383,7 +384,7 @@ function HomeShell({ owner }: { owner: boolean }) {
             <section aria-label="Routines" className="rounded-3xl bg-card p-4">
               {view.failed ? (
                 <p role="alert" className="text-base">
-                  Could not load routines. Check your connection.
+                  {couldNotLoad('routines')}
                 </p>
               ) : (
                 <EmptyWords>Loading</EmptyWords>

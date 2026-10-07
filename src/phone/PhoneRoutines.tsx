@@ -13,6 +13,7 @@ import { useCelebration } from '../lib/use-routines-today';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { Confetti, DoneEarlier, PartGroups } from '../RoutinesPage';
 import { Segmented, SideScroll } from './parts';
+import { couldNotLoad } from '../lib/synced-read';
 
 // The phone's Routines tab (docs/specs/0004-the-wall-on-a-phone.md, Screens; docs/look.md, "The phone"): one person at a time. A
 // row of the people the chart has a column for, each with their progress in words; the chart's own control for the part of the day;
@@ -136,7 +137,7 @@ export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProp
   // A burst belongs to the card on the screen: the one for a person left behind is gone, so it never plays again on the way back.
   const celebration = useCelebration({ date: routines.date, finished: new Set(showing !== null && routines.finished.has(showing) ? [showing] : []) });
 
-  if (!timezone) return <BeforeHousehold label="Routines" failed={view.failed} words="Could not load routines. Check your connection." />;
+  if (!timezone) return <BeforeHousehold label="Routines" failed={view.failed} words={couldNotLoad('routines')} />;
 
   const column = columns.find(({ profile }) => profile.id === showing);
   const people = stripPeople(
@@ -155,7 +156,7 @@ export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProp
           start, or just after Household midnight) the words say so rather than leave "Loading" for ever. */}
       {failed && !settled && (
         <p role="alert" className="text-base">
-          Could not load routines. Check your connection.
+          {couldNotLoad('routines')}
         </p>
       )}
       {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}

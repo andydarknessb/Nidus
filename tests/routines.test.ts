@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PROFILE_PALETTE, createProfile, deleteProfile, movedIds, type Profile } from '../src/lib/profiles';
 import {
   ROUTINE_TABLES,
@@ -22,7 +22,6 @@ import {
   routineProgress,
   showsTimeOfDayHeadings,
   tapFinishesProfile,
-  tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
   updateRoutine,
@@ -43,6 +42,7 @@ import {
   type Tablet,
 } from './support/supabase';
 import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { startSyncedRead } from '../src/lib/synced-read';
 
 const red = PROFILE_PALETTE[0].hex;
 const blue = PROFILE_PALETTE[7].hex;
@@ -249,48 +249,6 @@ describe('moving a Routine inside its time of day group', () => {
         expect(movedIdsInGroup(plain, id, offset)).toEqual(movedIds(['x', 'y', 'z'], id, offset));
       }
     }
-  });
-});
-
-describe('optimistic tick', () => {
-  function screen(initial: string[]) {
-    let checked = new Set(initial);
-    return {
-      publish: (update: (ids: Set<string>) => Set<string>) => {
-        checked = update(checked);
-      },
-      get: () => [...checked].sort(),
-    };
-  }
-
-  it('shows the tick before the server answers and keeps it when the write lands', async () => {
-    const view = screen([]);
-    let shownWhileWriting: string[] = [];
-    const stuck = await tickOptimistically(view.publish, 'r1', true, async () => {
-      shownWhileWriting = view.get();
-    });
-    expect(shownWhileWriting).toEqual(['r1']);
-    expect(stuck).toBe(true);
-    expect(view.get()).toEqual(['r1']);
-  });
-
-  it('rolls a failed tick back, leaving other changes alone', async () => {
-    const view = screen(['r2']);
-    const stuck = await tickOptimistically(view.publish, 'r1', true, async () => {
-      view.publish((ids) => new Set([...ids, 'r3']));
-      throw new Error('offline');
-    });
-    expect(stuck).toBe(false);
-    expect(view.get()).toEqual(['r2', 'r3']);
-  });
-
-  it('rolls a failed untick back to checked', async () => {
-    const view = screen(['r1']);
-    const stuck = await tickOptimistically(view.publish, 'r1', false, async () => {
-      throw new Error('offline');
-    });
-    expect(stuck).toBe(false);
-    expect(view.get()).toEqual(['r1']);
   });
 });
 
@@ -831,6 +789,31 @@ describe('routines', () => {
 
     await uncompleteRoutine(wall, pills.id, today);
     expect(await loadCompletions(wall, today)).toEqual([]);
+  });
+
+  it('a Device ticking through the synced read shows its tick and a completion another screen made meanwhile', async () => {
+    const { arranged, phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay }, 0);
+    const walk = await createRoutine(phone, householdId, profile.id, { title: 'Walk', days_of_week: everyDay }, 1);
+    const wall = await device(arranged);
+    const today = householdDay(arranged.household.timezone).date;
+    const shown: (string[] | null)[] = [];
+    const read = startSyncedRead<string[]>({ load: () => loadCompletions(wall, today), onChange: (state) => shown.push(state.data) });
+    try {
+      await vi.waitFor(() => expect(shown.at(-1)).toEqual([]));
+      // The phone ticks the walk while the wall's own tick is in flight; the read after the wall's tick shows both.
+      await read.write(
+        async () => {
+          await completeRoutine(phone, walk.id, today);
+          await completeRoutine(wall, pills.id, today);
+        },
+        (done) => [...done, pills.id],
+      );
+      expect(shown).toContainEqual([pills.id]);
+      await vi.waitFor(() => expect([...(shown.at(-1) ?? [])].sort()).toEqual([pills.id, walk.id].sort()));
+    } finally {
+      read.stop();
+    }
   });
 
   it("a Household Account ticks a Routine too", async () => {

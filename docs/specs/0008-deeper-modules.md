@@ -18,7 +18,6 @@ The owner and the agents who build Nidus pay for this on every ticket. A rule ha
 The family pays a little too:
 - A floating-time iPhone event at 2:30 on the night the clocks go forward shows at 1:30.
 - An iPhone calendar the sync simply did not reach in time says its last update failed.
-- When an offline tick fails, another tick made since can briefly disappear.
 
 ## Solution
 
@@ -28,7 +27,6 @@ Each of the six behaviours becomes one deep module with a small interface, at th
 - Every screen refreshes on the same timing: every 30 seconds, and 5 seconds after a read fails.
 - A month on the calendar loads, or fails to load, as a whole.
 - A calendar the sync did not reach this time says nothing new; its "last synced" age tells the truth.
-- A failed tick or crossing-off takes back only itself.
 
 ## User Stories
 
@@ -37,7 +35,7 @@ Each of the six behaviours becomes one deep module with a small interface, at th
 3. As a parent adding a Native Event for a time the clocks skip, I want it to keep moving forward by the gap, as it does today.
 4. As a family member at the Wall, I want Routines, lists, Meals and the calendar to catch up with another screen within 30 seconds even if a change notice is lost, so that every screen shows the same Household.
 5. As a family member at the Wall, I want a screen whose read failed to try again within 5 seconds, so that a dropped connection mends quickly.
-6. As a child ticking Routines while the tablet is offline, I want a tick that could not be saved to take back only itself, so that my other ticks stay where I put them.
+6. As a child ticking Routines while the tablet is offline, I want a tick that could not be saved to take back only itself, so that my other ticks stay where I put them, as today.
 7. As a family member, I want a screen that already shows something to keep showing it when a later read fails, and to say it could not load only when it never has, as today.
 8. As a family member, I want the calendar's month to show all its weeks once loaded, or one plain message if it could not load.
 9. As a parent with Ava pressed on the people strip, I want an event for Ava and Ben to show and still name Ben, and the phone month's dots for that day to show only Ava, as today.
