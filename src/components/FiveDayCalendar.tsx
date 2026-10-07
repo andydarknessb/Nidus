@@ -80,7 +80,7 @@ const PAGE_ARROW = 'size-12 rounded-full bg-card p-0';
 // The week, day and month views: the week is the schedule with seven columns, the day the hour grid and a month a grid
 // of its own, each under a header to page back and forward within the synced window and jump to today. `date` is the
 // page's anchor (null for today); a date outside the window is pulled to its nearest end. A touch anywhere on the page
-// keeps the Profile filter open.
+// keeps the Profile filter open. `portrait` (from the Wall's one read of the window, WallPage) draws the week as seven rows, not columns.
 export function PagedCalendar({
   timezone,
   view,
@@ -90,6 +90,7 @@ export function PagedCalendar({
   forecast = null,
   weatherOn = false,
   profiles,
+  portrait = false,
 }: {
   timezone: string;
   view: CalendarView;
@@ -99,6 +100,7 @@ export function PagedCalendar({
   forecast?: Forecast | null;
   weatherOn?: boolean;
   profiles: Profile[] | null;
+  portrait?: boolean;
 }) {
   const now = useNow(timezone);
   const { touch } = useContext(ProfileFilterContext);
@@ -176,6 +178,7 @@ export function PagedCalendar({
           forecast={forecast}
           weatherOn={weatherOn}
           profiles={profiles}
+          rows={portrait}
         />
       ) : day ? (
         <DayView key={`${view}:${day.date}`} timezone={timezone} now={now} day={day} version={version} profiles={profiles} focusHeading={() => heading.current?.focus()} />

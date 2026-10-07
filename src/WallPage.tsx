@@ -401,7 +401,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
           <ListsScreen />
         ) : route.view !== 'home' && timezone ? (
-          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
+          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} portrait={home.portrait} />
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day, Week or Month.
