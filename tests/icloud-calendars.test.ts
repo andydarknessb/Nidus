@@ -11,8 +11,12 @@ import {
   asServiceRole,
   asTablet,
   createHousehold,
+  createSignedUpAccount,
   destroyHousehold,
+  destroySignedUpAccount,
   destroyTablet,
+  signInAs,
+  type SignedUpAccount,
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
@@ -61,6 +65,7 @@ async function post(d: ConnectDeps, body: unknown, token?: string): Promise<Resp
 
 let households: HouseholdAccount[] = [];
 let tablets: Tablet[] = [];
+let newcomers: SignedUpAccount[] = [];
 
 async function arrange(): Promise<HouseholdAccount> {
   const account = await createHousehold();
@@ -82,6 +87,8 @@ async function accountRows(account: HouseholdAccount) {
 
 afterEach(async () => {
   await Promise.all(tablets.map((tablet) => destroyTablet(tablet)));
+  await Promise.all(newcomers.map(destroySignedUpAccount));
+  newcomers = [];
   await Promise.all(households.map((account) => destroyHousehold(account)));
   tablets = [];
   households = [];
@@ -187,6 +194,23 @@ describe('POST /icloud', () => {
     const [first, second] = [await arrange(), await arrange()];
     expect((await addLink(first, LINK, fakeFeed(new Response(feedText())))).status).toBe(200);
     expect((await addLink(second, LINK, fakeFeed(new Response(feedText())))).status).toBe(200);
+  });
+
+  it('lets a second Household Account, joined through an invite, add a link for the Household', async () => {
+    const account = await arrange();
+    const { data: invite } = await (await asHouseholdAccount(account)).rpc('create_household_invite').single<{ token: string }>();
+    const arranged = await createSignedUpAccount();
+    newcomers.push(arranged);
+    const phone = await signInAs(arranged);
+    expect((await phone.rpc('accept_household_invite', { p_token: invite!.token })).error).toBeNull();
+
+    const response = await post(deps(fakeFeed(new Response(feedText('Family')))), { url: LINK }, await tokenOf(phone));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { id: string; name: string };
+    expect(body.name).toBe('Family');
+    // The calendar belongs to the Household: the first account sees it too.
+    expect(await accountRows(account)).toHaveLength(1);
+    expect(await loadMirroredCalendars(await asHouseholdAccount(account))).toEqual([expect.objectContaining({ calendar_account_id: body.id, name: 'Family' })]);
   });
 
   it('refuses a request with no session, a Device and an anonymous tablet, and fetches nothing', async () => {
