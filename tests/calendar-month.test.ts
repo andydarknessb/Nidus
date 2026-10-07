@@ -6,7 +6,9 @@ import {
   describeCell,
   describeMonth,
   formatCompactClock,
+  isTightCell,
   linesPerCell,
+  monthMinRem,
   monthWeeks,
   pagingWindow,
   type Occurrence,
@@ -496,5 +498,47 @@ describe('what a screen reader hears of a cell', () => {
 
   it('gives only the date until the day has been read, so a day not yet known is never called free', () => {
     expect(describeCell('2026-10-01', null)).toBe('Thursday, October 1');
+  });
+});
+
+// A six-week month at larger text (issue #69). On the 1280 x 800 Wall at 130 percent text (a root of 20.8 px) the grid has about 492 px under the
+// people strip and paging row, 52 of them the weekday row. A date needs 2.625 rem and the line under it 1.5 rem, so six weeks of both need 567 px,
+// 75 more than the room: a week the room leaves no line for is drawn as its date and a count beside it, and the month fits and does not scroll.
+describe('a month at larger text', () => {
+  const REM = 20.8;
+  const HEAD = 2.625;
+  const LINE = 1.5;
+  const ROOM = 492;
+  const WEEKDAYS = 2.5 * REM;
+  const row = (weeks: number) => (ROOM - WEEKDAYS) / weeks;
+
+  it('asks for the weekday row and a date for each week, and no line', () => {
+    expect(monthMinRem(6, HEAD)).toBeCloseTo(2.5 + 6 * 2.625, 9);
+    expect(monthMinRem(5, HEAD)).toBeCloseTo(2.5 + 5 * 2.625, 9);
+    expect(monthMinRem(4, HEAD)).toBeCloseTo(2.5 + 4 * 2.625, 9);
+  });
+
+  it('fits six weeks in the room at a 20.8 px root, though a date and a line for each would not', () => {
+    expect(monthMinRem(6, HEAD) * REM).toBeLessThan(ROOM);
+    expect((2.5 + 6 * (HEAD + LINE)) * REM).toBeGreaterThan(ROOM);
+    expect(isTightCell(row(6), HEAD * REM, LINE * REM, REM)).toBe(true);
+    // The date fits its row, which is what tight cells are drawn with.
+    expect(row(6)).toBeGreaterThan(HEAD * REM);
+  });
+
+  it('leaves five weeks as they are: a date and a line, not tight', () => {
+    expect(isTightCell(row(5), HEAD * REM, LINE * REM, REM)).toBe(false);
+    expect(linesPerCell(row(5), HEAD * REM, LINE * REM)).toBe(1);
+    expect(isTightCell(row(4), HEAD * REM, LINE * REM, REM)).toBe(false);
+  });
+
+  it('is never tight at 16 px text, however short the row is, so a screen at 16 px is as it was', () => {
+    expect(isTightCell(40, HEAD * 16, LINE * 16, 16)).toBe(false);
+    expect(isTightCell(59, HEAD * 16, LINE * 16, 16)).toBe(false);
+  });
+
+  it('is tight at 200 percent text when the row has no room for a line under the date', () => {
+    expect(isTightCell(110, HEAD * 32, LINE * 32, 32)).toBe(true);
+    expect(isTightCell(140, HEAD * 32, LINE * 32, 32)).toBe(false);
   });
 });

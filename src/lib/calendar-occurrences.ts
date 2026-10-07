@@ -343,6 +343,23 @@ export function linesPerCell(rowPx: number, headPx: number, linePx: number): num
   return Math.max(1, Math.floor((rowPx - headPx) / linePx));
 }
 
+// Whether a day cell `rowPx` tall is too short for its date and one line of words under it (`headPx` and `linePx`, as for linesPerCell),
+// at larger text (`rem`, the root font size, above 16 px: a cell at 16 px is drawn as it always was). Such a cell shows its date and, beside
+// it, how many events the day holds as a number, and no lines: the line under the date would be cut off.
+export function isTightCell(rowPx: number, headPx: number, linePx: number, rem: number): boolean {
+  return rem > 16 && rowPx < headPx + linePx;
+}
+
+// The weekday names' row of the month grid, in rem (py-2 and a line of text-sm, and the border under it).
+const WEEKDAYS_ROW_REM = 2.5;
+
+// The least height of the month grid in rem: the weekday row and, for each of `weeks`, its date (`headRem`, CELL_HEAD_REM). The line under the
+// date is not in it: a week the room leaves no line for is drawn without one (isTightCell), so a six-week month at 130 percent text fits the
+// 1280 x 800 Wall, where date and line would need 567 px of the 492 it has.
+export function monthMinRem(weeks: number, headRem: number): number {
+  return WEEKDAYS_ROW_REM + weeks * headRem;
+}
+
 // ---- Words --------------------------------------------------------------------------
 
 // "no events", "1 event", "3 events".

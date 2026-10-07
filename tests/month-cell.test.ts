@@ -379,3 +379,26 @@ describe("a cell's lines at the Wall's size", () => {
     expect(lines(463, 5)).toBe(2);
   });
 });
+
+// A cell the room leaves no line for (lines 0, isTightCell, at larger text, issue #69): its date and, beside it, how many events the day holds as
+// a number; no line, no "+N more" and no words for the count, which its name says. A day with none says nothing but its date.
+describe('a day cell too short for a line under its date', () => {
+  const three = [event('Piano', [CORY.id]), event('Swim', [SAM.id]), event('Soccer', [AVA.id])];
+
+  it('shows the date and the count of the day beside it, and no line', () => {
+    const html = cell('2026-10-01', { occurrences: three, lines: 0 });
+    expect(count(html, 'data-testid="event-line"')).toBe(0);
+    expect(html).not.toContain('more');
+    expect(html).toMatch(/<span aria-hidden="true" data-testid="cell-count" class="[^"]*">3<\/span>/);
+    expect(nameOf(html)).toContain('3 events');
+  });
+
+  it('says nothing but the date for a day with no events, or one not read yet', () => {
+    expect(cell('2026-10-02', { occurrences: [], lines: 0 })).not.toContain('cell-count');
+    expect(cell('2026-10-02', { occurrences: null, lines: 0 })).not.toContain('cell-count');
+  });
+
+  it('is as it was with a line or more: no count beside the date', () => {
+    expect(cell('2026-10-01', { occurrences: three, lines: 3 })).not.toContain('cell-count');
+  });
+});

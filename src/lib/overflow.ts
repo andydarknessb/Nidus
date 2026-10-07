@@ -51,6 +51,14 @@ export function overflowState({ scrollSize, clientSize, scrollOffset, buttonSize
   return { overflowing, atEnd, next: atEnd ? 0 : sliver ? farthest : target };
 }
 
+// What a button holds back from the box it is beside, or over the end of: its size and, beside the box, the gap the row puts between them, while it
+// is drawn; nothing while it is not. A button that is not drawn (the phone hides the Day view's rows' buttons with display: none) has no size and
+// the row has no gap to it. Counting the gap anyway made a row 16 px over its room ask for a button, find the room less by 16, lose the button, and
+// ask again, for ever: "Maximum update depth exceeded", at 200 percent text on the phone's Day (issue #69).
+export function buttonHeldBack({ drawn, size, gap }: { drawn: boolean; size: number; gap: number }): number {
+  return drawn ? size + gap : 0;
+}
+
 // A press is taken only when the scroll the last one began has ended. A smooth scroll takes most of a second, and a second press that
 // reads the box in the middle of it takes it from where it is and not from where it is going: "Back" pressed twice, 60 ms apart, left the
 // box at its end (the second read the offset in the middle, and the rule above sent it on). The gate is told when the scroll has

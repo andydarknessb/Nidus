@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { canOpenDay, dayOccurrences, linesPerCell, monthWeeks, type Occurrence, type PagingWindow, type WallDay } from '../lib/calendar-occurrences';
+import { canOpenDay, dayOccurrences, isTightCell, linesPerCell, monthMinRem, monthWeeks, type Occurrence, type PagingWindow, type WallDay } from '../lib/calendar-occurrences';
 import type { Profile } from '../lib/profiles';
 import { WEEKDAYS } from '../lib/routines';
 import { useOccurrences } from '../lib/wall-hooks';
 import { CELL_HEAD_REM, CELL_LINE_REM, DayCell } from './MonthCell';
-
-// The weekday names' row, in rem (py-2 and a line of text-sm, and the border under it).
-const WEEKDAYS_REM = 2.5;
-
-// The least height of the grid in rem: the weekday row and, for each week, the date and the one line under it.
-function monthMinRem(weeks: number): number {
-  return WEEKDAYS_REM + weeks * (CELL_HEAD_REM + CELL_LINE_REM);
-}
 
 // The month view's grid: the weekday names and a row per week. Each day inside the mirror's window is one
 // button that opens that day (MonthCell.tsx). It lists the day's occurrences a line each, as many as fit, and says how many
@@ -66,13 +58,16 @@ export function MonthGrid({
     return () => observer.disconnect();
   }, []);
 
-  const lines = linesPerCell(rowsPx / weeks.length, CELL_HEAD_REM * remPx, CELL_LINE_REM * remPx);
+  // A week the room for the grid leaves too short for its date and a line under it (a six-week month at 130 percent text on the 1280 x 800
+  // Wall: 73 px of the 86 it needs) is drawn as its date and the day's count beside it, 0 lines (isTightCell), rather than cut off.
+  const rowPx = rowsPx / weeks.length;
+  const lines = isTightCell(rowPx, CELL_HEAD_REM * remPx, CELL_LINE_REM * remPx, remPx) ? 0 : linesPerCell(rowPx, CELL_HEAD_REM * remPx, CELL_LINE_REM * remPx);
 
-  // At larger text a week is never drawn shorter than its date and the one line under it (the "+N more" or "6 events" that says what the
-  // day holds): where the room for the grid is less than that, the grid is as tall as it needs and the screen scrolls. At 16 px text the
-  // floor is 0, so the grid is as it was: `(1rem - 16px) * 1000` is 0 there and thousands of px as soon as the text is larger.
+  // At larger text a week is never drawn shorter than its date (a row too short for a line under it shows the count beside the date, see
+  // `lines` above): where even that is more than the room, the grid is as tall as it needs and the screen scrolls. At 16 px text the floor
+  // is 0, so the grid is as it was: `(1rem - 16px) * 1000` is 0 there and thousands of px as soon as the text is larger.
   return (
-    <section aria-label="Calendar" style={{ minHeight: `min(${monthMinRem(weeks.length)}rem, calc((1rem - 16px) * 1000))` }} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
+    <section aria-label="Calendar" style={{ minHeight: `min(${monthMinRem(weeks.length, CELL_HEAD_REM)}rem, calc((1rem - 16px) * 1000))` }} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
       {/* Every cell's name says its weekday already, so a screen reader need not hear the row of them first. */}
       <div aria-hidden className="grid grid-cols-7 divide-x divide-border border-b border-border">
         {WEEKDAYS.map((weekday) => (
