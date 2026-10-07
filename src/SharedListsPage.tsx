@@ -206,7 +206,9 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
 // The Wall's Lists screen: every Shared List as a card, the Pinned List first. Three cards fill the screen's width. With more,
 // the fourth shows in part and the row scrolls sideways, and the heading row holds a "More lists" button that says so, so a list
 // is never left off the screen with no sign of it; each card still scrolls its own items up and down.
-export function ListsScreen() {
+// `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). A card is then never
+// under 17 rem, as at larger text, so the title of a list is not left with 75 px of a 227 px card; the row scrolls sideways with its button.
+export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
   const { read, failed } = useLists();
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
   // The row of cards, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row.
@@ -236,7 +238,7 @@ export function ListsScreen() {
       {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
       <div
         ref={row.scroller}
-        className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cards.length > 3 ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%,calc((1rem_-_16px)*1000)))]' : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]'}`}
+        className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${portrait ? '[--card-floor:min(17rem,100%)]' : '[--card-floor:min(17rem,100%,calc((1rem_-_16px)*1000))]'} ${cards.length > 3 ? '[--card-w:max(calc((100%_-_3rem)/3.2),var(--card-floor))]' : '[--card-w:max(calc((100%_-_2rem)/3),var(--card-floor))]'}`}
       >
         {cards.map((list) => (
           <ListCard key={list.id} list={list} pinned={list.id === read?.pinnedId} />
