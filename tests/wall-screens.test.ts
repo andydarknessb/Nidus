@@ -60,3 +60,21 @@ describe('the Meals screen', () => {
     for (const heading of others) expect(number(heading).split(' ')).toContain('text-[22px]');
   });
 });
+
+// Larger text (a root font size above 16 px, which makes every rem box bigger and leaves the screen as it is, issue #69). What is asserted is
+// the markup that decides it: nothing here can measure a screen, so each part says what it is held to in its classes.
+describe('the Wall at larger text', () => {
+  it("gives the Month grid the height of a week's date and the line under it, for every week", () => {
+    // A week is 2.625 rem for the date and 1.5 rem for the line under it (MonthCell.tsx), and the grid has a weekday row of 2.5 rem over its weeks.
+    const html = renderToStaticMarkup(createElement(PagedCalendar, { timezone, view: 'month', date: null, onNavigate: () => undefined, profiles: null }));
+    const rem = Number(/<section aria-label="Calendar" style="min-height:([\d.]+)rem"/.exec(html)?.[1]);
+    expect([4, 5, 6].map((weeks) => 2.5 + weeks * 4.125)).toContain(rem);
+    // At 16 px text a six-week month asks for 436 px, which the room under the people strip of a 1280 x 800 Wall (about 520) gives it.
+    expect(2.5 + 6 * 4.125).toBeLessThan(520 / 16);
+  });
+
+  it("caps the Meals plan's slot column at larger text, so seven days keep their room, and keeps its 7 rem at 16 px", () => {
+    const html = renderToStaticMarkup(createElement(MealsScreen, { timezone, date: null, onNavigate: () => undefined }));
+    expect(html).toContain('grid-template-columns:min(7rem, max(112px, 11vw)) repeat(7, minmax(3rem, 1fr))');
+  });
+});

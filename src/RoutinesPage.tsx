@@ -130,7 +130,7 @@ export function RoutineTile({
     >
       <span
         aria-hidden
-        className={cn('flex size-13 shrink-0 items-center justify-center rounded-full', done ? 'bg-person-done-disc text-person-done-picture' : 'bg-person-fill text-person-strong')}
+        className={cn('flex size-[52px] shrink-0 items-center justify-center rounded-full', done ? 'bg-person-done-disc text-person-done-picture' : 'bg-person-fill text-person-strong')}
       >
         <RoutinePicture picture={routine.picture} />
       </span>
@@ -149,7 +149,7 @@ export function RoutineTile({
           ) : (
             <span className="flex items-center gap-1.5">
               <PersonDisc name={who} color={color} size={24} />
-              <span dir="auto" className={cn('min-w-0 truncate text-start text-sm leading-[18px]', !done && 'text-muted-foreground')}>
+              <span dir="auto" className={cn('min-w-0 truncate text-start text-sm leading-[1.2857]', !done && 'text-muted-foreground')}>
                 {who}
               </span>
             </span>
@@ -271,7 +271,7 @@ export function DoneEarlier({ view, color }: { view: PartView; color: string }) 
           <Tick key={index} size={20} color={color} strong />
         ))}
       </span>
-      <span className="min-w-0 flex-1 truncate text-sm leading-[18px] text-muted-foreground">{view.doneEarlier} done earlier today</span>
+      <span className="min-w-0 flex-1 truncate text-sm leading-[1.2857] text-muted-foreground">{view.doneEarlier} done earlier today</span>
     </div>
   );
 }
@@ -404,13 +404,14 @@ export function RoutinesChart({ routines }: { routines: RoutinesToday }) {
   return (
     <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-4">
       {/* The heading row is 48 px, as on every screen, and the first card is 16 px under it. */}
-      <div className="flex h-12 flex-none items-center justify-between gap-4">
+      <div className="flex min-h-12 flex-none flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
           Routines
         </h2>
-        <div className="flex flex-none items-center gap-4">
-          {/* The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways: the control is as tall as one of them. */}
-          <div role="group" aria-label="Part of the day" className="flex h-12 flex-none gap-2 rounded-[18px] bg-card">
+        <div className="flex max-w-full flex-none flex-wrap items-center gap-x-4 gap-y-2">
+          {/* The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways: the control is as tall as one of them. At larger text
+              the heading row and the control wrap rather than run past the edge of the screen. */}
+          <div role="group" aria-label="Part of the day" className="flex min-h-12 max-w-full flex-none flex-wrap gap-2 rounded-[18px] bg-card">
             {CHART_CHOICES.map(({ part, label, icon: Icon }) => (
               <Button
                 key={part}
@@ -731,7 +732,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                             </span>
                             <div className="min-w-0 flex-1">
                               <p className="text-[17px] leading-6 font-medium break-words">{routine.title}</p>
-                              <p className="text-sm leading-[18px] text-muted-foreground">{scheduleSummary(routine.days_of_week, routine.time_of_day)}</p>
+                              <p className="text-sm leading-[1.2857] text-muted-foreground">{scheduleSummary(routine.days_of_week, routine.time_of_day)}</p>
                             </div>
                           </div>
                           {confirming === routine.id ? (

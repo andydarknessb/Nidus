@@ -161,11 +161,11 @@ export function Pager({
   headingRef?: Ref<HTMLHeadingElement>;
 }) {
   return (
-    <div className="flex h-12 items-center gap-2">
+    <div className="flex min-h-12 items-center gap-2">
       <Button aria-label={previousLabel} disabled={!onPrevious} onClick={onPrevious ?? undefined} className="size-12 rounded-full bg-card p-0">
         <ChevronLeft aria-hidden className="size-6" />
       </Button>
-      <h2 ref={headingRef} tabIndex={headingRef ? -1 : undefined} className={cn('min-w-0 flex-1 truncate text-center font-display text-[22px] leading-7', headingRef && 'outline-none')}>
+      <h2 ref={headingRef} tabIndex={headingRef ? -1 : undefined} className={cn('min-w-0 flex-1 text-center font-display text-[22px] leading-7 wrap-anywhere', headingRef && 'outline-none')}>
         {words}
       </h2>
       <Button aria-label={nextLabel} disabled={!onNext} onClick={onNext ?? undefined} className="size-12 rounded-full bg-card p-0">

@@ -5,6 +5,14 @@ import { WEEKDAYS } from '../lib/routines';
 import { useOccurrences } from '../lib/wall-hooks';
 import { CELL_HEAD_REM, CELL_LINE_REM, DayCell } from './MonthCell';
 
+// The weekday names' row, in rem (py-2 and a line of text-sm, and the border under it).
+const WEEKDAYS_REM = 2.5;
+
+// The least height of the grid in rem: the weekday row and, for each week, the date and the one line under it.
+function monthMinRem(weeks: number): number {
+  return WEEKDAYS_REM + weeks * (CELL_HEAD_REM + CELL_LINE_REM);
+}
+
 // The month view's grid: the weekday names and a row per week. Each day inside the mirror's window is one
 // button that opens that day (MonthCell.tsx). It lists the day's occurrences a line each, as many as fit, and says how many
 // more there are. Events are not tappable here, the day is.
@@ -60,8 +68,10 @@ export function MonthGrid({
 
   const lines = linesPerCell(rowsPx / weeks.length, CELL_HEAD_REM * remPx, CELL_LINE_REM * remPx);
 
+  // A week is never drawn shorter than its date and the one line under it (the "+N more" or "6 events" that says what the day holds),
+  // whatever the text size: where the room for the grid is less than that, the grid is as tall as it needs and the screen scrolls.
   return (
-    <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
+    <section aria-label="Calendar" style={{ minHeight: `${monthMinRem(weeks.length)}rem` }} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
       {/* Every cell's name says its weekday already, so a screen reader need not hear the row of them first. */}
       <div aria-hidden className="grid grid-cols-7 divide-x divide-border border-b border-border">
         {WEEKDAYS.map((weekday) => (

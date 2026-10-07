@@ -43,7 +43,10 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
     if (!element) return null;
     const button = piece.current;
     let buttonSize = 0;
-    if (fit && button) {
+    // A button that is not drawn (the phone hides the Day view's rows' buttons with display: none) holds nothing back, and its gap to the
+    // row is not there either: counting that gap made a row 16 px over its room ask for a button that took no room, lose it, and ask again,
+    // for ever ("Maximum update depth exceeded", at 200 percent text on the phone's Day).
+    if (fit && button && button.getClientRects().length > 0) {
       const exact = button.getBoundingClientRect();
       buttonSize = fit === 'over' ? (sideways ? exact.width : exact.height) : sideways ? button.offsetWidth : button.offsetHeight;
       if (fit === 'beside' && button.parentElement) {

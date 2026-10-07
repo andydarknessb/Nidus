@@ -1,5 +1,5 @@
 import { CalendarDays, CircleCheck, House, List, Plus, Settings, Utensils, type LucideIcon } from 'lucide-react';
-import { useEffect, type ComponentProps, type ReactNode } from 'react';
+import { useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
 import { formatDate, navigationRailDate, type CalendarView, type WallRoute } from '../lib/calendar-occurrences';
 import type { Household } from '../lib/household';
 import { householdDay } from '../lib/routines';
@@ -30,7 +30,7 @@ const COLUMN_FOOT = `calc(${BAR} + 1rem + 3.5rem + 1rem + env(safe-area-inset-bo
 // draws the Selected look, so it never rests on colour alone.
 function Tab({ icon: Icon, label, current = false, ...props }: { icon: LucideIcon; label: string; current?: boolean } & Omit<ComponentProps<typeof Button>, 'children'>) {
   return (
-    <Button variant="quiet" aria-current={current ? 'page' : undefined} className="h-14 min-w-0 flex-1 flex-col gap-0.5 rounded-[14px] px-0 text-sm font-medium whitespace-normal max-[380px]:tracking-tight" {...props}>
+    <Button variant="quiet" aria-current={current ? 'page' : undefined} className="h-14 min-w-fit flex-1 flex-col gap-0.5 rounded-[14px] px-0 text-sm font-medium whitespace-normal max-[380px]:tracking-tight" {...props}>
       <Icon aria-hidden className="size-6" />
       {label}
     </Button>
@@ -59,8 +59,14 @@ export function PhoneTabs({
   onLists: () => void;
 }) {
   const onCalendar = route.view === 'day' || route.view === 'week' || route.view === 'month';
+  // At larger text the five tabs are wider than the screen and the bar scrolls sideways: the current tab is brought into view, so the bar
+  // never opens with the tab that says where you are out of sight.
+  const bar = useRef<HTMLElement>(null);
+  useEffect(() => {
+    bar.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [route.view]);
   return (
-    <nav aria-label="Wall sections" className="fixed inset-x-0 bottom-0 z-20 flex gap-1 border-t border-border bg-card px-1 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+    <nav ref={bar} aria-label="Wall sections" className="fixed inset-x-0 bottom-0 z-20 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-border bg-card px-1 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <Tab icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
       <Tab
         icon={CalendarDays}

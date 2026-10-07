@@ -30,8 +30,9 @@ import { FACE, PhoneCard, SideScroll, TOUCHING } from './parts';
 // Selected look. The picked day starts as today when the month holds it, else the 1st, and is the screen's own state, given up when
 // the month changes (the screen is keyed on it).
 
-// A cell is a touching 48 px target at least, so a row narrower than seven of them (336 px) scrolls sideways, as the day chips do.
-const ROW_FLOOR = 'min-w-[336px]';
+// A cell is a touching 48 px target at least, so a row narrower than seven of them (336 px) scrolls sideways, as the day chips do. A cell is
+// also as wide as the weekday's three letters (14 px, in rem, so 2.4 rem and more), so at larger text the letters never run into each other.
+const ROW_FLOOR = 'min-w-[calc(7*max(48px,2.4rem))]';
 
 function Dot({ dot }: { dot: MonthDot }) {
   return dot.kind === 'household' ? (

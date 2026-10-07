@@ -81,9 +81,9 @@ function MealsGrid({ days }: { days: WallDay[] }) {
   const known = meals !== null;
   const rows = mealGrid(meals ?? [], days.map((day) => day.date));
   const template: CSSProperties = {
-    // The slot column is 7 rem and the heading row 3.875 rem (the weekday's 18 px, 2, the 38 px date and 4 to spare); a
-    // day never narrows past a finger.
-    gridTemplateColumns: `7rem repeat(${days.length}, minmax(3rem, 1fr))`,
+    // The slot column is 7 rem (at larger text no more than 112 px or 11 percent of the screen, whichever is more, so the days keep
+    // their room) and the heading row 3.875 rem (the weekday's 18 px, 2, the 38 px date and 4 to spare); a day never narrows past a finger.
+    gridTemplateColumns: `min(7rem, max(112px, 11vw)) repeat(${days.length}, minmax(3rem, 1fr))`,
     gridTemplateRows: `3.875rem repeat(${rows.length}, minmax(min-content, 1fr))`,
   };
 
@@ -95,7 +95,7 @@ function MealsGrid({ days }: { days: WallDay[] }) {
         </p>
       )}
       {/* The padding is on the scrolling grid, so a focus ring has room inside what it clips. */}
-      <div style={template} className="grid min-h-0 flex-1 gap-2 overflow-y-auto p-2.5">
+      <div style={template} className="grid min-h-0 flex-1 gap-[8px] overflow-y-auto p-2.5">
         {/* The first read's own line, in the corner so the grid does not shift when it lands. */}
         <div className="flex items-center px-3 text-sm text-muted-foreground">{!known && !failed ? 'Loading' : null}</div>
         {days.map((day) => (
@@ -123,7 +123,7 @@ function MealsGrid({ days }: { days: WallDay[] }) {
                     onClick={() => setEditing({ date: day.date, slot: row.slot, heading, meal })}
                     // Corners of 14 and 10 px inside, as an event pill has; a Meal's words start at the top left and are
                     // clamped to three lines (the whole of them are in the sheet), an empty slot's plus is in the middle.
-                    className={`h-auto min-h-12 min-w-0 rounded-[14px] p-2.5 text-left text-[15px] leading-[19px] font-medium whitespace-normal ${meal ? 'items-start justify-start bg-everyone' : 'text-muted-foreground'}`}
+                    className={`h-auto min-h-12 min-w-0 rounded-[14px] p-[10px] text-left text-[15px] leading-[19px] font-medium whitespace-normal ${meal ? 'items-start justify-start bg-everyone' : 'text-muted-foreground'}`}
                   >
                     {/* The name a screen reader hears: "Dinner, Thursday 1: Tacos", or "Dinner, Thursday 1: nothing planned. Add a meal"; while the Meals are unknown, just "Dinner, Thursday 1". */}
                     <span className="sr-only">{known ? `${heard}: ` : heard}</span>
@@ -173,7 +173,7 @@ function DayHeading({ day }: { day: WallDay }) {
       aria-label={`${dayName(day)}${day.isToday ? ', today' : ''}`}
       className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[14px] font-normal ${day.isToday ? 'bg-muted' : ''}`}
     >
-      <span className={`text-sm leading-[18px] ${day.isToday ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{day.isToday ? 'Today' : short}</span>
+      <span className={`text-sm leading-[1.2857] ${day.isToday ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{day.isToday ? 'Today' : short}</span>
       <span className={`flex h-[38px] items-center justify-center font-display leading-none ${day.isToday ? 'size-[38px] rounded-full bg-primary text-[21px] text-primary-foreground' : 'text-[22px]'}`}>{date}</span>
     </h3>
   );
@@ -337,7 +337,7 @@ function NextMealButton({ timezone, onOpen }: { timezone: string; onOpen: () => 
         <Picture className="size-6" />
       </span>
       <span className="flex min-w-0 flex-col text-left">
-        <span className="truncate text-sm leading-[18px] text-muted-foreground">{words}</span>
+        <span className="truncate text-sm leading-[1.2857] text-muted-foreground">{words}</span>
         <span dir="auto" className="truncate font-display text-[22px] leading-7">{next.title}</span>
       </span>
       <ChevronRight aria-hidden className="size-[22px] text-muted-foreground" strokeWidth={2.2} />

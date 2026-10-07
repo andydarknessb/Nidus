@@ -71,6 +71,6 @@ describe('the Lists screen', () => {
   });
 
   it('has the 28 px title in a heading row 48 tall, and the first card 16 px under it, as every screen has', () => {
-    expect(screen()).toMatch(/^<div class="flex min-h-0 flex-col gap-4"><div class="flex h-12 shrink-0 [^"]*"><h2 tabindex="-1" class="font-display text-\[28px\] leading-\[34px\] outline-none">Lists<\/h2>/);
+    expect(screen()).toMatch(/^<div class="flex min-h-0 flex-col gap-4"><div class="flex min-h-12 shrink-0 [^"]*"><h2 tabindex="-1" class="font-display text-\[28px\] leading-\[34px\] outline-none">Lists<\/h2>/);
   });
 });

@@ -41,3 +41,39 @@ describe('homeLayout, the phone', () => {
     expect(homeLayout({ width: 1280, height: 800 })).toEqual({ days: 5, tiles: 3, phone: false });
   });
 });
+
+// Larger text (a root font size above 16 px) makes every rem box bigger and leaves the screen as it is, so the Wall holds what the
+// smaller screen it is then would: the width and the height are judged in rem, as they would be at 16 px. 1280 x 800 at 130 percent
+// (20.8 px) has the room of 984 x 615, and at 200 percent (32 px) of 640 x 400, which the Wall is never shorter than 34 rem of.
+describe('homeLayout, larger text', () => {
+  it('is the same at 16 px text, whether or not the size is given', () => {
+    expect(homeLayout({ width: 1280, height: 800, rem: 16 })).toEqual(homeLayout({ width: 1280, height: 800 }));
+    expect(homeLayout({ width: 1024, height: 768, rem: 16 })).toEqual({ days: 4, tiles: 3, phone: false });
+  });
+
+  it('gives up a day and an Up next tile at 130 percent', () => {
+    expect(homeLayout({ width: 1280, height: 800, rem: 20.8 })).toEqual({ days: 4, tiles: 2, phone: false });
+  });
+
+  it('holds three days and one tile at 200 percent', () => {
+    expect(homeLayout({ width: 1280, height: 800, rem: 32 })).toEqual({ days: 3, tiles: 1, phone: false });
+  });
+
+  it('never holds one tile at 16 px text, however short the screen is', () => {
+    expect(homeLayout({ width: 1280, height: 400 }).tiles).toBe(2);
+  });
+
+  it('takes the Wall to be 34 rem tall at least, so a tall text size on a short screen asks for no fewer tiles than a short one', () => {
+    expect(homeLayout({ width: 1280, height: 300, rem: 16 }).tiles).toBe(2);
+    // 1280 x 600 at 200 percent is 640 x 300 rem-wise, but the Wall is 34 rem (1088 px) tall, which is 544 at 16 px text.
+    expect(homeLayout({ width: 1280, height: 600, rem: 32 }).tiles).toBe(1);
+    expect(homeLayout({ width: 1280, height: 1300, rem: 32 }).tiles).toBe(2);
+    expect(homeLayout({ width: 1920, height: 1600, rem: 20.8 }).tiles).toBe(3);
+  });
+
+  it('stays a phone below 768 px whatever the text size is, and keeps its four days at 16 px text on a narrow tablet', () => {
+    expect(homeLayout({ width: 767, height: 800, rem: 32 }).phone).toBe(true);
+    expect(homeLayout({ width: 768, height: 800, rem: 32 }).phone).toBe(false);
+    expect(homeLayout({ width: 768, height: 720 }).days).toBe(4);
+  });
+});

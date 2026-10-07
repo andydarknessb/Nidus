@@ -20,6 +20,7 @@ import {
   type ListItem,
   type SharedList,
 } from './lib/shared-lists';
+import { rootFontSize } from './lib/home-layout';
 import type { Household } from './lib/household';
 import { useRefetchOn } from './lib/change-feed';
 import { useStatusLine } from './lib/status-line';
@@ -112,7 +113,7 @@ export function AddRow({ listName, size = 'wall', onAdd }: { listName: string; s
 // The mark on the Pinned List, on the Wall's card and on the phone's.
 export function PinnedMark() {
   return (
-    <p className="flex h-8 shrink-0 items-center gap-2 self-start rounded-full bg-muted px-3 text-sm text-muted-foreground">
+    <p className="flex min-h-8 shrink-0 items-center gap-2 self-start rounded-full bg-muted px-3 py-0.5 text-sm text-muted-foreground">
       <Pin aria-hidden className="size-4" />
       On the home screen
     </p>
@@ -135,7 +136,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
 
   return (
     <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className="flex max-h-full w-(--card-w) shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3.5">
-      <div className="flex h-13 shrink-0 items-center gap-3">
+      <div className="flex min-h-13 shrink-0 items-center gap-3">
         {/* One picture for every list: there is no picture on a Shared List to choose. */}
         <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
           <List className="size-[22px]" />
@@ -216,11 +217,11 @@ export function ListsScreen() {
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <div className="flex h-12 shrink-0 items-center justify-between gap-4">
+      <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h2 ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
           Lists
         </h2>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <p className="text-[15px] text-muted-foreground">The owner adds lists in Settings.</p>
           {/* The heading row is 48 px, and the button is the row's height. */}
           <OverflowButton control={row} of="lists" className="h-12" />
@@ -234,7 +235,7 @@ export function ListsScreen() {
       {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
       <div
         ref={row.scroller}
-        className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cards.length > 3 ? '[--card-w:calc((100%_-_3rem)/3.2)]' : '[--card-w:calc((100%_-_2rem)/3)]'}`}
+        className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cards.length > 3 ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%))]' : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%))]'}`}
       >
         {cards.map((list) => (
           <ListCard key={list.id} list={list} pinned={list.id === read?.pinnedId} />
@@ -296,7 +297,7 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
   const nothing = loaded && rows.length === 0;
   const measured = limit === undefined;
   // The rows that show, and the items still to get that the card has no room for.
-  const { shown, hidden } = homeWindow({ rows, limit, room });
+  const { shown, hidden } = homeWindow({ rows, limit, room, rem: rootFontSize() });
 
   // A tap crosses a row off, or puts back one crossed off here. The row stays where it is either way.
   function tap(item: ListItem) {

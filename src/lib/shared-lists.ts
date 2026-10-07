@@ -56,17 +56,16 @@ export function rowsThatFit({ count, room, row, gap }: { count: number; room: nu
   return Math.min(count, Math.max(0, Math.floor((room + gap) / (row + gap))));
 }
 
-// From the drawing (v2/home.js): a row on Home is 48 px (h-12) and rows are 8 px apart (gap-2).
-// ponytail: these sit beside the classes they stand for and are not measured; if a larger text size (#69) ever grows a row,
-// measure the first row instead.
-const HOME_ROW_PX = 48;
-const HOME_GAP_PX = 8;
+// From the drawing (v2/home.js): a row on Home is 3 rem (48 px, h-12) and rows are 0.5 rem apart (gap-2). They are rem, like the
+// classes they stand for, so a larger text size makes the rows taller and the card counts them taller (`rem`, the root font size).
+const HOME_ROW_REM = 3;
+const HOME_GAP_REM = 0.5;
 
 // Which of the rows Home's card draws it shows, and how many items still to get it leaves out (what its link says: "3 more"). On a
-// tablet the card is measured: `room` px of height, none before it is laid out (then no row shows yet). On a phone the column has no
-// height to give, so `limit` rows show instead and `room` is not looked at.
-export function homeWindow({ rows, limit, room }: { rows: ListItem[]; limit?: number | undefined; room: number | null }): { shown: number; hidden: number } {
-  const shown = limit !== undefined ? Math.min(rows.length, limit) : room === null ? 0 : rowsThatFit({ count: rows.length, room, row: HOME_ROW_PX, gap: HOME_GAP_PX });
+// tablet the card is measured: `room` px of height, none before it is laid out (then no row shows yet), and the rows are as tall as
+// `rem` makes them. On a phone the column has no height to give, so `limit` rows show instead and `room` is not looked at.
+export function homeWindow({ rows, limit, room, rem = 16 }: { rows: ListItem[]; limit?: number | undefined; room: number | null; rem?: number }): { shown: number; hidden: number } {
+  const shown = limit !== undefined ? Math.min(rows.length, limit) : room === null ? 0 : rowsThatFit({ count: rows.length, room, row: HOME_ROW_REM * rem, gap: HOME_GAP_REM * rem });
   return { shown, hidden: withoutCrossed(rows.slice(shown)).length };
 }
 
