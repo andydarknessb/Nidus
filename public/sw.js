@@ -27,6 +27,22 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(text(data.title) || 'Nidus', options));
 });
 
+// The push service rotated this phone's endpoint. The worker has no session to save the new one with, so it subscribes again with the
+// same key and leaves the two endpoints in a cache of its own; the page saves the new one the next time it reads the phone's state
+// (readPushState in src/lib/push.ts, which shares this cache name and key).
+self.addEventListener('pushsubscriptionchange', (event) => {
+  const key = event.oldSubscription && event.oldSubscription.options && event.oldSubscription.options.applicationServerKey;
+  if (!key) return;
+  event.waitUntil(
+    self.registration.pushManager
+      .subscribe({ userVisibleOnly: true, applicationServerKey: key })
+      .then(async (subscription) => {
+        const cache = await self.caches.open('nidus-push-rotation');
+        await cache.put('/push-rotation', new Response(JSON.stringify({ old: event.oldSubscription.endpoint, new: subscription.endpoint })));
+      }),
+  );
+});
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   // Only a place in Nidus: anything else opens its front door.
