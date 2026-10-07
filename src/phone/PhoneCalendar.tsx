@@ -15,6 +15,7 @@ import {
   type WallDay,
   type WallRoute,
 } from '../lib/calendar-occurrences';
+import { focusTitleIfLost } from '../lib/focus';
 import { pageWords, pickedDay } from '../lib/phone-calendar';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
@@ -72,16 +73,17 @@ function Calendar({
   const days = calendarView === 'month' ? null : pageDays(calendarView, anchor, timezone, now);
   const { previous, next } = paging(calendarView, anchor, window);
 
-  // Paging may switch off the button that was pressed: put focus on the page's words instead of losing it. Only after the page or the view
-  // has changed, never when the tab opens (which would scroll the page), StrictMode's second run of the effect included: the page it saw
-  // last is kept, as the Meals tab does.
+  // Paging may switch off the button that was pressed: put focus on the page's words instead of losing it (and only if it was lost: paging by keyboard stays on the button pressed). Only after the page or the view
+  // the person chose has changed (the view and the date they opened, never the computed `anchor`, which also moves by itself at Household
+  // midnight, at the start of a week or a month while the page follows today), never when the tab opens (which would scroll the page),
+  // StrictMode's second run of the effect included: the page it saw last is kept, as the Meals tab does.
   const heading = useRef<HTMLHeadingElement>(null);
-  const page = `${calendarView}:${anchor}`;
+  const page = `${calendarView}:${route.date ?? 'today'}`;
   const seen = useRef(page);
   useEffect(() => {
     if (seen.current === page) return;
     seen.current = page;
-    heading.current?.focus({ preventScroll: true });
+    focusTitleIfLost(heading.current, { preventScroll: true });
   }, [page]);
 
   return (
