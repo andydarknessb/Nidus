@@ -98,10 +98,11 @@ function sample(count: number): { rule: string; start: string; allDay: boolean }
     if (interval !== 1 || r() < 0.2) parts.push(`INTERVAL=${interval}`);
     if (r() < 0.25) parts.push(`WKST=${pick(DAYS)}`);
     const end = r();
-    if (end < 0.2) parts.push(`COUNT=${pick([1, 2, 5, 10, 100, 1000, 5000])}`);
+    const counted = end < 0.2;
+    if (counted) parts.push(`COUNT=${pick([1, 2, 5, 10, 100, 1000, 5000])}`);
     else if (end < 0.4) parts.push(`UNTIL=${pick([2027, 2030, 2099])}${p2(int(1, 12))}${p2(int(1, 28))}`);
-    // A monthly BYSETPOS is walked from at most 240 of its steps before the window.
-    const year = setpos ? int(2007, 2026) : r() < 0.5 ? int(1900, 2026) : pick([1900, 1970, 1999, 2015, 2026]);
+    // A monthly BYSETPOS with COUNT is walked from DTSTART, and only from at most 240 of its steps before the window.
+    const year = setpos && counted ? int(2007, 2026) : r() < 0.5 ? int(1900, 2026) : pick([1900, 1970, 1999, 2015, 2026]);
     const month = int(1, 12);
     const date = `${year}${p2(month)}${p2(r() < 0.3 ? new Date(Date.UTC(year, month, 0)).getUTCDate() : int(1, 28))}`;
     const time = `T${p2(int(0, 23))}${pick(['00', '15', '30'])}00`;
