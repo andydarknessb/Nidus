@@ -721,14 +721,14 @@ function paint({
   storage?: 'works' | 'blocked';
   metas?: 'present' | 'missing';
 }) {
-  const page: { mode?: string; metas: Record<string, string> } = { metas: {} };
+  const page: { mode?: string; phone?: boolean; metas: Record<string, string> } = { metas: {} };
   const sandbox: Record<string, unknown> = {
     location: { pathname: path },
     ...(width === undefined ? {} : { innerWidth: width }),
     ...(height === undefined ? {} : { innerHeight: height }),
     matchMedia: (query: string) => ({ matches: query === '(prefers-color-scheme: dark)' && prefersDark }),
     document: {
-      documentElement: { setAttribute: (name: string, value: string) => void (name === 'data-mode' && (page.mode = value)) },
+      documentElement: { setAttribute: (name: string, value: string) => void (name === 'data-mode' ? (page.mode = value) : name === 'data-phone' && (page.phone = true)) },
       querySelector: (selector: string) => {
         const meta = /name=["']?([\w-]+)/.exec(selector)?.[1];
         if (metas === 'missing' || meta === undefined) return null;
@@ -752,7 +752,7 @@ function paint({
   } catch {
     threw = true;
   }
-  return { mode: page.mode, metas: page.metas, threw, leaked: Object.keys(sandbox).filter((key) => !before.has(key)) };
+  return { mode: page.mode, phone: page.phone, metas: page.metas, threw, leaked: Object.keys(sandbox).filter((key) => !before.has(key)) };
 }
 
 describe('the inline script in index.html', () => {
@@ -815,6 +815,15 @@ describe('the inline script in index.html', () => {
     expect(paint({ path: '/', width: 768, stored: 'dark', prefersDark: false }).mode).toBe('dark');
     expect(paint({ path: '/', width: 768, stored: 'light', prefersDark: true }).mode).toBe('light');
     expect(paint({ path: '/', width: 1280, stored: 'dark', prefersDark: false }).mode).toBe('dark');
+  });
+
+  it("marks a small window as a phone (data-phone) by the Wall's rule, on every path, so /settings' sheets rise from the foot", () => {
+    expect(paint({ path: '/settings', width: 390, height: 844 }).phone).toBe(true);
+    expect(paint({ path: '/settings/events', width: 852, height: 393 }).phone).toBe(true);
+    expect(paint({ path: '/', width: 390, height: 844 }).phone).toBe(true);
+    expect(paint({ path: '/settings', width: 1280, height: 800 }).phone).toBeUndefined();
+    expect(paint({ path: '/', width: 1280, height: 800 }).phone).toBeUndefined();
+    expect(paint({ path: '/' }).phone).toBeUndefined();
   });
 
   it('takes a phone on its side, under 544 px tall, for a phone, and a short tablet of 544 for the Wall', () => {
