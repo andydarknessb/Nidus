@@ -83,7 +83,7 @@ export function DayCell({
       // A day of the neighbouring month is dimmed with the muted colour, which holds 7:1 on the card and on today's lifted ground.
       // The cell is a grid item and clips what it holds, so its focus ring is drawn inside it.
       className={cn(
-        'h-auto min-h-0 w-full min-w-0 flex-col items-stretch justify-start gap-0 overflow-hidden rounded-none px-1.5 pt-1 text-left font-normal focus-visible:-outline-offset-2 active:translate-y-0',
+        '@container h-auto min-h-0 w-full min-w-0 flex-col items-stretch justify-start gap-0 overflow-hidden rounded-none px-1.5 pt-1 text-left font-normal focus-visible:-outline-offset-2 active:translate-y-0',
         inMonth || day.isToday ? 'text-foreground' : 'text-muted-foreground',
         day.isToday && 'bg-muted',
       )}
@@ -115,17 +115,19 @@ export function DayCell({
 // ellipsis, and at the end who it is for, in discs (EventDiscs, by the pill's rule, at 16 px): colour alone does not say whose an
 // event is, as two people can share a colour to the eye and four of five draw the same three bands as three. A timed event that
 // began on an earlier day only continues, so it shows no time, as in the week view. The words are --foreground, on a fill that
-// holds 7:1 for them. It is one line and never wider than its cell: the title gives way, and the discs never shrink. The title
-// starts where it starts, whichever way it is written (dir="auto"), so a right-to-left one is cut at its end.
+// holds 7:1 for them. It is one line and never wider than its cell: the title gives way, and the discs never shrink. In a cell under 7 rem
+// wide (the cell is the container) the pin gives way first and the gaps close up, then the end of the time (an ellipsis), never a disc; the
+// title takes no part in the shrinking (flex-1, max-w-max), so a cell with room is as it was. The title starts where it starts, whichever way
+// it is written (dir="auto"), so a right-to-left one is cut at its end.
 function EventLine({ occurrence, day, timezone, people }: { occurrence: Occurrence; day: WallDay; timezone: string; people: PillPeople }) {
   const start = Date.parse(occurrence.starts_at);
   const time = !occurrence.is_all_day && start >= day.startMs ? formatCompactClock(start, timezone) : null;
   return (
-    <span data-testid="event-line" className="relative mb-0.5 flex h-5.5 min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-lg pr-1 pl-1.5 text-foreground">
+    <span data-testid="event-line" className="relative mb-0.5 flex h-5.5 min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-lg pr-1 pl-1.5 text-foreground @max-[7rem]:gap-0.5">
       <EventFill people={people} />
-      {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="relative size-3.5 shrink-0" />}
-      {time && <span className="relative shrink-0 text-sm font-medium tabular-nums">{time}</span>}
-      <span dir="auto" className="relative min-w-0 truncate text-[0.9375rem] leading-5 font-semibold">
+      {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="relative size-3.5 shrink-0 @max-[7rem]:hidden" />}
+      {time && <span className="relative min-w-0 truncate text-sm font-medium tabular-nums">{time}</span>}
+      <span dir="auto" className="relative min-w-0 max-w-max flex-1 truncate text-[0.9375rem] leading-5 font-semibold">
         {occurrence.title}
       </span>
       <span className="relative ml-auto flex shrink-0">
