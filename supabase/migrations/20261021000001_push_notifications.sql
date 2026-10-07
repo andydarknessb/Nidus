@@ -57,8 +57,10 @@ create policy "household account deletes its own subscriptions"
   using (public.is_household_account() and auth_user_id = auth.uid());
 
 -- Saves the calling phone's subscription and returns its id. The same browser subscribing
--- again keeps its row and preferences (the keys are replaced); a browser now signed in as
--- another Household Account moves to that account.
+-- again keeps its row and preferences (the keys are replaced). A browser now signed in as
+-- another Household Account gets a fresh row for that account (default preferences, no old
+-- deliveries); the previous account's row is deleted. At most 10 subscriptions per account:
+-- the oldest beyond that go. The endpoint must be https on a known push service host.
 create or replace function public.save_push_subscription(p_endpoint text, p_p256dh text, p_auth text)
 returns uuid
 language plpgsql
@@ -74,16 +76,38 @@ begin
   if p_endpoint is null or p_endpoint !~ '^https://[^[:space:]]+$' or char_length(p_endpoint) > 2048 then
     raise exception 'the push endpoint must be an https address of at most 2048 characters' using errcode = '22023';
   end if;
+  -- The host runs from after https:// to the first slash, so userinfo (a@b), a port, or a longer
+  -- host that merely starts with a good one (fcm.googleapis.com.evil.example) never matches.
+  if p_endpoint !~ '^https://(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|web\.push\.apple\.com|([a-z0-9-]+\.)+notify\.windows\.com)/' then
+    raise exception 'the push endpoint is not on a known push service' using errcode = '22023';
+  end if;
   if p_p256dh is null or char_length(p_p256dh) not between 1 and 200
      or p_auth is null or char_length(p_auth) not between 1 and 200 then
     raise exception 'the push keys must be 1 to 200 characters' using errcode = '22023';
   end if;
 
+  -- Another account's row for this browser goes (its deliveries cascade); this account gets its own.
+  delete from public.push_subscriptions as s where s.endpoint = p_endpoint and s.auth_user_id <> auth.uid();
+
   insert into public.push_subscriptions as s (auth_user_id, endpoint, p256dh, auth)
   values (auth.uid(), p_endpoint, p_p256dh, p_auth)
   on conflict (endpoint) do update
-    set auth_user_id = excluded.auth_user_id, p256dh = excluded.p256dh, auth = excluded.auth
+    set p256dh = excluded.p256dh, auth = excluded.auth
+    where s.auth_user_id = excluded.auth_user_id
   returning s.id into sub_id;
+  if sub_id is null then
+    -- Another account took the endpoint between the delete and the insert.
+    raise exception 'this browser was subscribed by another account at the same moment, try again' using errcode = '40001';
+  end if;
+
+  -- At most 10 per account: the newest stay.
+  delete from public.push_subscriptions as s
+  where s.id in (
+    select o.id from public.push_subscriptions as o
+    where o.auth_user_id = auth.uid()
+    order by o.created_at desc, o.id desc
+    offset 10
+  );
 
   return sub_id;
 end;
@@ -109,7 +133,8 @@ comment on table public.push_deliveries is 'Keys of notifications already claime
 alter table public.push_deliveries enable row level security;
 revoke all on public.push_deliveries from anon, authenticated;
 
--- The nightly prune keeps what it had and sweeps deliveries too. A key matters only while its
+-- The nightly prune keeps what it had and sweeps deliveries too, and pg_cron's run log (a row per
+-- run, so one a minute now) beyond a week. A key matters only while its
 -- notification could still be sent (a day, at most), so two days is margin.
 create or replace function public.prune_stale_rows()
 returns void
@@ -121,6 +146,7 @@ begin
   delete from public.synced_events where ends_at < now() - interval '1 month';
   delete from public.pairing_requests where expires_at < now() - interval '1 hour';
   delete from public.push_deliveries where sent_at < now() - interval '2 days';
+  delete from cron.job_run_details where end_time < now() - interval '7 days';
 end;
 $$;
 
