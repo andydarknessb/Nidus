@@ -910,6 +910,25 @@ RRULE:${rule}`, 'missing')), windowStart, windowEnd);
     expect(skipped.rows).toEqual(walked.rows);
   });
 
+  it('refuses a monthly BYSETPOS series it cannot move, as one with COUNT: its first occurrence, said to be cut, and no clock spent', () => {
+    // A length that runs past the window leaves no month to move to, so the series is walked from 1900, at 0.7 ms a step.
+    const text = feed(event('DTSTART:19000115T090000Z\nDURATION:P73000D\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1', 'long'));
+    const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0 };
+    const began = Date.now();
+    const { rows, truncated } = expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+    expect(Date.now() - began).toBeLessThan(400);
+    expect(rows).toHaveLength(1);
+    expect(truncated).toBe(true);
+  });
+
+  it('leaves to the plain walk a series whose moved start is the one ical.js gives up on', () => {
+    // The 31st every 5 months from January 2000: alive from DTSTART, but dead from a start moved to a month 5 periods before the next 31st.
+    const text = feed(event('DTSTART:20000115T090000Z\nRRULE:FREQ=MONTHLY;BYMONTHDAY=31;INTERVAL=5', 'dead-moved'));
+    const { walked, skipped } = compare(text, Date.parse('2005-07-02T00:00:00Z'), Date.parse('2007-09-01T00:00:00Z'));
+    expect(walked.rows.map((row) => row.starts_at)).toContain('2007-07-31T09:00:00.000Z');
+    expect(skipped.rows).toEqual(walked.rows);
+  });
+
   it('walks a series with COUNT from DTSTART, as it counts from there', () => {
     const { slow, fast } = both(event('DTSTART:20200111T090000Z\nRRULE:FREQ=MONTHLY;COUNT=100;BYDAY=2TU', 'counted'));
     expect(fast).toBe(slow);

@@ -16,7 +16,7 @@ export const MAX_PER_FEED = 20000;
 // forever, and the hosted function has a 2 s CPU limit for the run (the run's caps leave a margin
 // under it). The caps only ever limit repeating series: a single event, an RDATE or a moved
 // occurrence is always read, costs no steps, and is kept whatever any budget says.
-// ponytail: ical.js's iterator cannot jump to the window, so a series without COUNT is moved
+// ponytail: ical.js's iterator cannot jump to the window, so a series without COUNT is, where it can be, moved
 // forward by whole periods first (`fastForwarded`) and the rest is walked a step at a time, newest
 // start first, so the ancient expensive rules are the ones a cap cuts. A series cut by the event's or feed's cap keeps
 // what it reached and the feed says so (`truncated`). Past the run's cap or time, the feed is not
@@ -143,10 +143,10 @@ const ordinal = (n: number) => (n >= 1 && n <= 5) || n === -1;
 // Two shapes are narrower still, because measured they take seconds (see the tests): a "fifth"
 // (ordinal 5, or BYSETPOS 5) is walked only with INTERVAL 1, since a month or year that never has one
 // (the fifth Monday of a 28-day February, every 4 years) sends ical.js searching inside one step; and a
-// monthly BYSETPOS costs about 0.7 ms a step, so one with COUNT, which is walked from DTSTART, is
-// walked only when DTSTART is at most MAX_SETPOS_STEPS of its steps before the window
-// (`monthsToWindow`, in months); one without COUNT is moved forward to the window first.
-function walkableRule(rule: ICAL.Recur, monthsToWindow: number): boolean {
+// monthly BYSETPOS costs about 0.7 ms a step, so one that is walked from DTSTART (it has COUNT, or
+// `fastForwarded` cannot move it: `moves` says) is walked only when DTSTART is at most
+// MAX_SETPOS_STEPS of its steps before the window (`monthsToWindow`, in months).
+function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boolean): boolean {
   const parts = rule.parts as Record<string, unknown[] | undefined>;
   const names = Object.keys(parts).sort().join(',');
   const list = (name: string) => parts[name] ?? [];
@@ -169,7 +169,7 @@ function walkableRule(rule: ICAL.Recur, monthsToWindow: number): boolean {
         names === '' ||
         (names === 'BYMONTHDAY' && inRange('BYMONTHDAY', (n) => (n >= 1 && n <= 31) || n === -1)) ||
         (names === 'BYDAY' && oneOrdinalDay) ||
-        (names === 'BYDAY,BYSETPOS' && bare && onePosition && (!rule.count || Math.ceil(Math.max(0, monthsToWindow) / rule.interval) <= MAX_SETPOS_STEPS))
+        (names === 'BYDAY,BYSETPOS' && bare && onePosition && (Math.ceil(Math.max(0, monthsToWindow) / rule.interval) <= MAX_SETPOS_STEPS || moves()))
       );
     case 'YEARLY': {
       if (names === '') return true;
@@ -183,12 +183,12 @@ function walkableRule(rule: ICAL.Recur, monthsToWindow: number): boolean {
 
 // Whether the event's one rule is a repeat the iPhone can make (see walkableRule); two rules on one
 // event are not something it writes.
-function walkable(ev: ICAL.Event, start: ICAL.Time, windowStartMs: number): boolean {
+function walkable(ev: ICAL.Event, start: ICAL.Time, lengthBound: number, windowStartMs: number): boolean {
   const rules = ev.component.getAllProperties('rrule');
   const rule = rules.length === 1 ? rules[0]!.getFirstValue() : null;
   const window = new Date(windowStartMs);
   const monthsToWindow = window.getUTCFullYear() * 12 + window.getUTCMonth() - (start.year * 12 + start.month - 1);
-  return rule instanceof ICAL.Recur && walkableRule(rule, monthsToWindow);
+  return rule instanceof ICAL.Recur && walkableRule(rule, monthsToWindow, () => fastForwarded(ev, start, lengthBound, windowStartMs) !== null);
 }
 
 // Whether every rule of the event has ended before the window, in any zone: nothing to walk.
@@ -258,10 +258,10 @@ function fastForwarded(ev: ICAL.Event, start: ICAL.Time, lengthBound: number, wi
   // Built from whole fields: a Time moved with addDuration is normalised only when read, which the
   // iterator does not do.
   const moved = ICAL.Time.fromData({ ...at, hour: start.hour, minute: start.minute, second: start.second, isDate: start.isDate }, start.zone);
-  // ical.js gives up at once on a rule whose first match is many periods after DTSTART (a 31st every 5
-  // months, from June), and then the plain walk shows nothing. The moved start would find the later
-  // matches, so such a series is left to the plain walk, to read as it always has.
-  if ((rule.freq === 'MONTHLY' || rule.freq === 'YEARLY') && !rule.iterator(start).next()) return null;
+  // ical.js gives up at once on a rule whose first match is many periods after the start it is given
+  // (a 31st every 5 months, from June). Then the plain walk, from DTSTART, shows nothing, or the moved
+  // start finds nothing the plain walk would have found: either way the series is left to the plain walk.
+  if ((rule.freq === 'MONTHLY' || rule.freq === 'YEARLY') && (!rule.iterator(start).next() || !rule.iterator(moved).next())) return null;
   return rule.iterator(moved);
 }
 
@@ -407,7 +407,7 @@ function expand(
           const s: Series = { uid, ev, layout: l, startMs: instantMs(l.start, timezone), excluded: excludedStarts(ev, timezone) };
           const lengthBound = l.isAllDay ? l.lengthDays * DAY_MS : l.lengthMs;
           const live = ev.component.hasProperty('rrule') && !endedBefore(ev, windowStartMs, lengthBound);
-          const canWalk = live && walkable(ev, l.start, windowStartMs);
+          const canWalk = live && walkable(ev, l.start, lengthBound, windowStartMs);
           const emit = emitterFor(s);
           // A series that is walked emits its own DTSTART there, where the row cap can stop it.
           if (!canWalk) emit(l.start);
