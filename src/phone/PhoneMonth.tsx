@@ -1,25 +1,23 @@
 import { cn } from 'cn';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { BEYOND_RANGE, HATCH } from '../components/MonthCell';
 import { Button } from '../components/ui/button';
 import {
   canOpenDay,
-  dayOccurrences,
   describeCell,
   describeMonth,
   monthWeeks,
   pageDays,
-  weekStart,
   type Occurrence,
   type PagingWindow,
   type WallDay,
 } from '../lib/calendar-occurrences';
 import { personStyle } from '../lib/look';
-import { monthDots, pickedDay, type MonthDot } from '../lib/phone-calendar';
-import { ProfileFilterContext } from '../lib/profile-filter';
+import type { DayEvents as Read } from '../lib/day-events';
+import { pickedDay, type MonthDot } from '../lib/phone-calendar';
 import type { Profile } from '../lib/profiles';
 import { WEEKDAYS } from '../lib/routines';
-import { useOccurrences } from '../lib/wall-hooks';
+import { useDayEvents } from '../lib/wall-hooks';
 import { DayEvents } from './DayEvents';
 import { FACE, PhoneCard, SideScroll, TOUCHING } from './parts';
 
@@ -42,8 +40,9 @@ function Dot({ dot }: { dot: MonthDot }) {
   );
 }
 
-// One day of the grid. `occurrences` are the day's own, in order and after the Profile filter, and null until its week has been read
-// (the name then gives the date alone: "no events" would call a day free that may not be). A day past the range the calendar keeps
+// One day of the grid. `occurrences` are the day's own, in order and after the Profile filter, and null until the month has been read
+// (the name then gives the date alone: "no events" would call a day free that may not be); `dots` are who has something that day
+// (DayEvents.dots). A day past the range the calendar keeps
 // (`beyond`) is no button: it has nothing to open, so it is a hatched cell that says so.
 //
 // The button is 58 tall and a cell wide, and the cells touch. The Selected fill and ring are drawn 2 px inside it, on an inner span,
@@ -54,8 +53,7 @@ export function MonthDay({
   beyond,
   picked,
   occurrences,
-  profiles,
-  pressed,
+  dots,
   onPick,
 }: {
   day: WallDay;
@@ -63,8 +61,7 @@ export function MonthDay({
   beyond: boolean;
   picked: boolean;
   occurrences: Occurrence[] | null;
-  profiles: readonly Profile[];
-  pressed: readonly string[];
+  dots: readonly MonthDot[];
   onPick: (date: string) => void;
 }) {
   const number = Number(day.date.slice(8));
@@ -82,7 +79,6 @@ export function MonthDay({
       </div>
     );
   }
-  const dots = occurrences === null ? [] : monthDots(occurrences, profiles, pressed);
   return (
     <Button
       variant="quiet"
@@ -113,29 +109,22 @@ export function MonthDay({
   );
 }
 
-// What one week of the grid has read: its occurrences after the filter (null until the first read lands, and for a week that is never
-// read) and whether the first read failed.
-type WeekRead = { occurrences: Occurrence[] | null; unread: boolean };
-
-// The seven cells of a week, given what its week has read (null until it has, and for a week that is never read).
+// The seven cells of a week, from the month's day events (null for a week that is never read).
 export function WeekCells({
   days,
   anchor,
   window,
-  occurrences,
-  profiles,
+  events,
   picked,
   onPick,
 }: {
   days: WallDay[];
   anchor: string;
   window: PagingWindow;
-  occurrences: Occurrence[] | null;
-  profiles: readonly Profile[];
+  events: Read | null;
   picked: string;
   onPick: (date: string) => void;
 }) {
-  const { pressed } = useContext(ProfileFilterContext);
   return (
     <div className="grid grid-cols-7">
       {days.map((day) => (
@@ -145,9 +134,8 @@ export function WeekCells({
           inMonth={day.date.slice(0, 7) === anchor.slice(0, 7)}
           beyond={!canOpenDay(day.date, window)}
           picked={day.date === picked}
-          occurrences={occurrences === null ? null : dayOccurrences(occurrences, day)}
-          profiles={profiles}
-          pressed={pressed}
+          occurrences={events === null ? null : events.on(day)}
+          dots={events === null ? [] : events.dots(day)}
           onPick={onPick}
         />
       ))}
@@ -155,42 +143,8 @@ export function WeekCells({
   );
 }
 
-// One week of the grid, which reads its own seven days: the API caps a read at 1000 rows without saying so, and a week cannot reach
-// that where a month could. It tells the screen what it has read, so the picked day's list needs no read of its own. The cells are
-// drawn from the Profiles, so until they are read the week is as one that has not been read yet.
-function WeekRow({
-  days,
-  anchor,
-  window,
-  version,
-  profiles,
-  picked,
-  onPick,
-  onRead,
-}: {
-  days: WallDay[];
-  anchor: string;
-  window: PagingWindow;
-  version: number;
-  profiles: Profile[] | null;
-  picked: string;
-  onPick: (date: string) => void;
-  onRead: (week: string, read: WeekRead) => void;
-}) {
-  const week = days[0]!.date;
-  const { occurrences, failed } = useOccurrences(days, version);
-  // As on the other views, only a read that has never landed is reported: a later failure keeps what is shown.
-  const unread = failed && occurrences === null;
-  const waiting = profiles === null;
-  const read = waiting ? null : occurrences;
-  useEffect(() => {
-    onRead(week, { occurrences: read, unread });
-  }, [onRead, week, read, unread]);
-  return <WeekCells days={days} anchor={anchor} window={window} occurrences={read} profiles={profiles ?? []} picked={picked} onPick={onPick} />;
-}
-
-// The Month page anchored on `anchor` (the 1st). `version` changes when the screen around the calendar has written an event, so every
-// week reads again at once.
+// The Month page anchored on `anchor` (the 1st), read in one go (useDayEvents), so the picked day's list needs no read of its own.
+// `version` changes when the screen around the calendar has written an event, so the month reads again at once.
 export function PhoneMonth({
   timezone,
   now,
@@ -210,23 +164,12 @@ export function PhoneMonth({
 }) {
   // Built once a page and a day, not on every tick of the clock: it is the slow part.
   const weeks = useMemo(() => monthWeeks(anchor, timezone, today), [anchor, timezone, today]);
+  const events = useDayEvents(useMemo(() => weeks.flat(), [weeks]), version, profiles);
   // The pick is the screen's own: until a day is tapped it is the default, which follows today across Household midnight.
   const [pick, setPick] = useState<string | null>(null);
   const picked = pick ?? pickedDay('month', anchor, timezone, now);
-  const [reads, setReads] = useState<Record<string, WeekRead>>({});
-  const onRead = useCallback((week: string, read: WeekRead) => {
-    setReads((current) => {
-      const last = current[week];
-      return last && last.occurrences === read.occurrences && last.unread === read.unread ? current : { ...current, [week]: read };
-    });
-  }, []);
-  // An edit made from the picked day's sheet counts into `version`, so every week reads again like an event added around the calendar.
-  const [edits, setEdits] = useState(0);
-
-  const pickedWeek = reads[weekStart(picked)];
   const beyond = !canOpenDay(picked, window);
   const day = pageDays('day', picked, timezone, now)[0]!;
-  const anyUnread = Object.values(reads).some((read) => read.unread);
 
   return (
     <>
@@ -242,42 +185,26 @@ export function PhoneMonth({
                 </span>
               ))}
             </div>
-            {weeks.map((days) =>
-              // A week wholly past the range has nothing to read, so it is drawn without asking the API.
-              days.every((day) => !canOpenDay(day.date, window)) ? (
-                <WeekCells key={days[0]!.date} days={days} anchor={anchor} window={window} occurrences={null} profiles={profiles ?? []} picked={picked} onPick={setPick} />
-              ) : (
-              <WeekRow
+            {weeks.map((days) => (
+              <WeekCells
                 key={days[0]!.date}
                 days={days}
                 anchor={anchor}
                 window={window}
-                version={version + edits}
-                profiles={profiles}
+                // A week wholly past the range is drawn as one that holds nothing to read.
+                events={days.every((other) => !canOpenDay(other.date, window)) ? null : events}
                 picked={picked}
                 onPick={setPick}
-                onRead={onRead}
               />
-              ),
-            )}
+            ))}
           </div>
         </SideScroll>
-        {anyUnread && (
+        {events.problem && (
           <p role="alert" className="text-base">
-            Could not load the calendar. Check your connection.
+            {events.problem}
           </p>
         )}
-        <DayEvents
-          day={day}
-          occurrences={beyond || !pickedWeek ? null : pickedWeek.occurrences}
-          failed={pickedWeek?.unread ?? false}
-          beyond={beyond}
-          profiles={profiles}
-          now={now}
-          timezone={timezone}
-          onEdited={() => setEdits((count) => count + 1)}
-          announce={false}
-        />
+        <DayEvents day={day} events={events} beyond={beyond} profiles={profiles} now={now} timezone={timezone} announce={false} />
       </PhoneCard>
     </>
   );

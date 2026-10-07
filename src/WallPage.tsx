@@ -386,13 +386,13 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day, Week or Month.
-          <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
+          <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
         ) : (
         <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_min(20rem,max(320px,27vw))] gap-4">
           {timezone ? (
             <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
           ) : (
-            <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
+            <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
           )}
           <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} onOpenRoutines={openRoutines} onOpenLists={openLists} />
         </div>

@@ -20,17 +20,18 @@ import { focusTitleIfLost } from '../lib/focus';
 import { pageWords, pickedDay } from '../lib/phone-calendar';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
-import { useNow, useOccurrences } from '../lib/wall-hooks';
+import { useNow, useDayEvents } from '../lib/wall-hooks';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { DayEvents } from './DayEvents';
 import { DayChips, Pager, PhoneCard, Segmented } from './parts';
 import { PhoneMonth } from './PhoneMonth';
 import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { couldNotLoad } from '../lib/synced-read';
 
 // The phone's Calendar tab (docs/specs/0004-the-wall-on-a-phone.md, Screens, Calendar): under the people strip, which the shell draws,
 // a control of three (Day, Week, Month) and a pager, then the view for one day at a time. The control changes the address as the
 // navigation rail's entries do (navigationRailDate), and the pager turns pages by the same routes and dates as the tablet's paging
-// row (paging), so Back works. Every event is read by the tablet's own readers (useOccurrences, through the Profile filter): no new query.
+// row (paging), so Back works. Every event is read by the tablet's own readers (useDayEvents, through the Profile filter): no new query.
 
 const VIEWS: readonly { value: CalendarView; label: string }[] = [
   { value: 'day', label: 'Day' },
@@ -38,7 +39,7 @@ const VIEWS: readonly { value: CalendarView; label: string }[] = [
   { value: 'month', label: 'Month' },
 ];
 
-const COULD_NOT_LOAD = 'Could not load the calendar. Check your connection.';
+const COULD_NOT_LOAD = couldNotLoad('the calendar');
 
 // The Day view's box: the hours it shows are the whole hours that fit between its Earlier and Later rows, so it is given a height. It is
 // the screen's height less about 26.5 rem for what is above it (the header, the strip, the control and the pager) and below (the bar,
@@ -155,21 +156,17 @@ function PhoneWeek({
 }) {
   const [pick, setPick] = useState<string | null>(null);
   const picked = pick ?? pickedDay('week', anchor, timezone, now);
-  // An edit made from the picked day's sheet counts into `version`, so the week reads again like an event added around the calendar.
-  const [edits, setEdits] = useState(0);
-  const { occurrences, failed } = useOccurrences(days, version + edits);
+  const events = useDayEvents(days, version, profiles);
   return (
     <PhoneCard label="Calendar">
       <DayChips label="Days of this week" dates={days.map((day) => day.date)} today={today} picked={picked} onPick={setPick} canPick={(date) => canOpenDay(date, window)} />
       <DayEvents
         day={days.find((day) => day.date === picked) ?? days[0]!}
-        occurrences={occurrences}
-        failed={failed}
+        events={events}
         beyond={!canOpenDay(picked, window)}
         profiles={profiles}
         now={now}
         timezone={timezone}
-        onEdited={() => setEdits((count) => count + 1)}
       />
     </PhoneCard>
   );

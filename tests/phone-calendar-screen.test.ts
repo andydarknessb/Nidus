@@ -2,12 +2,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { monthWeeks, type CalendarView, type Occurrence, type WallRoute } from '../src/lib/calendar-occurrences';
-import { ProfileFilterContext } from '../src/lib/profile-filter';
 import type { Profile } from '../src/lib/profiles';
 import type { PhoneCalendar as PhoneCalendarType } from '../src/phone/PhoneCalendar';
 import type { WeekCells as WeekCellsType } from '../src/phone/PhoneMonth';
 import { FACE, TOUCHING } from '../src/phone/parts';
 import type { PhoneScreenProps } from '../src/PhoneWall';
+import { dayEventsOf } from '../src/lib/day-events';
 
 // The phone's Calendar screen rendered to markup (docs/specs/0004, Screens, Calendar): the control with the view pressed, the pager named
 // for what it moves by, and the chips or cells of Week and Month. A static render reads nothing, so what the Profile filter does to the
@@ -184,15 +184,10 @@ describe('the Profile filter reaches the Month cells', () => {
     profile_id: profile_ids[0] ?? null,
     profile_ids,
   });
-  // What a read gives the grid after the filter has cut it (useOccurrences does it where it reads); the cells cut the dots again by the
-  // pressed people, which only the context tells them.
+  // What a read gives the grid: the day events (dayEventsOf) cut it by the Profile filter, and the dots by the pressed people.
   const cells = (occurrences: Occurrence[], pressed: readonly string[]) =>
     renderToStaticMarkup(
-      createElement(
-        ProfileFilterContext.Provider,
-        { value: { pressed, clear: noop, touch: noop } },
-        createElement(WeekCells, { days: WEEK!, anchor: '2026-10-01', window: WINDOW, occurrences, profiles: [AVA, BEN, CORY], picked: '2026-10-08', onPick: noop }),
-      ),
+      createElement(WeekCells, { days: WEEK!, anchor: '2026-10-01', window: WINDOW, events: dayEventsOf(occurrences, [AVA, BEN, CORY], pressed), picked: '2026-10-08', onPick: noop }),
     );
   const dots = (html: string) => html.match(/bg-person-strong/g)?.length ?? 0;
   const thursday = (html: string) => nameOf(buttons(html).find((button) => nameOf(button.tag)?.startsWith('Thursday, October 8'))!.tag);
