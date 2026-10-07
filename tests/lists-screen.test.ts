@@ -77,21 +77,17 @@ describe('the Lists screen', () => {
   it('keeps a card at least 17 rem wide in portrait, so a title is not left with 75 px of a 227 px card, and only from larger text in landscape', () => {
     const portrait = renderToStaticMarkup(createElement(ListsScreen, { portrait: true }));
     const landscape = renderToStaticMarkup(createElement(ListsScreen, { portrait: false }));
-    expect(portrait).toContain('[--card-floor:min(17rem,100%)]');
-    expect(landscape).toContain('[--card-floor:min(17rem,100%,calc((1rem_-_16px)*1000))]');
-    expect(landscape).toBe(screen());
+    expect(portrait).toContain('[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%))]');
+    // The row as it was before portrait: master's own class string, character for character.
+    expect(landscape).toContain(
+      '<div class="flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto [--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]">',
+    );
   });
 
   it('wraps the cards in portrait, 16 apart, in a box that scrolls up and down and not sideways, and says "More lists" nowhere in the heading row', () => {
     const html = renderToStaticMarkup(createElement(ListsScreen, { portrait: true }));
-    expect(html).toContain('<div class="min-h-0 flex-1 overflow-y-auto"><div class="flex flex-wrap items-start gap-4 [&amp;_*]:scroll-mb-18 [--card-floor:min(17rem,100%)]');
+    expect(html).toContain('<div class="min-h-0 flex-1 overflow-y-auto"><div class="flex flex-wrap items-start gap-4 [&amp;_*]:scroll-mb-18 [--card-w:');
     expect(html).not.toMatch(/overflow-x-auto|snap-x/);
     expect(words(html)).not.toContain('More');
-  });
-
-  it('leaves landscape as it was: one row of cards that scrolls sideways and snaps', () => {
-    const html = renderToStaticMarkup(createElement(ListsScreen, { portrait: false }));
-    expect(html).toContain('<div class="flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto [--card-floor:');
-    expect(html).not.toContain('flex-wrap items-start');
   });
 });

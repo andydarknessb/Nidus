@@ -221,7 +221,14 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
 
-  const cardSize = `${portrait ? '[--card-floor:min(17rem,100%)]' : '[--card-floor:min(17rem,100%,calc((1rem_-_16px)*1000))]'} ${cards.length > 3 ? '[--card-w:max(calc((100%_-_3rem)/3.2),var(--card-floor))]' : '[--card-w:max(calc((100%_-_2rem)/3),var(--card-floor))]'}`;
+  // Three cards fill the width, or 3.2 with more. Never under 17 rem in portrait; in landscape, from larger text (as master drew it).
+  const cardSize = portrait
+    ? cards.length > 3
+      ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%))]'
+      : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%))]'
+    : cards.length > 3
+      ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%,calc((1rem_-_16px)*1000)))]'
+      : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]';
   const shown = cards.map((list) => <ListCard key={list.id} list={list} pinned={list.id === read?.pinnedId} portrait={portrait} />);
 
   return (
