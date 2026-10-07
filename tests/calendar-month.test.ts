@@ -14,7 +14,7 @@ import {
   type Occurrence,
   type WallDay,
 } from '../src/lib/calendar-occurrences';
-import { householdDay } from '../src/lib/routines';
+import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 const CHICAGO = 'America/Chicago';
 const TOKYO = 'Asia/Tokyo';

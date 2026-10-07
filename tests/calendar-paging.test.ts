@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addDays,
   addMonths,
   canOpenDay,
   clampToWindow,
@@ -23,6 +22,7 @@ import {
   type CalendarView,
   type WallRoute,
 } from '../src/lib/calendar-occurrences';
+import { addDays } from '../supabase/functions/_shared/zoned-time.ts';
 
 const CHICAGO = 'America/Chicago';
 const TOKYO = 'Asia/Tokyo';

@@ -4,7 +4,7 @@ import { BeforeHousehold } from '../components/BeforeHousehold';
 import { EmptyWords } from '../components/EmptyWords';
 import { InBody } from '../components/InBody';
 import { Button } from '../components/ui/button';
-import { dayStartMs, describeCell, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay, type WallRoute } from '../lib/calendar-occurrences';
+import { describeCell, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay, type WallRoute } from '../lib/calendar-occurrences';
 import { focusTitleIfLost } from '../lib/focus';
 import { mealGrid, mealsPickedDay, slotRowName, type Meal } from '../lib/meals';
 import { pageWords } from '../lib/phone-calendar';
@@ -13,6 +13,7 @@ import { dayName, SLOT_PICTURES, sheetFor, useMeals } from '../lib/use-meals';
 import { MealSheet, type Editing } from '../MealsPage';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { DayChips, Pager, PhoneCard } from './parts';
+import { dayStartMs } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // The phone's Meals tab (spec 0004, "Meals"): the pager by week, then a card with seven day chips, the picked day's heading and its
 // four slots as rows. It reads through the Meals screen's own reader (useMeals) and opens the Meals screen's own sheet (MealSheet), so

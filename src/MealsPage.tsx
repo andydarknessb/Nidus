@@ -3,16 +3,17 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSPropert
 import { InBody } from './components/InBody';
 import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
-import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
+import { describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
 import { dialogKeys } from './lib/dialog';
 import { focusTitleIfLost } from './lib/focus';
 import { appBehind, holdBackground } from './lib/inert-behind';
 import { mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
-import { householdDay, WEEKDAYS } from './lib/routines';
+import { WEEKDAYS } from './lib/routines';
 import { supabase } from './lib/supabase';
 import { dayLabel, dayName, SLOT_PICTURES, useMeals } from './lib/use-meals';
 import { useFailureWords } from './lib/use-failure-words';
 import { useHouseholdDay, useNow } from './lib/wall-hooks';
+import { dayStartMs, householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 // Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the header's button for the
 // next meal of today. Written by a Household Account or a Device, whichever session `supabase` holds.

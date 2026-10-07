@@ -15,7 +15,6 @@ import { StatusLineProvider } from './components/StatusLine';
 import { WallHeader, WallTime } from './components/WallHeader';
 import { useChangeTick } from './lib/change-feed';
 import { mealsPath, onCalendarScreen, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
-import { householdDay } from './lib/routines';
 import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { deviceStorage, gateWords, recallHousehold, rememberHousehold } from './lib/remembered-household';
 import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/profile-filter';
@@ -32,6 +31,7 @@ import { MealsScreen } from './MealsPage';
 import { PhoneWall } from './PhoneWall';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
+import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
 const HEARTBEAT_MS = 30_000;

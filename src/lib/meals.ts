@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { wallMs } from './native-events';
-import { householdDay } from './routines';
+import { householdDay, instantAt } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // Meals (CONTEXT.md): what the Household plans to eat for one slot on one Household date, as free
 // text. A Household Account (the phone) or a Device (the wall) writes them. Every function that
@@ -64,7 +63,7 @@ const DAY_SLOTS: readonly { slot: MealSlot; until: string | null }[] = [
 export function nextMeal(meals: readonly Meal[], now: Date, timezone: string): Meal | null {
   const today = householdDay(timezone, now).date;
   for (const { slot, until } of DAY_SLOTS) {
-    if (until !== null && now.getTime() >= wallMs(today, until, timezone)) continue;
+    if (until !== null && now.getTime() >= instantAt(today, until, timezone)) continue;
     const planned = meals.find((meal) => meal.meal_date === today && meal.slot === slot);
     if (planned) return planned;
   }

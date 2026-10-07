@@ -24,7 +24,6 @@ import {
 } from '../lib/native-events';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
-import { householdDay } from '../lib/routines';
 import { useStatusLine } from '../lib/status-line';
 import { supabase } from '../lib/supabase';
 import { useFailureWords } from '../lib/use-failure-words';
@@ -33,6 +32,7 @@ import { InBody } from './InBody';
 import { HouseDisc, PersonDisc } from './people';
 import { PHONE_FRAME, PHONE_SCRIM, SheetBody, SheetHandle } from './Sheet';
 import { Button } from './ui/button';
+import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // A field's caption, above it.
 const caption = 'text-[15px] leading-5 text-muted-foreground';

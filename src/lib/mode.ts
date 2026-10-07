@@ -1,8 +1,6 @@
-import { addDays } from './calendar-occurrences';
 import { TOKENS, type Mode } from './look';
-import { wallMs } from './native-events';
-import { householdDay } from './routines';
 import type { SunDay } from './weather';
+import { addDays, householdDay, instantAt } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // The mode of a screen: light or dark, by the Household's Appearance (CONTEXT.md), the screen's own switch, the
 // clock and the sun. The document's `data-mode` is the only switch: components never branch on it for colour
@@ -24,7 +22,7 @@ const SUNSET = '19:00';
 // saving included).
 function sunToday(now: number, timezone: string, sunrise: number | undefined, sunset: number | undefined) {
   const date = householdDay(timezone, new Date(now)).date;
-  return { date, sunrise: sunrise ?? wallMs(date, SUNRISE, timezone), sunset: sunset ?? wallMs(date, SUNSET, timezone) };
+  return { date, sunrise: sunrise ?? instantAt(date, SUNRISE, timezone), sunset: sunset ?? instantAt(date, SUNSET, timezone) };
 }
 
 // What the forecast says of the sun on one Household date, as instants (epoch milliseconds). A part it has nothing on is
@@ -103,7 +101,7 @@ export function nextBoundary({
   const sun = sunToday(now, timezone, sunrise, sunset);
   if (now < sun.sunrise) return sun.sunrise;
   if (now < sun.sunset) return sun.sunset;
-  return nextSunrise ?? wallMs(addDays(sun.date, 1), SUNRISE, timezone);
+  return nextSunrise ?? instantAt(addDays(sun.date, 1), SUNRISE, timezone);
 }
 
 // ---- What a screen keeps in localStorage ------------------------------------------------------

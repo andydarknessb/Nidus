@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatClock, formatDate } from '../src/lib/calendar-occurrences';
 import { msUntilHouseholdMidnight, watchHouseholdDay, watchMinute } from '../src/lib/household-day';
-import type { HouseholdDay } from '../src/lib/routines';
+import { type HouseholdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 // Household midnight, with the clock faked: nothing here waits for a real one.
 const CHICAGO = 'America/Chicago';
