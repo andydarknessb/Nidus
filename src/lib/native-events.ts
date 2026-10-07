@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { offsetMs } from '../../supabase/functions/_shared/zoned-time.ts';
+import { wallClockMs } from '../../supabase/functions/_shared/zoned-time.ts';
 import { addDays, dayStartMs, formatClock, formatDate, occurrenceColumns, type Occurrence } from './calendar-occurrences';
 import { householdDay, WEEKDAYS } from './routines';
 
@@ -42,20 +42,13 @@ export function blankEventForm(date: string): EventForm {
   return { title: '', date, allDay: false, startTime: '09:00', endTime: '10:00', location: '', notes: '', profileIds: [] };
 }
 
-// The instant `time` on `date` is on the wall clock of `timezone`. The offsets a day either side
-// give the two candidates: a time that happens twice (clocks going back) takes the earlier, and a
-// time that does not exist (clocks going forward) moves on by the skipped hour, never back.
+// The instant `time` on `date` is on the wall clock of `timezone`, by the same rule as an iPhone
+// calendar's floating times (wallClockMs).
 export function wallMs(date: string, time: string, timezone: string): number {
   const [year, month, day] = date.split('-').map(Number) as [number, number, number];
   const [hour, minute] = time.split(':').map(Number) as [number, number];
-  const wall = Date.UTC(year, month - 1, day, hour, minute);
-  const before = wall - offsetMs(wall - DAY_MS, timezone);
-  const after = wall - offsetMs(wall + DAY_MS, timezone);
-  const real = [before, after].filter((candidate) => candidate + offsetMs(candidate, timezone) === wall);
-  return real.length > 0 ? Math.min(...real) : before;
+  return wallClockMs(Date.UTC(year, month - 1, day, hour, minute), timezone);
 }
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function eventFormToInput(form: EventForm, timezone: string): NativeEventInput | { problem: string } {
   const title = form.title.trim();
