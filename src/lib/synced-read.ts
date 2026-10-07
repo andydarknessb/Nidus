@@ -155,29 +155,36 @@ export function couldNotLoad(what: string): string {
 }
 
 // The React side: reads with `load` while `key` stays the same (null reads nothing), and again from the
-// start when it changes. What was shown stays until the new key's first read lands. `tables` should be
-// a constant, as useRefetchOn asks.
+// start when it changes. A new key starts with nothing shown, unless `keepAcrossKeys`: then what was
+// shown stays until the new key's first read lands (today's Routines over Household midnight). `tables`
+// should be a constant, as useRefetchOn asks.
+const NOTHING: SyncedState<never> = { data: null, failed: false, unread: false, error: null };
+
 export function useSyncedRead<T>(
   load: () => Promise<T>,
   tables: readonly WatchedTable[],
   key: string | null,
+  { keepAcrossKeys = false }: { keepAcrossKeys?: boolean } = {},
 ): SyncedState<T> & Pick<SyncedRead<T>, 'write' | 'readBack'> & { refresh: () => void } {
-  const [state, setState] = useState<SyncedState<T>>({ data: null, failed: false, unread: false, error: null });
+  const [state, setState] = useState<SyncedState<T>>(NOTHING);
   const latest = useRef(load);
   useEffect(() => {
     latest.current = load;
   });
   const current = useRef<SyncedRead<T> | null>(null);
   useEffect(() => {
+    if (!keepAcrossKeys) setState(NOTHING);
     if (key === null) return;
-    // A new key's read that fails before anything lands keeps what the old key showed, as the screen did before it changed.
-    const onChange = (next: SyncedState<T>) => setState((was) => (next.data === null && was.data !== null ? { ...next, data: was.data, unread: false } : next));
+    // Kept across keys, a new key's read that fails before anything lands keeps what the old key showed.
+    const onChange = (next: SyncedState<T>) =>
+      setState((was) => (keepAcrossKeys && next.data === null && was.data !== null ? { ...next, data: was.data, unread: false } : next));
     const started = startSyncedRead<T>({ load: () => latest.current(), onChange });
     current.current = started;
     return () => {
       started.stop();
       current.current = null;
     };
+    // keepAcrossKeys is how a screen reads, not what it reads: it never changes for one caller.
   }, [key]);
   useRefetchOn(tables, () => current.current?.poke());
   const write = useCallback<SyncedRead<T>['write']>((work, change, landed) => (current.current ? current.current.write(work, change, landed) : work()), []);

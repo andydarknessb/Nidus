@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MEAL_SLOTS, loadMeals, mealGrid, setMeal, type Meal, type MealSlot } from '../src/lib/meals';
 import { openChangeFeed, type ChangeFeed } from '../src/lib/realtime';
 import {
@@ -14,6 +14,8 @@ import {
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
+import { startSyncedRead } from '../src/lib/synced-read';
+import { withMeal } from '../src/lib/use-meals';
 
 let households: HouseholdAccount[] = [];
 let tablets: Tablet[] = [];
@@ -334,6 +336,44 @@ function mealsChanged(feed: ChangeFeed, waitMs = 8_000): Promise<void> {
     }, waitMs);
   });
 }
+
+describe('saving a Meal through the synced read', () => {
+  it('shows a Meal saved on the phone at once there, and on the wall at its next read', async () => {
+    const account = await arrange();
+    const phone = await asHouseholdAccount(account);
+    const device = await arrangeDevice(account);
+    const titles = (meals: Meal[] | null) => meals?.map((meal) => `${meal.slot} ${meal.title}`) ?? null;
+    let onPhone: Meal[] | null = null;
+    let onWall: Meal[] | null = null;
+    const phoneRead = startSyncedRead({ load: () => loadMeals(phone, DAY, DAY), onChange: (state) => (onPhone = state.data) });
+    const wallRead = startSyncedRead({ load: () => loadMeals(device.client, DAY, DAY), onChange: (state) => (onWall = state.data) });
+    try {
+      await vi.waitFor(() => expect([titles(onPhone), titles(onWall)]).toEqual([[], []]));
+      const saving = phoneRead.write(() => setMeal(phone, DAY, 'dinner', 'Tacos'), (meals) => withMeal(meals, DAY, 'dinner', 'Tacos'));
+      expect(titles(onPhone)).toEqual(['dinner Tacos']);
+      await saving;
+      // The change feed's notice, which the screen hears from Realtime.
+      wallRead.poke();
+      await vi.waitFor(() => expect(titles(onWall)).toEqual(['dinner Tacos']));
+    } finally {
+      phoneRead.stop();
+      wallRead.stop();
+    }
+  });
+});
+
+describe('a Meal shown before it is stored', () => {
+  const tacos: Meal = { id: 'm1', meal_date: DAY, slot: 'dinner', title: 'Tacos' };
+  const eggs: Meal = { id: 'm2', meal_date: DAY, slot: 'breakfast', title: 'Eggs' };
+
+  it('takes the place of what the cell held, and leaves the other cells alone', () => {
+    expect(withMeal([tacos, eggs], DAY, 'dinner', ' Lasagne ')).toEqual([eggs, { id: `pending-${DAY}-dinner`, meal_date: DAY, slot: 'dinner', title: 'Lasagne' }]);
+  });
+
+  it('clears the cell for a blank title', () => {
+    expect(withMeal([tacos, eggs], DAY, 'dinner', '  ')).toEqual([eggs]);
+  });
+});
 
 describe('meals on the Realtime change feed', () => {
   it('tells another screen of the Household when a Meal is set or changed', async () => {

@@ -92,6 +92,8 @@ export function useRoutinesToday(timezone: string | null, profiles: Profile[] | 
     },
     WALL_ROUTINE_TABLES,
     timezone === null ? null : `${timezone} ${date}`,
+    // Over Household midnight the old day stays shown (unchecked: it is not settled) until the new day's first read lands.
+    { keepAcrossKeys: true },
   );
   const loaded = read.data;
   const [problems, setProblems] = useState<TickProblems>(noTickProblems);

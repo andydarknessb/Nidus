@@ -230,7 +230,7 @@ export function ListsScreen() {
       </div>
       {failed && read === null && (
         <p role="alert" className="text-xl">
-          Could not load lists. Check your connection.
+          {couldNotLoad('lists')}
         </p>
       )}
       {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
@@ -408,7 +408,7 @@ export function PinnedListCard({ onOpenLists, limit }: { onOpenLists: () => void
       {!failed && <EmptyWords>Loading</EmptyWords>}
       {failed && (
         <p role="alert" className="text-base">
-          Could not load lists. Check your connection.
+          {couldNotLoad('lists')}
         </p>
       )}
     </aside>

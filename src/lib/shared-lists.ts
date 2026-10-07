@@ -181,45 +181,6 @@ export async function reorderItems(client: SupabaseClient, orderedIds: string[])
   if (error) throw error;
 }
 
-// ---- Optimistic updates ----------------------------------------------------------
-
-type Publish = (update: (current: ListItem[]) => ListItem[]) => void;
-
-// Shows the cross (or uncross) at once, then asks the server. If the server says
-// no, only that item goes back to what it was; other changes made meanwhile stay.
-// `before` is the rows as they were when the tap happened. Returns whether it stuck.
-export async function crossOptimistically(
-  publish: Publish,
-  id: string,
-  crossed: boolean,
-  before: ListItem[],
-  write: () => Promise<void>,
-): Promise<boolean> {
-  const previous = before.find((item) => item.id === id)?.crossed_at ?? null;
-  publish((current) => withCrossed(current, id, crossed));
-  try {
-    await write();
-    return true;
-  } catch {
-    publish((current) => current.map((item) => (item.id === id ? { ...item, crossed_at: previous } : item)));
-    return false;
-  }
-}
-
-// Same for "clear completed": the crossed items vanish at once and come back in
-// their places if the delete fails.
-export async function clearOptimistically(publish: Publish, before: ListItem[], write: () => Promise<void>): Promise<boolean> {
-  const removed = before.filter((item) => item.crossed_at !== null);
-  publish((current) => withoutCrossed(current));
-  try {
-    await write();
-    return true;
-  } catch {
-    publish((current) => byPosition([...current, ...removed]));
-    return false;
-  }
-}
-
 // The list a phone's Lists screen has open: the one chosen if it is still there, else the Pinned List, else the first. Null with no lists.
 export function pickedList(lists: SharedList[], pinnedId: string | null, choice: string | null): string | null {
   return lists.find((list) => list.id === choice)?.id ?? pinnedFirst(lists, pinnedId)[0]?.id ?? null;

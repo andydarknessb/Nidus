@@ -7,13 +7,13 @@ import { describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowA
 import { dialogKeys } from './lib/dialog';
 import { focusTitleIfLost } from './lib/focus';
 import { appBehind, holdBackground } from './lib/inert-behind';
-import { mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
+import { mealGrid, nextMeal, nextMealWords, type Meal, type MealSlot } from './lib/meals';
 import { WEEKDAYS } from './lib/routines';
-import { supabase } from './lib/supabase';
 import { dayLabel, dayName, SLOT_PICTURES, useMeals } from './lib/use-meals';
 import { useFailureWords } from './lib/use-failure-words';
 import { useHouseholdDay, useNow } from './lib/wall-hooks';
 import { dayStartMs, householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { couldNotLoad } from './lib/synced-read';
 
 // Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the header's button for the
 // next meal of today. Written by a Household Account or a Device, whichever session `supabase` holds.
@@ -90,9 +90,8 @@ export type Editing = { date: string; slot: MealSlot; heading: string; meal: Mea
 // read that failed) the cells are disabled and show nothing, since a cell that looked empty and could be tapped would
 // invite writing over a Meal that is only not read yet.
 function MealsGrid({ days }: { days: WallDay[] }) {
-  const [saves, setSaves] = useState(0);
   const [editing, setEditing] = useState<Editing | null>(null);
-  const { meals, failed } = useMeals(days[0]!.date, days[days.length - 1]!.date, saves);
+  const { meals, failed, save } = useMeals(days[0]!.date, days[days.length - 1]!.date);
   const known = meals !== null;
   const rows = mealGrid(meals ?? [], days.map((day) => day.date));
   const template: CSSProperties = {
@@ -106,7 +105,7 @@ function MealsGrid({ days }: { days: WallDay[] }) {
     <section aria-label="Meal plan" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
       {failed && !known && (
         <p role="alert" className="p-4 text-xl">
-          Could not load meals. Check your connection.
+          {couldNotLoad('meals')}
         </p>
       )}
       {/* The padding is on the scrolling grid, so a focus ring has room inside what it clips. */}
@@ -164,11 +163,9 @@ function MealsGrid({ days }: { days: WallDay[] }) {
         <InBody>
           <MealSheet
             editing={editing}
+            save={save}
             onClose={() => setEditing(null)}
-            onSaved={() => {
-              setEditing(null);
-              setSaves((count) => count + 1);
-            }}
+            onSaved={() => setEditing(null)}
           />
         </InBody>
       )}
@@ -198,7 +195,7 @@ function DayHeading({ day }: { day: WallDay }) {
 // Focus moves onto the field on open, so the tablet's keyboard comes up at once, and back to the cell on close;
 // Close, Cancel and Escape close it without writing, and so does a tap on the scrim while the field still holds what
 // it opened with. A blank field is a clear.
-export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
+export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editing; save: (date: string, slot: MealSlot, title: string) => Promise<void>; onSaved: () => void; onClose: () => void }) {
   const dialog = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing.meal?.title ?? '');
@@ -240,7 +237,7 @@ export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onS
     setProblem('');
     setBusy(true);
     try {
-      await setMeal(supabase, editing.date, editing.slot, next);
+      await save(editing.date, editing.slot, next);
       onSaved();
     } catch (error) {
       setProblem(failureWords(error));

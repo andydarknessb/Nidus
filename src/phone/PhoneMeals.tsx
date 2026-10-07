@@ -14,6 +14,7 @@ import { MealSheet, type Editing } from '../MealsPage';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { DayChips, Pager, PhoneCard } from './parts';
 import { dayStartMs } from '../../supabase/functions/_shared/zoned-time.ts';
+import { couldNotLoad } from '../lib/synced-read';
 
 // The phone's Meals tab (spec 0004, "Meals"): the pager by week, then a card with seven day chips, the picked day's heading and its
 // four slots as rows. It reads through the Meals screen's own reader (useMeals) and opens the Meals screen's own sheet (MealSheet), so
@@ -50,7 +51,7 @@ export function SlotRow({ label, slot, day, meal, onOpen }: { label: string; slo
 }
 
 export function PhoneMeals({ route, timezone, view, openMeals }: PhoneScreenProps & { route: Extract<WallRoute, { view: 'meals' }> }) {
-  if (!timezone) return <BeforeHousehold label="Meals" failed={view.failed} words="Could not load meals. Check your connection." />;
+  if (!timezone) return <BeforeHousehold label="Meals" failed={view.failed} words={couldNotLoad('meals')} />;
   return <MealsWeek timezone={timezone} date={route.date} onNavigate={openMeals} />;
 }
 
@@ -96,9 +97,8 @@ function MealsWeek({ timezone, date, onNavigate }: { timezone: string; date: str
 function MealsDay({ days, today }: { days: WallDay[]; today: string }) {
   const dates = days.map((day) => day.date);
   const [choice, setChoice] = useState<string | null>(null);
-  const [saves, setSaves] = useState(0);
   const [editing, setEditing] = useState<Editing | null>(null);
-  const { meals, failed } = useMeals(dates[0]!, dates[6]!, saves);
+  const { meals, failed, save } = useMeals(dates[0]!, dates[6]!);
   const known = meals !== null;
   const picked = mealsPickedDay(dates, choice, today);
   const day = days[dates.indexOf(picked)]!;
@@ -110,7 +110,7 @@ function MealsDay({ days, today }: { days: WallDay[]; today: string }) {
       <h3 className="px-1 text-[15px] leading-5 font-medium text-muted-foreground">{describeCell(picked, null)}</h3>
       {failed && !known && (
         <p role="alert" className="px-1 text-base">
-          Could not load meals. Check your connection.
+          {couldNotLoad('meals')}
         </p>
       )}
       {!known && !failed && <EmptyWords className="px-1">Loading</EmptyWords>}
@@ -132,11 +132,9 @@ function MealsDay({ days, today }: { days: WallDay[]; today: string }) {
         <InBody>
           <MealSheet
             editing={editing}
+            save={save}
             onClose={() => setEditing(null)}
-            onSaved={() => {
-              setEditing(null);
-              setSaves((count) => count + 1);
-            }}
+            onSaved={() => setEditing(null)}
           />
         </InBody>
       )}
