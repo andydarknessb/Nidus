@@ -79,7 +79,7 @@ export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEX
   }
 
   return (
-    <section ref={card} aria-label="Up next" className="relative flex flex-none flex-col gap-2 rounded-3xl bg-card p-3 max-[768px]:rounded-[22px]">
+    <section ref={card} aria-label="Up next" className="relative flex flex-none flex-col gap-2 rounded-3xl bg-card p-3 phone:rounded-[22px]">
       {/* The heading row is 48 px tall for the link, which is how the card is the drawing's 336 px with three tiles. */}
       <div className="flex h-12 items-center justify-between gap-2 pl-1">
         <h2 className="font-display text-[22px] leading-7">Up next</h2>

@@ -269,7 +269,7 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
 // min-w-0: the card is a grid item, whose width is otherwise at least that of its widest unwrapped words, so one long item or list
 // name would make the whole right rail, and the page, wider than the screen.
 // On a phone (below 768 px, spec 0004) the card is 22 round, like every card of its column.
-const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3 max-[768px]:rounded-[22px]';
+const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3 phone:rounded-[22px]';
 
 // The Pinned List's card, under Up next in Home's right column: it is as tall as that column leaves it. A heading row holds the list's
 // name and a link to the Lists screen that says how many items still to get the card has no room for ("3 more"), or "All lists" when it

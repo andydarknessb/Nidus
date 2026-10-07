@@ -35,7 +35,7 @@ describe('homeLayout, portrait', () => {
   });
 });
 
-// Below 768 px of width the Wall is laid out for a phone; the width alone decides, whatever the height is.
+// Below 768 px of width, or 544 px of height (a phone on its side), the Wall is laid out for a phone; the viewport alone decides.
 describe('homeLayout, the phone', () => {
   it('is a phone at 767 px wide and not at 768', () => {
     expect(homeLayout({ width: 767, height: 800 }).phone).toBe(true);
@@ -48,11 +48,26 @@ describe('homeLayout, the phone', () => {
     expect(homeLayout({ width: 1, height: 800 }).phone).toBe(true);
   });
 
-  it('is decided by the width alone, never the height', () => {
+  it('is a phone below 768 px wide whatever the height', () => {
     expect(homeLayout({ width: 390, height: 844 }).phone).toBe(true);
     expect(homeLayout({ width: 390, height: 2000 }).phone).toBe(true);
-    expect(homeLayout({ width: 1024, height: 300 }).phone).toBe(false);
     expect(homeLayout({ width: 1280, height: 800 }).phone).toBe(false);
+  });
+
+  // An iPhone 15 on its side is 852 by 393, a Pro Max 932 by 430; the shortest tablet of the Wall's kind is 1024 by 600.
+  it('is a phone on its side below 544 px tall, and never portrait', () => {
+    expect(homeLayout({ width: 852, height: 393 })).toMatchObject({ phone: true, portrait: false });
+    expect(homeLayout({ width: 932, height: 430 }).phone).toBe(true);
+    expect(homeLayout({ width: 1024, height: 543 }).phone).toBe(true);
+    expect(homeLayout({ width: 1024, height: 544 }).phone).toBe(false);
+    expect(homeLayout({ width: 1024, height: 600 }).phone).toBe(false);
+    expect(homeLayout({ width: 1024, height: 0 }).phone).toBe(false);
+  });
+
+  it('is held off a tablet by the keyboard, which shrinks the height under 544', () => {
+    const room = { width: 1280, height: 800 };
+    expect(homeLayout(viewportToLayOut({ width: 1280, height: 420, room, keyboardMayBeUp: true })).phone).toBe(false);
+    expect(homeLayout(viewportToLayOut({ width: 1280, height: 420, room, keyboardMayBeUp: false })).phone).toBe(true);
   });
 
   it('leaves the days and the tiles as they were on a tablet, at the widths they were tested at', () => {
