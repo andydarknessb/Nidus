@@ -73,4 +73,12 @@ describe('the Lists screen', () => {
   it('has the 28 px title in a heading row 48 tall, and the first card 16 px under it, as every screen has', () => {
     expect(screen()).toMatch(/^<div class="flex min-h-0 flex-col gap-4"><div class="flex min-h-12 shrink-0 [^"]*"><h2 tabindex="-1" class="font-display text-\[28px\] leading-\[34px\] outline-none">Lists<\/h2>/);
   });
+
+  it('keeps a card at least 17 rem wide in portrait, so a title is not left with 75 px of a 227 px card, and only from larger text in landscape', () => {
+    const portrait = renderToStaticMarkup(createElement(ListsScreen, { portrait: true }));
+    const landscape = renderToStaticMarkup(createElement(ListsScreen, { portrait: false }));
+    expect(portrait).toContain('[--card-floor:min(17rem,100%)]');
+    expect(landscape).toContain('[--card-floor:min(17rem,100%,calc((1rem_-_16px)*1000))]');
+    expect(landscape).toBe(screen());
+  });
 });

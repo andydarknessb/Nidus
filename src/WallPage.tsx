@@ -393,13 +393,13 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : route.view === 'meals' ? (
           // Meals is a screen of its own, not a calendar view: it takes the same slot, and before the Household is read it is an empty frame, or says it could not be read.
           timezone ? (
-            <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} />
+            <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} portrait={home.portrait} />
           ) : (
             <BeforeHousehold label="Meals" failed={view.failed} words="Could not load meals. Check your connection." />
           )
         ) : route.view === 'lists' ? (
           // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
-          <ListsScreen />
+          <ListsScreen portrait={home.portrait} />
         ) : route.view !== 'home' && timezone ? (
           <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} portrait={home.portrait} />
         ) : route.view !== 'home' ? (

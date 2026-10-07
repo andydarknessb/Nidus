@@ -77,3 +77,41 @@ describe('the Wall at larger text', () => {
     expect(html).toContain('grid-template-columns:min(7rem, max(112px, 11vw)) repeat(7, minmax(3rem, 1fr))');
   });
 });
+
+// The Wall in portrait (docs/specs/0009): Meals turns, the slots across the top and the days down the side, and nothing else about it moves.
+describe('the Meals screen in portrait', () => {
+  const meals = (portrait: boolean) => renderToStaticMarkup(createElement(MealsScreen, { timezone, date: null, onNavigate: () => undefined, portrait }));
+  const names = (html: string) => [...html.matchAll(/<button [^>]*><span class="sr-only">([^<]*)<\/span>/g)].map(([, name]) => name);
+  const headings = (html: string) => [...html.matchAll(/<h3 [^>]*>/g)].map(([tag]) => /aria-label="([^"]*)"/.exec(tag)?.[1] ?? 'slot');
+
+  it('puts the four slots in the first row and the days in the first column', () => {
+    const html = meals(true);
+    expect(html).toContain('grid-template-columns:6rem repeat(4, minmax(3rem, 1fr))');
+    expect(html).toContain('grid-template-rows:auto repeat(7, minmax(min-content, 1fr))');
+    // The slots' names come before every day's heading, each with its picture, and then each day's heading is followed by its four cells.
+    const slots = [...html.matchAll(/<h3 [^>]*><span aria-hidden[^>]*><svg[^>]*>.*?<\/svg><\/span>(Breakfast|Lunch|Dinner|Snack)<\/h3>/g)].map(([, label]) => label);
+    expect(slots).toEqual(['Breakfast', 'Lunch', 'Dinner', 'Snack']);
+    expect(headings(html)).toEqual(['slot', 'slot', 'slot', 'slot', ...Array(7).fill(expect.stringMatching(/^[A-Z][a-z]+ \d+(, today)?$/))]);
+    const days = html.split(/<h3 [^>]*aria-label=/).slice(1);
+    expect(days).toHaveLength(7);
+    for (const day of days) expect(names(day)).toHaveLength(4);
+    expect(names(days[0]!)).toEqual(expect.arrayContaining([expect.stringMatching(/^Breakfast, /), expect.stringMatching(/^Snack, /)]));
+  });
+
+  it('keeps every cell the same button, at least 48 tall in a track of at least 3 rem, with the name it has in landscape', () => {
+    const portrait = meals(true);
+    const landscape = meals(false);
+    expect(names(portrait)).toHaveLength(28);
+    expect([...names(portrait)].sort()).toEqual([...names(landscape)].sort());
+    expect(portrait.match(/<button [^>]*class="[^"]*\bmin-h-12\b[^"]*\bmin-w-0\b/g)).toHaveLength(28);
+  });
+
+  it('leaves the landscape grid as it is: the days across the top and a row for each slot', () => {
+    const html = meals(false);
+    expect(html).toContain('grid-template-columns:min(7rem, max(112px, 11vw)) repeat(7, minmax(3rem, 1fr))');
+    expect(html).toContain('grid-template-rows:3.875rem repeat(4, minmax(min-content, 1fr))');
+    expect(headings(html).slice(0, 7)).toEqual(Array(7).fill(expect.stringMatching(/^[A-Z][a-z]+ \d+(, today)?$/)));
+    expect(html).toBe(meals(false));
+    expect(html).toBe(renderToStaticMarkup(createElement(MealsScreen, { timezone, date: null, onNavigate: () => undefined })));
+  });
+});
