@@ -35,6 +35,13 @@ export async function setMeal(client: SupabaseClient, date: string, slot: MealSl
   if (error) throw error;
 }
 
+// What one cell holds once `title` is saved in it: its Meal, or none for a blank title. A Meal not stored yet has an id that says so.
+export function withMeal(meals: Meal[], date: string, slot: MealSlot, title: string): Meal[] {
+  const others = meals.filter((meal) => meal.meal_date !== date || meal.slot !== slot);
+  const kept = title.trim();
+  return kept === '' ? others : [...others, { id: `pending-${date}-${slot}`, meal_date: date, slot, title: kept }];
+}
+
 type MealRow = { slot: MealSlot; label: string; cells: (Meal | null)[] };
 
 // The Meals as the grid draws them: a row for each slot in order, and in it one cell for each of

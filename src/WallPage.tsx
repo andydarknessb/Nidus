@@ -376,7 +376,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           timezone ? (
             <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} />
           ) : (
-            <BeforeHousehold label="Meals" failed={view.failed} words="Could not load meals. Check your connection." />
+            <BeforeHousehold label="Meals" failed={view.failed} words={couldNotLoad('meals')} />
           )
         ) : route.view === 'lists' ? (
           // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
