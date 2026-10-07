@@ -8,6 +8,7 @@ import { expandFeed, FeedParseError, FeedTooLargeError, MAX_EXPANSION_MS, MAX_PE
 const HOUSEHOLD = 'Pacific/Auckland';
 const WINDOW_START = Date.parse('2026-09-01T00:00:00Z');
 const WINDOW_END = Date.parse('2027-03-01T00:00:00Z');
+const DAY_MS = 86_400_000;
 
 const CHICAGO = `BEGIN:VTIMEZONE
 TZID:America/Chicago
@@ -311,6 +312,14 @@ describe('expandFeed: lengths', () => {
 
 // A run's work with a clock that never moves, so that no test here depends on how fast the machine is:
 // only the step caps and the time limit the test itself sets can cut a read.
+function mulberry(seed: number) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 const budget = (remaining = MAX_STEPS_PER_RUN): StepBudget => ({ remaining, spentMs: 0, now: () => 0 });
 const read = (text: string, run: StepBudget = budget()) => expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
 const ids = (rows: { google_event_id: string }[]) => rows.map((row) => row.google_event_id.split('|')[0]!);
@@ -591,16 +600,21 @@ RRULE:${rule}`, 'ok')), run);
     expect(run.remaining, rule).toBeLessThan(MAX_STEPS_PER_RUN);
   }, 5000);
 
-  it('walks a monthly BYSETPOS rule only when DTSTART is at most 240 of its steps before the window', () => {
-    const rule = (start: string, interval: number) => feed(event(`DTSTART:${start}T090000Z
-RRULE:FREQ=MONTHLY;INTERVAL=${interval};BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1`, 'last'));
+  it('walks a monthly BYSETPOS rule with COUNT only when DTSTART is at most 240 of its steps before the window, and one without COUNT from any year', () => {
+    const rule = (start: string, interval: number, end = '') => feed(event(`DTSTART:${start}T090000Z
+RRULE:FREQ=MONTHLY;INTERVAL=${interval};BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1${end}`, 'last'));
     // 2007-01 to 2026-09 is 236 months; 2006-01 is 248.
-    expect(read(rule('20070115', 1), budget()).truncated).toBe(false);
-    expect(read(rule('20060115', 1), budget()).truncated).toBe(true);
-    expect(read(rule('20060115', 2), budget()).truncated).toBe(false);
+    expect(read(rule('20070115', 1, ';COUNT=400'), budget()).truncated).toBe(false);
+    expect(read(rule('20060115', 1, ';COUNT=400'), budget()).truncated).toBe(true);
+    expect(read(rule('20060115', 2, ';COUNT=400'), budget()).truncated).toBe(false);
     const run = budget();
-    expect(read(rule('19700115', 1), run).truncated).toBe(true);
+    expect(read(rule('19700115', 1, ';COUNT=900'), run).truncated).toBe(true);
     expect(run.remaining).toBe(MAX_STEPS_PER_RUN);
+    // Without COUNT it is moved forward to the window, so its age costs nothing.
+    expect(read(rule('20060115', 1), budget()).truncated).toBe(false);
+    const old = budget();
+    expect(read(rule('19700115', 1), old).truncated).toBe(false);
+    expect(MAX_STEPS_PER_RUN - old.remaining).toBeLessThan(100);
   });
 
   it('does not start a series the run has no steps or time left for, even before its first step', () => {
@@ -767,19 +781,23 @@ describe('expandFeed: what the caps cut', () => {
   });
 });
 
-describe('expandFeed: daily and weekly series that began long ago', () => {
-  // Each series is read twice, from DTSTART a step at a time and with the skip over the years before
-  // the window, and must give the same rows; the skip must cost almost no steps.
-  const both = (...components: string[]) => {
-    const slow = { ...budget(), noFastForward: true };
-    const fast = budget();
-    const walked = read(feed(...components), slow);
-    const skipped = read(feed(...components), fast);
-    expect(skipped.rows).toEqual(walked.rows);
-    expect(skipped.truncated).toBe(walked.truncated);
-    return { rows: skipped.rows, slow: MAX_STEPS_PER_RUN - slow.remaining, fast: MAX_STEPS_PER_RUN - fast.remaining };
-  };
+// Each series is read twice, from DTSTART a step at a time and with the skip over the years before
+// the window, and must give the same rows; the skip must cost almost no steps.
+const compare = (text: string, windowStartMs = WINDOW_START, windowEndMs = WINDOW_END) => {
+  const slow = { ...budget(), noFastForward: true };
+  const fast = budget();
+  const walked = expandFeed(text, HOUSEHOLD, windowStartMs, windowEndMs, slow);
+  const skipped = expandFeed(text, HOUSEHOLD, windowStartMs, windowEndMs, fast);
+  return { walked, skipped, slow: MAX_STEPS_PER_RUN - slow.remaining, fast: MAX_STEPS_PER_RUN - fast.remaining };
+};
+const both = (...components: string[]) => {
+  const { walked, skipped, slow, fast } = compare(feed(...components));
+  expect(skipped.rows).toEqual(walked.rows);
+  expect(skipped.truncated).toBe(walked.truncated);
+  return { rows: skipped.rows, slow, fast };
+};
 
+describe('expandFeed: daily and weekly series that began long ago', () => {
   it('gives a weekly BYDAY=MO,WE series with a TZID since 2010 the same rows across a DST change, for a few steps', () => {
     // Chicago ends daylight time on 2026-11-01: the 09:00 rows are 14:00Z before and 15:00Z after.
     const { rows, slow, fast } = both(
@@ -839,6 +857,205 @@ describe('expandFeed: daily and weekly series that began long ago', () => {
     expect(rows.length).toBeGreaterThan(20);
     expect(fast).toBe(slow);
   });
+});
+
+describe('expandFeed: monthly and yearly series that began long ago', () => {
+  it('reads a monthly BYDAY=2TU series since 2000 the same, for a few steps', () => {
+    const { rows, slow, fast } = both(event('DTSTART:20000111T090000Z\nRRULE:FREQ=MONTHLY;BYDAY=2TU', 'second-tuesday'));
+    expect(rows.map((row) => row.starts_at)).toContain('2026-10-13T09:00:00.000Z');
+    expect(slow).toBeGreaterThan(300);
+    expect(fast).toBeLessThan(100);
+  });
+
+  it('keeps a monthly series on the 31st, the 29th and the last day, and a leap-day yearly series, on their months', () => {
+    const { rows, fast } = both(
+      event('DTSTART;TZID=America/Chicago:19980131T090000\nRRULE:FREQ=MONTHLY', 'thirty-first'),
+      event('DTSTART;TZID=Europe/London:20000229T090000\nRRULE:FREQ=MONTHLY;INTERVAL=5', 'twenty-ninth'),
+      event('DTSTART:20000130T090000Z\nRRULE:FREQ=MONTHLY;BYMONTHDAY=-1', 'last'),
+      event('DTSTART;VALUE=DATE:19960229\nRRULE:FREQ=YEARLY', 'leap'),
+      event('DTSTART:20040229T090000Z\nRRULE:FREQ=YEARLY;INTERVAL=4', 'leap4'),
+    );
+    expect(rows.map((row) => row.google_event_id.split('|')[0])).toContain('thirty-first');
+    expect(fast).toBeLessThan(100);
+  });
+
+  it('still leaves out EXDATEs and moved occurrences of a monthly series, and keeps RDATEs', () => {
+    const series = event('DTSTART;TZID=America/Chicago:20000111T090000\nRRULE:FREQ=MONTHLY;BYDAY=2TU\nEXDATE;TZID=America/Chicago:20261013T090000\nRDATE;TZID=America/Chicago:20261015T090000', 'x');
+    const moved = event('RECURRENCE-ID;TZID=America/Chicago:20261110T090000\nDTSTART;TZID=America/Chicago:20261111T100000', 'x');
+    const starts = both(series, moved).rows.map((row) => row.starts_at);
+    expect(starts).not.toContain('2026-10-13T14:00:00.000Z');
+    expect(starts).not.toContain('2026-11-10T15:00:00.000Z');
+    expect(starts).toContain('2026-11-11T16:00:00.000Z');
+    expect(starts).toContain('2026-10-15T14:00:00.000Z');
+    expect(starts).toContain('2026-12-08T15:00:00.000Z');
+  });
+
+  it('reads a series whose fifth Tuesday is missing in the month of the moved start the same: ical.js gives the first day of such a first month', () => {
+    // November 2017 has four Tuesdays. Started in that month, on the 6th, ical.js would give the 7th as
+    // the "fifth", so the walk starts from a month that ends before the window, not from the 6th.
+    const windowStart = Date.parse('2017-11-07T00:00:00Z');
+    const windowEnd = Date.parse('2017-12-07T00:00:00Z');
+    for (const rule of ['FREQ=MONTHLY;BYDAY=TU;BYSETPOS=5', 'FREQ=MONTHLY;BYDAY=5TU', 'FREQ=YEARLY;BYMONTH=11;BYDAY=TU;BYSETPOS=5', 'FREQ=YEARLY;BYMONTH=11;BYDAY=5TU']) {
+      const { walked, skipped, fast } = compare(feed(event(`DTSTART:20000106T003000Z
+RRULE:${rule}`, 'missing')), windowStart, windowEnd);
+      expect(skipped.rows, rule).toEqual(walked.rows);
+      expect(fast, rule).toBeLessThan(100);
+    }
+  });
+
+  it('leaves to the plain walk a series ical.js gives up on at its start, so that it reads as it always has', () => {
+    // The 31st every 5 months from June 2010: five months with no 31st in a row, and ical.js finds nothing.
+    const text = feed(event('DTSTART;TZID=America/Chicago:20100607T143000\nRRULE:FREQ=MONTHLY;BYMONTHDAY=31;INTERVAL=5', 'dead'));
+    const { walked, skipped } = compare(text, Date.parse('2023-10-01T00:00:00Z'), Date.parse('2023-12-01T00:00:00Z'));
+    expect(skipped.rows).toEqual(walked.rows);
+  });
+
+  it('refuses a monthly BYSETPOS series it cannot move, as one with COUNT: its first occurrence, said to be cut, and no clock spent', () => {
+    // A length that runs past the window leaves no month to move to, so the series is walked from 1900, at 0.7 ms a step.
+    const text = feed(event('DTSTART:19000115T090000Z\nDURATION:P73000D\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1', 'long'));
+    const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0 };
+    const began = Date.now();
+    const { rows, truncated } = expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+    expect(Date.now() - began).toBeLessThan(400);
+    expect(rows).toHaveLength(1);
+    expect(truncated).toBe(true);
+  });
+
+  it('syncs a feed with two series it cannot move, each shown as its first occurrence', () => {
+    const long = (uid: string) => event('DTSTART:19000115T090000Z\nDURATION:P73000D\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1', uid);
+    const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0 };
+    const { rows, truncated } = expandFeed(feed(long('a'), long('b')), HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+    expect(rows).toHaveLength(2);
+    expect(truncated).toBe(true);
+  });
+
+  it('stops a monthly BYSETPOS walk after the steps an admitted series needs, and says it was cut, however long each occurrence lasts', () => {
+    const rule = 'RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1';
+    // Each of these can be moved to a month before the window, but the occurrences overlapping the window are years of them.
+    for (const lines of [
+      `DTSTART:19000115T090000Z\nDURATION:P36525D\n${rule}`,
+      `DTSTART:16000115T090000Z\nDURATION:P109575D\n${rule}`,
+      `DTSTART:00010115T090000Z\nDURATION:P800000D\n${rule}`,
+    ]) {
+      const run = budget();
+      const { rows, truncated } = expandFeed(feed(event(lines, 'huge')), HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+      expect(truncated, lines).toBe(true);
+      expect(rows.length, lines).toBeGreaterThan(0);
+      expect(MAX_STEPS_PER_RUN - run.remaining, lines).toBeLessThan(400);
+    }
+  });
+
+  it('reads in full a monthly BYSETPOS series just inside the age limit, and one of any age that is moved', () => {
+    // 2006-09 to the window's 2026-09 is 240 months, the most that is walked from DTSTART.
+    const last = (start: string, end: string) => feed(event(`DTSTART:${start}T090000Z\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1${end}`, 'last'));
+    for (const text of [last('20060915', ';COUNT=400'), last('20060915', ''), last('19700115', '')]) {
+      const walked = expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, { ...budget(), noFastForward: true });
+      const run = budget();
+      const { rows, truncated } = expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+      expect(truncated).toBe(false);
+      expect(rows).toHaveLength(6);
+      expect(walked.truncated).toBe(false);
+      expect(walked.rows).toEqual(rows);
+    }
+  });
+
+  it('leaves to the plain walk a series whose moved start is the one ical.js gives up on', () => {
+    // The 31st every 5 months from January 2000: alive from DTSTART, but dead from a start moved to a month 5 periods before the next 31st.
+    const text = feed(event('DTSTART:20000115T090000Z\nRRULE:FREQ=MONTHLY;BYMONTHDAY=31;INTERVAL=5', 'dead-moved'));
+    const { walked, skipped } = compare(text, Date.parse('2005-07-02T00:00:00Z'), Date.parse('2007-09-01T00:00:00Z'));
+    expect(walked.rows.map((row) => row.starts_at)).toContain('2007-07-31T09:00:00.000Z');
+    expect(skipped.rows).toEqual(walked.rows);
+  });
+
+  it('walks a series with COUNT from DTSTART, as it counts from there', () => {
+    const { slow, fast } = both(event('DTSTART:20200111T090000Z\nRRULE:FREQ=MONTHLY;COUNT=100;BYDAY=2TU', 'counted'));
+    expect(fast).toBe(slow);
+  });
+
+  // Every series of a fixed seed, read both ways with a window of its own, gives the same rows.
+  // `ICS_SWEEP=<series>` and `ICS_SEED=<n>` make a bigger one-off run of the same generator.
+  const SERIES = Number(process.env.ICS_SWEEP) || 500;
+  it(`gives the same rows with and without the skip, for ${SERIES} generated monthly and yearly series`, () => {
+    const r = mulberry(Number(process.env.ICS_SEED) || 127);
+    const int = (a: number, b: number) => a + Math.floor(r() * (b - a + 1));
+    const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)]!;
+    const subset = <T>(a: T[], max: number) => [...new Set(Array.from({ length: int(1, max) }, () => pick(a)))];
+    const DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    const fmt = (ms: number) => new Date(ms).toISOString().replace(/[-:]|\.\d{3}/g, '');
+    const daysIn = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const specs = (count: number) =>
+      Array.from({ length: count }, (_, k) => {
+        const yearly = r() < 0.4;
+        const parts = [`FREQ=${yearly ? 'YEARLY' : 'MONTHLY'}`];
+        let interval = r() < 0.4 ? 1 : pick([int(1, 12), int(1, 12), 12, 24, 36, 5, 7]);
+        const position = () => pick([1, 2, 3, 4, 5, -1]);
+        // A monthly BYSETPOS step costs most, and the plain walk takes hundreds of them: it is the rarer shape.
+        const shape = r() < 0.06 ? 3 : int(0, 2);
+        if (yearly && (shape > 0 || r() < 0.3)) parts.push(`BYMONTH=${subset([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 3).join(',')}`);
+        if (!yearly && shape === 1) parts.push(`BYMONTHDAY=${subset([...Array.from({ length: 31 }, (_, d) => d + 1), -1, 29, 30, 31, -1], 4).join(',')}`);
+        if (shape === 2 && (!yearly || parts.length > 1)) {
+          const n = position();
+          if (n === 5) interval = 1;
+          parts.push(`BYDAY=${n}${pick(DAYS)}`);
+        }
+        if (shape === 3 && (!yearly || parts.length > 1)) {
+          const n = position();
+          if (n === 5) interval = 1;
+          parts.push(`BYDAY=${subset(DAYS, 7).join(',')}`, `BYSETPOS=${n}`);
+        }
+        if (interval !== 1 || r() < 0.2) parts.push(`INTERVAL=${interval}`);
+        if (r() < 0.2) parts.push(`WKST=${pick(DAYS)}`);
+        if (r() < 0.25) parts.push(`UNTIL=${pick([2020, 2027, 2028, 2035, 2099])}${p2(int(1, 12))}${p2(int(1, 28))}T000000Z`);
+        const year = r() < 0.9 ? int(1995, 2026) : pick([1900, 1970, 1999]);
+        const leapDay = r() < 0.2 && daysIn(year, 2) === 29;
+        const month = leapDay ? 2 : int(1, 12);
+        const day = leapDay ? 29 : r() < 0.35 ? pick([29, 30, 31, daysIn(year, month)].filter((d) => d <= daysIn(year, month))) : int(1, 28);
+        const date = `${year}${p2(month)}${p2(day)}`;
+        const time = `T${p2(int(0, 23))}${pick(['00', '15', '30'])}00`;
+        const kind = pick(['utc', 'floating', 'chicago', 'london', 'allday']);
+        const start = {
+          utc: `DTSTART:${date}${time}Z`,
+          floating: `DTSTART:${date}${time}`,
+          chicago: `DTSTART;TZID=America/Chicago:${date}${time}`,
+          london: `DTSTART;TZID=Europe/London:${date}${time}`,
+          allday: `DTSTART;VALUE=DATE:${date}`,
+        }[kind]!;
+        const length = kind === 'allday' ? pick(['P1D', 'P3D']) : pick(['PT1H', 'PT30M', 'P1D', 'P2DT3H', 'PT0S']);
+        return { uid: `s${k}`, lines: `${start}\nDURATION:${length}\nRRULE:${parts.join(';')}` };
+      });
+
+    let walkedSteps = 0;
+    let skippedSteps = 0;
+    let rowsSeen = 0;
+    for (let done = 0; done < SERIES; done += 10) {
+      const batch = specs(Math.min(10, SERIES - done));
+      const windowStart = Date.UTC(int(1996, 2040), int(0, 11), int(1, 28));
+      const windowEnd = windowStart + int(30, 200) * DAY_MS;
+      // Exclude and move a few of the occurrences the series really has, and add a date.
+      const probe = expandFeed(feed(...batch.map((spec) => event(spec.lines, spec.uid))), HOUSEHOLD, windowStart, windowEnd, budget()).rows;
+      const components = batch.map((spec) => {
+        const own = probe.filter((row) => row.google_event_id.startsWith(`${spec.uid}|`));
+        const exdates = own.filter(() => r() < 0.2).map((row) => `EXDATE:${fmt(Date.parse(row.starts_at))}`);
+        const rdate = r() < 0.2 ? [`RDATE:${fmt(windowStart + int(0, 20) * DAY_MS)}`] : [];
+        return event([spec.lines, ...exdates, ...rdate].join('\n'), spec.uid);
+      });
+      const moves = probe.filter(() => r() < 0.08).map((row) => {
+        const at = Date.parse(row.starts_at);
+        return event(`RECURRENCE-ID:${fmt(at)}\nDTSTART:${fmt(at + 5 * 3_600_000)}\nDURATION:PT1H`, row.google_event_id.split('|')[0]!);
+      });
+      const { walked, skipped, slow, fast } = compare(feed(...components, ...moves), windowStart, windowEnd);
+      const label = batch.map((spec) => spec.lines.replace(/\n/g, ' ')).join('\n');
+      expect(skipped.rows, label).toEqual(walked.rows);
+      expect(skipped.truncated, label).toBe(walked.truncated);
+      walkedSteps += slow;
+      skippedSteps += fast;
+      rowsSeen += skipped.rows.length;
+    }
+    // Most of the walk is skipped, and there were rows to compare.
+    expect(rowsSeen).toBeGreaterThan(SERIES / 4);
+    expect(skippedSteps).toBeLessThan(walkedSteps / 4);
+  }, Math.max(60_000, SERIES * 100));
 });
 
 describe('expandFeed: one bad part is not the feed', () => {
