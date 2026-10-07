@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Plus, Tablet } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass } from '@/components/phone';
+import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { useRefetchOn } from '@/lib/change-feed';
 import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice, type Device } from '@/lib/device';
@@ -247,7 +247,7 @@ export function DevicesSection() {
             Pair a tablet
           </Button>
         )}
-        <p role="status" className="min-h-6 text-base">
+        <p role="status" className={statusLineClass}>
           {pairMessages[pairStatus]}
         </p>
       </div>

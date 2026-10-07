@@ -81,12 +81,13 @@ describe('the control and the pager', () => {
 });
 
 describe('Day', () => {
-  it('is a card like the others on the phone: 22 round with 12 inside all round, 24 round and 8 at its left on the tablet', () => {
+  it('is a card like the others: 12 inside all round, 22 round on the phone and 24 round on the tablet', () => {
     const card = /<section aria-label="Thursday, October 8, today" class="([^"]*)"/.exec(screen('day', '2026-10-08'));
     expect(card).not.toBeNull();
     const classes = card![1]!.split(' ');
-    expect(classes).toEqual(expect.arrayContaining(['max-[768px]:rounded-[22px]', 'max-[768px]:pl-3', 'py-3', 'pr-3']));
-    expect(classes).toEqual(expect.arrayContaining(['rounded-3xl', 'pl-2']));
+    expect(classes).toEqual(expect.arrayContaining(['max-[768px]:rounded-[22px]', 'rounded-3xl', 'p-3']));
+    // One padding, so the card is even on the tablet too: nothing sets a side of it apart.
+    expect(classes.filter((name) => /(^|:)p[xytblr]-/.test(name))).toEqual([]);
   });
 });
 

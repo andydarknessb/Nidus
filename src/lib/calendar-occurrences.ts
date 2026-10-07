@@ -361,6 +361,24 @@ export function formatClock(ms: number, timezone: string): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
 }
 
+// "1:00 AM CDT": a time with the zone's short name, for the night the clocks go back, when one clock time is two instants.
+export function formatClockWithZone(ms: number, timezone: string): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(ms));
+}
+
+// Whether an event that starts and ends on one day (one that ends at midnight ends on the next) reads backwards, or as no time at all, on the clock: it lasts, but its end shows
+// the same time as its start or an earlier one, because the clocks went back inside it ("1:00 to 1:00 AM"). Such an event says its
+// times with their zones (formatClockWithZone), so the two are told apart.
+export function clocksRepeat(start: number, end: number, timezone: string): boolean {
+  const minutes = (ms: number) => {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hourCycle: 'h23', hour: 'numeric', minute: 'numeric' }).formatToParts(new Date(ms));
+    const part = (type: string) => Number(parts.find((each) => each.type === type)?.value);
+    return part('hour') * 60 + part('minute');
+  };
+  const sameDay = householdDay(timezone, new Date(start)).date === householdDay(timezone, new Date(end)).date;
+  return end > start && sameDay && minutes(end) <= minutes(start);
+}
+
 // "10 AM" on the hour and "9:30 AM" otherwise: the time without its ":00", for a month line, which has
 // room for little else than a few letters of the title after it.
 export function formatCompactClock(ms: number, timezone: string): string {
@@ -386,9 +404,9 @@ export function describeWhen(occurrence: Occurrence, timezone: string): string {
   }
   const sameDay = householdDay(timezone, new Date(start)).date === householdDay(timezone, new Date(end)).date;
   if (sameDay) {
-    return end === start
-      ? `${formatDate(start, timezone)}, ${formatClock(start, timezone)}`
-      : `${formatDate(start, timezone)}, ${formatClock(start, timezone)} to ${formatClock(end, timezone)}`;
+    if (end === start) return `${formatDate(start, timezone)}, ${formatClock(start, timezone)}`;
+    const clock = clocksRepeat(start, end, timezone) ? formatClockWithZone : formatClock;
+    return `${formatDate(start, timezone)}, ${clock(start, timezone)} to ${clock(end, timezone)}`;
   }
   return `${formatDate(start, timezone)}, ${formatClock(start, timezone)} to ${formatDate(end, timezone)}, ${formatClock(end, timezone)}`;
 }

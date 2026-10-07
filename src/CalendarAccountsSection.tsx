@@ -1,7 +1,7 @@
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { EmptyRing, Tick } from '@/components/people';
-import { Card, Confirm, Field, Problem, fieldClass, helpClass, labelClass } from '@/components/phone';
+import { Card, Confirm, Field, Problem, fieldClass, helpClass, labelClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { useRefetchOn } from '@/lib/change-feed';
 import {
@@ -458,7 +458,7 @@ export function CalendarAccountsSection() {
             Copy a link for another adult
           </Button>
           {link && <input className={fieldClass} readOnly value={link} aria-label="Link for another adult" onFocus={(event) => event.target.select()} />}
-          <p role="status" className="text-base">
+          <p role="status" className={statusLineClass}>
             {notice}
           </p>
           <Problem id={problemId(CONNECT)} problem={problems.at(CONNECT)} />

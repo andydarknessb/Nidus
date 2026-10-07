@@ -1,6 +1,6 @@
 import { Cloud } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
-import { Card, Field, Problem, fieldClass, labelClass } from '@/components/phone';
+import { Card, Field, Problem, fieldClass, labelClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHouseholdWeather, type Household } from '@/lib/household';
 import { useWriteProblem } from '@/lib/use-write-problem';
@@ -148,7 +148,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
               Search
             </Button>
           </form>
-          <p role="status" className="min-h-6 text-base">
+          <p role="status" className={statusLineClass}>
             {searchStatus === 'found' ? foundWords(options.length) : SEARCH_WORDS[searchStatus]}
           </p>
           {options.length > 0 && (
@@ -182,12 +182,11 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
             </Button>
           ))}
         </div>
-        {/* The status line is there from the start, so a screen reader has it before it speaks, and is one line tall whichever of
-            the two says something, so nothing below moves. */}
-        <div className="min-h-6 text-base">
-          <p role="status">{landed && 'Saved.'}</p>
-          <Problem id={`problem-${UNIT}`} problem={problems.at(UNIT)} />
-        </div>
+        {/* The status line is there from the start, so a screen reader has it before it speaks, and takes no room until it says something. */}
+        <p role="status" className={statusLineClass}>
+          {landed && 'Saved.'}
+        </p>
+        <Problem id={`problem-${UNIT}`} problem={problems.at(UNIT)} />
       </div>
 
       <a href="https://open-meteo.com/" target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center self-start text-sm leading-5 text-muted-foreground underline">

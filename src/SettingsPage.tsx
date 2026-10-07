@@ -6,7 +6,7 @@ import { HouseholdAccountsSection } from '@/HouseholdAccountsSection';
 import { NotificationsSection } from '@/NotificationsSection';
 import { ProfilesSection } from '@/ProfilesSection';
 import { WeatherSection } from '@/WeatherSection';
-import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass } from '@/components/phone';
+import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import { timezoneOptions } from '@/lib/timezones';
@@ -92,16 +92,16 @@ export function SettingsPage({ household, userId, onSaved, onSignOut }: Props) {
             </Field>
             <p className={helpClass}>Every date and the midnight reset follow this time zone.</p>
           </div>
-          {/* The line for what the save did is there from the start, so a screen reader has it before it speaks, and is one line
-              tall whichever it says, so nothing below moves. */}
+          {/* The line for what the save did is there from the start, so a screen reader has it before it speaks, and takes no room
+              until it says something. */}
           <div className="flex flex-col gap-2">
             <Button type="submit" variant="primary" size="phone" aria-disabled={busy || undefined}>
               Save
             </Button>
-            <div className="min-h-6 text-base">
-              <p role="status">{saved && 'Saved.'}</p>
-              <Problem id="problem-household" problem={problem} />
-            </div>
+            <p role="status" className={statusLineClass}>
+              {saved && 'Saved.'}
+            </p>
+            <Problem id="problem-household" problem={problem} />
           </div>
         </form>
       </Card>
