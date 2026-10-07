@@ -235,7 +235,7 @@ export function ListsScreen() {
       {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
       <div
         ref={row.scroller}
-        className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cards.length > 3 ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%))]' : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%))]'}`}
+        className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cards.length > 3 ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%,calc((1rem_-_16px)*1000)))]' : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]'}`}
       >
         {cards.map((list) => (
           <ListCard key={list.id} list={list} pinned={list.id === read?.pinnedId} />

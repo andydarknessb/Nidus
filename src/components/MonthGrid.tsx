@@ -68,10 +68,11 @@ export function MonthGrid({
 
   const lines = linesPerCell(rowsPx / weeks.length, CELL_HEAD_REM * remPx, CELL_LINE_REM * remPx);
 
-  // A week is never drawn shorter than its date and the one line under it (the "+N more" or "6 events" that says what the day holds),
-  // whatever the text size: where the room for the grid is less than that, the grid is as tall as it needs and the screen scrolls.
+  // At larger text a week is never drawn shorter than its date and the one line under it (the "+N more" or "6 events" that says what the
+  // day holds): where the room for the grid is less than that, the grid is as tall as it needs and the screen scrolls. At 16 px text the
+  // floor is 0, so the grid is as it was: `(1rem - 16px) * 1000` is 0 there and thousands of px as soon as the text is larger.
   return (
-    <section aria-label="Calendar" style={{ minHeight: `${monthMinRem(weeks.length)}rem` }} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
+    <section aria-label="Calendar" style={{ minHeight: `min(${monthMinRem(weeks.length)}rem, calc((1rem - 16px) * 1000))` }} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
       {/* Every cell's name says its weekday already, so a screen reader need not hear the row of them first. */}
       <div aria-hidden className="grid grid-cols-7 divide-x divide-border border-b border-border">
         {WEEKDAYS.map((weekday) => (

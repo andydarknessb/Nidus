@@ -55,7 +55,7 @@ function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
 }
 
 const PILL =
-  'person @container min-h-[56px] min-w-32 max-w-76 flex-1 basis-0 rounded-[18px] bg-person-soft text-base text-foreground max-[768px]:h-13 max-[768px]:w-[132px] max-[768px]:min-w-[132px]! max-[768px]:max-w-[132px] max-[768px]:flex-none max-[768px]:basis-auto';
+  'person @container min-h-[56px] max-[768px]:min-h-0 min-w-32 max-w-76 flex-1 basis-0 rounded-[18px] bg-person-soft text-base text-foreground max-[768px]:h-13 max-[768px]:w-[132px] max-[768px]:min-w-[132px]! max-[768px]:max-w-[132px] max-[768px]:flex-none max-[768px]:basis-auto';
 
 // The least a pill is: the disc, its gaps and padding (4.5 rem) and the name's letters (one ch each, a little over what a
 // name needs), never under the 8 rem of min-w-32 and never over the 19 rem of max-w-76, where the name is cut. A pill
@@ -75,14 +75,14 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
     <div
       role="group"
       aria-label="Show events for"
-      className="flex min-h-[56px] gap-2 max-[768px]:h-13 max-[768px]:-mx-4 max-[768px]:items-center max-[768px]:scroll-px-4 max-[768px]:px-4 max-[768px]:overflow-x-auto max-[768px]:overscroll-x-contain max-[768px]:[scrollbar-width:none] max-[768px]:[&::-webkit-scrollbar]:hidden max-[768px]:[&>*]:shrink-0"
+      className="flex min-h-[56px] gap-2 max-[768px]:h-13 max-[768px]:min-h-0 max-[768px]:-mx-4 max-[768px]:items-center max-[768px]:scroll-px-4 max-[768px]:px-4 max-[768px]:overflow-x-auto max-[768px]:overscroll-x-contain max-[768px]:[scrollbar-width:none] max-[768px]:[&::-webkit-scrollbar]:hidden max-[768px]:[&>*]:shrink-0"
     >
       {!alone && (
         <Button
           variant="quiet"
           aria-pressed={pressed.length === 0}
           onClick={filter.clear}
-          className="h-auto min-h-[56px] gap-2.5 rounded-[18px] bg-card px-0 pr-4.5 pl-2 text-base text-foreground max-[768px]:h-13 max-[768px]:min-w-[132px] max-[768px]:gap-2 max-[768px]:pr-2 max-[768px]:focus-visible:-outline-offset-2"
+          className="h-auto min-h-[56px] max-[768px]:min-h-0 gap-2.5 rounded-[18px] bg-card px-0 pr-4.5 pl-2 text-base text-foreground max-[768px]:h-13 max-[768px]:min-w-[132px] max-[768px]:gap-2 max-[768px]:pr-2 max-[768px]:focus-visible:-outline-offset-2"
         >
           <HouseDisc size={40} className={PHONE_DISC} />
           Everyone

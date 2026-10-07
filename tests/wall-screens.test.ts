@@ -67,7 +67,8 @@ describe('the Wall at larger text', () => {
   it("gives the Month grid the height of a week's date and the line under it, for every week", () => {
     // A week is 2.625 rem for the date and 1.5 rem for the line under it (MonthCell.tsx), and the grid has a weekday row of 2.5 rem over its weeks.
     const html = renderToStaticMarkup(createElement(PagedCalendar, { timezone, view: 'month', date: null, onNavigate: () => undefined, profiles: null }));
-    const rem = Number(/<section aria-label="Calendar" style="min-height:([\d.]+)rem"/.exec(html)?.[1]);
+    // The floor is there from the first pixel of larger text and not at 16 px, so a short screen at 16 px text is as it was.
+    const rem = Number(/<section aria-label="Calendar" style="min-height:min\(([\d.]+)rem, calc\(\(1rem - 16px\) \* 1000\)\)"/.exec(html)?.[1]);
     expect([4, 5, 6].map((weeks) => 2.5 + weeks * 4.125)).toContain(rem);
     // At 16 px text a six-week month asks for 436 px, which the room under the people strip of a 1280 x 800 Wall (about 520) gives it.
     expect(2.5 + 6 * 4.125).toBeLessThan(520 / 16);
