@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+
+// The Wall's routes and the dates they put a screen on: reading and writing the address, whether a page holds today, and the date the
+// navigation rail opens each view on. The page arithmetic they build on is tested in paged-view.test.ts.
 import {
   describePage,
   holdsToday,
