@@ -199,8 +199,9 @@ export const ICLOUD_LINK_GONE_WORDS = 'This link no longer works. Turn on Public
 // is whatever the sync logged when it failed: it only says that an update failed, and is never shown or compared.
 export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error' | 'truncated'> & Partial<Pick<CalendarAccount, 'provider'>>): string {
   if (account.status === 'needs_reauth') return account.provider === 'icloud' ? ICLOUD_LINK_GONE_WORDS : 'Needs to be connected again';
-  if (account.provider === 'icloud' && account.truncated) return ICLOUD_TRUNCATED_WORDS;
-  return account.last_error ? UPDATE_FAILED_WORDS : 'Connected';
+  // A failed update wins over cut-short repeats: a failure is what the family saw before there was a flag.
+  if (account.last_error) return UPDATE_FAILED_WORDS;
+  return account.provider === 'icloud' && account.truncated ? ICLOUD_TRUNCATED_WORDS : 'Connected';
 }
 
 // What the wall needs to know about each account to say whether the mirror is behind.

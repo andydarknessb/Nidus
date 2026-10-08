@@ -229,6 +229,10 @@ describe('what a Calendar Account says of itself', () => {
     expect(say({ provider: 'icloud', last_error: 'Some repeating events in this calendar cannot be shown in full.' })).toBe(UPDATE_FAILED_WORDS);
   });
 
+  it('says the last update failed, and not that repeats were cut short, for a calendar that is both truncated and failing', () => {
+    expect(say({ provider: 'icloud', truncated: true, last_error: 'Could not read the iPhone calendar (timed out).' })).toBe(UPDATE_FAILED_WORDS);
+  });
+
   it('says Connected, and not that the update failed, for a calendar the run did not reach, which the sync leaves exactly as it was', () => {
     expect(say({ provider: 'icloud', last_synced_at: '2026-10-01T19:16:00Z' })).toBe('Connected');
   });
