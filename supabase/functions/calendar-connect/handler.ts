@@ -120,7 +120,7 @@ export async function verifyState(secret: string, token: string | null, nowMs: n
   }
 }
 
-// Every answer of this function carries the CORS headers: the Settings page calls it from the browser.
+// Every JSON answer of this function carries the CORS headers: the Settings page calls it from the browser.
 const json = (status: number, body: unknown): Response => jsonWith(status, body, cors);
 
 function page(status: number, title: string, message: string): Response {

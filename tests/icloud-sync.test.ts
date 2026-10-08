@@ -683,7 +683,7 @@ describe('the order of a run', () => {
     // The iPhone calendar is made first, so only the run's own ordering can put Google ahead of it.
     await arrangeIcloud(account, link);
     await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'refresh-A' });
-    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf() }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf() }]]), { cal: [] });
 
     await syncOk(deps(account, world));
 
@@ -721,7 +721,7 @@ describe('the order of a run', () => {
     const link = newLink();
     const { accountId } = await arrangeIcloud(account, link);
     const google = await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'refresh-A' });
-    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(dentist) }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(dentist) }]]), { cal: [] });
     const seen: (string | null)[] = [];
     const spy = (async (input: string | URL | Request, init?: RequestInit) => {
       if (String(input) === link) {
