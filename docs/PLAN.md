@@ -188,7 +188,7 @@ Settled on 2026-10-08 when the owner asked for the Wall to fit an Elo 2402L touc
 
 ### Decisions
 
-- **The rules hold**: the viewport alone decides, and by it the Elo is a Wall both ways, 1920 by 1080 in landscape (five days, three tiles) and 1080 by 1920 in portrait (four days, three tiles). No rule reads the screen.
+- **The rules hold**: the viewport alone decides, and by it the Elo is a Wall both ways, 1920 by 1080 in landscape (five days, three tiles) and 1080 by 1920 in portrait (four days, and the tiles the height holds). No rule reads the screen.
 - **The host decides the orientation and the size**: Windows' display orientation turns the screen, and Chrome runs in kiosk mode with a profile folder that keeps its storage, since the Device's pairing lives there. The app locks no orientation.
 - **Larger text is the browser's font size**, held at 130 percent; zoom shrinks the viewport and is held to 125 percent. At 150 percent in portrait the Wall is a phone by its rule.
 - **Nothing scales up for the panel**: the look's tokens, parts and sizes are unchanged at 92 pixels per inch.

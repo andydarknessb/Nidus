@@ -12,7 +12,7 @@ Nothing about the rules changes: the viewport alone decides, as settled in v4, v
 
 The decisions:
 
-1. **The rules hold.** A viewport of 768 px and wider and 544 px and taller is a Wall; taller than wide is portrait. At 100 percent the Elo is 1920 by 1080 in landscape (five days and three tiles on Home) and 1080 by 1920 in portrait (four days and three tiles, within 2 px of the P12's default portrait width). No rule gains a case for a monitor, and no rule reads the device.
+1. **The rules hold.** A viewport of 768 px and wider and 544 px and taller is a Wall; taller than wide is portrait. At 100 percent the Elo is 1920 by 1080 in landscape (five days and three tiles on Home) and 1080 by 1920 in portrait (four days, and six tiles since #190, within 2 px of the P12's default portrait width). No rule gains a case for a monitor, and no rule reads the device.
 2. **The host decides the orientation and the size.** Windows' display orientation turns the screen, and its touch is mapped to the turned screen there; the browser runs in kiosk mode, full screen, with a profile that keeps its storage, since the Device's anonymous session lives in it. The app asks for no orientation and never locks one, as before.
 3. **Larger text is the browser's font size.** The browser's font size setting grows the root font size and every rem with it, as the tablet's Font size does, and leaves the viewport alone; the Wall holds its layout to 130 percent as [look.md](../look.md), "Larger text" says. Zoom, which shrinks the viewport instead, is held to 125 percent either way (1536 by 864 and 864 by 1536, still five days and three tiles, or four days and five tiles). At 150 percent in portrait the viewport is 720 px wide, a phone by the rule, and the rule is not bent for a monitor: the ceiling is written down instead.
 4. **Nothing scales up for the panel.** At 92 pixels per inch 16 px type is about 4.4 mm tall, 1.75 times its size on the P12 and read from further away; 100 percent is the default and the household chooses larger text if it likes. The look's tokens, parts and sizes are unchanged.
@@ -33,7 +33,7 @@ The decisions:
 
 ### The rule
 
-- `homeLayout` in `src/lib/home-layout.ts` changes nothing (until #190, which gives portrait more tiles on a tall screen, below). `tests/home-layout.test.ts` says what it gives at 1920 by 1080 (landscape, five days, three tiles), 1080 by 1920 (portrait, four days, three tiles), 1536 by 864 (landscape, five, three), 864 by 1536 (portrait, four, three), 1280 by 720 (landscape, five days, two tiles) and 720 by 1280 (a phone).
+- `homeLayout` in `src/lib/home-layout.ts` changes nothing (until #190, which gives portrait more tiles on a tall screen, below). `tests/home-layout.test.ts` says what it gives at 1920 by 1080 (landscape, five days, three tiles), 1080 by 1920 (portrait, four days, six tiles), 1536 by 864 (landscape, five, three), 864 by 1536 (portrait, four, five), 1280 by 720 (landscape, five days, two tiles) and 720 by 1280 (a phone).
 - The inline script in `index.html` changes nothing.
 
 ### The screens
