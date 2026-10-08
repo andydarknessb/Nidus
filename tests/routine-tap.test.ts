@@ -1,10 +1,10 @@
-import { createElement } from 'react';
+import { createElement, isValidElement, type ComponentProps, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { RoutineColumn, type ColumnLayout } from '../src/components/RoutineColumn';
 import type { Profile } from '../src/lib/profiles';
 import { tapOutcome, tapRoutine, type Frame, type Measured } from '../src/lib/routine-tap';
 import type { Routine } from '../src/lib/routines';
-import type { RoutineColumn as RoutineColumnType } from '../src/components/RoutineColumn';
 
 // What a tap on a Routine does on the Wall's column, the phone's card and Up next: one decision (src/lib/routine-tap.ts), tested here
 // with plain numbers for the measuring, and the shared column drawn once for both layouts.
@@ -70,40 +70,57 @@ describe('tapRoutine', () => {
 });
 
 describe('the shared column', () => {
-  let RoutineColumn: typeof RoutineColumnType;
-  beforeAll(async () => {
-    // The tiles' pictures come with the app's client, which wants its env; CI has none (see tests/phone-routines.test.ts).
-    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
-    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
-    ({ RoutineColumn } = await import('../src/components/RoutineColumn'));
+  const props = (layout: ColumnLayout, onToggle: (routine: Routine) => Promise<boolean> = () => Promise.resolve(true)): ComponentProps<typeof RoutineColumn> => ({
+    profile: ava,
+    routines: both,
+    done: new Set(['r-2']),
+    part: 'morning',
+    held: new Set<string>(),
+    problem: undefined,
+    onToggle,
+    burst: undefined,
+    onFinish: () => undefined,
+    onLand: () => undefined,
+    layout,
   });
 
-  const draw = (layout: { className: string; header: string; disc: number }) =>
-    renderToStaticMarkup(
-      createElement(RoutineColumn, {
-        profile: ava,
-        routines: both,
-        done: new Set(['r-2']),
-        part: 'morning',
-        held: new Set<string>(),
-        problem: undefined,
-        onToggle: () => Promise.resolve(true),
-        burst: undefined,
-        onFinish: () => undefined,
-        onLand: () => undefined,
-        layout,
-      }),
-    );
+  // Every host element under `node`, calling function components on the way down (none under the column has a hook).
+  function hosts(node: ReactNode, found: ReactElement<Record<string, unknown>>[] = []): ReactElement<Record<string, unknown>>[] {
+    if (Array.isArray(node)) node.forEach((child) => hosts(child as ReactNode, found));
+    else if (isValidElement<Record<string, unknown>>(node)) {
+      if (typeof node.type === 'function') hosts((node.type as (props: unknown) => ReactNode)(node.props), found);
+      else {
+        found.push(node);
+        hosts(node.props['children'] as ReactNode, found);
+      }
+    }
+    return found;
+  }
 
   it('draws the progress header and a tile for each Routine, ticked or not, whatever the layout around it', () => {
     for (const layout of [
       { className: 'person relative wall-column', header: 'min-h-14', disc: 56 },
       { className: 'person relative phone-card', header: 'min-h-13', disc: 52 },
     ]) {
-      const html = draw(layout);
+      const html = renderToStaticMarkup(createElement(RoutineColumn, props(layout)));
       expect(html).toContain(`class="${layout.className}`);
       expect(html).toContain('1 of 2 done');
       expect([...html.matchAll(/aria-pressed="(true|false)"/g)].map((match) => match[1])).toEqual(['false', 'true']);
     }
+  });
+
+  it('sends a tile\'s tap to toggle with that tile\'s Routine, ticking and unticking alike', () => {
+    const toggle = vi.fn(() => Promise.resolve(true));
+    // The column is called inside a real render, so its ref is legal; the tiles are then the elements it returned.
+    let tree: ReactNode = null;
+    const Probe = () => {
+      tree = RoutineColumn(props({ className: 'person relative phone-card', header: 'min-h-13', disc: 52 }, toggle));
+      return null;
+    };
+    renderToStaticMarkup(createElement(Probe));
+    const tiles = hosts(tree).filter((element) => element.type === 'button' && element.props['aria-pressed'] !== undefined);
+    expect(tiles.map((tile) => tile.props['aria-pressed'])).toEqual([false, true]);
+    for (const tile of tiles) (tile.props['onClick'] as (event: unknown) => void)({ currentTarget: {} });
+    expect(toggle.mock.calls).toEqual([[brush], [dressed]]);
   });
 });
