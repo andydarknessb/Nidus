@@ -181,10 +181,10 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
       )}
       {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
       {portrait ? (
-        // The columns are a grid of columns at least 17 rem, as many to a row as fit, each its row-mates' width, 12 apart across and 16 under one
+        // The columns are a grid of columns at least 17 rem, as many to a row as fit, each its row-mates' width (and with fewer columns than fit, the columns share the row), 12 apart across and 16 under one
         // another, each its natural height; the chart scrolls as one column, and its foot is the shared button. A tile or field that takes the focus is scrolled clear of the foot.
         <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
-          <div className={cn('grid grid-cols-[repeat(auto-fill,minmax(min(17rem,100%),1fr))] items-start gap-x-3 gap-y-4', BODY_CLEARANCE)}>{people}</div>
+          <div className={cn('grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-x-3 gap-y-4', BODY_CLEARANCE)}>{people}</div>
           <OverflowButton control={row} of="the routines" />
         </div>
       ) : (

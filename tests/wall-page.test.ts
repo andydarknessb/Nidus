@@ -56,6 +56,9 @@ describe('the pairing screen', () => {
     expect(code).not.toBeNull();
     const classes = (code?.[1] ?? '').split(' ');
     expect(classes).toContain('font-display');
+    // At 768 px wide the code fits: 8 rem at most, 15vw below that.
+    expect(classes).toContain('text-[min(8rem,15vw)]');
+    expect(classes).not.toContain('text-9xl');
     expect(classes.some((name) => name.startsWith('tracking-'))).toBe(true);
     // The space after the last letter is as much as the space before the first, so the code sits in the middle.
     expect(classes).toContain('pl-[0.2em]');
