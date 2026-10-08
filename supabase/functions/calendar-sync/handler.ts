@@ -117,7 +117,7 @@ export function toRow(event: GoogleEvent, timezone: string): EventRow | null {
   };
 }
 
-type Account = { id: string; household_id: string; vault_secret_id: string; provider: 'google' | 'icloud'; last_attempted_at: string | null; last_error: string | null };
+type Account = { id: string; household_id: string; vault_secret_id: string; provider: 'google' | 'icloud'; last_attempted_at: string | null };
 type Calendar = {
   id: string;
   google_calendar_id: string;
@@ -288,11 +288,11 @@ async function failAccount(deps: SyncDeps, account: Account, summary: SyncSummar
     .eq('id', account.id);
 }
 
-// The run had no time for this calendar: nothing was stored, and it is read first next time.
-export const FEED_TOO_LARGE_MESSAGE = 'This calendar was not read this time; it will be tried again.';
-// Read and stored, but some repeating events were cut short by the work limits.
-export const FEED_TRUNCATED_MESSAGE = 'Some repeating events in this calendar cannot be shown in full.';
-export const FEED_GONE_MESSAGE = 'This link no longer works. Turn on Public Calendar again and paste the new link.';
+// What the sync writes in `last_error` when the feed's link is gone. For the logs only: the family's
+// words for it live in the client and key on the account's status and provider.
+const FEED_GONE_LOG = 'The feed link no longer works.';
+// A feed that had the whole run and did not fit. For the logs only.
+const FEED_TOO_LARGE_LOG = 'The calendar is too large to read within the run’s limits.';
 
 // An iPhone calendar's validator, kept in its Mirrored Calendar's sync_token (no client can read
 // it) as JSON: {"etag": "...", "lastModified": "..."}, either null, and `"truncated": true` when
@@ -321,13 +321,19 @@ function decodeFeedValidators(token: string | null): { etag: string | null; last
 async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: string, nowMs: number, summary: SyncSummary, run: StepBudget): Promise<void> {
   const fail = (message: string, status?: 'needs_reauth') => failAccount(deps, account, summary, message, status);
 
+  // Decided before anything is written or read: a run with no steps or time left cannot read a feed at
+  // all, not even to parse it. A calendar the run did not reach is untouched (no stamp, no note), so it
+  // keeps its row and its place in line. A feed that does start and does not fit has been tried, and
+  // goes to the back (below).
+  if (run.remaining <= 0 || (run.spentMs ?? 0) >= MAX_EXPANSION_MS) return;
+
   // Before anything that can take long or kill the run: a feed that does so goes to the back of the
   // line next time. Whether this write lands is not the sync's business.
   await deps.admin.from('calendar_accounts').update({ last_attempted_at: new Date(nowMs).toISOString() }).eq('id', account.id);
 
   const { data: link, error: secretError } = await deps.admin.rpc('read_calendar_secret', { p_secret_id: account.vault_secret_id });
   if (secretError) return fail('Could not read the stored link.');
-  if (typeof link !== 'string') return fail(FEED_GONE_MESSAGE, 'needs_reauth');
+  if (typeof link !== 'string') return fail(FEED_GONE_LOG, 'needs_reauth');
 
   const { data: calendars, error: listError } = await deps.admin
     .from('mirrored_calendars')
@@ -337,8 +343,8 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
     .returns<Calendar[]>();
   if (listError || !calendars) return fail('Could not read the account’s calendars.');
 
-  const markSynced = (note: string | null = null) =>
-    deps.admin.from('calendar_accounts').update({ last_synced_at: new Date(nowMs).toISOString(), last_error: note }).eq('id', account.id);
+  const markSynced = (truncated = false) =>
+    deps.admin.from('calendar_accounts').update({ last_synced_at: new Date(nowMs).toISOString(), last_error: null, truncated }).eq('id', account.id);
   // Deselected: it has no events and no business with the feed.
   const calendar = calendars[0];
   if (!calendar) {
@@ -349,19 +355,8 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
   // As Google's incremental sync is dropped every FULL_SYNC_EVERY_MS, so is a validator: a feed
   // that keeps answering 304 would otherwise never be expanded past the window it was last read in.
   const validators = canReadIncrementally(calendar, nowMs) ? decodeFeedValidators(calendar.sync_token) : { etag: null, lastModified: null, truncated: false };
-  // Decided before the feed starts: a run with no steps or time left cannot read this feed at all, not
-  // even to parse it. It was not really tried, so it keeps its place in line; a feed that does start and
-  // does not fit has been tried, and goes to the back.
-  if (run.remaining <= 0 || (run.spentMs ?? 0) >= MAX_EXPANSION_MS) {
-    summary.errors.push(`${account.id}: ${FEED_TOO_LARGE_MESSAGE}`);
-    await deps.admin
-      .from('calendar_accounts')
-      .update({ last_attempted_at: account.last_attempted_at, ...(account.last_error ? {} : { last_error: FEED_TOO_LARGE_MESSAGE }) })
-      .eq('id', account.id);
-    return;
-  }
   const feed = await fetchFeed(link, validators, deps.fetch);
-  if (feed.kind === 'gone') return fail(FEED_GONE_MESSAGE, 'needs_reauth');
+  if (feed.kind === 'gone') return fail(FEED_GONE_LOG, 'needs_reauth');
   if (feed.kind === 'error') return fail(`Could not read the iPhone calendar (${feed.message}).`);
   if (feed.kind === 'calendar') {
     const window = syncWindow(nowMs);
@@ -379,7 +374,7 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
         // line. One that had less than a whole run (feeds before it took the rest) has not shown it is
         // too big: it gets its old place back, and a whole run next time.
         if (!fresh) await deps.admin.from('calendar_accounts').update({ last_attempted_at: account.last_attempted_at }).eq('id', account.id);
-        return fail(FEED_TOO_LARGE_MESSAGE);
+        return fail(FEED_TOO_LARGE_LOG);
       }
       return fail('Could not read the iPhone calendar (it is not a calendar the Wall can read).');
     }
@@ -389,14 +384,14 @@ async function syncIcloudAccount(deps: SyncDeps, account: Account, timezone: str
       return fail('Could not store the iPhone calendar’s events.');
     }
     summary.events += rows.length;
-    // It did sync: the account stays active and last_synced_at moves; the note says what was cut.
+    // It did sync: the account stays active and last_synced_at moves; `truncated` says what was cut.
     summary.calendars += 1;
-    await markSynced(truncated ? FEED_TRUNCATED_MESSAGE : null);
+    await markSynced(truncated);
     return;
   }
   summary.calendars += 1;
-  // Not changed: the stored events are still the truth, so a note about them is too.
-  await markSynced(validators.truncated ? FEED_TRUNCATED_MESSAGE : null);
+  // Not changed: the stored events are still the truth, so is whether they were cut short.
+  await markSynced(validators.truncated);
 }
 
 // Syncs one Calendar Account. Never throws: its outcome is on the account row and in `summary`.
@@ -442,7 +437,7 @@ export async function syncAll(deps: SyncDeps): Promise<SyncSummary> {
   const nowMs = (deps.now ?? Date.now)();
   const summary: SyncSummary = { accounts: 0, calendars: 0, events: 0, errors: [] };
 
-  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id, provider, last_attempted_at, last_error').eq('status', 'active');
+  let query = deps.admin.from('calendar_accounts').select('id, household_id, vault_secret_id, provider, last_attempted_at').eq('status', 'active');
   if (deps.householdId) query = query.eq('household_id', deps.householdId);
   const { data: accounts, error } = await query.returns<Account[]>();
   if (error || !accounts) {

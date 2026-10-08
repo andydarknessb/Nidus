@@ -402,7 +402,7 @@ describe('the Settings page’s code path', () => {
     const phone = await asHouseholdAccount(account);
 
     const [listed] = await loadCalendarAccounts(phone);
-    expect(listed).toMatchObject({ provider: 'icloud', google_email: null, status: 'active', last_synced_at: null, last_error: null });
+    expect(listed).toMatchObject({ provider: 'icloud', google_email: null, status: 'active', last_synced_at: null, last_error: null, truncated: false });
     const [calendar] = calendarsOfAccount(await loadMirroredCalendars(phone), listed!.id);
     expect(calendar).toMatchObject({ name: 'Sam’s iPhone', selected: true, profile_id: null });
 

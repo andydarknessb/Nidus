@@ -12,7 +12,7 @@ import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '..
 import { Confirm } from '../src/components/phone';
 import { Button } from '../src/components/ui/button';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
-import { ICLOUD_TRUNCATED_WORDS, UPDATE_FAILED_WORDS, accountStatusText, type CalendarAccount, type MirroredCalendar } from '../src/lib/calendar-accounts';
+import { ICLOUD_LINK_GONE_WORDS, ICLOUD_TRUNCATED_WORDS, UPDATE_FAILED_WORDS, accountStatusText, type CalendarAccount, type MirroredCalendar } from '../src/lib/calendar-accounts';
 import { seenWords } from '../src/lib/device-format';
 import type { Household } from '../src/lib/household';
 import { TOKENS } from '../src/lib/look';
@@ -184,42 +184,62 @@ describe('the phone\'s pages', () => {
 });
 
 describe('what a Calendar Account says of itself', () => {
+  // A row as the sync leaves it: the facts, and a last_error that is only ever for the logs.
+  const row = (fields: Partial<CalendarAccount>): CalendarAccount => ({
+    id: 'a1',
+    provider: 'google',
+    google_email: null,
+    status: 'active',
+    last_synced_at: null,
+    last_error: null,
+    truncated: false,
+    ...fields,
+  });
+  const say = (fields: Partial<CalendarAccount>) => accountStatusText(row(fields));
+
   it('says Connected when its last update went through', () => {
-    expect(accountStatusText({ status: 'active', last_error: null })).toBe('Connected');
+    expect(say({})).toBe('Connected');
+    expect(say({ provider: 'icloud' })).toBe('Connected');
   });
 
   it('says that the last update failed, and that Nidus tries again every 5 minutes, and nothing of what Google said', () => {
-    const words = accountStatusText({ status: 'active', last_error: 'Family: Google answered 500; Sam: could not reach Google' });
+    const words = say({ last_error: 'Family: Google answered 500; Sam: could not reach Google' });
     expect(words).toBe('Connected, but the last update failed. Nidus tries again every 5 minutes.');
     expect(words).toBe(UPDATE_FAILED_WORDS);
     expect(words).not.toMatch(/Google|500|Family|Sam/);
+    expect(say({ provider: 'icloud', last_error: 'Feed answered 500' })).toBe(UPDATE_FAILED_WORDS);
   });
 
-  it('says of an iPhone calendar whose link broke the sentence the sync wrote, which is Nidus’s own, and Connected otherwise', () => {
+  it('says of an iPhone calendar whose link broke what to do, from its status and provider and not from what the sync wrote', () => {
     const broken = 'This link no longer works. Turn on Public Calendar again and paste the new link.';
-    expect(accountStatusText({ provider: 'icloud', status: 'needs_reauth', last_error: broken })).toBe(broken);
-    expect(accountStatusText({ provider: 'icloud', status: 'needs_reauth', last_error: null })).toBe('Needs to be connected again');
-    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: null })).toBe('Connected');
-    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: 'Feed answered 500' })).toBe(UPDATE_FAILED_WORDS);
-    // A Google account is as it was: its last_error is never shown.
-    expect(accountStatusText({ provider: 'google', status: 'needs_reauth', last_error: broken })).toBe('Needs to be connected again');
+    expect(say({ provider: 'icloud', status: 'needs_reauth', last_error: null })).toBe(broken);
+    expect(say({ provider: 'icloud', status: 'needs_reauth', last_error: 'whatever the log says' })).toBe(broken);
+    expect(say({ provider: 'icloud', status: 'needs_reauth' })).toBe(ICLOUD_LINK_GONE_WORDS);
+    // A Google account is as it was: it has to be connected again, and its last_error is never shown.
+    expect(say({ provider: 'google', status: 'needs_reauth', last_error: broken })).toBe('Needs to be connected again');
   });
 
   it('says of an active iPhone calendar whose repeating events were cut short that it is connected, and what was cut, in the family’s words', () => {
     const words = 'Connected. Some repeating events cannot be shown in full.';
-    const note = 'Some repeating events in this calendar cannot be shown in full.';
-    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: note })).toBe(words);
-    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: note })).toBe(ICLOUD_TRUNCATED_WORDS);
-    expect(words).not.toContain('\u2014');
-    // Only an iPhone calendar's own sentence: any other error keeps the failed words, and Google never shows it.
-    expect(accountStatusText({ provider: 'icloud', status: 'active', last_error: 'This calendar was not read this time; it will be tried again.' })).toBe(UPDATE_FAILED_WORDS);
-    expect(accountStatusText({ provider: 'google', status: 'active', last_error: note })).toBe(UPDATE_FAILED_WORDS);
-    expect(accountStatusText({ status: 'active', last_error: note })).toBe(UPDATE_FAILED_WORDS);
+    expect(say({ provider: 'icloud', truncated: true })).toBe(words);
+    expect(say({ provider: 'icloud', truncated: true })).toBe(ICLOUD_TRUNCATED_WORDS);
+    expect(words).not.toContain('—');
+    // Only an iPhone calendar's own flag: a Google account never says it, and no error text turns it on.
+    expect(say({ provider: 'google', truncated: true })).toBe('Connected');
+    expect(say({ provider: 'icloud', last_error: 'Some repeating events in this calendar cannot be shown in full.' })).toBe(UPDATE_FAILED_WORDS);
+  });
+
+  it('says the last update failed, and not that repeats were cut short, for a calendar that is both truncated and failing', () => {
+    expect(say({ provider: 'icloud', truncated: true, last_error: 'Could not read the iPhone calendar (timed out).' })).toBe(UPDATE_FAILED_WORDS);
+  });
+
+  it('says Connected, and not that the update failed, for a calendar the run did not reach, which the sync leaves exactly as it was', () => {
+    expect(say({ provider: 'icloud', last_synced_at: '2026-10-01T19:16:00Z' })).toBe('Connected');
   });
 
   it('says it has to be connected again when Google no longer trusts it, whatever went wrong before', () => {
-    expect(accountStatusText({ status: 'needs_reauth', last_error: null })).toBe('Needs to be connected again');
-    expect(accountStatusText({ status: 'needs_reauth', last_error: 'invalid_grant' })).toBe('Needs to be connected again');
+    expect(say({ status: 'needs_reauth', last_error: null })).toBe('Needs to be connected again');
+    expect(say({ status: 'needs_reauth', last_error: 'invalid_grant' })).toBe('Needs to be connected again');
   });
 });
 
@@ -551,7 +571,7 @@ describe('a Calendar Account and its calendars', () => {
 
   it('says of an account whose last update failed what Nidus says, and none of what the sync wrote', () => {
     const now = Date.parse('2026-10-01T19:21:00Z');
-    const account = { id: 'a1', provider: 'google' as const, google_email: 'sam.work@example.com', status: 'active' as const, last_synced_at: '2026-10-01T16:21:00Z', last_error: 'Work: Google answered 500 (backendError)' };
+    const account = { id: 'a1', provider: 'google' as const, google_email: 'sam.work@example.com', status: 'active' as const, last_synced_at: '2026-10-01T16:21:00Z', last_error: 'Work: Google answered 500 (backendError)', truncated: false };
     const shown = words(renderToStaticMarkup(createElement(AccountSummary, { account, now })));
     expect(shown).toContain('sam.work@example.com');
     expect(shown).toContain('Connected, but the last update failed. Nidus tries again every 5 minutes.');
@@ -621,8 +641,8 @@ describe('iPhone calendars in Settings', () => {
     expect(form()).not.toContain('role="alert"');
   });
 
-  const google: CalendarAccount = { id: 'a1', provider: 'google', google_email: 'sam.work@example.com', status: 'needs_reauth', last_synced_at: '2026-10-01T16:21:00Z', last_error: null };
-  const iphone: CalendarAccount = { id: 'a2', provider: 'icloud', google_email: null, status: 'active', last_synced_at: '2026-10-01T19:16:00Z', last_error: null };
+  const google: CalendarAccount = { id: 'a1', provider: 'google', google_email: 'sam.work@example.com', status: 'needs_reauth', last_synced_at: '2026-10-01T16:21:00Z', last_error: null, truncated: false };
+  const iphone: CalendarAccount = { id: 'a2', provider: 'icloud', google_email: null, status: 'active', last_synced_at: '2026-10-01T19:16:00Z', last_error: null, truncated: false };
   const gcal: MirroredCalendar = { id: 'c1', calendar_account_id: 'a1', google_calendar_id: 'g1', name: 'Family', color: null, profile_id: null, selected: true };
   const ical: MirroredCalendar = { id: 'c2', calendar_account_id: 'a2', google_calendar_id: 'ics', name: 'Sam’s iPhone', color: null, profile_id: 'p-sam', selected: true };
   const block = (account: CalendarAccount, calendars: MirroredCalendar[], extra: Partial<Parameters<typeof AccountBlockType>[0]> = {}) =>
@@ -659,7 +679,7 @@ describe('iPhone calendars in Settings', () => {
   });
 
   it('shows none of Google’s controls for an iPhone calendar, even when its link broke', () => {
-    const markup = block({ ...iphone, status: 'needs_reauth', last_error: 'This link no longer works. Turn on Public Calendar again and paste the new link.' }, [ical]);
+    const markup = block({ ...iphone, status: 'needs_reauth' }, [ical]);
     expect(words(markup)).toContain('This link no longer works. Turn on Public Calendar again and paste the new link.');
     expect(markup).not.toMatch(/Connect |Connecting again|Choose the calendars|type="checkbox"|Google|google_email|consent/i);
     expect(markup.match(/<button/g)).toHaveLength(1);
