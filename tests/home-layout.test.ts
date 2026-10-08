@@ -35,6 +35,27 @@ describe('homeLayout, portrait', () => {
   });
 });
 
+// The Elo 2402L, 24 inches, 1920 by 1080 at a device pixel ratio of 1 (docs/specs/0010): a Wall both ways, by the viewport alone.
+describe('homeLayout, the Elo 2402L, 24 inches, 1920 by 1080', () => {
+  it('is landscape at 1920 by 1080, with five days and three tiles', () => {
+    expect(homeLayout({ width: 1920, height: 1080 })).toEqual({ days: 5, tiles: 3, phone: false, portrait: false });
+  });
+
+  it('is portrait at 1080 by 1920, with four days and three tiles', () => {
+    expect(homeLayout({ width: 1080, height: 1920 })).toEqual({ days: 4, tiles: 3, phone: false, portrait: true });
+  });
+
+  it('holds five days and three tiles at 125 percent zoom, 1536 by 864, and four days and three tiles upright, 864 by 1536', () => {
+    expect(homeLayout({ width: 1536, height: 864 })).toEqual({ days: 5, tiles: 3, phone: false, portrait: false });
+    expect(homeLayout({ width: 864, height: 1536 })).toEqual({ days: 4, tiles: 3, phone: false, portrait: true });
+  });
+
+  it('gives up a tile at 150 percent zoom on its side, 1280 by 720, and is a phone upright, 720 by 1280', () => {
+    expect(homeLayout({ width: 1280, height: 720 })).toEqual({ days: 5, tiles: 2, phone: false, portrait: false });
+    expect(homeLayout({ width: 720, height: 1280 })).toMatchObject({ phone: true, portrait: false });
+  });
+});
+
 // Below 768 px of width, or 544 px of height (a phone on its side), the Wall is laid out for a phone; the viewport alone decides.
 describe('homeLayout, the phone', () => {
   it('is a phone at 767 px wide and not at 768', () => {

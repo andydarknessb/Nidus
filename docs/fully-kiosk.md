@@ -1,6 +1,6 @@
 # Fully Kiosk Browser setup
 
-The wall is an Android tablet, a Lenovo Tab P12 (12.7 inches, 2944 by 1840, 16:10, an LCD), running [Fully Kiosk Browser](https://www.fully-kiosk.com/). Fully Kiosk owns everything about the screen's behaviour; the app never dims, sleeps or locks anything itself (`docs/PLAN.md`, Home screen).
+The wall is an Android tablet, a Lenovo Tab P12 (12.7 inches, 2944 by 1840, 16:10, an LCD), running [Fully Kiosk Browser](https://www.fully-kiosk.com/). Fully Kiosk owns everything about the screen's behaviour; the app never dims, sleeps or locks anything itself (`docs/PLAN.md`, Home screen). The Wall may also be an Elo 2402L touch monitor on a Windows PC, set up in `docs/windows-kiosk.md`.
 
 Do this once per tablet, after the production site is deployed (`docs/go-live.md`).
 

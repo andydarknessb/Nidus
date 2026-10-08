@@ -1,6 +1,6 @@
 # Nidus
 
-A wall-mounted family calendar and organizer for a single household, shown on a tablet running as a kiosk. Mirrors the household's external calendars and adds household-only routines and lists.
+A wall-mounted family calendar and organizer for a single household, shown on a tablet or a touch screen running as a kiosk. Mirrors the household's external calendars and adds household-only routines and lists.
 
 ## Language
 
@@ -19,7 +19,7 @@ A person in the Household, used for attribution and colour-coding. Has no creden
 _Avoid_: User, member, account, kiosk
 
 **Device**:
-A tablet paired to a Household so it can show the display without a sign-in. It may read everything, tick Routines and list items, plan Meals, and manage Native Events, but never administer the Household. A Device is not a Profile.
+A tablet, or a PC's browser driving a touch screen, paired to a Household so it can show the display without a sign-in. It may read everything, tick Routines and list items, plan Meals, and manage Native Events, but never administer the Household. A Device is not a Profile.
 _Avoid_: Kiosk profile, terminal
 
 **Pairing Code**:
@@ -32,7 +32,7 @@ _Avoid_: Pairing Code, share code, membership
 
 **Push Subscription**:
 One browser on one phone, signed in as a Household Account, that has turned on notifications. It holds the browser's Web Push endpoint and which of the four kinds that phone gets (event reminders, morning summary, Routines not done, added to the list). It belongs to its Household Account and goes when that account is removed. A Device never has one.
-_Avoid_: device (a Device is a tablet), token, registration
+_Avoid_: device (a Device is a tablet or a screen's PC), token, registration
 
 **Household Timezone**:
 The one timezone stored on the Household. All display, rollover and reset logic uses it; source calendar timezones are converted on ingest.

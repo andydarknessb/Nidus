@@ -15,6 +15,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0006-household-invites.md` is the v6 spec: more than one Household Account, joined by a Household Invite link.
 - `docs/specs/0007-push-notifications.md` is the v7 spec: Web Push notifications to the grown-ups' phones, per phone, four kinds.
 - `docs/specs/0009-the-wall-in-portrait.md` is the v9 spec: the Wall on a tablet hung upright (768 px and wider, taller than wide), with the Lenovo Tab P12 as the tablet.
+- `docs/specs/0010-the-wall-on-a-24-inch-screen.md` is the v10 spec: the Wall on an Elo 2402L touch monitor (24 inches, 1920 by 1080) on a Windows PC, hung either way; `docs/windows-kiosk.md` is its set-up.
 
 ## Conventions
 

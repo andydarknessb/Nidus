@@ -145,6 +145,16 @@ At 768 px and wider, a viewport taller than it is wide is a tablet in portrait (
 - **Everything else** keeps its landscape form, narrower and taller, and gives way by its own rule: a Month line's title gives way first, to its ellipsis; in a cell under 7 rem wide its pin is hidden; the end of its time is cut when it must be; its discs are never cut; the Add event sheet is one column below 960 px wide and two from it.
 - **Landscape** changes nothing, at 1280 by 800 or at the P12's 1470 to 1730 by 920 to 1080: five days and three tiles.
 
+## A 24-inch screen
+
+The Elo 2402L touch monitor (24 inches, 1920 by 1080, 16:9) on a Windows PC is a Wall both ways ([0010](specs/0010-the-wall-on-a-24-inch-screen.md)): the browser sees its own pixels at Windows' 100 percent scale, 1920 by 1080 hung landscape and 1080 by 1920 hung upright, and no rule reads the screen. The chrome, the tokens, the type, the parts and their sizes are the same as on the tablet.
+
+- **Landscape, 1920 by 1080.** Five days and three tiles: the landscape Wall with more room, the extra width going to the day columns and the Month cells.
+- **Portrait, 1080 by 1920.** Four days and three tiles: the portrait Wall of the P12 with more height.
+- **Type.** On its 92 pixels per inch 16 px type is about 4.4 mm tall, 1.75 times its size on the P12. Nothing scales up for it; larger text is the browser's font size, held at 130 percent as in "Larger text".
+- **Zoom** shrinks the viewport, and is held to 125 percent either way (1536 by 864 and 864 by 1536, still five or four days and three tiles). At 150 percent in portrait the viewport is 720 px wide and the Wall is a phone by its rule; in landscape 1280 by 720 holds two tiles, not three.
+- **Touch.** The Wall has no hover styles and a tap is a tap, as on the tablet.
+
 ## Larger text
 
 The tablet's text size sets the root font size, and every rem in the Wall grows with it (issue #69). What is held at 130 percent (a root of 20.8 px) is that the Wall still looks like itself, and at 200 percent (32 px) that nothing is lost or out of reach.

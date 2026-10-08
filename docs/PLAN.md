@@ -181,3 +181,16 @@ Settled on 2026-10-07 when the owner asked for the Wall to fit the Lenovo Tab P1
 - **Five screens use the height**: Home puts the days across the top and Up next beside the Pinned List under them; Week is seven rows; Meals turns, days down and slots across; the Routines chart and the Lists screen wrap. Month, Day and the sheets keep their form and give way by their own rules.
 - **The orientation is the kiosk's**: Fully Kiosk's Screen Orientation setting; the manifest asks for none and the app never locks one.
 - **No new data**: no migration.
+
+## v10: the Wall on a 24-inch screen
+
+Settled on 2026-10-08 when the owner asked for the Wall to fit an Elo 2402L touch monitor (24 inches, 1920 by 1080, 16:9) on a Windows PC, hung either way. The spec is [0010](specs/0010-the-wall-on-a-24-inch-screen.md); the sizes are in [look.md](look.md), "A 24-inch screen"; the host is [windows-kiosk.md](windows-kiosk.md). It qualifies "one or two Android tablets" above: a Device may be a PC's browser.
+
+### Decisions
+
+- **The rules hold**: the viewport alone decides, and by it the Elo is a Wall both ways, 1920 by 1080 in landscape (five days, three tiles) and 1080 by 1920 in portrait (four days, three tiles). No rule reads the screen.
+- **The host decides the orientation and the size**: Windows' display orientation turns the screen, and Chrome runs in kiosk mode with a profile folder that keeps its storage, since the Device's pairing lives there. The app locks no orientation.
+- **Larger text is the browser's font size**, held at 130 percent; zoom shrinks the viewport and is held to 125 percent. At 150 percent in portrait the Wall is a phone by its rule.
+- **Nothing scales up for the panel**: the look's tokens, parts and sizes are unchanged at 92 pixels per inch.
+- **The Device is a tablet or a PC's browser**: pairing, the Pairing Code, the heartbeat and what a Device may write do not change.
+- **No new data**: no migration.
