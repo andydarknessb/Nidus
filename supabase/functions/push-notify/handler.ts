@@ -18,6 +18,7 @@
 // Every date and time of day here is in the Household Timezone (_shared/zoned-time.ts), never the
 // machine's.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { cors, householdAccountOf, json, sameSecret } from '../_shared/edge.ts';
 import { addDays, dayStartMs, householdTime, spanIsOn, type HouseholdTime } from '../_shared/zoned-time.ts';
 
 export type PushEnv = {
@@ -402,37 +403,10 @@ async function runAll(deps: PushDeps): Promise<PushSummary> {
 
 // ---- routes -------------------------------------------------------------------------------
 
-// Compared byte by byte without stopping early, so the time taken does not say how much matched.
-function sameSecret(given: string, expected: string): boolean {
-  const a = new TextEncoder().encode(given);
-  const b = new TextEncoder().encode(expected);
-  let difference = a.length ^ b.length;
-  for (let index = 0; index < Math.max(a.length, b.length); index += 1) difference |= (a[index] ?? 0) ^ (b[index] ?? 0);
-  return difference === 0;
-}
-
 // /key and /test are called from the phone's browser, so they answer CORS.
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-};
-
-function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
-}
-
 async function test(request: Request, deps: PushDeps): Promise<Response> {
-  const token = /^Bearer (.+)$/i.exec(request.headers.get('Authorization') ?? '')?.[1];
-  if (!token) return json(401, { error: 'sign in first' }, cors);
-  const { data: session } = await deps.admin.auth.getUser(token);
-  if (!session.user) return json(401, { error: 'sign in first' }, cors);
-  const { data: account } = await deps.admin
-    .from('household_accounts')
-    .select('auth_user_id')
-    .eq('auth_user_id', session.user.id)
-    .maybeSingle<{ auth_user_id: string }>();
-  if (!account) return json(403, { error: 'only a Household Account gets notifications' }, cors);
+  const account = await householdAccountOf(request, deps.admin, 'only a Household Account gets notifications', cors);
+  if (account instanceof Response) return account;
 
   const body = (await request.json().catch(() => ({}))) as { endpoint?: unknown };
   if (typeof body.endpoint !== 'string' || body.endpoint.length === 0) return json(400, { error: 'endpoint is required' }, cors);
@@ -441,7 +415,7 @@ async function test(request: Request, deps: PushDeps): Promise<Response> {
     .from('push_subscriptions')
     .select('id, endpoint, p256dh, auth')
     .eq('endpoint', body.endpoint)
-    .eq('auth_user_id', account.auth_user_id)
+    .eq('auth_user_id', account.authUserId)
     .maybeSingle<{ id: string; endpoint: string; p256dh: string; auth: string }>();
   if (!sub) return json(404, { error: 'this phone is not subscribed' }, cors);
 

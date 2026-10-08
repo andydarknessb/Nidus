@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { GOOGLE_TOKEN_URL, handleCalendarSync, type SyncDeps, type SyncSummary } from '../supabase/functions/calendar-sync/handler';
+import { GOOGLE_TOKEN_URL } from '../supabase/functions/_shared/google-token';
+import { handleCalendarSync, type SyncDeps, type SyncSummary } from '../supabase/functions/calendar-sync/handler';
 import { arrangeCalendar } from './support/calendar';
+import { fakeGoogle, type GoogleEvent } from './support/google';
+import { fakeICloud, type FeedReply } from './support/icloud';
+import { mixed } from './support/outside-http';
 import { asHouseholdAccount, asServiceRole, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
 // The sync of an iPhone (iCloud) calendar through the one seam: the local stack, the service role
@@ -9,40 +13,12 @@ import { asHouseholdAccount, asServiceRole, createHousehold, destroyHousehold, t
 
 const SECRET = 'sync-secret-that-is-long-enough-to-matter';
 const NOW = Date.parse('2026-09-30T12:00:00Z');
-const GOOGLE_EVENTS = /\/calendars\/([^/]+)\/events$/;
-
-// What a feed server says to a link: a feed with its validators, 304, or a failure.
-type Reply = { text: string; etag?: string; lastModified?: string } | number | 'unreachable';
 
 let linkCounter = 0;
 const newLink = () => `https://p12-caldav.icloud.com/published/2/secret-token-${Date.now().toString(36)}-${(linkCounter += 1)}`;
 
-type Call = { url: string; headers: Headers };
-
-function fakeWorld(feeds: Map<string, Reply>, googleEvents: Record<string, unknown[]> = {}) {
-  const calls: Call[] = [];
-  const fake = (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = String(input);
-    calls.push({ url, headers: new Headers(init?.headers) });
-    if (url === GOOGLE_TOKEN_URL) return Response.json({ access_token: 'access', expires_in: 3600 });
-    const google = GOOGLE_EVENTS.exec(new URL(url).pathname);
-    if (google) return Response.json({ items: googleEvents[decodeURIComponent(google[1]!)] ?? [], nextSyncToken: 'g-token' });
-    const reply = feeds.get(url);
-    if (reply === undefined) return new Response('missing', { status: 404 });
-    if (reply === 'unreachable') throw new TypeError(`fetch failed for ${url}`);
-    if (typeof reply === 'number') return new Response('', { status: reply });
-    const headers = new Headers();
-    if (reply.etag) headers.set('ETag', reply.etag);
-    if (reply.lastModified) headers.set('Last-Modified', reply.lastModified);
-    const sent = new Headers(init?.headers);
-    // A real server answers 304 to a validator it issued.
-    if ((reply.etag && sent.get('If-None-Match') === reply.etag) || (!reply.etag && reply.lastModified && sent.get('If-Modified-Since') === reply.lastModified)) {
-      return new Response(null, { status: 304 });
-    }
-    return new Response(reply.text, { headers });
-  }) as typeof fetch;
-  return { fetch: fake, calls };
-}
+// Both providers' requests go through the one injected `fetch`, logged in order.
+const fakeWorld = (feeds: Map<string, FeedReply>, googleEvents: Record<string, GoogleEvent[]> = {}) => mixed(fakeGoogle({ events: googleEvents }), fakeICloud(feeds));
 
 const feedOf = (...events: string[]) =>
   ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Apple Inc.//iPhone OS 18.0//EN', 'X-WR-CALNAME:Family', ...events, 'END:VCALENDAR', '']
@@ -145,7 +121,7 @@ describe('a first sync of an iPhone calendar', () => {
     const theirs = await arrangeIcloud(account, other, 'Work');
     await admin.from('mirrored_calendars').update({ profile_id: profile!.id }).eq('id', mine.calendarId);
 
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist, swim), etag: '"v1"' }], [other, { text: feedOf(), etag: '"w1"' }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(dentist, swim), etag: '"v1"' }], [other, { text: feedOf(), etag: '"w1"' }]]));
     const summary = await syncOk(deps(account, world));
 
     expect(summary).toMatchObject({ accounts: 2, calendars: 2, events: 4, errors: [] });
@@ -177,7 +153,7 @@ describe('a first sync of an iPhone calendar', () => {
     expect(household!.timezone).toBe('America/Chicago');
     const link = newLink();
     const { calendarId } = await arrangeIcloud(account, link);
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(vevent('f', 'Floating', 'DTSTART:20261014T090000'), vevent('d', 'Birthday', 'DTSTART;VALUE=DATE:20261015')) }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(vevent('f', 'Floating', 'DTSTART:20261014T090000'), vevent('d', 'Birthday', 'DTSTART;VALUE=DATE:20261015')) }]]));
     await syncOk(deps(account, world));
     expect((await rowsOf(calendarId)).map((row) => [row.title, row.starts_at, row.is_all_day])).toEqual([
       ['Floating', '2026-10-14T14:00:00+00:00', false],
@@ -192,7 +168,7 @@ describe('a later sync', () => {
     const account = await arrange();
     const link = newLink();
     const { calendarId } = await arrangeIcloud(account, link);
-    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist, swim), etag: '"v1"' }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: feedOf(dentist, swim), etag: '"v1"' }]]);
     const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
     const before = await rowsOf(calendarId);
@@ -221,7 +197,7 @@ describe('a later sync', () => {
     const account = await arrange();
     const link = newLink();
     const { accountId, calendarId } = await arrangeIcloud(account, link);
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist), etag: '"v1"', lastModified: 'Tue, 29 Sep 2026 10:00:00 GMT' }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(dentist), etag: '"v1"', lastModified: 'Tue, 29 Sep 2026 10:00:00 GMT' }]]));
     const first = deps(account, world);
     await syncOk(first);
     const before = await rowsOf(calendarId);
@@ -245,7 +221,7 @@ describe('a later sync', () => {
     const link = newLink();
     const { calendarId } = await arrangeIcloud(account, link);
     const weekly = vevent('weekly', 'Weekly', 'DTSTART:20261006T230000Z\nDTEND:20261007T000000Z\nRRULE:FREQ=WEEKLY');
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(weekly), etag: '"v1"' }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(weekly), etag: '"v1"' }]]));
     const first = deps(account, world);
     await syncOk(first);
     const before = await rowsOf(calendarId);
@@ -277,7 +253,7 @@ describe('a later sync', () => {
     const account = await arrange();
     const link = newLink();
     const { calendarId } = await arrangeIcloud(account, link);
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist), etag: '"v1"' }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(dentist), etag: '"v1"' }]]));
     await syncOk(deps(account, world));
     const admin = asServiceRole();
     await admin.from('mirrored_calendars').update({ selected: false }).eq('id', calendarId);
@@ -295,7 +271,7 @@ describe('when the feed says no', () => {
     const account = await arrange();
     const link = newLink();
     const { accountId, calendarId } = await arrangeIcloud(account, link);
-    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist), etag: '"v1"' }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: feedOf(dentist), etag: '"v1"' }]]);
     const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
 
@@ -319,7 +295,7 @@ describe('when the feed says no', () => {
     const link = newLink();
     const broken = await arrangeIcloud(account, link);
     const google = await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'refresh-A' });
-    const feeds = new Map<string, Reply>([[link, { text: 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:cut\r\nDTSTART:20261014T140000Z\r\n' }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:cut\r\nDTSTART:20261014T140000Z\r\n' }]]);
     const world = fakeWorld(feeds, {
       cal: [{ id: 'standup', summary: 'Standup', start: { dateTime: '2026-10-05T09:00:00-05:00' }, end: { dateTime: '2026-10-05T09:30:00-05:00' } }],
     });
@@ -355,7 +331,7 @@ describe('when the feed says no', () => {
     const account = await arrange();
     const link = newLink();
     await arrangeIcloud(account, link);
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf() }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf() }]]));
     await syncOk(deps(account, world));
     expect(world.calls.map((call) => call.url)).toEqual([link]);
   });
@@ -370,7 +346,7 @@ describe('a run with more feed than it can read', () => {
   const MINUTE = 60_000;
 
   async function arrangeFeeds(account: HouseholdAccount, count: number, text: string) {
-    const feeds = new Map<string, Reply>();
+    const feeds = new Map<string, FeedReply>();
     const calendars: { accountId: string; calendarId: string; link: string }[] = [];
     for (let index = 0; index < count; index += 1) {
       const link = newLink();
@@ -613,7 +589,7 @@ RDATE:${dates}`);
     for (const text of [feedOf(runaway('a'), dentist), feedOf(dentist, runaway('a')), feedOf(runaway('a'), dentist, runaway('b', 1701))]) {
       const link = newLink();
       const { accountId, calendarId } = await arrangeIcloud(account, link);
-      const world = fakeWorld(new Map<string, Reply>([[link, { text, etag: '"v1"' }]]));
+      const world = fakeWorld(new Map<string, FeedReply>([[link, { text, etag: '"v1"' }]]));
 
       await syncOk(deps(account, world));
 
@@ -631,7 +607,7 @@ RDATE:${dates}`);
     const hostile = ['FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30', 'FREQ=SECONDLY;BYMONTH=1', 'FREQ=MINUTELY;BYMONTH=1'].map((rule, index) =>
       vevent(`h${index}`, 'Hostile', `DTSTART:20260201T000000Z\nRRULE:${rule}\nRDATE:20261010T150000Z`),
     );
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(...hostile, dentist), etag: '"v1"' }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(...hostile, dentist), etag: '"v1"' }]]));
     const began = Date.now();
 
     await syncOk({ ...deps(account, world), clock: () => performance.now() });
@@ -645,7 +621,7 @@ RDATE:${dates}`);
     const account = await arrange();
     const link = newLink();
     const { accountId } = await arrangeIcloud(account, link);
-    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist, runaway('a')) }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: feedOf(dentist, runaway('a')) }]]);
     const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
     expect((await accountOf(accountId)).truncated).toBe(true);
@@ -659,7 +635,7 @@ RDATE:${dates}`);
     const account = await arrange();
     const link = newLink();
     const { accountId } = await arrangeIcloud(account, link);
-    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist, runaway('a')), etag: '"v1"' }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: feedOf(dentist, runaway('a')), etag: '"v1"' }]]);
     const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
     expect((await accountOf(accountId)).truncated).toBe(true);
@@ -675,7 +651,7 @@ RDATE:${dates}`);
     const account = await arrange();
     const link = newLink();
     const { accountId, calendarId } = await arrangeIcloud(account, link);
-    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist, runaway('a')), etag: '"v1"' }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: feedOf(dentist, runaway('a')), etag: '"v1"' }]]);
     const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
     expect((await accountOf(accountId)).truncated).toBe(true);
@@ -707,7 +683,7 @@ describe('the order of a run', () => {
     // The iPhone calendar is made first, so only the run's own ordering can put Google ahead of it.
     await arrangeIcloud(account, link);
     await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'refresh-A' });
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf() }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf() }]]));
 
     await syncOk(deps(account, world));
 
@@ -720,7 +696,7 @@ describe('the order of a run', () => {
   it('takes the iPhone calendars by when they were last tried, never-tried first, then by id, whatever was last read', async () => {
     const account = await arrange();
     const made: { accountId: string; link: string }[] = [];
-    const feeds = new Map<string, Reply>();
+    const feeds = new Map<string, FeedReply>();
     for (let index = 0; index < 4; index += 1) {
       const link = newLink();
       feeds.set(link, { text: feedOf() });
@@ -745,7 +721,7 @@ describe('the order of a run', () => {
     const link = newLink();
     const { accountId } = await arrangeIcloud(account, link);
     const google = await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'refresh-A' });
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist) }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(dentist) }]]));
     const seen: (string | null)[] = [];
     const spy = (async (input: string | URL | Request, init?: RequestInit) => {
       if (String(input) === link) {
