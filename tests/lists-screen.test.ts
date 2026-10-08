@@ -78,13 +78,19 @@ describe('the Lists screen', () => {
   it('lays the cards in portrait in a grid of columns at least 17 rem, each card as wide as its row-mates and not the landscape width, and keeps 17 rem only from larger text in landscape', () => {
     const portrait = renderToStaticMarkup(createElement(ListsScreen, { portrait: true }));
     const landscape = renderToStaticMarkup(createElement(ListsScreen, { portrait: false }));
-    expect(portrait).toContain('grid grid-cols-[repeat(auto-fill,minmax(min(17rem,100%),1fr))] items-start gap-4');
+    expect(portrait).toContain('grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-4');
     expect(portrait).not.toContain('--card-w');
     const list = { id: 'l-1', name: 'Groceries', sort_order: 0 };
     const card = (isPortrait: boolean) => renderToStaticMarkup(createElement(ListCard, { list, pinned: false, portrait: isPortrait }));
     expect(card(true)).not.toContain('w-(--card-w)');
     expect(card(true)).toContain('w-auto shrink-0 snap-start');
     expect(card(false)).toContain('w-(--card-w) shrink-0 snap-start');
+    // A portrait card's title wraps; a landscape card's is cut, class for class as it was.
+    const title = (isPortrait: boolean) => /<h3 [^>]*class="([^"]*)"/.exec(card(isPortrait))?.[1]?.split(' ') ?? [];
+    expect(title(true)).toContain('break-words');
+    expect(title(true)).not.toContain('truncate');
+    expect(title(false)).toContain('truncate');
+    expect(title(false)).not.toContain('break-words');
     // The row as it was before portrait: master's own class string, character for character.
     expect(landscape).toContain(
       '<div class="flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto [--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]"><div class="contents">',
@@ -93,7 +99,7 @@ describe('the Lists screen', () => {
 
   it('puts the cards in portrait in a grid, 16 apart, in a box that scrolls up and down and not sideways, and says "More lists" nowhere in the heading row', () => {
     const html = renderToStaticMarkup(createElement(ListsScreen, { portrait: true }));
-    expect(html).toContain('<div class="min-h-0 flex-1 overflow-y-auto"><div class="grid grid-cols-[repeat(auto-fill,minmax(min(17rem,100%),1fr))] items-start gap-4 [&amp;_*]:scroll-mb-18">');
+    expect(html).toContain('<div class="min-h-0 flex-1 overflow-y-auto"><div class="grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-4 [&amp;_*]:scroll-mb-18">');
     expect(html).not.toMatch(/overflow-x-auto|snap-x/);
     expect(words(html)).not.toContain('More');
   });

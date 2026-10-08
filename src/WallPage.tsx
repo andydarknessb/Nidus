@@ -171,7 +171,8 @@ export function PairingScreen({ pairing }: { pairing: PairingCode }) {
       <p className="max-w-2xl text-2xl">
         On your phone, open {window.location.origin}/settings, <span className="whitespace-nowrap">sign in,</span> and enter this code.
       </p>
-      <p className="font-display text-9xl leading-none tracking-[0.2em] pl-[0.2em]">{pairing.code}</p>
+      {/* At 768 px wide the 8 rem code with its tracking was wider than the screen, so it shrinks to 15vw below 853 px. */}
+      <p className="font-display text-[min(8rem,15vw)] leading-none tracking-[0.2em] pl-[0.2em]">{pairing.code}</p>
       <p role="timer" className="text-2xl">
         {remaining > 0 ? `Code expires in ${formatCountdown(remaining)}` : 'Getting a new code'}
       </p>

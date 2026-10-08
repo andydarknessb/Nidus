@@ -127,7 +127,7 @@ export function PinnedMark() {
 // that adds an item, then its items, which scroll inside the card when the card is shorter than the list, with a "More" button
 // at their foot that says so (OverflowButton). A card is as tall as its items, up to the height of the screen. Items are crossed
 // off here and cleared; reordering is for the phone. In portrait (docs/specs/0009) it is its natural height, every item, with no foot of
-// its own: the screen scrolls.
+// its own: the screen scrolls, and its title wraps (up to three lines cost nothing) where a landscape card's is cut with an ellipsis.
 export function ListCard({ list, pinned, portrait }: { list: SharedList; pinned: boolean; portrait: boolean }) {
   const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
   const left = withoutCrossed(items).length;
@@ -143,7 +143,7 @@ export function ListCard({ list, pinned, portrait }: { list: SharedList; pinned:
         <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
           <List className="size-[22px]" />
         </span>
-        <h3 id={titleId(list.id)} tabIndex={-1} className="min-w-0 flex-1 truncate font-display text-2xl leading-[30px]">
+        <h3 id={titleId(list.id)} tabIndex={-1} className={`min-w-0 flex-1 ${portrait ? 'break-words' : 'truncate'} font-display text-2xl leading-[30px]`}>
           {list.name}
         </h3>
         {loaded && <span className="shrink-0 text-[15px] text-muted-foreground">{left} to get</span>}
@@ -209,7 +209,7 @@ export function ListCard({ list, pinned, portrait }: { list: SharedList; pinned:
 // is never left off the screen with no sign of it; each card still scrolls its own items up and down.
 // `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). A card is then never
 // under 17 rem, as at larger text, so the title of a list is not left with 75 px of a 227 px card. The cards then sit in a grid, as many to a row
-// as fit at 17 rem, each its row-mates' width, 16 apart and each its natural height, and the screen scrolls as one column with the shared "More"
+// as fit at 17 rem, each its row-mates' width (and with fewer cards than fit, the cards share the row), 16 apart and each its natural height, and the screen scrolls as one column with the shared "More"
 // foot; there is no sideways "More".
 export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
   const { read, failed } = useLists();
@@ -249,7 +249,7 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
       {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
       {portrait ? (
         <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
-          <div className={`grid grid-cols-[repeat(auto-fill,minmax(min(17rem,100%),1fr))] items-start gap-4 ${BODY_CLEARANCE}`}>{shown}</div>
+          <div className={`grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-4 ${BODY_CLEARANCE}`}>{shown}</div>
           <OverflowButton control={row} of="the lists" />
         </div>
       ) : (
