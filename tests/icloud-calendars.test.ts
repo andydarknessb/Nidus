@@ -4,6 +4,7 @@ import { handleCalendarConnect, type ConnectDeps } from '../supabase/functions/c
 import { AddRefused, IPHONE_ADDED, IPHONE_ADD_FAILED, addIphoneCalendar, calendarsOfAccount, loadCalendarAccounts, loadMirroredCalendars, removeCalendarAccount, sendLink, updateMirroredCalendar } from '../src/lib/calendar-accounts';
 import { PROFILE_PALETTE, createProfile } from '../src/lib/profiles';
 import { arrangeEvents } from './support/calendar';
+import { fakeICloud } from './support/icloud';
 import {
   asAnonymous,
   asDevice,
@@ -35,14 +36,7 @@ const WEBCAL = 'webcal://p12-caldav.icloud.com/published/2/secret-feed-token-1';
 const feedText = (name?: string) => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${name ? `X-WR-CALNAME:${name}\r\n` : ''}END:VCALENDAR\r\n`;
 
 // The feed's server is the only fake. It answers one link, or nothing it knows.
-function fakeFeed(reply: Response | (() => Response)) {
-  const calls: string[] = [];
-  const fake = (async (input: string | URL | Request) => {
-    calls.push(String(input));
-    return String(input) === LINK ? (typeof reply === 'function' ? reply() : reply.clone()) : new Response('missing', { status: 404 });
-  }) as typeof fetch;
-  return { fetch: fake, calls };
-}
+const fakeFeed = (reply: Response | (() => Response)) => fakeICloud({ [LINK]: reply });
 
 function deps(feed: { fetch: typeof fetch }): ConnectDeps {
   return { env, admin: asServiceRole(), fetch: feed.fetch };
@@ -104,7 +98,7 @@ describe('POST /icloud', () => {
     const body = (await response.json()) as { id: string; name: string };
     expect(body.name).toBe('Family');
     // Fetched once, over https: webcal is only a spelling.
-    expect(feed.calls).toEqual([LINK]);
+    expect(feed.calls.map((call) => call.url)).toEqual([LINK]);
 
     const [row] = await accountRows(account);
     expect(await accountRows(account)).toHaveLength(1);

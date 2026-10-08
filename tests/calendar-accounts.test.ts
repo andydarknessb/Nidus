@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CALENDAR_SCOPE,
-  GOOGLE_CALENDAR_LIST_URL,
-  GOOGLE_TOKEN_URL,
   LINK_STATE_SECONDS,
   SETTINGS_STATE_SECONDS,
   handleCalendarConnect,
@@ -10,6 +8,7 @@ import {
   verifyState,
   type ConnectDeps,
 } from '../supabase/functions/calendar-connect/handler';
+import { GOOGLE_TOKEN_URL } from '../supabase/functions/_shared/google-token';
 import {
   SYNC_STALE_MS,
   calendarsOfAccount,
@@ -41,6 +40,7 @@ import {
   type Tablet,
 } from './support/supabase';
 import { startSyncedRead } from '../src/lib/synced-read';
+import { fakeGoogle } from './support/google';
 
 const STATE_SECRET = 'test-state-secret-that-is-long-enough-to-sign-with';
 const env = {
@@ -51,37 +51,7 @@ const env = {
   googleClientSecret: 'client-secret',
 };
 
-// Google's HTTP API is the only fake: canned token and calendarList responses.
-type FakeGoogle = { fetch: typeof fetch; calls: { url: string; init?: RequestInit }[] };
-
-function fakeGoogle(options: {
-  email: string;
-  refreshToken?: string | null;
-  calendars?: { id: string; summary: string; primary?: boolean }[];
-  tokenStatus?: number;
-}): FakeGoogle {
-  const calls: FakeGoogle['calls'] = [];
-  const calendars = options.calendars ?? [
-    { id: options.email, summary: options.email, primary: true },
-    { id: 'family@group.calendar.google.com', summary: 'Family' },
-    { id: 'school@group.calendar.google.com', summary: 'School' },
-  ];
-  const fake = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = String(input);
-    calls.push(init ? { url, init } : { url });
-    if (url === GOOGLE_TOKEN_URL) {
-      if (options.tokenStatus && options.tokenStatus !== 200) return Promise.resolve(new Response('{}', { status: options.tokenStatus }));
-      const body: Record<string, string> = { access_token: 'access-token' };
-      if (options.refreshToken !== null) body['refresh_token'] = options.refreshToken ?? 'refresh-token-1';
-      return Promise.resolve(Response.json(body));
-    }
-    if (url.startsWith(GOOGLE_CALENDAR_LIST_URL)) return Promise.resolve(Response.json({ items: calendars }));
-    return Promise.resolve(new Response('unexpected', { status: 500 }));
-  };
-  return { fetch: fake as typeof fetch, calls };
-}
-
-function deps(google: FakeGoogle, extra: Partial<ConnectDeps> = {}): ConnectDeps {
+function deps(google: ReturnType<typeof fakeGoogle>, extra: Partial<ConnectDeps> = {}): ConnectDeps {
   return { env, admin: asServiceRole(), fetch: google.fetch, ...extra };
 }
 
@@ -212,7 +182,7 @@ describe('calendar-connect callback', () => {
     expect(response.status).toBe(302);
     expect(response.headers.get('Location')).toBe(env.appUrl);
 
-    const tokenCall = google.calls.find((call) => call.url === GOOGLE_TOKEN_URL)!;
+    const tokenCall = google.calls.find((call) => String(call.url) === GOOGLE_TOKEN_URL)!;
     const form = new URLSearchParams(String(tokenCall.init?.body));
     expect(form.get('code')).toBe('the-auth-code');
     expect(form.get('grant_type')).toBe('authorization_code');
