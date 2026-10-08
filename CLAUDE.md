@@ -15,6 +15,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0006-household-invites.md` is the v6 spec: more than one Household Account, joined by a Household Invite link.
 - `docs/specs/0007-push-notifications.md` is the v7 spec: Web Push notifications to the grown-ups' phones, per phone, four kinds.
 - `docs/specs/0008-deeper-modules.md` is the v8 spec: deeper modules (the Household clock, one synced read, day events, the paged view, the card write guard, calendar provider adapters), with no visible change beyond its rulings.
+- `docs/specs/0009-the-wall-in-portrait.md` is the v9 spec: the Wall on a tablet hung upright (768 px and wider, taller than wide), with the Lenovo Tab P12 as the tablet.
 
 ## Conventions
 
@@ -22,7 +23,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - Tests run through one seam: the Supabase JS client against the local stack, acting as a real principal (Household Account, Device, anonymous). The outside HTTP the Edge Functions make (Google's API, an iCloud calendar's feed, the Web Push service) is the only fake, injected into the function. Never mock the database.
 - Row-level security on every table; `current_household_id()` is the one helper policies use. A Device may write only Native Events, Routine Completions, list items, Meals and its own heartbeat.
 - All date logic uses the Household Timezone. Never use the machine's local zone.
-- Two modes, light and dark, from one set of tokens (`docs/look.md`). The mode is the document's `data-mode`; no component branches on it for colour. WCAG AAA contrast in both, 48 px minimum touch targets, landscape 16:10 on the Wall, and a phone layout below 768 px wide (`docs/specs/0004-the-wall-on-a-phone.md`, `docs/look.md` "The phone").
+- Two modes, light and dark, from one set of tokens (`docs/look.md`). The mode is the document's `data-mode`; no component branches on it for colour. WCAG AAA contrast in both, 48 px minimum touch targets, 16:10 on the Wall in landscape or portrait (`docs/look.md` "Portrait"), and a phone layout below 768 px wide or 544 px tall (`docs/specs/0004-the-wall-on-a-phone.md`, `docs/look.md` "The phone"; the `phone:` variant, never a width media query).
 - The chrome is neutral and colour belongs to people. Nothing is told by colour alone: a person is a disc with their initial.
 - Words the family reads are plain (people, tablets, lists, time zone); the glossary's terms are for code, tests, issues and PRs.
 - No em-dashes in user-facing copy.

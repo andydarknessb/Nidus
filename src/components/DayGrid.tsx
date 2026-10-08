@@ -66,7 +66,7 @@ export function PillRow({
           ))
         )}
       </div>
-      <OverflowButton control={control} of={of} short className="h-13 bg-secondary max-[768px]:hidden" />
+      <OverflowButton control={control} of={of} short className="h-13 bg-secondary phone:hidden" />
     </div>
   );
 }
@@ -151,7 +151,7 @@ function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top:
       data-event={occurrence.id}
       aria-label={pillName(pill, day, people)}
       onClick={() => onOpen(occurrence)}
-      className="absolute h-auto justify-start gap-3 rounded-[14px] px-0 pt-0 pr-2.5 pb-0.5 pl-3.5 text-left font-normal whitespace-normal text-foreground focus-visible:-outline-offset-2 active:bg-transparent max-[768px]:flex-wrap max-[768px]:content-center max-[768px]:gap-x-2 max-[768px]:gap-y-0.5 max-[768px]:pr-2 max-[768px]:pl-2.5"
+      className="absolute h-auto justify-start gap-3 rounded-[14px] px-0 pt-0 pr-2.5 pb-0.5 pl-3.5 text-left font-normal whitespace-normal text-foreground focus-visible:-outline-offset-2 active:bg-transparent phone:flex-wrap phone:content-center phone:gap-x-2 phone:gap-y-0.5 phone:pr-2 phone:pl-2.5"
       style={{
         top,
         height: heightOf(block.bottomHour - block.topHour),
@@ -162,12 +162,12 @@ function EventBlock({ block, top, day, people, onOpen }: { block: DayBlock; top:
       <span aria-hidden className={PAINTED}>
         <EventFill people={people} />
       </span>
-      <span className="relative line-clamp-2 min-w-0 text-base leading-5 font-semibold text-ellipsis max-[768px]:line-clamp-1 max-[768px]:basis-full">
+      <span className="relative line-clamp-2 min-w-0 text-base leading-5 font-semibold text-ellipsis phone:line-clamp-1 phone:basis-full">
         {occurrence.source === 'native' && <Pin aria-hidden data-testid="native-mark" className="mr-1 inline size-3.5 align-[-2px]" />}
         {occurrence.title}
       </span>
-      <span className="relative min-w-max flex-1 text-sm leading-[1.2857] max-[768px]:min-w-0 max-[768px]:truncate">{pill.time}</span>
-      {pill.onNow && <span className={cn('relative shrink-0 text-sm leading-[1.2857] font-semibold', block.lanes > 1 && 'max-[768px]:hidden')}>On now</span>}
+      <span className="relative min-w-max flex-1 text-sm leading-[1.2857] phone:min-w-0 phone:truncate">{pill.time}</span>
+      {pill.onNow && <span className={cn('relative shrink-0 text-sm leading-[1.2857] font-semibold', block.lanes > 1 && 'phone:hidden')}>On now</span>}
       <span className="relative flex shrink-0">
         <EventDiscs people={people} />
       </span>

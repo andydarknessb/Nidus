@@ -23,10 +23,10 @@ import { Button } from './ui/button';
 
 // On a phone (below 768 px wide, spec 0004) the strip is one row that scrolls sideways under a finger: Everyone and then the pills,
 // each 132 px wide and 52 tall, a 36 px disc (the discs' own size is a style, so the class is important), the name and the pips,
-// the last one cut at the edge, and no "More people" button. The row's classes are the tablet's with `max-[768px]:` variants over
-// them (never the `sm:` or `md:` ones, which Tailwind emits after them), so from 768 px nothing changes. A pill's inline
+// the last one cut at the edge, and no "More people" button. The row's classes are the tablet's with `phone:` variants over
+// them (never the `sm:` or `md:` ones), so on a tablet nothing changes. A pill's inline
 // minimum width, which is the name's, gives way to the 132 px with an important class.
-const PHONE_DISC = 'max-[768px]:size-9!';
+const PHONE_DISC = 'phone:size-9!';
 
 // The disc, the name and, in a pill wide enough, the count and the pips. The count is what gives way first when the name
 // is long: it drops to a line of its own that is not shown, so the name is never cut short for it.
@@ -45,7 +45,7 @@ function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
           )}
         </span>
         {total > 0 && total <= MAX_PIPS && (
-          <span className="hidden @min-[9.6rem]:block max-[768px]:block">
+          <span className="hidden @min-[9.6rem]:block phone:block">
             <Pips done={done} total={total} label={person.label} color={profile.color} />
           </span>
         )}
@@ -55,7 +55,7 @@ function PersonPill({ person, on }: { person: StripPerson; on: boolean }) {
 }
 
 const PILL =
-  'person @container min-h-[56px] max-[768px]:min-h-0 min-w-32 max-w-76 flex-1 basis-0 rounded-[18px] bg-person-soft text-base text-foreground max-[768px]:h-13 max-[768px]:w-[132px] max-[768px]:min-w-[132px]! max-[768px]:max-w-[132px] max-[768px]:flex-none max-[768px]:basis-auto';
+  'person @container min-h-[56px] phone:min-h-0 min-w-32 max-w-76 flex-1 basis-0 rounded-[18px] bg-person-soft text-base text-foreground phone:h-13 phone:w-[132px] phone:min-w-[132px]! phone:max-w-[132px] phone:flex-none phone:basis-auto';
 
 // The least a pill is: the disc, its gaps and padding (4.5 rem) and the name's letters (one ch each, a little over what a
 // name needs), never under the 8 rem of min-w-32 and never over the 19 rem of max-w-76, where the name is cut. A pill
@@ -75,21 +75,21 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
     <div
       role="group"
       aria-label="Show events for"
-      className="flex min-h-[56px] gap-2 max-[768px]:h-13 max-[768px]:min-h-0 max-[768px]:-mx-4 max-[768px]:items-center max-[768px]:scroll-px-4 max-[768px]:px-4 max-[768px]:overflow-x-auto max-[768px]:overscroll-x-contain max-[768px]:[scrollbar-width:none] max-[768px]:[&::-webkit-scrollbar]:hidden max-[768px]:[&>*]:shrink-0"
+      className="flex min-h-[56px] gap-2 phone:h-13 phone:min-h-0 phone:-mx-4 phone:items-center phone:scroll-px-4 phone:px-4 phone:overflow-x-auto phone:overscroll-x-contain phone:[scrollbar-width:none] phone:[&::-webkit-scrollbar]:hidden phone:[&>*]:shrink-0"
     >
       {!alone && (
         <Button
           variant="quiet"
           aria-pressed={pressed.length === 0}
           onClick={filter.clear}
-          className="h-auto min-h-[56px] max-[768px]:min-h-0 gap-2.5 rounded-[18px] bg-card px-0 pr-4.5 pl-2 text-base text-foreground max-[768px]:h-13 max-[768px]:min-w-[132px] max-[768px]:gap-2 max-[768px]:pr-2 max-[768px]:focus-visible:-outline-offset-2"
+          className="h-auto min-h-[56px] phone:min-h-0 gap-2.5 rounded-[18px] bg-card px-0 pr-4.5 pl-2 text-base text-foreground phone:h-13 phone:min-w-[132px] phone:gap-2 phone:pr-2 phone:focus-visible:-outline-offset-2"
         >
           <HouseDisc size={40} className={PHONE_DISC} />
           Everyone
         </Button>
       )}
       {/* On a phone this box is `contents`, so the pills are the row's own items and the row is what scrolls. */}
-      <div ref={more.scroller} className="flex min-w-0 flex-1 gap-2 overflow-x-auto [scrollbar-width:none] max-[768px]:contents">
+      <div ref={more.scroller} className="flex min-w-0 flex-1 gap-2 overflow-x-auto [scrollbar-width:none] phone:contents">
         {people.map((person) =>
           alone ? (
             <div key={person.profile.id} style={pillStyle(person.profile)} className={cn(PILL, 'flex items-center gap-2.5 py-0 pr-3.5 pl-2')}>
@@ -115,7 +115,7 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
       {/* At the end of the row there is nothing more, so the button reads "Back" and returns to the first people: it is never
           switched off, so nobody is left at the far end of the row with no way back but a swipe they cannot know about, and the
           keyboard's focus never has to leave it. */}
-      <OverflowButton control={more} of="people" className="max-[768px]:hidden" />
+      <OverflowButton control={more} of="people" className="phone:hidden" />
     </div>
   );
 }
@@ -125,7 +125,7 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
 // read the row keeps its height, so the calendar under it does not move when they arrive; a Household with no
 // Profiles has nothing to show.
 export function PeopleStrip({ profiles, routines, filter, pressed }: { profiles: Profile[] | null; routines: RoutinesToday; filter: ProfileFilter; pressed: readonly string[] }) {
-  if (profiles === null) return <div className="h-[56px] max-[768px]:h-13" />;
+  if (profiles === null) return <div className="h-[56px] phone:h-13" />;
   if (profiles.length === 0) return null;
   return <Strip people={stripPeople(profiles, routines.groups, routines.done)} filter={filter} pressed={pressed} />;
 }
