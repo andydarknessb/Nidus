@@ -3,7 +3,7 @@ import { WEEKDAYS } from './routines';
 import { loadMeals, setMeal, withMeal, type Meal, type MealSlot } from './meals';
 import { supabase } from './supabase';
 import { useSyncedRead } from './synced-read';
-import type { WallDay } from './calendar-occurrences';
+import type { WallDay } from './paged-view';
 
 // The Meals reader as a hook, and how a day and a slot are named, for the Wall's Meals screen and the phone's (src/MealsPage.tsx,
 // src/phone/PhoneMeals.tsx).

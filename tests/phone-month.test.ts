@@ -1,7 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { monthWeeks, type Occurrence } from '../src/lib/calendar-occurrences';
+import { type Occurrence } from '../src/lib/calendar-occurrences';
+import { monthWeeks } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
 import type { MonthDay as MonthDayType } from '../src/phone/PhoneMonth';
 import { dayEventsOf } from '../src/lib/day-events';

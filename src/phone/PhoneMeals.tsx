@@ -1,13 +1,14 @@
 import { Plus } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { BeforeHousehold } from '../components/BeforeHousehold';
 import { EmptyWords } from '../components/EmptyWords';
 import { InBody } from '../components/InBody';
 import { Button } from '../components/ui/button';
-import { describeCell, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay, type WallRoute } from '../lib/calendar-occurrences';
-import { focusTitleIfLost } from '../lib/focus';
+import { describeCell, mealsPageDate, type WallRoute } from '../lib/calendar-occurrences';
+import { MEAL_PLAN_LIMITS, type WallDay } from '../lib/paged-view';
 import { mealGrid, mealsPickedDay, slotRowName, type Meal } from '../lib/meals';
 import { pageWords } from '../lib/phone-calendar';
+import { usePagedView } from '../lib/use-paged-view';
 import { useHouseholdDay } from '../lib/wall-hooks';
 import { dayName, SLOT_PICTURES, sheetFor, useMeals } from '../lib/use-meals';
 import { MealSheet, type Editing } from '../MealsPage';
@@ -60,31 +61,25 @@ export function PhoneMeals({ route, timezone, view, openMeals }: PhoneScreenProp
 function MealsWeek({ timezone, date, onNavigate }: { timezone: string; date: string | null; onNavigate: (date: string | null) => void }) {
   const today = useHouseholdDay(timezone).date;
   const now = new Date(dayStartMs(today, timezone));
-  const anchor = pageStart('week', shownDate(date, today));
-  const days = pageDays('week', anchor, timezone, now);
-  const { previous, next } = paging('week', anchor, pagingWindowAround(today));
+  // Paging may disable the button that was pressed: usePagedView puts focus on the pager's words instead of losing it (and only if it was
+  // lost: paging by keyboard stays on the button pressed). It never moves when the screen opens, which would scroll the page.
+  const { days, previous, next, limit, heading } = usePagedView({
+    view: 'week',
+    date,
+    now,
+    timezone,
+    limits: MEAL_PLAN_LIMITS,
+    takesFocusOnArrival: false,
+    preventScroll: true,
+  });
   const open = (week: string) => onNavigate(mealsPageDate(week, today));
-
-  // Paging may disable the button that was pressed: put focus on the pager's words instead of losing it (and only if it was lost: paging by keyboard stays on the button pressed). Only after the week the person
-  // chose has changed (`date`, never the computed `anchor`, which also moves by itself at the week's turn while the page follows this
-  // week), never when the screen opens (which would scroll the page), StrictMode's second run of the effect included: the date it saw last is kept.
-  const heading = useRef<HTMLHeadingElement>(null);
-  const seen = useRef(date);
-  useEffect(() => {
-    if (seen.current === date) return;
-    seen.current = date;
-    focusTitleIfLost(heading.current, { preventScroll: true });
-  }, [date]);
-  // The week's card is keyed on the anchor, so when it moves by itself (the week turning) it is new and focus inside it is gone: it goes
-  // to the pager's words then, and focus that is anywhere else is left alone.
-  useEffect(() => focusTitleIfLost(heading.current, { preventScroll: true }), [anchor]);
 
   return (
     <div className="flex flex-col gap-3">
       <Pager words={pageWords(days, today)} previousLabel="Previous week" nextLabel="Next week" onPrevious={previous ? () => open(previous) : null} onNext={next ? () => open(next) : null} headingRef={heading} />
       {/* Always mounted, so a screen reader announces the words when they appear. */}
       <p role="status" className="text-base text-muted-foreground empty:hidden">
-        {previous === null ? 'This is as far back as the meal plan goes.' : next === null ? 'This is as far ahead as the meal plan goes.' : ''}
+        {limit}
       </p>
       {/* Keyed on the week, so a turned page never shows the last week's Meals or keeps its picked day. */}
       <MealsDay key={days[0]!.date} days={days} today={today} />

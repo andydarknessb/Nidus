@@ -1,3 +1,5 @@
+import type { FocusAt } from './paged-view';
+
 // Putting focus back on the Wall's calendar when the element it would return to has gone: an event that was deleted, or that an edit
 // moved to another place on the screen. A sheet gives focus back to what opened it, but a read can then take that away, and focus
 // falls to the page, where Escape, Tab and a screen reader's place are all lost. The views say where it goes; this is how they look.
@@ -15,12 +17,17 @@ export function focusEvent(id: string): boolean {
   return [...document.querySelectorAll<HTMLElement>(`[data-event="${CSS.escape(id)}"]`)].some((element) => focusElement(element));
 }
 
-// After a page has turned: puts focus on the page's title when the person's focus was lost with it, and leaves it alone when it was not.
-// Paging may disable or remove the button that was pressed (Next on the last page), and focus then falls to the page, or stays on a
-// button that is switched off; but a person paging with the keyboard, or one who was on something else (a Profile's chip), is where they
-// were and is not moved. A button that was just switched off still has the focus for a moment, so it counts as lost.
-export function focusTitleIfLost(title: HTMLElement | null | undefined, options?: FocusOptions): void {
+// Whether focus was lost with a page that has turned or moved: it fell to the page, or it is on a button that was just switched off.
+// Paging may disable or remove the button that was pressed, and a button that was just switched off still has the focus for a moment, so
+// it counts as lost. A person paging with the keyboard, or one who was on something else (a Profile's chip), is where they were and is not
+// lost. The paged view (paged-view.ts) decides from this whether focus goes to the page's title.
+export function focusIsLost(): boolean {
   const active = document.activeElement;
-  const lost = !active || active === document.body || (active instanceof HTMLButtonElement && active.disabled);
-  if (lost) title?.focus(options);
+  return !active || active === document.body || (active instanceof HTMLButtonElement && active.disabled);
+}
+
+// Does what the paged view decided: puts focus on the page's title, or does nothing. `options` is how the phone keeps the page from
+// scrolling (preventScroll); with no title yet there is nothing to focus.
+export function moveFocus(at: FocusAt, title: HTMLElement | null | undefined, options?: FocusOptions): void {
+  if (at === 'title') title?.focus(options);
 }

@@ -72,7 +72,7 @@ Each of the six behaviours becomes one deep module with a small interface, at th
 
 ### Household clock
 
-- One module for Household-Timezone arithmetic, beside today's zoned-time helpers in the Edge Functions' shared folder (the Wall already imports from there). Free functions, timezone first, as now: the Household Date at an instant, its start, the instant of a time of day on it, adding days, and the page arithmetic the calendar and Meals use.
+- One module for Household-Timezone arithmetic, beside today's zoned-time helpers in the Edge Functions' shared folder (the Wall already imports from there). Free functions, timezone first, as now: the Household Date at an instant, its start, the instant of a time of day on it, adding days. Date math only: the page arithmetic the calendar and Meals use lives in the paged view (src/lib/paged-view.ts).
 - The Household Date leaves the Routines module. The Native Event form's and the iPhone sync's conversions of a time of day become one, which follows the DST rule above. The Edge Functions' own next-day helpers go.
 - One predicate, "is this event on this Household Date", lives here. The day-events module and push-notify's morning summary both use it. The calendar's database query stays only as a coarse first filter.
 

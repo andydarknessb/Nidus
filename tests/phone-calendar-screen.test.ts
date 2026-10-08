@@ -1,7 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { monthWeeks, type CalendarView, type Occurrence, type WallRoute } from '../src/lib/calendar-occurrences';
+import { type Occurrence, type WallRoute } from '../src/lib/calendar-occurrences';
+import { monthWeeks, type CalendarView } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
 import type { PhoneCalendar as PhoneCalendarType } from '../src/phone/PhoneCalendar';
 import type { WeekCells as WeekCellsType } from '../src/phone/PhoneMonth';

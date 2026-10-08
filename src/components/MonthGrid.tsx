@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { canOpenDay, isTightCell, linesPerCell, monthMinRem, monthWeeks, type PagingWindow, type WallDay } from '../lib/calendar-occurrences';
+import { isTightCell, linesPerCell, monthMinRem } from '../lib/calendar-occurrences';
+import { canOpenDay, monthWeeks, type PagingWindow, type WallDay } from '../lib/paged-view';
 import type { DayEvents } from '../lib/day-events';
 import type { Profile } from '../lib/profiles';
 import { WEEKDAYS } from '../lib/routines';
