@@ -34,6 +34,16 @@ To leave the Wall, press Alt+F4. That is a parent's job.
 
 The profile folder, the shortcut in the Startup folder and the power timeouts are three commands, so they are one script. Run it on the PC in PowerShell as administrator, after Chrome is installed; it finds Chrome under Program Files or Program Files (x86). Orientation, scale, the sign-in and the font size stay by hand, above and below.
 
+How to run it, on the PC:
+
+1. Install Chrome from google.com/chrome if it is not there.
+2. Open PowerShell as administrator: right-click the Start button, choose Terminal (Admin) or Windows PowerShell (Admin), and accept the prompt.
+3. Copy the whole code block below, paste it into the window and press Enter. (To run it from a file instead, save it as `nidus-wall.ps1`, run `Set-ExecutionPolicy -Scope Process Bypass` in that window first, then `.
+idus-wall.ps1`.)
+4. Read the last line: it names the shortcut and the Chrome it found. If it says Chrome is not installed, do step 1 and run it again.
+5. Close every Chrome window and double-click the Nidus Wall shortcut in the Startup folder (`shell:startup` in the Run dialog, Win and R). The screen shows a Pairing Code.
+6. Do the rest by hand: orientation and scale (above), the sign-in and the font size (below), and pair the screen from a phone.
+
 ```powershell
 $site = 'https://nidus-home.netlify.app/'
 $chrome = @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
