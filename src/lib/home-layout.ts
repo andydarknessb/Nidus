@@ -2,7 +2,9 @@ import { useLayoutEffect, useSyncExternalStore } from 'react';
 
 // What Home holds at the screen's size. The 1280 x 800 Wall holds five day columns and three Up next tiles; the navigation rail
 // and the right rail are fixed, so below 1200 px wide the day columns share too little room and Home shows four days, and below
-// 760 px tall the three tiles (336 px) leave the list card under them no row and Up next shows two.
+// 760 px tall the three tiles (336 px) leave the list card under them no row and Up next shows two. In portrait Up next shows as many
+// tiles as a third of the height holds, never fewer than the landscape rule gives: a row of n tiles is 72 + 88n px at 16 px text, so 6
+// at 1920 tall, 5 at 1732, 4 at 1472, 3 at 1024 (#190).
 // Those are widths and heights at the Wall's 16 px text. Larger text (a root font size above 16 px, from the tablet's font size
 // setting) makes every rem box bigger and leaves the screen as it is, so the same boxes have the room of a smaller screen: what
 // the screen holds is judged in rem, as the screen would be at 16 px (`rem` is the root font size, 16 where it is not known).
@@ -15,7 +17,7 @@ import { useLayoutEffect, useSyncExternalStore } from 'react';
 // sets from this one rule, so the keyboard hold (below) holds them too.
 // `portrait` is a tablet hung upright (docs/specs/0009): at 768 px and wider, a viewport taller than it is wide, by the viewport
 // alone. A phone is never portrait, whatever its height; a square viewport is landscape; a width of 0 is neither.
-export type HomeLayout = { days: 5 | 4 | 3; tiles: 3 | 2 | 1; phone: boolean; portrait: boolean };
+export type HomeLayout = { days: 5 | 4 | 3; tiles: number; phone: boolean; portrait: boolean };
 
 // The least width of a tablet: below it the Wall is a phone.
 const PHONE_BELOW = 768;
@@ -40,12 +42,16 @@ export function homeLayout({ width, height, rem = 16 }: { width: number; height:
   const days = room >= 1200 ? 5 : rem > 16 && room < THREE_DAYS_BELOW ? 3 : 4;
   const tall = Math.max(height, WALL_MIN_REM * rem) * scale;
   const phone = width > 0 && (width < PHONE_BELOW || (height > 0 && height < PHONE_SHORTER_THAN));
-  return { days, tiles: tall < 760 ? (rem > 16 && tall < ONE_TILE_BELOW ? 1 : 2) : 3, phone, portrait: !phone && width > 0 && height > width };
+  const portrait = !phone && width > 0 && height > width;
+  const landscapeTiles = tall < 760 ? (rem > 16 && tall < ONE_TILE_BELOW ? 1 : 2) : 3;
+  const tiles = portrait ? Math.max(landscapeTiles, Math.floor((tall / 3 - 72) / 88)) : landscapeTiles;
+  return { days, tiles, phone, portrait };
 }
 
 // Home's grid: the days and the rail side by side, or in portrait the days over the rail, which takes the height Up next needs but
 // never less than three tiles' worth: 21 rem is Up next's card with three tiles (24 padding + 48 heading + 8 gap + 3 x 80 tiles + 2 x 8 gaps =
-// 336 px, UpNext.tsx), so the Pinned List's card keeps its rows and the calendar does not jump when tiles come and go.
+// 336 px, UpNext.tsx), so the Pinned List's card keeps its rows and the calendar does not jump when tiles come and go. In portrait Up next's
+// tiles follow the height (above), so the row is as tall as they need: 4.5 + 5.5n rem for n tiles.
 export const homeGrid = (portrait: boolean) =>
   portrait
     ? 'grid min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_minmax(21rem,auto)] gap-4'

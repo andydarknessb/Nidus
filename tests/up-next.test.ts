@@ -127,6 +127,23 @@ describe('when Up next has nothing to show', () => {
   });
 });
 
+// Up next shows as many tiles as it is given, a tile for each person with something left (one tile a person), so a tall screen's six
+// tiles (home-layout.ts, #190) are six.
+describe('how many tiles', () => {
+  const NAMES = ['Cory', 'Sam', 'Ava', 'Ben', 'Eve', 'Fay', 'Gus'];
+  const MANY = NAMES.map((name, i) => profile(`p-${i}`, name, i, '#93c5fd'));
+  const MANY_ROUTINES = MANY.map((p, i) => routine(`r-${i}`, p.id, `Chore ${i}`));
+  const count = (html: string) => (html.match(/<li/g) ?? []).length;
+
+  it('shows six tiles when it is given six and seven people have something left', () => {
+    expect(count(card(routinesToday({}, MANY, MANY_ROUTINES), false, 6))).toBe(6);
+  });
+
+  it('shows three when it is given three', () => {
+    expect(count(card(routinesToday({}, MANY, MANY_ROUTINES), false, 3))).toBe(3);
+  });
+});
+
 describe('Up next while it loads', () => {
   // The height of the tiles it will show: 80 each and 8 between, 256 px (16 rem) for three and 168 px (10.5 rem) for two. Home's list
   // card under it would otherwise jump when the read lands.
@@ -141,6 +158,10 @@ describe('Up next while it loads', () => {
   it('holds the height of two tiles when the screen shows two', () => {
     expect(reserved(card(routinesToday({ loaded: false }), false, 2))).toBe('10.5');
     expect(reserved(card(routinesToday({ loaded: false, failed: true }), true, 2))).toBe('10.5');
+  });
+
+  it('holds the height of six tiles, 32.5 rem, when the screen shows six', () => {
+    expect(reserved(card(routinesToday({ loaded: false }), false, 6))).toBe('32.5');
   });
 
   it('takes the height it needs once it has: the tiles, or a line of words', () => {

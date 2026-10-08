@@ -38,7 +38,7 @@ The decisions:
 
 ### The rule
 
-- `homeLayout(width, height, rem)` in `src/lib/home-layout.ts` gains `portrait: !phone && height > width`, and `useHomeLayout` returns it as it returns `phone`, one listener, one pure function. `days` and `tiles` keep their rules: in portrait at the P12's widths the room is under 1200 px, so Home holds four days, and the height is well over 760 px, so Up next holds three tiles.
+- `homeLayout(width, height, rem)` in `src/lib/home-layout.ts` gains `portrait: !phone && height > width`, and `useHomeLayout` returns it as it returns `phone`, one listener, one pure function. `days` and `tiles` keep their rules: in portrait at the P12's widths the room is under 1200 px, so Home holds four days, and the height is well over 760 px, so Up next holds three tiles. (Since #190, in portrait Up next shows the tiles a third of the height holds, never fewer than three.)
 - A width of 0 is neither a phone nor portrait. A square viewport is landscape.
 - The inline script in `index.html` that paints the mode before the first paint changes nothing: portrait is a tablet and paints by the Wall's rules.
 - Crossing portrait (a tablet turned) swaps the layout without a reload and keeps the route, the Profile filter and what has been read, as crossing 768 px does. An open Add event sheet may close, as it does across 768 px.
