@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { ArrowDown, ArrowUp, ChevronRight, List, Pin, Plus } from 'lucide-react';
+import { movedIds, nextSortOrder } from './lib/ordering';
 import { supabase } from './lib/supabase';
 import {
   createList,
@@ -10,8 +11,6 @@ import {
   homeWindow,
   loadLists,
   loadPinnedListId,
-  movedIds,
-  nextSortOrder,
   pinnedFirst,
   renameList,
   reorderLists,
@@ -24,6 +23,7 @@ import { rootFontSize } from './lib/home-layout';
 import type { Household } from './lib/household';
 import { focusElement } from './lib/focus';
 import { useStatusLine } from './lib/status-line';
+import { useCardWrite } from './lib/use-card-write';
 import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
 import { useOverflow } from './lib/use-overflow';
 import { unnamed } from './lib/write-failure';
@@ -502,23 +502,27 @@ export function SharedListsPage({ household }: { household: Household }) {
   const renameProblem = renaming ? unnamed('list', renaming.asked, renaming.name) : null;
   const [confirming, setConfirming] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  // One change at a time (the card write guard): the buttons are drawn `aria-disabled` from `busy`.
+  const card = useCardWrite();
+  const { busy } = card;
 
-  // Runs one change, then reloads so the screen shows what the database holds. Says whether it was made.
+  // Runs one change, then reads again so the screen shows what the database holds, before the next may begin. A failure is said
+  // at once. Says whether it was made; false too when another change was on its way and this one did nothing.
   async function change(work: () => Promise<void>, failure: string): Promise<boolean> {
-    let made = true;
-    try {
-      await read.write(work);
-      setProblem('');
-    } catch {
-      setProblem(failure);
-      made = false;
-    }
-    await read.readBack();
-    return made;
+    const outcome = await card.run(
+      async () => {
+        await read.write(work);
+        setProblem('');
+        await read.readBack();
+      },
+      { failed: () => setProblem(failure) },
+    );
+    return outcome === 'done';
   }
 
   async function create(event: FormEvent) {
     event.preventDefault();
+    if (card.isBusy()) return;
     if (!newName.trim()) {
       setAskedNew((count) => count + 1);
       return;
@@ -532,7 +536,7 @@ export function SharedListsPage({ household }: { household: Household }) {
 
   async function rename(event: FormEvent) {
     event.preventDefault();
-    if (!renaming) return;
+    if (!renaming || card.isBusy()) return;
     if (!renaming.name.trim()) {
       setRenaming({ ...renaming, asked: renaming.asked + 1 });
       return;
@@ -546,6 +550,7 @@ export function SharedListsPage({ household }: { household: Household }) {
   }
 
   async function move(id: string, offset: number) {
+    if (card.isBusy()) return;
     const ids = movedIds((lists ?? []).map((list) => list.id), id, offset);
     await change(() => reorderLists(supabase, ids), 'Could not reorder lists. Try again.');
   }
@@ -553,6 +558,7 @@ export function SharedListsPage({ household }: { household: Household }) {
   // The Delete that was pressed goes with its list: focus goes at once to the title of the list beside it, or to "New list" when it was
   // the only one, so it never falls to the page; and back to this list's Delete if the delete did not go through.
   async function remove(id: string) {
+    if (card.isBusy()) return;
     const ids = (lists ?? []).map((list) => list.id);
     const beside = ids[ids.indexOf(id) + 1] ?? ids[ids.indexOf(id) - 1];
     setConfirming(null);
@@ -581,7 +587,7 @@ export function SharedListsPage({ household }: { household: Household }) {
               aria-describedby={newProblem ? NEW_LIST_PROBLEM : undefined}
             />
           </label>
-          <Button type="submit" variant="primary" size="phone" className="w-full text-[17px]">
+          <Button type="submit" variant="primary" size="phone" className="w-full text-[17px]" aria-disabled={busy || undefined}>
             Add list
           </Button>
           <Problem id={NEW_LIST_PROBLEM} problem={newProblem} />
@@ -613,7 +619,7 @@ export function SharedListsPage({ household }: { household: Household }) {
                     autoFocus
                   />
                   <div className="flex gap-2">
-                    <Button type="submit" variant="secondary" className={ACTION}>
+                    <Button type="submit" variant="secondary" className={ACTION} aria-disabled={busy || undefined}>
                       Save
                     </Button>
                     <Button
@@ -635,10 +641,10 @@ export function SharedListsPage({ household }: { household: Household }) {
                   <h2 id={titleId(list.id)} tabIndex={-1} className={`${CARD_TITLE} min-w-0 flex-1 break-words`}>
                     {list.name}
                   </h2>
-                  <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} up`} disabled={index === 0} onClick={() => void move(list.id, -1)}>
+                  <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} up`} disabled={index === 0} aria-disabled={busy || undefined} onClick={() => void move(list.id, -1)}>
                     <ArrowUp aria-hidden className="size-5" />
                   </Button>
-                  <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} down`} disabled={index === lists.length - 1} onClick={() => void move(list.id, 1)}>
+                  <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} down`} disabled={index === lists.length - 1} aria-disabled={busy || undefined} onClick={() => void move(list.id, 1)}>
                     <ArrowDown aria-hidden className="size-5" />
                   </Button>
                 </div>
@@ -656,14 +662,17 @@ export function SharedListsPage({ household }: { household: Household }) {
                   <Button
                     variant="secondary"
                     className={ACTION}
-                    onClick={() => void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.')}
+                    aria-disabled={busy || undefined}
+                    onClick={() => {
+                      if (!card.isBusy()) void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.');
+                    }}
                   >
                     Show on home screen
                   </Button>
                 )}
                 {confirming === list.id ? (
                   <>
-                    <Button variant="delete" className="h-auto min-h-12 px-4 py-2 whitespace-normal" onClick={() => void remove(list.id)}>
+                    <Button variant="delete" className="h-auto min-h-12 px-4 py-2 whitespace-normal" aria-disabled={busy || undefined} onClick={() => void remove(list.id)}>
                       Delete {list.name} and its items
                     </Button>
                     <Button

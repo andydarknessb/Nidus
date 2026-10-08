@@ -1,14 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   PROFILE_PALETTE,
-  byPosition,
   contrastRatio,
   createProfile,
   deleteProfile,
   initialOf,
   loadProfiles,
-  movedIds,
-  nextSortOrder,
   reorderProfiles,
   updateProfile,
 } from '../src/lib/profiles';
@@ -42,20 +39,6 @@ describe('the Profile palette', () => {
 });
 
 describe('profile helpers', () => {
-  it('orders by position and appends at the bottom', () => {
-    const rows = [{ sort_order: 2 }, { sort_order: 0 }, { sort_order: 1 }];
-    expect(byPosition(rows).map((row) => row.sort_order)).toEqual([0, 1, 2]);
-    expect(nextSortOrder(rows)).toBe(3);
-    expect(nextSortOrder([])).toBe(0);
-  });
-
-  it('moves an id by an offset, clamped to the ends', () => {
-    expect(movedIds(['a', 'b', 'c'], 'c', -1)).toEqual(['a', 'c', 'b']);
-    expect(movedIds(['a', 'b', 'c'], 'a', -1)).toEqual(['a', 'b', 'c']);
-    expect(movedIds(['a', 'b', 'c'], 'a', 5)).toEqual(['b', 'c', 'a']);
-    expect(movedIds(['a', 'b'], 'zzz', 1)).toEqual(['a', 'b']);
-  });
-
   it("takes the first letter of a name, in capitals, for a person's disc", () => {
     expect(initialOf('ava')).toBe('A');
     expect(initialOf('  Ben ')).toBe('B');

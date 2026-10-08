@@ -7,7 +7,8 @@ import { EmptyRing, MAX_PIPS, PersonDisc, Pips, Tick } from './components/people
 import { Problem } from './components/phone';
 import { Button } from './components/ui/button';
 import type { Household } from './lib/household';
-import { PROFILE_PALETTE, loadProfiles, nextSortOrder, type Profile } from './lib/profiles';
+import { nextSortOrder } from './lib/ordering';
+import { PROFILE_PALETTE, loadProfiles, type Profile } from './lib/profiles';
 import {
   ROUTINE_TABLES,
   TIME_OF_DAY_GROUPS,
@@ -34,6 +35,7 @@ import {
   type TimeOfDay,
 } from './lib/routines';
 import { PictureField, RoutinePicture } from './lib/routine-pictures';
+import { useCardWrite } from './lib/use-card-write';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
 import { CHART_CHOICES, PART_ICON, WORDS, timeWord, useChartPart } from './lib/routine-chart';
@@ -495,12 +497,16 @@ const timeOfDayChoices = [...TIME_OF_DAY_GROUPS.slice(-1), ...TIME_OF_DAY_GROUPS
 export function RoutineForm({
   profile,
   routine,
+  busy = false,
   onSave,
   onCancel,
 }: {
   profile: Profile;
   routine?: Routine;
-  onSave: (input: RoutineEdit) => Promise<boolean>;
+  // Whether the page is making a change: Save does nothing and is drawn `aria-disabled`.
+  busy?: boolean;
+  // Whether the Routine was saved; undefined when the page was busy and did nothing, which is not a failure.
+  onSave: (input: RoutineEdit) => Promise<boolean | undefined>;
   onCancel?: () => void;
 }) {
   const [title, setTitle] = useState(routine?.title ?? '');
@@ -523,15 +529,16 @@ export function RoutineForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (mask === 0 || saving) return;
+    if (mask === 0 || saving || busy) return;
     if (!title.trim()) {
       setAsked((count) => count + 1);
       return;
     }
     setSaving(true);
-    setFailed(false);
     const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture });
     setSaving(false);
+    // Nothing was done (the page was busy): what the form said of the last save stands.
+    if (saved === undefined) return;
     setFailed(!saved);
     if (saved && !routine) {
       setTitle('');
@@ -595,7 +602,7 @@ export function RoutineForm({
       <PictureField key={added} about={about} picture={picture} onChange={setPicture} />
       <div className="flex gap-3">
         {/* A page of forms has one primary: the Save of the Routine being edited. Adding is secondary. */}
-        <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" disabled={mask === 0 || saving}>
+        <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" aria-disabled={mask === 0 || saving || busy || undefined}>
           {routine ? 'Save' : 'Add routine'}
         </Button>
         {onCancel && (
@@ -636,28 +643,23 @@ export function RoutinesPage({ household }: { household: Household }) {
   const [editing, setEditing] = useState<string | null>(null);
   // Which Routine's form is open right now. A save that finishes late looks here, not at the render it began in.
   const editingNow = useRef<string | null>(null);
-  const [focusNext, setFocusNext] = useState<string | null>(null);
+  // One change at a time (the card write guard): the buttons are drawn `aria-disabled` from `busy`, and focus goes where the page says.
+  const card = useCardWrite();
+  const { busy } = card;
 
-  // Moves focus once the element it names is on screen; the swap unmounts whatever had it.
-  useEffect(() => {
-    if (focusNext === null) return;
-    document.getElementById(focusNext)?.focus();
-    setFocusNext(null);
-  }, [focusNext]);
-
-  // Runs one change, then reloads so the screen shows what the database holds. A failure is said in
-  // the status line; a form that says so itself, beside its Save, passes no failure.
-  async function change(work: () => Promise<void>, failure = ''): Promise<boolean> {
-    let ok = true;
-    try {
-      await read.write(work);
-      setProblem('');
-    } catch {
-      setProblem(failure);
-      ok = false;
-    }
-    await read.readBack();
-    return ok;
+  // Runs one change, then reads again so the screen shows what the database holds, before the next may begin. A failure is said in
+  // the status line at once; a form that says so itself, beside its Save, passes no failure. Says whether it was made, and nothing
+  // (undefined) when another change was on its way and this one did nothing. `landed` is what the page then does.
+  async function change(work: () => Promise<void>, failure = '', landed?: () => void): Promise<boolean | undefined> {
+    const outcome = await card.run(
+      async () => {
+        await read.write(work);
+        setProblem('');
+        await read.readBack();
+      },
+      { failed: () => setProblem(failure), landed },
+    );
+    return outcome === 'busy' ? undefined : outcome === 'done';
   }
 
   function startEditing(id: string) {
@@ -672,14 +674,12 @@ export function RoutinesPage({ household }: { household: Household }) {
     if (editingNow.current !== id) return;
     editingNow.current = null;
     setEditing(null);
-    setFocusNext(`edit-${id}`);
+    card.focus(`edit-${id}`);
   }
 
   // A failed save keeps the form open, with what was typed; the form says so itself.
-  async function save(id: string, input: RoutineEdit): Promise<boolean> {
-    const ok = await change(() => updateRoutine(supabase, id, input));
-    if (ok) stopEditing(id);
-    return ok;
+  async function save(id: string, input: RoutineEdit): Promise<boolean | undefined> {
+    return change(() => updateRoutine(supabase, id, input), '', () => stopEditing(id));
   }
 
   const ofProfile = (profileId: string) => routines.filter((routine) => routine.profile_id === profileId);
@@ -721,7 +721,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                   {time.routines.map((routine, index) => (
                     <li key={routine.id} className={cn('flex flex-col gap-2', editing !== routine.id && 'rounded-[14px] bg-muted p-3')}>
                       {editing === routine.id ? (
-                        <RoutineForm profile={profile} routine={routine} onSave={(input) => save(routine.id, input)} onCancel={() => stopEditing(routine.id)} />
+                        <RoutineForm profile={profile} routine={routine} busy={busy} onSave={(input) => save(routine.id, input)} onCancel={() => stopEditing(routine.id)} />
                       ) : (
                         <>
                           <div className="flex items-center gap-3">
@@ -740,9 +740,11 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 variant="delete"
                                 aria-label={`Archive ${routineName(routine)}`}
                                 className="h-12 flex-1 rounded-[14px]"
+                                aria-disabled={busy || undefined}
                                 onClick={() => {
+                                  if (card.isBusy()) return;
                                   setConfirming(null);
-                                  setFocusNext(`profile-${profile.id}`);
+                                  card.focus(`profile-${profile.id}`);
                                   void change(() => archiveRoutine(supabase, routine.id), 'Could not archive that routine. Try again.');
                                 }}
                               >
@@ -753,7 +755,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 className="h-12 rounded-[14px]"
                                 onClick={() => {
                                   setConfirming(null);
-                                  setFocusNext(`archive-${routine.id}`);
+                                  card.focus(`archive-${routine.id}`);
                                 }}
                               >
                                 Keep it
@@ -784,9 +786,10 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 className="size-12 rounded-full p-0"
                                 aria-label={`Move ${routineName(routine)} up`}
                                 disabled={index === 0}
-                                onClick={() =>
-                                  void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder routines. Try again.')
-                                }
+                                aria-disabled={busy || undefined}
+                                onClick={() => {
+                                  if (!card.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder routines. Try again.');
+                                }}
                               >
                                 <ArrowUp aria-hidden className="size-5" />
                               </Button>
@@ -795,9 +798,10 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 className="size-12 rounded-full p-0"
                                 aria-label={`Move ${routineName(routine)} down`}
                                 disabled={index === time.routines.length - 1}
-                                onClick={() =>
-                                  void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder routines. Try again.')
-                                }
+                                aria-disabled={busy || undefined}
+                                onClick={() => {
+                                  if (!card.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder routines. Try again.');
+                                }}
                               >
                                 <ArrowDown aria-hidden className="size-5" />
                               </Button>
@@ -813,6 +817,7 @@ export function RoutinesPage({ household }: { household: Household }) {
             <div className={own.length > 0 ? 'border-t border-border pt-4' : undefined}>
               <RoutineForm
                 profile={profile}
+                busy={busy}
                 onSave={(input) => change(() => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined))}
               />
             </div>

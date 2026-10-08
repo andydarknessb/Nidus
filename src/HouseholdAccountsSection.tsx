@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Plus, UserRound } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { formatDate, formatDateWithYear } from '@/lib/calendar-occurrences';
@@ -14,6 +14,7 @@ import {
   type HouseholdInvite,
 } from '@/lib/household-invites';
 import { CANCEL_SAID, MAKE_SAID, REMOVED_WORDS, inviteViewOf, isRemoved, loadFailedWords, sharePayload, type InviteView } from '@/lib/household-accounts';
+import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
 import { useSyncedRead } from '@/lib/synced-read';
 
@@ -211,44 +212,36 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   const loadProblem = read.failed ? loadFailedWords(read.error) : null;
   const problems = useWriteProblem();
   const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
-  // One write at a time: the ref is the guard, the state is what is drawn (`aria-disabled`, never `disabled`).
-  const working = useRef(false);
-  const [busy, setBusy] = useState(false);
-  const [focusNext, setFocusNext] = useState<string | null>(null);
-
-  // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
-  useEffect(() => {
-    if (focusNext === null) return;
-    document.getElementById(focusNext)?.focus();
-    setFocusNext(null);
-  }, [focusNext]);
+  // One write at a time (the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes afterwards.
+  const card = useCardWrite(problems);
+  const { busy } = card;
 
   // One write, alone: `place` is where it says so when it fails (in `said`'s words, or the default ones), `done` what changes once it
-  // landed, and `landed` what the accounts and invite show from then until the read that follows it.
+  // landed (it returns where focus goes), and `landed` what the accounts and invite show from then until the read that follows it.
   async function write(
     place: string,
     run: () => Promise<unknown>,
-    done: (result: unknown) => void,
+    done: (result: unknown) => string | undefined | void,
     said?: { failed: string; offline: string },
     landed?: (result: unknown) => ((shown: Read) => Read) | undefined,
   ) {
-    if (working.current) return;
-    working.current = true;
-    setBusy(true);
-    let result: unknown;
-    try {
-      result = await read.write(run, undefined, landed);
-      problems.clear(place);
-    } catch (error) {
-      if (isRemoved(error)) problems.say(place, REMOVED_WORDS);
-      else problems.fail(place, error, said ? { said } : {});
-      working.current = false;
-      setBusy(false);
-      return;
-    }
-    done(result);
-    working.current = false;
-    setBusy(false);
+    await card.run(
+      async () => {
+        const result = await read.write(run, undefined, landed);
+        problems.clear(place);
+        return result;
+      },
+      {
+        place,
+        words: said ? { said } : {},
+        failed: (error) => {
+          if (!isRemoved(error)) return false;
+          problems.say(place, REMOVED_WORDS);
+          return true;
+        },
+        landed: done,
+      },
+    );
   }
 
   const makeInvite = () =>
@@ -260,7 +253,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       },
       () => {
         setStatus('idle');
-        setFocusNext(INVITE_MAIN);
+        return INVITE_MAIN;
       },
       MAKE_SAID,
     );
@@ -272,7 +265,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       () => {
         setMade(null);
         setStatus('cancelled');
-        setFocusNext(INVITE_MAIN);
+        return INVITE_MAIN;
       },
       CANCEL_SAID,
       // At once, so that the cancelled invite is not drawn while the read is on its way, and focus lands on Invite someone.
@@ -289,7 +282,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
         // Removing someone also cancels the waiting invite, server side: a link just made would be a dead one.
         setMade(null);
         setOpen(null);
-        setFocusNext(INVITE_MAIN);
+        return INVITE_MAIN;
       },
       undefined,
       (removed) => (removed === true ? (shown) => ({ accounts: shown.accounts.filter((account) => account.authUserId !== id), stored: null }) : undefined),
@@ -342,7 +335,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       onCancelRemove={(id) => {
         problems.clear();
         setOpen({ id, confirming: false });
-        setFocusNext(removeId(id));
+        card.focus(removeId(id));
       }}
       onRemove={remove}
       onMakeInvite={makeInvite}

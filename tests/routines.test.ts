@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PROFILE_PALETTE, createProfile, deleteProfile, movedIds, type Profile } from '../src/lib/profiles';
+import { movedIds } from '../src/lib/ordering';
+import { PROFILE_PALETTE, createProfile, deleteProfile, type Profile } from '../src/lib/profiles';
 import {
   ROUTINE_TABLES,
   TIME_OF_DAY_GROUPS,

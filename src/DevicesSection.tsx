@@ -1,9 +1,10 @@
 import { ChevronDown, ChevronRight, Plus, Tablet } from 'lucide-react';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice } from '@/lib/device';
 import { seenWords } from '@/lib/device-format';
+import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem } from '@/lib/use-write-problem';
 import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
 
@@ -46,61 +47,52 @@ export function DevicesSection() {
   const [pairStatus, setPairStatus] = useState<PairStatus>('idle');
   // The tablet whose row is open, and whether it is being asked to be sure.
   const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
-  // One write at a time: the ref is the guard, the state is what is drawn (`aria-disabled`, never `disabled`: a button that is
-  // disabled while it has focus drops it to the page).
-  const working = useRef(false);
-  const [busy, setBusy] = useState(false);
-  const [focusNext, setFocusNext] = useState<string | null>(null);
-
-  // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
-  useEffect(() => {
-    if (focusNext === null) return;
-    document.getElementById(focusNext)?.focus();
-    setFocusNext(null);
-  }, [focusNext]);
+  // One write at a time (the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes afterwards.
+  const card = useCardWrite(problems);
+  const { busy } = card;
 
   async function pair(event: FormEvent) {
     event.preventDefault();
-    if (!pairing || working.current) return;
-    working.current = true;
-    setBusy(true);
-    setPairStatus('pairing');
-    try {
-      await read.write(() => claimPairingCode(pairing.code, pairing.name));
-      problems.clear(PAIR);
-    } catch (error) {
-      setPairStatus('idle');
-      if (isInvalidCode(error)) problems.say(PAIR, INVALID_CODE_WORDS, true);
-      else if (isTooManyAttempts(error)) problems.say(PAIR, TOO_MANY_WORDS);
-      else problems.fail(PAIR, error, { said: PAIR_SAID });
-      working.current = false;
-      setBusy(false);
-      return;
-    }
-    setPairing(null);
-    setPairStatus('paired');
-    setFocusNext(PAIR_ID);
-    working.current = false;
-    setBusy(false);
+    if (!pairing) return;
+    await card.run(
+      async () => {
+        setPairStatus('pairing');
+        await read.write(() => claimPairingCode(pairing.code, pairing.name));
+        problems.clear(PAIR);
+      },
+      {
+        place: PAIR,
+        words: { said: PAIR_SAID },
+        failed: (error) => {
+          setPairStatus('idle');
+          if (isInvalidCode(error)) problems.say(PAIR, INVALID_CODE_WORDS, true);
+          else if (isTooManyAttempts(error)) problems.say(PAIR, TOO_MANY_WORDS);
+          else return false;
+          return true;
+        },
+        landed: () => {
+          setPairing(null);
+          setPairStatus('paired');
+          return PAIR_ID;
+        },
+      },
+    );
   }
 
   async function unpair(id: string) {
-    if (working.current) return;
-    working.current = true;
-    setBusy(true);
-    try {
-      await read.write(() => revokeDevice(id));
-      problems.clear(unpairPlace(id));
-    } catch (error) {
-      problems.fail(unpairPlace(id), error);
-      working.current = false;
-      setBusy(false);
-      return;
-    }
-    setOpen(null);
-    setFocusNext(PAIR_ID);
-    working.current = false;
-    setBusy(false);
+    await card.run(
+      async () => {
+        await read.write(() => revokeDevice(id));
+        problems.clear(unpairPlace(id));
+      },
+      {
+        place: unpairPlace(id),
+        landed: () => {
+          setOpen(null);
+          return PAIR_ID;
+        },
+      },
+    );
   }
 
   const pairProblem = problems.at(PAIR);
@@ -147,7 +139,7 @@ export function DevicesSection() {
                     onCancel={() => {
                       problems.clear();
                       setOpen({ id: device.id, confirming: false });
-                      setFocusNext(`unpair-${device.id}`);
+                      card.focus(`unpair-${device.id}`);
                     }}
                     onConfirm={() => void unpair(device.id)}
                   />
@@ -202,7 +194,7 @@ export function DevicesSection() {
                   problems.clear();
                   setPairing(null);
                   setPairStatus('idle');
-                  setFocusNext(PAIR_ID);
+                  card.focus(PAIR_ID);
                 }}
               >
                 Cancel
