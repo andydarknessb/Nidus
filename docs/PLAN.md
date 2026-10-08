@@ -193,4 +193,5 @@ Settled on 2026-10-08 when the owner asked for the Wall to fit an Elo 2402L touc
 - **Larger text is the browser's font size**, held at 130 percent; zoom shrinks the viewport and is held to 125 percent. At 150 percent in portrait the Wall is a phone by its rule.
 - **Nothing scales up for the panel**: the look's tokens, parts and sizes are unchanged at 92 pixels per inch.
 - **The Device is a tablet or a PC's browser**: pairing, the Pairing Code, the heartbeat and what a Device may write do not change.
+- **Portrait's Routines and Lists are a grid**: columns and cards at least 17 rem, as many to a row as fit, each its row-mates' width; the P12 gets it too.
 - **No new data**: no migration.

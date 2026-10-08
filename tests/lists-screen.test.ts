@@ -1,19 +1,20 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import type { EmptyListCard as EmptyListCardType, ListsScreen as ListsScreenType, PinnedListCard as PinnedListCardType } from '../src/SharedListsPage';
+import type { EmptyListCard as EmptyListCardType, ListCard as ListCardType, ListsScreen as ListsScreenType, PinnedListCard as PinnedListCardType } from '../src/SharedListsPage';
 
 // The Lists screen and Home's list card as the Wall first draws them, rendered to markup so that what is asserted is what the browser
 // is given. They import the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to load
 // them (as tests/phone-settings.test.ts does for the phone's pages).
 
 let ListsScreen: typeof ListsScreenType;
+let ListCard: typeof ListCardType;
 let PinnedListCard: typeof PinnedListCardType;
 let EmptyListCard: typeof EmptyListCardType;
 beforeAll(async () => {
   vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
-  ({ ListsScreen, PinnedListCard, EmptyListCard } = await import('../src/SharedListsPage'));
+  ({ ListsScreen, ListCard, PinnedListCard, EmptyListCard } = await import('../src/SharedListsPage'));
 });
 
 const words = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -74,19 +75,25 @@ describe('the Lists screen', () => {
     expect(screen()).toMatch(/^<div class="flex min-h-0 flex-col gap-4"><div class="flex min-h-12 shrink-0 [^"]*"><h2 tabindex="-1" class="font-display text-\[28px\] leading-\[34px\] outline-none">Lists<\/h2>/);
   });
 
-  it('keeps a card at least 17 rem wide in portrait, so a title is not left with 75 px of a 227 px card, and only from larger text in landscape', () => {
+  it('lays the cards in portrait in a grid of columns at least 17 rem, each card as wide as its row-mates and not the landscape width, and keeps 17 rem only from larger text in landscape', () => {
     const portrait = renderToStaticMarkup(createElement(ListsScreen, { portrait: true }));
     const landscape = renderToStaticMarkup(createElement(ListsScreen, { portrait: false }));
-    expect(portrait).toContain('[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%))]');
+    expect(portrait).toContain('grid grid-cols-[repeat(auto-fill,minmax(min(17rem,100%),1fr))] items-start gap-4');
+    expect(portrait).not.toContain('--card-w');
+    const list = { id: 'l-1', name: 'Groceries', sort_order: 0 };
+    const card = (isPortrait: boolean) => renderToStaticMarkup(createElement(ListCard, { list, pinned: false, portrait: isPortrait }));
+    expect(card(true)).not.toContain('w-(--card-w)');
+    expect(card(true)).toContain('w-auto shrink-0 snap-start');
+    expect(card(false)).toContain('w-(--card-w) shrink-0 snap-start');
     // The row as it was before portrait: master's own class string, character for character.
     expect(landscape).toContain(
       '<div class="flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto [--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]"><div class="contents">',
     );
   });
 
-  it('wraps the cards in portrait, 16 apart, in a box that scrolls up and down and not sideways, and says "More lists" nowhere in the heading row', () => {
+  it('puts the cards in portrait in a grid, 16 apart, in a box that scrolls up and down and not sideways, and says "More lists" nowhere in the heading row', () => {
     const html = renderToStaticMarkup(createElement(ListsScreen, { portrait: true }));
-    expect(html).toContain('<div class="min-h-0 flex-1 overflow-y-auto"><div class="flex flex-wrap items-start gap-4 [&amp;_*]:scroll-mb-18 [--card-w:');
+    expect(html).toContain('<div class="min-h-0 flex-1 overflow-y-auto"><div class="grid grid-cols-[repeat(auto-fill,minmax(min(17rem,100%),1fr))] items-start gap-4 [&amp;_*]:scroll-mb-18">');
     expect(html).not.toMatch(/overflow-x-auto|snap-x/);
     expect(words(html)).not.toContain('More');
   });

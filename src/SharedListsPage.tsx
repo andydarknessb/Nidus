@@ -128,7 +128,7 @@ export function PinnedMark() {
 // at their foot that says so (OverflowButton). A card is as tall as its items, up to the height of the screen. Items are crossed
 // off here and cleared; reordering is for the phone. In portrait (docs/specs/0009) it is its natural height, every item, with no foot of
 // its own: the screen scrolls.
-function ListCard({ list, pinned, portrait }: { list: SharedList; pinned: boolean; portrait: boolean }) {
+export function ListCard({ list, pinned, portrait }: { list: SharedList; pinned: boolean; portrait: boolean }) {
   const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
   const left = withoutCrossed(items).length;
   const crossed = items.length - left;
@@ -137,7 +137,7 @@ function ListCard({ list, pinned, portrait }: { list: SharedList; pinned: boolea
   const more = useOverflow('y', 'over');
 
   return (
-    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className={`flex ${portrait ? '' : 'max-h-full '}w-(--card-w) shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3`}>
+    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className={`flex ${portrait ? '' : 'max-h-full '}${portrait ? 'w-auto' : 'w-(--card-w)'} shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3`}>
       <div className="flex min-h-13 shrink-0 items-center gap-3">
         {/* One picture for every list: there is no picture on a Shared List to choose. */}
         <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -208,8 +208,9 @@ function ListCard({ list, pinned, portrait }: { list: SharedList; pinned: boolea
 // the fourth shows in part and the row scrolls sideways, and the heading row holds a "More lists" button that says so, so a list
 // is never left off the screen with no sign of it; each card still scrolls its own items up and down.
 // `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). A card is then never
-// under 17 rem, as at larger text, so the title of a list is not left with 75 px of a 227 px card. The cards then wrap, as many to a row as fit,
-// 16 apart, each its natural height, and the screen scrolls as one column with the shared "More" foot; there is no sideways "More".
+// under 17 rem, as at larger text, so the title of a list is not left with 75 px of a 227 px card. The cards then sit in a grid, as many to a row
+// as fit at 17 rem, each its row-mates' width, 16 apart and each its natural height, and the screen scrolls as one column with the shared "More"
+// foot; there is no sideways "More".
 export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
   const { read, failed } = useLists();
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
@@ -221,12 +222,9 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
 
-  // Three cards fill the width, or 3.2 with more. Never under 17 rem in portrait; in landscape, from larger text (as master drew it).
-  const cardSize = portrait
-    ? cards.length > 3
-      ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%))]'
-      : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%))]'
-    : cards.length > 3
+  // Three cards fill the width, or 3.2 with more; in landscape, never under 17 rem from larger text (as master drew it). Portrait is a grid.
+  const cardSize =
+    cards.length > 3
       ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%,calc((1rem_-_16px)*1000)))]'
       : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]';
   const shown = cards.map((list) => <ListCard key={list.id} list={list} pinned={list.id === read?.pinnedId} portrait={portrait} />);
@@ -251,7 +249,7 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
       {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
       {portrait ? (
         <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
-          <div className={`flex flex-wrap items-start gap-4 ${BODY_CLEARANCE} ${cardSize}`}>{shown}</div>
+          <div className={`grid grid-cols-[repeat(auto-fill,minmax(min(17rem,100%),1fr))] items-start gap-4 ${BODY_CLEARANCE}`}>{shown}</div>
           <OverflowButton control={row} of="the lists" />
         </div>
       ) : (

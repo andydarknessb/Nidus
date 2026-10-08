@@ -47,7 +47,7 @@ describe('the pairing screen', () => {
   const screen = () => renderToStaticMarkup(createElement(PairingScreen, { pairing: { code: 'K7M2QX', expiresAt: new Date(Date.now() + 9 * 60_000) } }));
 
   it('has its title in the display face', () => {
-    expect(screen()).toMatch(/<h1 class="font-display [^"]*">Pair this tablet<\/h1>/);
+    expect(screen()).toMatch(/<h1 class="font-display [^"]*">Pair this screen<\/h1>/);
   });
 
   it('has its code in the display face, whose figures are lining and tabular, spaced out by letter-spacing, and in no monospace face', () => {

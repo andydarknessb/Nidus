@@ -122,9 +122,10 @@ describe('the chart in portrait', () => {
   const portrait = () => renderToStaticMarkup(createElement(RoutinesChart, { routines: today(), portrait: true }));
   const columnClasses = (html: string) => [...html.matchAll(/<section aria-labelledby="routines-p-[^"]*" class="([^"]*)"/g)].map(([, classes]) => classes?.split(' ') ?? []);
 
-  it('wraps the columns, 12 across and 16 under one another, in a box that scrolls up and down and not sideways', () => {
+  it('lays the columns in a grid of at least 17 rem, 12 across and 16 under one another, in a box that scrolls up and down and not sideways', () => {
     const html = portrait();
-    expect(html).toContain('<div class="min-h-0 flex-1 overflow-y-auto"><div class="flex flex-wrap items-start gap-x-3 gap-y-4 [&amp;_*]:scroll-mb-18">');
+    expect(html).toContain('<div class="min-h-0 flex-1 overflow-y-auto"><div class="grid grid-cols-[repeat(auto-fill,minmax(min(17rem,100%),1fr))] items-start gap-x-3 gap-y-4 [&amp;_*]:scroll-mb-18">');
+    expect(html).not.toContain('flex-wrap items-start');
     expect(html).not.toContain('overflow-x-auto');
   });
 

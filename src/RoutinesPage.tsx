@@ -393,7 +393,7 @@ function Column({
 // that part begins; a part picked by hand holds until then. Only when there are more Profiles than fit at a readable
 // width does the row scroll sideways, and the heading row then holds a "More people" button that says so.
 // `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). The columns then
-// wrap, each its natural height, and the chart scrolls as one column with the shared "More" foot; there is no sideways "More".
+// sit in a grid, each its natural height, and the chart scrolls as one column with the shared "More" foot; there is no sideways "More".
 export function RoutinesChart({ routines, portrait = false }: { routines: RoutinesToday; portrait?: boolean }) {
   const { loaded, failed, problems, columns, done, toggle } = routines;
   const celebration = useCelebration(routines);
@@ -460,10 +460,10 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
       )}
       {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
       {portrait ? (
-        // The columns wrap, 12 apart across and 16 under one another, each its natural height; the chart scrolls as one column, and its foot
-        // is the shared button. A tile or field that takes the focus is scrolled clear of the foot.
+        // The columns are a grid of columns at least 17 rem, as many to a row as fit, each its row-mates' width, 12 apart across and 16 under one
+        // another, each its natural height; the chart scrolls as one column, and its foot is the shared button. A tile or field that takes the focus is scrolled clear of the foot.
         <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
-          <div className={cn('flex flex-wrap items-start gap-x-3 gap-y-4', BODY_CLEARANCE)}>{people}</div>
+          <div className={cn('grid grid-cols-[repeat(auto-fill,minmax(min(17rem,100%),1fr))] items-start gap-x-3 gap-y-4', BODY_CLEARANCE)}>{people}</div>
           <OverflowButton control={row} of="the routines" />
         </div>
       ) : (

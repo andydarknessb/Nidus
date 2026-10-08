@@ -170,7 +170,7 @@ export function PairingScreen({ pairing }: { pairing: PairingCode }) {
 
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-8 p-8 text-center">
-      <h1 className="font-display text-[40px] leading-[44px]">Pair this tablet</h1>
+      <h1 className="font-display text-[40px] leading-[44px]">Pair this screen</h1>
       <p className="max-w-2xl text-2xl">
         On your phone, open {window.location.origin}/settings, <span className="whitespace-nowrap">sign in,</span> and enter this code.
       </p>
