@@ -535,9 +535,9 @@ export function RoutineForm({
       return;
     }
     setSaving(true);
-    setFailed(false);
     const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture });
     setSaving(false);
+    // Nothing was done (the page was busy): what the form said of the last save stands.
     if (saved === undefined) return;
     setFailed(!saved);
     if (saved && !routine) {

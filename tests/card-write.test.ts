@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCardWrite } from '../src/lib/card-write';
+import { createCardWrite, sayFailure } from '../src/lib/card-write';
 import { NOT_SAVED, NOT_SAVED_OFFLINE, writeFailureWords } from '../src/lib/write-failure';
 
 // The card write guard: one-shot actions on a Settings card go one at a time, the guard is let go on every exit, and the card says where
@@ -133,13 +133,46 @@ describe('the card write guard', () => {
     expect(heard).toBe(2);
   });
 
-  // The words a failure is said in are the write-problem words (use-write-problem), which the card hands the error to.
-  it('hands the failure on as it was thrown, for the write-problem words', async () => {
+  it('says a failure through the write-problem words when the card does not word it, and the guard lets go', async () => {
     const card = createCardWrite();
     const said: string[] = [];
-    const words = (error: unknown) => said.push(writeFailureWords(error, { offline: false }));
-    await card.run(() => Promise.reject(Object.assign(new Error('boom'), { code: '500' })), { failed: words });
-    await card.run(() => Promise.reject(new TypeError('Failed to fetch')), { failed: words });
+    const fail = (_place: string, error: unknown) => void said.push(writeFailureWords(error, { offline: false }));
+    const then = { failed: (error: unknown) => sayFailure(error, { place: 'pair' }, fail) };
+    await card.run(() => Promise.reject(Object.assign(new Error('boom'), { code: '500' })), then);
+    await card.run(() => Promise.reject(new TypeError('Failed to fetch')), then);
     expect(said).toEqual([NOT_SAVED, NOT_SAVED_OFFLINE]);
+    expect(card.state().busy).toBe(false);
+  });
+});
+
+// Where a failure goes: the card's own words first, else the write-problem words at the card's place.
+describe('saying a failure', () => {
+  const error = new Error('boom');
+  const words = { said: { failed: 'Could not pair. Try again.', offline: 'No internet, so that did not pair. Try again soon.' } };
+
+  it('leaves it to the card when the card words it itself', () => {
+    const calls: unknown[][] = [];
+    sayFailure(error, { place: 'pair', failed: () => true }, (...call) => void calls.push(call));
+    expect(calls).toEqual([]);
+  });
+
+  it('gives it to the write-problem words, at the place and with the words, when the card returns false or nothing', () => {
+    const calls: unknown[][] = [];
+    const fail = (...call: unknown[]) => void calls.push(call);
+    sayFailure(error, { place: 'pair', words, failed: () => false }, fail);
+    sayFailure(error, { place: 'pair', words, failed: () => undefined }, fail);
+    sayFailure(error, { place: 'pair', words }, fail);
+    expect(calls).toEqual([
+      ['pair', error, words],
+      ['pair', error, words],
+      ['pair', error, words],
+    ]);
+  });
+
+  it('says nothing when the card names no place', () => {
+    const calls: unknown[][] = [];
+    sayFailure(error, { words }, (...call) => void calls.push(call));
+    sayFailure(error, {}, undefined);
+    expect(calls).toEqual([]);
   });
 });

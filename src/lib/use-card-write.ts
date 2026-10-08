@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { createCardWrite, type CardWriteOutcome } from './card-write';
+import { createCardWrite, sayFailure, type CardWriteOutcome, type FailWords } from './card-write';
 import type { useWriteProblem } from './use-write-problem';
 
 // The card write guard (card-write.ts) on a card: it wires the core to state, draws nothing itself, and moves focus once the control the
 // card named is on screen (the swap unmounts whatever had it). The card draws `aria-disabled={busy || undefined}`, never `disabled`.
-
-type FailWords = Parameters<ReturnType<typeof useWriteProblem>['fail']>[2];
 
 export type CardAction<T> = {
   // Where a failure says so (useWriteProblem's place), and in whose words when they are not the default two.
@@ -39,10 +37,7 @@ export function useCardWrite(problems?: Pick<ReturnType<typeof useWriteProblem>,
     <T>(work: () => Promise<T>, action: CardAction<T> = {}): Promise<CardWriteOutcome> =>
       core.run(work, {
         landed: action.landed,
-        failed: (error) => {
-          if (action.failed?.(error) === true) return;
-          if (fail && action.place !== undefined) fail(action.place, error, action.words);
-        },
+        failed: (error) => sayFailure(error, action, fail),
       }),
     [core, fail],
   );

@@ -6,6 +6,9 @@
 // use-card-write.ts wires it to a card and draws `aria-disabled` from `busy`, never `disabled`: a button that is disabled while it
 // has focus drops it to the page.
 
+// What a write-problem failure may be worded with: the words for a value the database refused, and for an action that is not a save.
+export type FailWords = { refusal?: string; said?: { failed: string; offline: string } } | undefined;
+
 export type CardWriteState = {
   // Whether an action is on its way.
   busy: boolean;
@@ -75,4 +78,15 @@ export function createCardWrite(): CardWrite {
       return () => listeners.delete(listener);
     },
   };
+}
+
+// Where a failure goes: to the card first, which may word it itself (returns true when it did); otherwise to the write-problem words
+// (`fail`, useWriteProblem's), at `place` and only when the card named one.
+export function sayFailure(
+  error: unknown,
+  action: { place?: string | undefined; words?: FailWords | undefined; failed?: ((error: unknown) => boolean | void) | undefined },
+  fail?: (place: string, error: unknown, words?: FailWords) => void,
+): void {
+  if (action.failed?.(error) === true) return;
+  if (fail && action.place !== undefined) fail(action.place, error, action.words);
 }
