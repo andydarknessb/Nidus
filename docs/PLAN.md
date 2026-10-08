@@ -194,4 +194,5 @@ Settled on 2026-10-08 when the owner asked for the Wall to fit an Elo 2402L touc
 - **Nothing scales up for the panel**: the look's tokens, parts and sizes are unchanged at 92 pixels per inch.
 - **The Device is a tablet or a PC's browser**: pairing, the Pairing Code, the heartbeat and what a Device may write do not change.
 - **Portrait's Routines and Lists are a grid**: columns and cards at least 17 rem, as many to a row as fit, each its row-mates' width; the P12 gets it too.
+- **Home in portrait fills the height**: Up next shows the tiles a third of the height holds, never fewer than three; the lower row follows; the P12 gets it too.
 - **No new data**: no migration.

@@ -17,9 +17,9 @@ describe('homeLayout', () => {
 
 // A tablet hung upright (docs/specs/0009): at 768 px and wider, a viewport taller than it is wide, by the viewport alone.
 describe('homeLayout, portrait', () => {
-  it('is portrait on the Lenovo Tab P12 upright, at either Display size, and holds four days and three tiles', () => {
-    expect(homeLayout({ width: 920, height: 1472 })).toEqual({ days: 4, tiles: 3, phone: false, portrait: true });
-    expect(homeLayout({ width: 1082, height: 1732 })).toEqual({ days: 4, tiles: 3, phone: false, portrait: true });
+  it('is portrait on the Lenovo Tab P12 upright, at either Display size, and holds four days and four or five tiles (#190)', () => {
+    expect(homeLayout({ width: 920, height: 1472 })).toEqual({ days: 4, tiles: 4, phone: false, portrait: true });
+    expect(homeLayout({ width: 1082, height: 1732 })).toEqual({ days: 4, tiles: 5, phone: false, portrait: true });
   });
 
   it('is landscape on the P12 on its side, where nothing changes: five days and three tiles', () => {
@@ -29,6 +29,7 @@ describe('homeLayout, portrait', () => {
 
   it('is portrait from 768 px wide, a phone below it whatever the height, landscape when square, and neither at 0', () => {
     expect(homeLayout({ width: 768, height: 1024 }).portrait).toBe(true);
+    expect(homeLayout({ width: 768, height: 1024 }).tiles).toBe(3);
     expect(homeLayout({ width: 767, height: 1024 })).toMatchObject({ phone: true, portrait: false });
     expect(homeLayout({ width: 1000, height: 1000 }).portrait).toBe(false);
     expect(homeLayout({ width: 0, height: 0 })).toMatchObject({ phone: false, portrait: false });
@@ -41,13 +42,13 @@ describe('homeLayout, the Elo 2402L, 24 inches, 1920 by 1080', () => {
     expect(homeLayout({ width: 1920, height: 1080 })).toEqual({ days: 5, tiles: 3, phone: false, portrait: false });
   });
 
-  it('is portrait at 1080 by 1920, with four days and three tiles', () => {
-    expect(homeLayout({ width: 1080, height: 1920 })).toEqual({ days: 4, tiles: 3, phone: false, portrait: true });
+  it('is portrait at 1080 by 1920, with four days and six tiles, a third of the height (#190)', () => {
+    expect(homeLayout({ width: 1080, height: 1920 })).toEqual({ days: 4, tiles: 6, phone: false, portrait: true });
   });
 
-  it('holds five days and three tiles at 125 percent zoom, 1536 by 864, and four days and three tiles upright, 864 by 1536', () => {
+  it('holds five days and three tiles at 125 percent zoom, 1536 by 864, and four days and five tiles upright, 864 by 1536', () => {
     expect(homeLayout({ width: 1536, height: 864 })).toEqual({ days: 5, tiles: 3, phone: false, portrait: false });
-    expect(homeLayout({ width: 864, height: 1536 })).toEqual({ days: 4, tiles: 3, phone: false, portrait: true });
+    expect(homeLayout({ width: 864, height: 1536 })).toEqual({ days: 4, tiles: 5, phone: false, portrait: true });
   });
 
   it('gives up a tile at 150 percent zoom on its side, 1280 by 720, and is a phone upright, 720 by 1280', () => {
