@@ -1,10 +1,11 @@
 import { ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Profile } from '../lib/profiles';
-import { holdEndsAt, tapFinishesProfile, UP_NEXT_TILES, upNext, upNextLink, type Routine, type TickedHere } from '../lib/routines';
+import { tapOutcome } from '../lib/routine-tap';
+import { holdEndsAt, UP_NEXT_TILES, upNext, upNextLink, type Routine, type TickedHere } from '../lib/routines';
 import { useStatusLine } from '../lib/status-line';
 import { useCelebration, type RoutinesToday } from '../lib/use-routines-today';
-import { Confetti, RoutineTile } from '../RoutinesPage';
+import { Confetti, RoutineTile } from './RoutineColumn';
 import { EmptyWords } from './EmptyWords';
 import { Button } from './ui/button';
 import { couldNotLoad } from '../lib/synced-read';
@@ -59,16 +60,10 @@ export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEX
   });
 
   function tap(profile: Profile, routine: Routine, button: HTMLElement) {
-    const checking = !done.has(routine.id);
     const mine = groups.find((group) => group.profile.id === profile.id)?.routines ?? [];
-    const section = card.current;
-    const finishes = section !== null && tapFinishesProfile(mine, done, routine.id, checking);
-    if (section && finishes) {
-      // Where the burst starts: the middle of the tile, measured from the card's padding edge, which is the burst's own top.
-      const box = button.getBoundingClientRect();
-      const top = section.getBoundingClientRect().top + section.clientTop;
-      celebration.start(profile.id, box.top + box.height / 2 - top);
-    }
+    // The same decision as a Profile's column makes, and the burst starts where it says (src/lib/routine-tap.ts).
+    const { checking, finishes, burstAt } = tapOutcome(mine, done, routine.id, button, card.current);
+    if (burstAt !== null) celebration.start(profile.id, burstAt);
     // A tick is held in its place from now; a tap on a Routine that is held takes the tick back, and the hold with it.
     const at = Date.now();
     setTicked((was) => (checking ? { ...was, [routine.id]: at } : Object.fromEntries(Object.entries(was).filter(([id]) => id !== routine.id))));
