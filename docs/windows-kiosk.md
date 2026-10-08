@@ -30,6 +30,35 @@ Put the shortcut in the Startup folder (`shell:startup` in the Run dialog), so t
 
 To leave the Wall, press Alt+F4. That is a parent's job.
 
+## The script
+
+The profile folder, the shortcut in the Startup folder and the power timeouts are three commands, so they are one script. Run it on the PC in PowerShell as administrator, after Chrome is installed; it finds Chrome under Program Files or Program Files (x86). Orientation, scale, the sign-in and the font size stay by hand, above and below.
+
+```powershell
+$site = 'https://nidus-home.netlify.app/'
+$chrome = @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $chrome) { throw 'Chrome is not installed. Install it from google.com/chrome, then run this again.' }
+
+New-Item -ItemType Directory -Force 'C:\NidusWall' | Out-Null
+
+$startup = [Environment]::GetFolderPath('Startup')
+$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut("$startup\Nidus Wall.lnk")
+$shortcut.TargetPath = $chrome
+$shortcut.Arguments = "--kiosk --user-data-dir=`"C:\NidusWall`" $site"
+$shortcut.Save()
+
+# Screen off: never. Sleep: never, on mains and on battery.
+powercfg /change monitor-timeout-ac 0
+powercfg /change monitor-timeout-dc 0
+powercfg /change standby-timeout-ac 0
+powercfg /change standby-timeout-dc 0
+
+"Shortcut: $startup\Nidus Wall.lnk -> $chrome"
+```
+
+Then close every Chrome window and double-click the shortcut.
+
 ## Pairing
 
 A screen that is not yet paired shows a Pairing Code. Pair it from a phone as `docs/go-live.md`, step 11, says. The pairing survives restarts only because the profile folder keeps it, so do not delete `C:\NidusWall`.
