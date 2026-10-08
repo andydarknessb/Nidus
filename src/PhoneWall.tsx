@@ -1,4 +1,5 @@
-import type { CalendarView, WallRoute } from './lib/calendar-occurrences';
+import type { WallRoute } from './lib/calendar-occurrences';
+import type { CalendarView } from './lib/paged-view';
 import type { HouseholdView } from './lib/household';
 import type { Profile } from './lib/profiles';
 import type { RoutinesToday } from './lib/use-routines-today';

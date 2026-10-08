@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { pageDays } from '../src/lib/calendar-occurrences';
+import { pageDays } from '../src/lib/paged-view';
 import { mealsPickedDay, slotRowName, type Meal } from '../src/lib/meals';
 import { leftToGet, listChipName, pickedList, type SharedList } from '../src/lib/shared-lists';
 import type { ListChip as ListChipType, PhoneLists as PhoneListsType } from '../src/phone/PhoneLists';

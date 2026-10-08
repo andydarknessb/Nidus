@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { addDays, dayStartMs, householdDay, offsetMs, spanIsOn } from '../../supabase/functions/_shared/zoned-time.ts';
+import { addDays, householdDay, offsetMs, spanIsOn } from '../../supabase/functions/_shared/zoned-time.ts';
+import { pageStart, shownDate, wallDays, type CalendarView, type WallDay } from './paged-view';
 
 
 // Occurrences on the wall (CONTEXT.md: Synced Event, Native Event). The `calendar_occurrences`
@@ -63,16 +64,6 @@ export async function loadOccurrences(client: SupabaseClient, from: Date, to: Da
 
 const HOUR_MS = 60 * 60 * 1000;
 
-export type WallDay = {
-  date: string;
-  weekday: number;
-  startMs: number;
-  // The start of the next day, so the day's length is right on a DST change.
-  endMs: number;
-  isToday: boolean;
-  timezone: string;
-};
-
 // An instant as hours on the day's wall clock (0 to 24): what the hour lines and labels show. On a
 // 23 or 25 hour day this is not the share of the day that has passed, so positions never use the
 // latter. Measured from the wall clock's own midnight, so a day that skips midnight (Santiago)
@@ -84,17 +75,6 @@ export function wallHour(ms: number, day: WallDay): number {
   return Math.min(Math.max(hour, 0), 24);
 }
 
-function wallDays(dates: string[], today: string, timezone: string): WallDay[] {
-  return dates.map((date) => ({
-    date,
-    weekday: householdDay(timezone, new Date(dayStartMs(date, timezone))).weekday,
-    startMs: dayStartMs(date, timezone),
-    endMs: dayStartMs(addDays(date, 1), timezone),
-    isToday: date === today,
-    timezone,
-  }));
-}
-
 // Today and the next four days in the Household Timezone.
 export function fiveDays(timezone: string, now: Date = new Date()): WallDay[] {
   const today = householdDay(timezone, now).date;
@@ -102,98 +82,6 @@ export function fiveDays(timezone: string, now: Date = new Date()): WallDay[] {
 }
 
 // ---- Week, day and month views ---------------------------------------------------------
-
-export type CalendarView = 'week' | 'day' | 'month';
-
-// The week runs Sunday to Saturday, as WEEKDAYS does.
-export function weekStart(date: string): string {
-  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
-  return addDays(date, -new Date(Date.UTC(year, month - 1, day)).getUTCDay());
-}
-
-// `date` moved by whole calendar months, stopping at the end of a shorter month (Mar 31 less a
-// month is Feb 28), the way the sync window is cut.
-export function addMonths(date: string, months: number): string {
-  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
-  const lastDay = new Date(Date.UTC(year, month - 1 + months + 1, 0)).getUTCDate();
-  return new Date(Date.UTC(year, month - 1 + months, Math.min(day, lastDay))).toISOString().slice(0, 10);
-}
-
-// The first and last Household dates the wall can page to: the mirror holds a month back and six
-// months ahead of today (PLAN.md: Calendar), so nothing beyond them has events to show.
-export type PagingWindow = { first: string; last: string };
-
-export function pagingWindow(timezone: string, now: Date = new Date()): PagingWindow {
-  return pagingWindowAround(householdDay(timezone, now).date);
-}
-
-// The same window around a Household date that is already known.
-export function pagingWindowAround(today: string): PagingWindow {
-  return { first: addMonths(today, -1), last: addMonths(today, 6) };
-}
-
-export function clampToWindow(date: string, window: PagingWindow): string {
-  return date < window.first ? window.first : date > window.last ? window.last : date;
-}
-
-// The date a page's address puts it on, as the page shows it: the address's date (today when it has
-// none) pulled to the nearest end of the window. The page drawn and every rule about it read it here,
-// so they agree on an address outside the window (old history, a Wall left on a week for a month).
-export function shownDate(date: string | null, today: string): string {
-  return clampToWindow(date ?? today, pagingWindowAround(today));
-}
-
-// Whether a day can be opened as itself. A day outside the window opens its nearest end instead, so
-// the week view's days beyond the window are headings and the month view's are plain cells, not buttons.
-export function canOpenDay(date: string, window: PagingWindow): boolean {
-  return clampToWindow(date, window) === date;
-}
-
-// The date a page is anchored on: the Sunday of a week page, the 1st of a month page, the day itself
-// on a day page.
-export function pageStart(view: CalendarView, date: string): string {
-  return view === 'week' ? weekStart(date) : view === 'month' ? `${date.slice(0, 8)}01` : date;
-}
-
-// The seven days of a week page, or the one day of a day page, in the Household Timezone. A month page
-// is a grid of weeks: see monthWeeks.
-export function pageDays(view: 'week' | 'day', anchor: string, timezone: string, now: Date = new Date()): WallDay[] {
-  const first = pageStart(view, anchor);
-  const today = householdDay(timezone, now).date;
-  return wallDays(Array.from({ length: view === 'week' ? 7 : 1 }, (_, index) => addDays(first, index)), today, timezone);
-}
-
-// The weeks of a month page: whole Sunday-to-Saturday weeks from the one holding the 1st to the one
-// holding the last day, four to six of them, each seven days in the Household Timezone. The days either
-// side of the month belong to its neighbours and are only shown. It takes today's date, not the instant,
-// because building 42 days is slow enough that the screen builds them once a day, not on every tick.
-export function monthWeeks(anchor: string, timezone: string, today: string): WallDay[][] {
-  const first = pageStart('month', anchor);
-  const last = addDays(addMonths(first, 1), -1);
-  const weeks: WallDay[][] = [];
-  for (let start = weekStart(first); start <= last; start = addDays(start, 7)) {
-    weeks.push(wallDays(Array.from({ length: 7 }, (_, index) => addDays(start, index)), today, timezone));
-  }
-  return weeks;
-}
-
-// The anchor of the page `count` pages on from the page anchored on `anchor`.
-function pageBy(view: CalendarView, anchor: string, count: number): string {
-  return view === 'month' ? addMonths(anchor, count) : addDays(anchor, count * (view === 'week' ? 7 : 1));
-}
-
-// The anchors of the pages either side of `anchor`, or null at the end of the window: a page is
-// reachable while any of its days falls inside it, so a week or a month that only partly overlaps is kept.
-export function paging(view: CalendarView, anchor: string, window: PagingWindow): { previous: string | null; next: string | null } {
-  const current = pageStart(view, anchor);
-  const previous = pageBy(view, current, -1);
-  const next = pageBy(view, current, 1);
-  return {
-    // The page before ends on the day before this one starts.
-    previous: addDays(current, -1) >= window.first ? previous : null,
-    next: next <= window.last ? next : null,
-  };
-}
 
 // A calendar date ('YYYY-MM-DD') in words. Calendar dates carry no zone, so they are formatted in UTC.
 function formatCalendarDate(date: string, options: Intl.DateTimeFormatOptions): string {

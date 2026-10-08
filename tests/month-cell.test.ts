@@ -2,7 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { CELL_HEAD_REM, CELL_LINE_REM, DayCell } from '../src/components/MonthCell';
-import { linesPerCell, monthWeeks, type Occurrence } from '../src/lib/calendar-occurrences';
+import { linesPerCell, type Occurrence } from '../src/lib/calendar-occurrences';
+import { monthWeeks } from '../src/lib/paged-view';
 import { personStyle, TOKENS, type Mode } from '../src/lib/look';
 import { contrastRatio, type Profile } from '../src/lib/profiles';
 

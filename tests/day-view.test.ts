@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pageDays, type Occurrence, type WallDay } from '../src/lib/calendar-occurrences';
+import { type Occurrence } from '../src/lib/calendar-occurrences';
+import { pageDays, type WallDay } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
 import { pillPeople } from '../src/lib/schedule';
 import { aboveLabel, blockTime, emptyRowWords, hourWindow, hourWords, hoursThatFit, planDay, whoWords, type DayPlan } from '../src/lib/day-view';

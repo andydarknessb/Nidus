@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import { Pin } from 'lucide-react';
-import { cellLines, describeCell, formatCompactClock, type Occurrence, type WallDay } from '../lib/calendar-occurrences';
+import { cellLines, describeCell, formatCompactClock, type Occurrence } from '../lib/calendar-occurrences';
+import type { WallDay } from '../lib/paged-view';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, type PillPeople } from '../lib/schedule';
 import { EventDiscs, EventFill } from './EventPill';

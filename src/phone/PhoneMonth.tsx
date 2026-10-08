@@ -3,15 +3,17 @@ import { useMemo, useState } from 'react';
 import { BEYOND_RANGE, HATCH } from '../components/MonthCell';
 import { Button } from '../components/ui/button';
 import {
-  canOpenDay,
   describeCell,
   describeMonth,
+  type Occurrence,
+} from '../lib/calendar-occurrences';
+import {
+  canOpenDay,
   monthWeeks,
   pageDays,
-  type Occurrence,
   type PagingWindow,
   type WallDay,
-} from '../lib/calendar-occurrences';
+} from '../lib/paged-view';
 import { personStyle } from '../lib/look';
 import type { DayEvents as Read } from '../lib/day-events';
 import { pickedDay, type MonthDot } from '../lib/phone-calendar';

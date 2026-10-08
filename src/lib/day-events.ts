@@ -1,4 +1,5 @@
-import { dayOccurrences, type Occurrence, type WallDay } from './calendar-occurrences';
+import { dayOccurrences, type Occurrence } from './calendar-occurrences';
+import type { WallDay } from './paged-view';
 import { monthDots, type MonthDot } from './phone-calendar';
 import { filterOccurrences } from './profile-filter';
 import type { Profile } from './profiles';

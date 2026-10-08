@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import type { Occurrence, WallDay } from '../lib/calendar-occurrences';
+import type { Occurrence } from '../lib/calendar-occurrences';
+import type { WallDay } from '../lib/paged-view';
 import { focusEvent } from '../lib/focus';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, type Pill } from '../lib/schedule';

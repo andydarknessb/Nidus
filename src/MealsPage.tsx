@@ -3,14 +3,15 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSPropert
 import { InBody } from './components/InBody';
 import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
-import { describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
+import { describePage, mealsPageDate } from './lib/calendar-occurrences';
+import { MEAL_PLAN_LIMITS, type WallDay } from './lib/paged-view';
 import { dialogKeys } from './lib/dialog';
-import { focusTitleIfLost } from './lib/focus';
 import { appBehind, holdBackground } from './lib/inert-behind';
 import { mealGrid, nextMeal, nextMealWords, type Meal, type MealSlot } from './lib/meals';
 import { WEEKDAYS } from './lib/routines';
 import { dayLabel, dayName, SLOT_PICTURES, useMeals } from './lib/use-meals';
 import { useFailureWords } from './lib/use-failure-words';
+import { usePagedView } from './lib/use-paged-view';
 import { useHouseholdDay, useNow } from './lib/wall-hooks';
 import { dayStartMs, householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 import { couldNotLoad } from './lib/synced-read';
@@ -28,26 +29,17 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
   const today = useHouseholdDay(timezone).date;
   // The page is laid out from the start of today, so its days and the mark on today agree.
   const now = new Date(dayStartMs(today, timezone));
-  const anchor = pageStart('week', shownDate(date, today));
-  const days = pageDays('week', anchor, timezone, now);
-  const { previous, next } = paging('week', anchor, pagingWindowAround(today));
+  // Paging may disable or remove the button that was pressed: usePagedView puts focus on the page title instead of losing it, but only when
+  // it was lost, so paging by keyboard stays on the button that was pressed; on arrival it goes to the title, as on the other screens.
+  const { days, previous, next, limit, heading } = usePagedView({
+    view: 'week',
+    date,
+    now,
+    timezone,
+    limits: MEAL_PLAN_LIMITS,
+    takesFocusOnArrival: true,
+  });
   const open = (week: string) => onNavigate(mealsPageDate(week, today));
-  // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it, but only when it was lost
-  // (focusTitleIfLost), so paging by keyboard stays on the button that was pressed; on arrival it goes to the title, as on the other
-  // screens. It runs on the week the person chose (`date`), never on `anchor`, which also moves by itself at the week's turn while the
-  // page follows this week.
-  const heading = useRef<HTMLHeadingElement>(null);
-  const arrived = useRef(false);
-  useEffect(() => {
-    if (arrived.current) focusTitleIfLost(heading.current);
-    else {
-      arrived.current = true;
-      heading.current?.focus();
-    }
-  }, [date]);
-  // The week's grid is keyed on the anchor, so when it moves by itself (the week turning) the grid is new and focus inside it is gone:
-  // it goes to the title then, and focus that is anywhere else is left alone.
-  useEffect(() => focusTitleIfLost(heading.current), [anchor]);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -66,14 +58,9 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
           {describePage(days)}
         </h2>
       </nav>
-      {/* Always mounted, so a screen reader announces the text when it appears. Meals page within the
-          calendar's window but are not what the mirror keeps, so these say only where the plan ends. */}
+      {/* Always mounted, so a screen reader announces the text when it appears. */}
       <p role="status" className="text-lg empty:hidden">
-        {previous === null
-          ? 'This is as far back as the meal plan goes.'
-          : next === null
-            ? 'This is as far ahead as the meal plan goes.'
-            : ''}
+        {limit}
       </p>
       {/* Keyed on the page so a turned page never shows the last page's Meals, and a failed read says so. */}
       <MealsGrid key={days[0]!.date} days={days} />

@@ -1,5 +1,6 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { loadOccurrences, type WallDay } from './calendar-occurrences';
+import { loadOccurrences } from './calendar-occurrences';
+import type { WallDay } from './paged-view';
 import { watchHouseholdDay, watchMinute } from './household-day';
 import { dayEventsOf, type DayEvents } from './day-events';
 import { ProfileFilterContext } from './profile-filter';

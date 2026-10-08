@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadOccurrences, monthWeeks, type WallDay } from '../src/lib/calendar-occurrences';
+import { loadOccurrences } from '../src/lib/calendar-occurrences';
+import { monthWeeks, type WallDay } from '../src/lib/paged-view';
 import { dayEventsOf } from '../src/lib/day-events';
 import { saveNativeEvent } from '../src/lib/native-events';
 import { PROFILE_PALETTE, createProfile, type Profile } from '../src/lib/profiles';

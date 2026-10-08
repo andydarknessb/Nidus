@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pageDays, type Occurrence } from '../src/lib/calendar-occurrences';
+import { type Occurrence } from '../src/lib/calendar-occurrences';
+import { pageDays } from '../src/lib/paged-view';
 import { MAX_DOTS, monthDots, pageWords, pickedDay, type MonthDot } from '../src/lib/phone-calendar';
 import { filterOccurrences } from '../src/lib/profile-filter';
 import type { Profile } from '../src/lib/profiles';

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { describeCell, type WallDay } from '../lib/calendar-occurrences';
+import { describeCell } from '../lib/calendar-occurrences';
+import type { WallDay } from '../lib/paged-view';
 import { focusElement } from '../lib/focus';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, scheduleColumns } from '../lib/schedule';

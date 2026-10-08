@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { canOpenDay, describeCell, pagingWindow, type Occurrence, type WallDay } from '../lib/calendar-occurrences';
+import { describeCell, type Occurrence } from '../lib/calendar-occurrences';
+import { canOpenDay, pagingWindow, type WallDay } from '../lib/paged-view';
 import { focusElement } from '../lib/focus';
 import type { Profile } from '../lib/profiles';
 import { dayHeadingName, headingLabel, pillPeople, pillsToShow, scheduleColumns, type ScheduleColumn } from '../lib/schedule';

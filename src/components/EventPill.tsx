@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import { Pin } from 'lucide-react';
-import type { Occurrence, WallDay } from '../lib/calendar-occurrences';
+import type { Occurrence } from '../lib/calendar-occurrences';
+import type { WallDay } from '../lib/paged-view';
 import { personStyle } from '../lib/look';
 import { pillName, type Pill, type PillPeople } from '../lib/schedule';
 import { HouseDisc, PersonDisc } from './people';

@@ -1,7 +1,8 @@
 import { cn } from 'cn';
 import { Pin } from 'lucide-react';
 import { Fragment, type Ref } from 'react';
-import type { Occurrence, WallDay } from '../lib/calendar-occurrences';
+import type { Occurrence } from '../lib/calendar-occurrences';
+import type { WallDay } from '../lib/paged-view';
 import { HOUR_REM, hourWords, type DayBlock, type DayPlan, type FoldTile } from '../lib/day-view';
 import type { Profile } from '../lib/profiles';
 import { pillName, pillPeople, type Pill, type PillPeople } from '../lib/schedule';

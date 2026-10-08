@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { fiveDays, pageDays, type Occurrence } from '../src/lib/calendar-occurrences';
+import { fiveDays, type Occurrence } from '../src/lib/calendar-occurrences';
+import { pageDays } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
 import type { ProfileRoutines, Routine } from '../src/lib/routines';
 import { dayHeadingName, headingLabel, isOnNow, pillName, pillPeople, pillsToShow, pillTime, scheduleColumns, stripPeople } from '../src/lib/schedule';

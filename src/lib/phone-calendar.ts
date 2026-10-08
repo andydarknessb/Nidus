@@ -1,4 +1,5 @@
-import { clampToWindow, describePage, pageStart, pagingWindowAround, type Occurrence, type WallDay } from './calendar-occurrences';
+import { describePage, type Occurrence } from './calendar-occurrences';
+import { clampToWindow, pageStart, pagingWindowAround, type WallDay } from './paged-view';
 import type { Profile } from './profiles';
 import { pillPeople } from './schedule';
 import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
