@@ -1,9 +1,10 @@
 import { Calendar1, CalendarDays, CalendarRange, CircleCheck, House, List, Moon, Plus, Settings, Sun, Utensils, type LucideIcon } from 'lucide-react';
 import type { ComponentProps } from 'react';
-import { navigationRailDate, type CalendarView, type WallRoute } from '../lib/calendar-occurrences';
-import { householdDay } from '../lib/routines';
+import { navigationRailDate, type WallRoute } from '../lib/calendar-occurrences';
+import type { CalendarView } from '../lib/paged-view';
 import { useMode } from '../lib/use-mode';
 import { Button } from './ui/button';
+import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // An entry's look, shared by the entries and the link to Settings: an icon over a word, at least 64 px tall and the
 // rail's width, in the quiet voice. A word too long for one line wraps; the entry then grows taller, never wider. The

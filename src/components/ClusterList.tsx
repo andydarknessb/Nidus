@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
-import type { Occurrence, WallDay } from '../lib/calendar-occurrences';
+import type { Occurrence } from '../lib/calendar-occurrences';
+import type { WallDay } from '../lib/paged-view';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, type Pill } from '../lib/schedule';
 import { EventPill } from './EventPill';

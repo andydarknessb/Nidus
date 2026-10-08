@@ -1,7 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { pageDays, pagingWindow, type Occurrence } from '../src/lib/calendar-occurrences';
+import type { Occurrence } from '../src/lib/calendar-occurrences';
+import { pageDays, pagingWindow } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
 import { scheduleColumns } from '../src/lib/schedule';
 import type { PagedCalendar as PagedCalendarType } from '../src/components/FiveDayCalendar';

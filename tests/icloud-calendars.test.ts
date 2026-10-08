@@ -1,9 +1,10 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { handleCalendarConnect, type ConnectDeps } from '../supabase/functions/calendar-connect/handler';
-import { AddRefused, IPHONE_ADDED, IPHONE_ADD_FAILED, addIphoneCalendar, calendarsOfAccount, loadCalendarAccounts, loadMirroredCalendars, pressAdd, removeCalendarAccount, updateMirroredCalendar } from '../src/lib/calendar-accounts';
+import { AddRefused, IPHONE_ADDED, IPHONE_ADD_FAILED, addIphoneCalendar, calendarsOfAccount, loadCalendarAccounts, loadMirroredCalendars, removeCalendarAccount, sendLink, updateMirroredCalendar } from '../src/lib/calendar-accounts';
 import { PROFILE_PALETTE, createProfile } from '../src/lib/profiles';
 import { arrangeEvents } from './support/calendar';
+import { fakeICloud } from './support/icloud';
 import {
   asAnonymous,
   asDevice,
@@ -35,14 +36,7 @@ const WEBCAL = 'webcal://p12-caldav.icloud.com/published/2/secret-feed-token-1';
 const feedText = (name?: string) => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${name ? `X-WR-CALNAME:${name}\r\n` : ''}END:VCALENDAR\r\n`;
 
 // The feed's server is the only fake. It answers one link, or nothing it knows.
-function fakeFeed(reply: Response | (() => Response)) {
-  const calls: string[] = [];
-  const fake = (async (input: string | URL | Request) => {
-    calls.push(String(input));
-    return String(input) === LINK ? (typeof reply === 'function' ? reply() : reply.clone()) : new Response('missing', { status: 404 });
-  }) as typeof fetch;
-  return { fetch: fake, calls };
-}
+const fakeFeed = (reply: Response | (() => Response)) => fakeICloud({ [LINK]: reply });
 
 function deps(feed: { fetch: typeof fetch }): ConnectDeps {
   return { env, admin: asServiceRole(), fetch: feed.fetch };
@@ -104,7 +98,7 @@ describe('POST /icloud', () => {
     const body = (await response.json()) as { id: string; name: string };
     expect(body.name).toBe('Family');
     // Fetched once, over https: webcal is only a spelling.
-    expect(feed.calls).toEqual([LINK]);
+    expect(feed.calls.map((call) => call.url)).toEqual([LINK]);
 
     const [row] = await accountRows(account);
     expect(await accountRows(account)).toHaveLength(1);
@@ -364,53 +358,32 @@ describe('addIphoneCalendar', () => {
   });
 });
 
-describe('pressing Add', () => {
-  const press = (add: (url: string) => Promise<void>, over: { link?: string; current?: () => string; state?: { adding: boolean } } = {}) => {
-    const state = over.state ?? { adding: false };
-    return { state, result: pressAdd({ link: over.link ?? `  ${LINK} `, state, current: over.current ?? (() => LINK), add }) };
-  };
+describe('what an Add comes to', () => {
+  const press = (add: (url: string) => Promise<void>, over: { link?: string; current?: () => string } = {}) =>
+    sendLink({ link: over.link ?? `  ${LINK} `, current: over.current ?? (() => LINK), add });
 
-  it('sends the link trimmed, clears the field, says the status line, and puts the guard down', async () => {
+  it('sends the link trimmed, clears the field, and says what the status line says', async () => {
     const sent: string[] = [];
-    const { state, result } = press(async (url) => void sent.push(url));
-    expect(state.adding).toBe(true);
-    expect(await result).toEqual({ kind: 'added', clear: true, say: 'Added. First sync within 5 minutes.' });
+    expect(await press(async (url) => void sent.push(url))).toEqual({ kind: 'added', clear: true, say: 'Added. First sync within 5 minutes.' });
     expect(IPHONE_ADDED).toBe('Added. First sync within 5 minutes.');
     expect(sent).toEqual([LINK]);
-    expect(state.adding).toBe(false);
   });
 
   it('keeps what was typed while it was adding: the field clears only if it still holds the link that was sent', async () => {
-    expect(await press(async () => undefined, { current: () => `${LINK}2` }).result).toMatchObject({ kind: 'added', clear: false });
-    expect(await press(async () => undefined, { current: () => '' }).result).toMatchObject({ kind: 'added', clear: false });
+    expect(await press(async () => undefined, { current: () => `${LINK}2` })).toMatchObject({ kind: 'added', clear: false });
+    expect(await press(async () => undefined, { current: () => '' })).toMatchObject({ kind: 'added', clear: false });
     // Spaces around the same link are the same link.
-    expect(await press(async () => undefined, { current: () => ` ${LINK}` }).result).toMatchObject({ kind: 'added', clear: true });
+    expect(await press(async () => undefined, { current: () => ` ${LINK}` })).toMatchObject({ kind: 'added', clear: true });
   });
 
   it('lets the route’s words reach the field, and leaves the field alone', async () => {
-    const result = await press(async () => Promise.reject(new AddRefused('That calendar is already on the Wall.'))).result;
+    const result = await press(async () => Promise.reject(new AddRefused('That calendar is already on the Wall.')));
     expect(result).toEqual({ kind: 'refused', words: 'That calendar is already on the Wall.' });
   });
 
-  it('hands any other failure back for the page to word, and puts the guard down', async () => {
+  it('hands any other failure back for the page to word', async () => {
     const offline = new TypeError('Failed to fetch');
-    const { state, result } = press(async () => Promise.reject(offline));
-    expect(await result).toEqual({ kind: 'failed', error: offline });
-    expect(state.adding).toBe(false);
-  });
-
-  it('ignores a second press while one is adding, sends nothing for it, and lets a later one through', async () => {
-    let finish!: () => void;
-    const sent: string[] = [];
-    const slow = (url: string) => new Promise<void>((resolve) => (sent.push(url), (finish = resolve)));
-    const first = press(slow);
-    const second = press(async (url) => void sent.push(`second ${url}`), { state: first.state });
-    expect(await second.result).toEqual({ kind: 'ignored' });
-    expect(first.state.adding).toBe(true);
-    finish();
-    expect(await first.result).toMatchObject({ kind: 'added' });
-    expect(sent).toEqual([LINK]);
-    expect(await press(async () => undefined, { state: first.state }).result).toMatchObject({ kind: 'added' });
+    expect(await press(async () => Promise.reject(offline))).toEqual({ kind: 'failed', error: offline });
   });
 });
 
@@ -423,7 +396,7 @@ describe('the Settings page’s code path', () => {
     const phone = await asHouseholdAccount(account);
 
     const [listed] = await loadCalendarAccounts(phone);
-    expect(listed).toMatchObject({ provider: 'icloud', google_email: null, status: 'active', last_synced_at: null, last_error: null });
+    expect(listed).toMatchObject({ provider: 'icloud', google_email: null, status: 'active', last_synced_at: null, last_error: null, truncated: false });
     const [calendar] = calendarsOfAccount(await loadMirroredCalendars(phone), listed!.id);
     expect(calendar).toMatchObject({ name: 'Sam’s iPhone', selected: true, profile_id: null });
 

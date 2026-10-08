@@ -1,8 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CALENDAR_SCOPE,
-  GOOGLE_CALENDAR_LIST_URL,
-  GOOGLE_TOKEN_URL,
   LINK_STATE_SECONDS,
   SETTINGS_STATE_SECONDS,
   handleCalendarConnect,
@@ -10,9 +8,11 @@ import {
   verifyState,
   type ConnectDeps,
 } from '../supabase/functions/calendar-connect/handler';
+import { GOOGLE_TOKEN_URL } from '../supabase/functions/_shared/google-token';
 import {
   SYNC_STALE_MS,
   calendarsOfAccount,
+  chooseCalendar,
   formatAge,
   lastSyncedText,
   loadCalendarAccounts,
@@ -39,6 +39,8 @@ import {
   type SignedUpAccount,
   type Tablet,
 } from './support/supabase';
+import { startSyncedRead } from '../src/lib/synced-read';
+import { fakeGoogle } from './support/google';
 
 const STATE_SECRET = 'test-state-secret-that-is-long-enough-to-sign-with';
 const env = {
@@ -49,37 +51,7 @@ const env = {
   googleClientSecret: 'client-secret',
 };
 
-// Google's HTTP API is the only fake: canned token and calendarList responses.
-type FakeGoogle = { fetch: typeof fetch; calls: { url: string; init?: RequestInit }[] };
-
-function fakeGoogle(options: {
-  email: string;
-  refreshToken?: string | null;
-  calendars?: { id: string; summary: string; primary?: boolean }[];
-  tokenStatus?: number;
-}): FakeGoogle {
-  const calls: FakeGoogle['calls'] = [];
-  const calendars = options.calendars ?? [
-    { id: options.email, summary: options.email, primary: true },
-    { id: 'family@group.calendar.google.com', summary: 'Family' },
-    { id: 'school@group.calendar.google.com', summary: 'School' },
-  ];
-  const fake = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = String(input);
-    calls.push(init ? { url, init } : { url });
-    if (url === GOOGLE_TOKEN_URL) {
-      if (options.tokenStatus && options.tokenStatus !== 200) return Promise.resolve(new Response('{}', { status: options.tokenStatus }));
-      const body: Record<string, string> = { access_token: 'access-token' };
-      if (options.refreshToken !== null) body['refresh_token'] = options.refreshToken ?? 'refresh-token-1';
-      return Promise.resolve(Response.json(body));
-    }
-    if (url.startsWith(GOOGLE_CALENDAR_LIST_URL)) return Promise.resolve(Response.json({ items: calendars }));
-    return Promise.resolve(new Response('unexpected', { status: 500 }));
-  };
-  return { fetch: fake as typeof fetch, calls };
-}
-
-function deps(google: FakeGoogle, extra: Partial<ConnectDeps> = {}): ConnectDeps {
+function deps(google: ReturnType<typeof fakeGoogle>, extra: Partial<ConnectDeps> = {}): ConnectDeps {
   return { env, admin: asServiceRole(), fetch: google.fetch, ...extra };
 }
 
@@ -210,7 +182,7 @@ describe('calendar-connect callback', () => {
     expect(response.status).toBe(302);
     expect(response.headers.get('Location')).toBe(env.appUrl);
 
-    const tokenCall = google.calls.find((call) => call.url === GOOGLE_TOKEN_URL)!;
+    const tokenCall = google.calls.find((call) => String(call.url) === GOOGLE_TOKEN_URL)!;
     const form = new URLSearchParams(String(tokenCall.init?.body));
     expect(form.get('code')).toBe('the-auth-code');
     expect(form.get('grant_type')).toBe('authorization_code');
@@ -473,6 +445,52 @@ describe('Mirrored Calendar selection', () => {
     await updateMirroredCalendar(phone, target.id, { selected: true, profile_id: null });
     expect(await setColor(phone, target.id, null)).toBeNull();
     expect((await loadMirroredCalendars(phone)).find((calendar) => calendar.id === target.id)).toMatchObject({ profile_id: null, color: null });
+  });
+
+  it('shows each choice at once, writes a calendar’s choices in the order made, and ends where two quick toggles started', async () => {
+    const { phone, calendars } = await arrangeWithCalendars();
+    const target = calendars.find((calendar) => calendar.name === 'Family')!;
+    expect(target.selected).toBe(false);
+    const shown: (MirroredCalendar[] | null)[] = [];
+    const read = startSyncedRead({ load: async () => ({ calendars: await loadMirroredCalendars(phone) }), onChange: (state) => shown.push(state.data?.calendars ?? null) });
+    const selectedShown = () => shown.at(-1)?.find((calendar) => calendar.id === target.id)?.selected;
+    try {
+      await vi.waitFor(() => expect(selectedShown()).toBe(false));
+      const queues: Record<string, Promise<void>> = {};
+      // On, then off again, before either has answered.
+      const on = chooseCalendar(read, queues, phone, target.id, { selected: true });
+      expect(selectedShown()).toBe(true);
+      const off = chooseCalendar(read, queues, phone, target.id, { selected: false });
+      expect(selectedShown()).toBe(false);
+      await Promise.all([on, off]);
+      await read.readBack();
+      expect(selectedShown()).toBe(false);
+      expect((await loadMirroredCalendars(phone)).find((calendar) => calendar.id === target.id)?.selected).toBe(false);
+    } finally {
+      read.stop();
+    }
+  });
+
+  it('takes back only a choice whose write failed, keeping the one made after it', async () => {
+    const { phone, calendars } = await arrangeWithCalendars();
+    const stranger = await arrange();
+    const foreign = await createProfile(await asHouseholdAccount(stranger), stranger.household.id, { name: 'Other', color: PROFILE_PALETTE[2].hex, avatar_url: null }, 0);
+    const target = calendars[0]!;
+    let shown: MirroredCalendar[] | null = null;
+    const read = startSyncedRead({ load: async () => ({ calendars: await loadMirroredCalendars(phone) }), onChange: (state) => (shown = state.data?.calendars ?? null) });
+    const row = () => (shown as MirroredCalendar[] | null)?.find((calendar) => calendar.id === target.id);
+    try {
+      await vi.waitFor(() => expect(row()).toBeDefined());
+      const queues: Record<string, Promise<void>> = {};
+      const refused = chooseCalendar(read, queues, phone, target.id, { profile_id: foreign.id });
+      const kept = chooseCalendar(read, queues, phone, target.id, { selected: true });
+      await expect(refused).rejects.toBeTruthy();
+      await kept;
+      await read.readBack();
+      expect(row()).toMatchObject({ selected: true, profile_id: null });
+    } finally {
+      read.stop();
+    }
   });
 
   it('lists the account’s selected calendars first', async () => {

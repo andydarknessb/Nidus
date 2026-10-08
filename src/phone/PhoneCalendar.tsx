@@ -1,36 +1,25 @@
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useContext, useState } from 'react';
 import { BeforeHousehold } from '../components/BeforeHousehold';
 import { DayView } from '../components/FiveDayCalendar';
 import { statusLineClass } from '../components/phone';
-import {
-  canOpenDay,
-  describeMonth,
-  navigationRailDate,
-  pageDays,
-  pageStart,
-  paging,
-  pagingWindow,
-  shownDate,
-  type CalendarView,
-  type PagingWindow,
-  type WallDay,
-  type WallRoute,
-} from '../lib/calendar-occurrences';
-import { focusTitleIfLost } from '../lib/focus';
+import { describeMonth, navigationRailDate, type WallRoute } from '../lib/calendar-occurrences';
+import { CALENDAR_LIMITS, canOpenDay, type CalendarView, type PagingWindow, type WallDay } from '../lib/paged-view';
 import { pageWords, pickedDay } from '../lib/phone-calendar';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
-import { householdDay } from '../lib/routines';
-import { useNow, useOccurrences } from '../lib/wall-hooks';
+import { usePagedView } from '../lib/use-paged-view';
+import { useNow, useDayEvents } from '../lib/wall-hooks';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { DayEvents } from './DayEvents';
 import { DayChips, Pager, PhoneCard, Segmented } from './parts';
 import { PhoneMonth } from './PhoneMonth';
+import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { couldNotLoad } from '../lib/synced-read';
 
 // The phone's Calendar tab (docs/specs/0004-the-wall-on-a-phone.md, Screens, Calendar): under the people strip, which the shell draws,
 // a control of three (Day, Week, Month) and a pager, then the view for one day at a time. The control changes the address as the
 // navigation rail's entries do (navigationRailDate), and the pager turns pages by the same routes and dates as the tablet's paging
-// row (paging), so Back works. Every event is read by the tablet's own readers (useOccurrences, through the Profile filter): no new query.
+// row (paging), so Back works. Every event is read by the tablet's own readers (useDayEvents, through the Profile filter): no new query.
 
 const VIEWS: readonly { value: CalendarView; label: string }[] = [
   { value: 'day', label: 'Day' },
@@ -38,7 +27,7 @@ const VIEWS: readonly { value: CalendarView; label: string }[] = [
   { value: 'month', label: 'Month' },
 ];
 
-const COULD_NOT_LOAD = 'Could not load the calendar. Check your connection.';
+const COULD_NOT_LOAD = couldNotLoad('the calendar');
 
 // The Day view's box: the hours it shows are the whole hours that fit between its Earlier and Later rows, so it is given a height. It is
 // the screen's height less about 26.5 rem for what is above it (the header, the strip, the control and the pager) and below (the bar,
@@ -66,29 +55,18 @@ function Calendar({
 }) {
   const now = useNow(timezone);
   const { touch } = useContext(ProfileFilterContext);
-  const today = householdDay(timezone, now).date;
-  const window = pagingWindow(timezone, now);
   const calendarView = route.view;
-  const anchor = pageStart(calendarView, shownDate(route.date, today));
-  // A week or a day is a run of days; a month is a grid of weeks of its own.
-  const days = calendarView === 'month' ? null : pageDays(calendarView, anchor, timezone, now);
-  const { previous, next } = paging(calendarView, anchor, window);
-
-  // Paging may switch off the button that was pressed: put focus on the page's words instead of losing it (and only if it was lost: paging by keyboard stays on the button pressed). Only after the page or the view
-  // the person chose has changed (the view and the date they opened, never the computed `anchor`, which also moves by itself at Household
-  // midnight, at the start of a week or a month while the page follows today), never when the tab opens (which would scroll the page),
-  // StrictMode's second run of the effect included: the page it saw last is kept, as the Meals tab does.
-  const heading = useRef<HTMLHeadingElement>(null);
-  const page = `${calendarView}:${route.date ?? 'today'}`;
-  const seen = useRef(page);
-  useEffect(() => {
-    if (seen.current === page) return;
-    seen.current = page;
-    focusTitleIfLost(heading.current, { preventScroll: true });
-  }, [page]);
-  // The page's contents are keyed on the anchor, so when it moves by itself (Household midnight, a week or a month turning) they are
-  // new and focus inside them is gone: it goes to the page's words then, and focus that is anywhere else is left alone.
-  useEffect(() => focusTitleIfLost(heading.current, { preventScroll: true }), [anchor]);
+  // The page, and focus on its words (usePagedView): paging may switch off the button that was pressed, so focus goes to the words when it
+  // was lost, and stays on the button when a person pages by keyboard. It never moves when the tab opens, which would scroll the page.
+  const { today, window, anchor, days, previous, next, limit, heading } = usePagedView({
+    view: calendarView,
+    date: route.date,
+    now,
+    timezone,
+    limits: CALENDAR_LIMITS,
+    takesFocusOnArrival: false,
+    preventScroll: true,
+  });
 
   return (
     // A touch anywhere in the calendar keeps the Profile filter open.
@@ -104,11 +82,7 @@ function Calendar({
       />
       {/* Always mounted, so a screen reader announces the text when it appears. */}
       <p role="status" className={`${statusLineClass} text-muted-foreground`}>
-        {previous === null
-          ? 'This is as far back as the calendar goes. It keeps one month of past events.'
-          : next === null
-            ? 'This is as far ahead as the calendar goes. It keeps six months of upcoming events.'
-            : ''}
+        {limit}
       </p>
       {/* Keyed on the view and the page, so a turned page, or the other view starting on the same day, never shows the last page's events. */}
       {calendarView === 'week' && days ? (
@@ -155,21 +129,17 @@ function PhoneWeek({
 }) {
   const [pick, setPick] = useState<string | null>(null);
   const picked = pick ?? pickedDay('week', anchor, timezone, now);
-  // An edit made from the picked day's sheet counts into `version`, so the week reads again like an event added around the calendar.
-  const [edits, setEdits] = useState(0);
-  const { occurrences, failed } = useOccurrences(days, version + edits);
+  const events = useDayEvents(days, version, profiles);
   return (
     <PhoneCard label="Calendar">
       <DayChips label="Days of this week" dates={days.map((day) => day.date)} today={today} picked={picked} onPick={setPick} canPick={(date) => canOpenDay(date, window)} />
       <DayEvents
         day={days.find((day) => day.date === picked) ?? days[0]!}
-        occurrences={occurrences}
-        failed={failed}
+        events={events}
         beyond={!canOpenDay(picked, window)}
         profiles={profiles}
         now={now}
         timezone={timezone}
-        onEdited={() => setEdits((count) => count + 1)}
       />
     </PhoneCard>
   );

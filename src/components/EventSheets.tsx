@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
-import type { Occurrence, WallDay } from '../lib/calendar-occurrences';
+import type { Occurrence } from '../lib/calendar-occurrences';
+import type { WallDay } from '../lib/paged-view';
+import { focusEvent } from '../lib/focus';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, type Pill } from '../lib/schedule';
 import { ClusterList } from './ClusterList';
@@ -14,34 +16,38 @@ export type OpenEvent = { sheet: 'details' | 'edit'; occurrence: Occurrence } | 
 // How long after a sheet closes a read may still find focus fallen to the page, and put it back.
 const REFOCUS_MS = 10_000;
 
-// The sheet `open` names, over the Wall. `date` is the day the calendar is on, which an edit starts from, and `onEdited` runs
-// after an edit is saved, so the calendar can read again at once. `profiles` are the Household's, which say who an event is for.
-// Focus moves in on open and back to the tapped event on close (Sheet), so going from the list to the details, or from the
-// details to Edit, hands it on without losing it.
+// The event sheet host: the sheet `open` names, over the Wall, for every calendar view. `date` is the day the calendar is on, which
+// an edit starts from; `events` is the view's day events (useDayEvents), read again here after an edit is saved. `profiles` are the
+// Household's, which say who an event is for. Focus moves in on open and back to the tapped event on close (Sheet), so going from the
+// list to the details, or from the details to Edit, hands it on without losing it.
 //
-// A read can take that element away: an event that was deleted has no pill any more, and one that an edit moved is a pill
-// somewhere else. So when `occurrences` (what the view has read) changes soon after a sheet closed and focus is on the page, it is
-// the view that says where focus goes: `returnFocus` is given the event the sheet was for, and puts focus on its pill or block if
-// the event is still on the screen, and on whatever stands for its place there (the heading of its day) if not.
+// A read can take that element away: an event that was deleted has no pill any more, and one that an edit moved is a pill somewhere
+// else. So when what the view has read changes soon after a sheet closed and focus is on the page, focus goes to the event's pill or
+// block if it is still on the screen, and if not to what stands for its place there, which the view names: `focusPlace` (the heading
+// of its day).
 export function EventSheets({
   open,
   onChange,
   timezone,
   date,
   profiles,
-  occurrences,
-  onEdited,
-  returnFocus,
+  events,
+  focusPlace,
 }: {
   open: OpenEvent;
   onChange: (open: OpenEvent) => void;
   timezone: string;
   date: string;
   profiles: readonly Profile[];
-  occurrences: Occurrence[] | null;
-  onEdited: () => void;
-  returnFocus: (occurrence: Occurrence) => void;
+  events: { occurrences: Occurrence[] | null; refresh: () => void };
+  focusPlace: () => void;
 }) {
+  const { occurrences, refresh } = events;
+  // The view's way to its event's place, as it is on the render the focus is put back in.
+  const place = useRef(focusPlace);
+  useEffect(() => {
+    place.current = focusPlace;
+  });
   // The event a sheet was last open for, and when that sheet closed (null while it is open).
   const last = useRef<{ occurrence: Occurrence; closedAt: number | null } | null>(null);
   useEffect(() => {
@@ -57,10 +63,10 @@ export function EventSheets({
       return;
     }
     const frame = requestAnimationFrame(() => {
-      if (document.activeElement === document.body) returnFocus(target.occurrence);
+      if (document.activeElement === document.body && !focusEvent(target.occurrence.id)) place.current();
     });
     return () => cancelAnimationFrame(frame);
-  }, [open, occurrences, returnFocus]);
+  }, [open, occurrences]);
 
   if (!open) return null;
   if (open.sheet === 'cluster') {
@@ -84,7 +90,7 @@ export function EventSheets({
       onClose={() => onChange(null)}
       onSaved={() => {
         onChange(null);
-        onEdited();
+        refresh();
       }}
     />
   );

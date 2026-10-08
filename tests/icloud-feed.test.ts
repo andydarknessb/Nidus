@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { feedCalendarName, fetchFeed, normaliseFeedUrl } from '../supabase/functions/_shared/feed';
+import { fakeICloud } from './support/icloud';
 
 const ICS = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nX-WR-CALNAME:Family\r\nEND:VCALENDAR\r\n';
 const LINK = 'https://p12-caldav.icloud.com/published/2/abc123';
@@ -93,20 +94,7 @@ describe('feedCalendarName', () => {
   });
 });
 
-type Reply = Response | (() => Response | Promise<Response>);
-
-// The feed's server is the only fake: a map from link to reply, recording each request.
-function fakeFeed(replies: Record<string, Reply>) {
-  const calls: { url: string; init: RequestInit }[] = [];
-  const fake = async (input: string | URL | Request, init: RequestInit = {}): Promise<Response> => {
-    const url = String(input);
-    calls.push({ url, init });
-    const reply = replies[url];
-    if (!reply) return new Response('missing', { status: 500 });
-    return typeof reply === 'function' ? reply() : reply;
-  };
-  return { fetch: fake as typeof fetch, calls };
-}
+const fakeFeed = fakeICloud;
 
 const redirect = (to: string, status = 302) => new Response(null, { status, headers: { Location: to } });
 const none = { etag: null, lastModified: null };

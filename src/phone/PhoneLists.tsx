@@ -6,6 +6,7 @@ import { leftToGet, listChipName, pinnedFirst, pickedList, type ListItem, type S
 import { focusTitle, titleId, useItems, useLists } from '../lib/use-shared-lists';
 import { AddRow, ItemRow, PinnedMark } from '../SharedListsPage';
 import { PhoneCard, SideScroll } from './parts';
+import { couldNotLoad } from '../lib/synced-read';
 
 // The phone's Lists tab (spec 0004, "Lists"): a row of list chips that scrolls sideways, the Pinned List first, then the picked list's
 // card. The items, the add row, crossing off and clearing are the tablet's own (useItems, AddRow, ItemRow in SharedListsPage), so
@@ -59,7 +60,7 @@ function Lists() {
   if (read === null) {
     return failed ? (
       <p role="alert" className="text-base">
-        Could not load lists. Check your connection.
+        {couldNotLoad('lists')}
       </p>
     ) : (
       <EmptyWords>Loading</EmptyWords>

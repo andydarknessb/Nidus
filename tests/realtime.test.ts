@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { openChangeFeed, type ChangeFeed, type WatchedTable } from '../src/lib/realtime';
 import { setMeal } from '../src/lib/meals';
 import { PROFILE_PALETTE, createProfile, updateProfile } from '../src/lib/profiles';
-import { completeRoutine, createRoutine, householdDay, uncompleteRoutine } from '../src/lib/routines';
+import { completeRoutine, createRoutine, uncompleteRoutine } from '../src/lib/routines';
 import { addItem, createList } from '../src/lib/shared-lists';
 import {
   asDevice,
@@ -13,6 +13,7 @@ import {
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
+import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 // Two principals of one Household, each with its own Realtime feed: one writes, the other
 // observes the change through its subscription (RLS decides who hears what).

@@ -1,8 +1,7 @@
 import { ChevronDown, ChevronRight, Plus, UserRound } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { useConnection } from '@/lib/change-feed';
 import { formatDate, formatDateWithYear } from '@/lib/calendar-occurrences';
 import {
   cancelHouseholdInvite,
@@ -15,7 +14,9 @@ import {
   type HouseholdInvite,
 } from '@/lib/household-invites';
 import { CANCEL_SAID, MAKE_SAID, REMOVED_WORDS, inviteViewOf, isRemoved, loadFailedWords, sharePayload, type InviteView } from '@/lib/household-accounts';
+import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
+import { useSyncedRead } from '@/lib/synced-read';
 
 // What the status line says: nothing, or what the last tap did.
 export type InviteStatus = 'idle' | 'copied' | 'cancelled';
@@ -188,74 +189,59 @@ export function HouseholdAccountsView(props: ViewProps) {
 
 // Settings, phone only: everyone who can sign in to the Household (the Household Accounts), and the invite for one more. Any of
 // them may remove another, never themselves; an invite is a link, made here and sent by the phone's share sheet. There is no
-// Realtime for these: the section reads again after each of its own writes.
+// Realtime for these: the section reads again after each of its own writes, and every 30 seconds (5 after a failure).
+type Read = { accounts: HouseholdAccountRow[]; stored: HouseholdInvite | null };
+const NO_TABLES = [] as const;
+
 export function HouseholdAccountsSection({ householdId, timezone, userId }: { householdId: string; timezone: string; userId: string }) {
-  const [accounts, setAccounts] = useState<HouseholdAccountRow[] | null>(null);
-  // The invite the database holds (undefined until it is read), and the link just made, which is on screen only until the page is
-  // left, since only its hash is stored.
-  const [stored, setStored] = useState<HouseholdInvite | null | undefined>(undefined);
+  // The accounts and the invite the database holds (undefined until it is read), through the synced read; and the link just made,
+  // which is on screen only until the page is left, since only its hash is stored.
+  const read = useSyncedRead<Read>(
+    async () => {
+      const [accounts, stored] = await Promise.all([listHouseholdAccounts(), readHouseholdInvite(householdId)]);
+      return { accounts, stored };
+    },
+    NO_TABLES,
+    householdId,
+  );
+  const accounts = read.data?.accounts ?? null;
+  const stored = read.data ? read.data.stored : undefined;
   const [made, setMade] = useState<{ link: string; expiresAt: Date } | null>(null);
   const [status, setStatus] = useState<InviteStatus>('idle');
   // A trouble reading, kept apart from what a write said of itself, as in the tablets section.
-  const [loadProblem, setLoadProblem] = useState<string | null>(null);
-  const readFailed = useRef(false);
+  const loadProblem = read.failed ? loadFailedWords(read.error) : null;
   const problems = useWriteProblem();
   const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
-  // One write at a time: the ref is the guard, the state is what is drawn (`aria-disabled`, never `disabled`).
-  const working = useRef(false);
-  const [busy, setBusy] = useState(false);
-  const [focusNext, setFocusNext] = useState<string | null>(null);
+  // One write at a time (the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes afterwards.
+  const card = useCardWrite(problems);
+  const { busy } = card;
 
-  // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
-  useEffect(() => {
-    if (focusNext === null) return;
-    document.getElementById(focusNext)?.focus();
-    setFocusNext(null);
-  }, [focusNext]);
-
-  const refresh = useCallback(async () => {
-    try {
-      const [list, waiting] = await Promise.all([listHouseholdAccounts(), readHouseholdInvite(householdId)]);
-      setAccounts(list);
-      setStored(waiting);
-      setLoadProblem(null);
-      readFailed.current = false;
-    } catch (error) {
-      readFailed.current = true;
-      setLoadProblem(loadFailedWords(error));
-    }
-  }, [householdId]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  // A read that failed is made again when the connection comes back, not on a timer.
-  const connection = useConnection();
-  useEffect(() => {
-    if (connection === 'online' && readFailed.current) void refresh();
-  }, [connection, refresh]);
-
-  // One write, alone: `place` is where it says so when it fails (in `said`'s words, or the default ones), `done` what changes once it landed.
-  async function write(place: string, run: () => Promise<unknown>, done: (result: unknown) => void, said?: { failed: string; offline: string }) {
-    if (working.current) return;
-    working.current = true;
-    setBusy(true);
-    let result: unknown;
-    try {
-      result = await run();
-      problems.clear(place);
-    } catch (error) {
-      if (isRemoved(error)) problems.say(place, REMOVED_WORDS);
-      else problems.fail(place, error, said ? { said } : {});
-      working.current = false;
-      setBusy(false);
-      return;
-    }
-    done(result);
-    working.current = false;
-    setBusy(false);
-    await refresh();
+  // One write, alone: `place` is where it says so when it fails (in `said`'s words, or the default ones), `done` what changes once it
+  // landed (it returns where focus goes), and `landed` what the accounts and invite show from then until the read that follows it.
+  async function write(
+    place: string,
+    run: () => Promise<unknown>,
+    done: (result: unknown) => string | undefined | void,
+    said?: { failed: string; offline: string },
+    landed?: (result: unknown) => ((shown: Read) => Read) | undefined,
+  ) {
+    await card.run(
+      async () => {
+        const result = await read.write(run, undefined, landed);
+        problems.clear(place);
+        return result;
+      },
+      {
+        place,
+        words: said ? { said } : {},
+        failed: (error) => {
+          if (!isRemoved(error)) return false;
+          problems.say(place, REMOVED_WORDS);
+          return true;
+        },
+        landed: done,
+      },
+    );
   }
 
   const makeInvite = () =>
@@ -267,7 +253,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       },
       () => {
         setStatus('idle');
-        setFocusNext(INVITE_MAIN);
+        return INVITE_MAIN;
       },
       MAKE_SAID,
     );
@@ -278,12 +264,12 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       cancelHouseholdInvite,
       () => {
         setMade(null);
-        // At once, so that the cancelled invite is not drawn while the read is on its way, and focus lands on Invite someone.
-        setStored(null);
         setStatus('cancelled');
-        setFocusNext(INVITE_MAIN);
+        return INVITE_MAIN;
       },
       CANCEL_SAID,
+      // At once, so that the cancelled invite is not drawn while the read is on its way, and focus lands on Invite someone.
+      () => (shown) => ({ ...shown, stored: null }),
     );
 
   const remove = (id: string) =>
@@ -293,13 +279,13 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       (removed) => {
         // false: the database refused (yourself, another Household's, already gone), so nothing was removed and the invite stands.
         if (removed !== true) return;
-        setAccounts((list) => list && list.filter((account) => account.authUserId !== id));
         // Removing someone also cancels the waiting invite, server side: a link just made would be a dead one.
         setMade(null);
-        setStored(null);
         setOpen(null);
-        setFocusNext(INVITE_MAIN);
+        return INVITE_MAIN;
       },
+      undefined,
+      (removed) => (removed === true ? (shown) => ({ accounts: shown.accounts.filter((account) => account.authUserId !== id), stored: null }) : undefined),
     );
 
   async function copy() {
@@ -349,7 +335,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       onCancelRemove={(id) => {
         problems.clear();
         setOpen({ id, confirming: false });
-        setFocusNext(removeId(id));
+        card.focus(removeId(id));
       }}
       onRemove={remove}
       onMakeInvite={makeInvite}

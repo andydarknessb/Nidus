@@ -37,6 +37,10 @@ _Avoid_: device (a Device is a tablet), token, registration
 **Household Timezone**:
 The one timezone stored on the Household. All display, rollover and reset logic uses it; source calendar timezones are converted on ingest.
 
+**Household Date**:
+A calendar date on the Household Timezone's clock. It begins at Household midnight, whatever zone the screen or the server is in. A time on a Household Date that the clocks skip moves forward by the skipped gap; a time that happens twice is the first one.
+_Avoid_: Local date, today (on its own)
+
 **Appearance**:
 How the Household wants the Wall to look: Auto (light from sunrise to sunset, dark otherwise), Light or Dark. The Household Account sets it. A screen's own switch overrides it on that screen until the next sunrise or sunset; that override is not stored on the Household.
 _Avoid_: Theme, skin, dark mode
@@ -54,6 +58,10 @@ _Avoid_: Sub-calendar, feed, source
 **Synced Event**:
 One occurrence of an event mirrored read-only from a Mirrored Calendar. Recurring events are stored as expanded occurrences (Google expands them; an iCloud feed's rules are expanded by the sync). Nidus never edits or writes it back.
 _Avoid_: External event, imported event
+
+**Profile Filter**:
+The people pressed on a screen's people strip; none pressed means everyone. It narrows which events a calendar shows to those for a pressed person or for the whole Household. An event that shows still names all its people; only a summary of who has something on a day (the phone month's dots) names just the pressed ones.
+_Avoid_: Person filter, chip filter
 
 **Native Event**:
 An event created in Nidus that exists only in Nidus and is never pushed to any provider.

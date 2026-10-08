@@ -1,4 +1,5 @@
 import type { HouseholdInvite } from './household-invites';
+import { couldNotLoad } from './synced-read';
 
 // What the Who can sign in card decides, apart from how it is drawn: pure, so a test needs no Supabase client.
 
@@ -16,7 +17,7 @@ export const CANCEL_SAID = { failed: 'Could not cancel the invite. Try again.', 
 // What a read or write says when the database refuses it for lack of right (42501): the account was removed while the screen was
 // open. It is the one thing that no retry or connection will fix, so it replaces the connection and try-again words.
 export const REMOVED_WORDS = 'You can no longer change this household. Reload the page.';
-export const LOAD_FAILED = 'Could not load who can sign in. Check your connection.';
+export const LOAD_FAILED = couldNotLoad('who can sign in');
 
 export const isRemoved = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '42501';

@@ -1,19 +1,17 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { loadOccurrences, type Occurrence, type WallDay } from './calendar-occurrences';
-import { useRefetchOn } from './change-feed';
+import { loadOccurrences } from './calendar-occurrences';
+import type { WallDay } from './paged-view';
 import { watchHouseholdDay, watchMinute } from './household-day';
-import { filterOccurrences, ProfileFilterContext } from './profile-filter';
-import { startReadLoop, type ReadLoop } from './read-loop';
+import { dayEventsOf, type DayEvents } from './day-events';
+import { ProfileFilterContext } from './profile-filter';
+import type { Profile } from './profiles';
 import { OCCURRENCE_TABLES } from './realtime';
-import { householdDay, type HouseholdDay } from './routines';
 import { supabase } from './supabase';
+import { couldNotLoad, useSyncedRead } from './synced-read';
+import { type HouseholdDay, householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // What the wall's screens share: the clock, the current Household day, and the one read every
 // calendar view makes of occurrences.
-
-// The slow read that backs up the change feed, and the sooner one after a read that failed.
-const REFRESH_MS = 60_000;
-const RETRY_MS = 5_000;
 
 // The clock, ticking at the start of each minute and also the instant Household midnight passes, so
 // a clock on the wall turns on the minute and the day columns and the calendar's read span move on
@@ -46,40 +44,27 @@ export function useHouseholdDay(timezone: string): HouseholdDay {
   return day;
 }
 
-// The occurrences of `days` that the Profile filter lets through, null until the first read lands, and
-// whether the latest read failed. `version` changes when the screen around the calendar has written an
-// event, so it reads again at once. The filter is applied here and nowhere else, so every calendar view
-// obeys it; it works on what was read, so pressing a chip never reads again.
-export function useOccurrences(days: WallDay[], version: number): { occurrences: Occurrence[] | null; failed: boolean } {
-  const [occurrences, setOccurrences] = useState<Occurrence[] | null>(null);
-  const [failed, setFailed] = useState(false);
-  const { pressed } = useContext(ProfileFilterContext);
-  const shown = useMemo(() => (occurrences ? filterOccurrences(occurrences, pressed) : null), [occurrences, pressed]);
+// The day events of `days` (day-events.ts), read through the synced read: at once, when an event, a calendar or a Profile changes
+// anywhere in the Household, every 30 seconds and 5 after a failure. The span read is from the first day's start to the last day's
+// end; while a new span's first read is on its way (a turned page, Household midnight) what was read stays, and each day still shows
+// only its own events. `version` changes when the screen around the calendar has added an event, so it reads again at once; the event
+// sheets read again after an edit (`refresh`). The filter works on what was read, so pressing a chip never reads again. `problem` is
+// what a view says while nothing has ever loaded.
+export type DayEventsRead = DayEvents & { problem: string | null; refresh: () => void };
 
-  // The span to read: from the first day's start to the last day's end. Read again when it changes
-  // (the day rolls over, the Household Timezone changes, a page is turned), and on a timer for new events.
+export function useDayEvents(days: WallDay[], version: number, profiles: Profile[] | null): DayEventsRead {
+  const { pressed } = useContext(ProfileFilterContext);
   const fromMs = days[0]!.startMs;
   const toMs = days[days.length - 1]!.endMs;
-  // Read again the moment an event, a calendar or a Profile's colour changes anywhere in the Household.
-  // A change pokes the loop instead of restarting it, so a read in flight lands and one more follows.
-  const loop = useRef<ReadLoop | null>(null);
-  useRefetchOn(OCCURRENCE_TABLES, () => loop.current?.poke());
+  const read = useSyncedRead(() => loadOccurrences(supabase, new Date(fromMs), new Date(toMs)), OCCURRENCE_TABLES, `${fromMs} ${toMs}`, { keepAcrossKeys: true });
+  // A change of `version` after the first render is an event added around the calendar.
+  const seen = useRef(version);
+  const { refresh } = read;
   useEffect(() => {
-    loop.current = startReadLoop({
-      read: () => loadOccurrences(supabase, new Date(fromMs), new Date(toMs)),
-      onResult: (rows) => {
-        setOccurrences(rows);
-        setFailed(false);
-      },
-      onFail: () => setFailed(true),
-      refreshMs: REFRESH_MS,
-      retryMs: RETRY_MS,
-    });
-    return () => {
-      loop.current?.stop();
-      loop.current = null;
-    };
-  }, [fromMs, toMs, version]);
-
-  return { occurrences: shown, failed };
+    if (seen.current === version) return;
+    seen.current = version;
+    refresh();
+  }, [version, refresh]);
+  const events = useMemo(() => dayEventsOf(read.data, profiles, pressed), [read.data, profiles, pressed]);
+  return { ...events, problem: read.unread ? couldNotLoad('the calendar') : null, refresh };
 }

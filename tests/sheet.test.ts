@@ -249,7 +249,7 @@ describe('a sheet on a phone', () => {
     const sheets = [
       drawSheet(),
       renderToStaticMarkup(createElement(NativeEventSheet, { timezone: 'America/Chicago', profiles: [], date: '2026-10-02', onSaved: () => undefined, onClose: () => undefined })),
-      renderToStaticMarkup(createElement(MealSheet, { editing: { date: '2026-10-02', slot: 'dinner', heading: 'Friday dinner', meal: null }, onSaved: () => undefined, onClose: () => undefined })),
+      renderToStaticMarkup(createElement(MealSheet, { editing: { date: '2026-10-02', slot: 'dinner', heading: 'Friday dinner', meal: null }, save: async () => undefined, onSaved: () => undefined, onClose: () => undefined })),
     ];
     for (const html of sheets) {
       for (const element of [scrimOf(html), dialogOf(html)]) {
@@ -267,7 +267,7 @@ describe('a sheet on a phone', () => {
     const { MealSheet } = await import('../src/MealsPage');
     const native = renderToStaticMarkup(createElement(NativeEventSheet, { timezone: 'America/Chicago', profiles: [], date: '2026-10-02', onSaved: () => undefined, onClose: () => undefined }));
     const meal = renderToStaticMarkup(
-      createElement(MealSheet, { editing: { date: '2026-10-02', slot: 'dinner', heading: 'Friday dinner', meal: null }, onSaved: () => undefined, onClose: () => undefined }),
+      createElement(MealSheet, { editing: { date: '2026-10-02', slot: 'dinner', heading: 'Friday dinner', meal: null }, save: async () => undefined, onSaved: () => undefined, onClose: () => undefined }),
     );
     for (const html of [native, meal]) {
       expect(hasFrame(scrimOf(html), PHONE_SCRIM)).toBe(true);

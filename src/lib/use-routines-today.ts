@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
-import { useConnection, useRefetchOn } from './change-feed';
+import { useConnection } from './change-feed';
 import { watchMinute } from './household-day';
 import type { Profile } from './profiles';
 import {
@@ -17,7 +17,6 @@ import {
   partOfDay,
   problemsOn,
   seePart,
-  tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
   type CelebrationEvent,
@@ -27,14 +26,9 @@ import {
   type TickProblems,
   type TimeOfDay,
 } from './routines';
-import { keepIfSame } from './same-data';
 import { supabase } from './supabase';
-import { createSyncedReader, type SyncedReader } from './synced-reader';
+import { useSyncedRead } from './synced-read';
 import { useHouseholdDay } from './wall-hooks';
-
-// Changes heard from the server normally refresh the Routines at once; this slow read is the
-// backstop for a change that was missed while the connection was down.
-const REFRESH_MS = 30_000;
 
 type Today = { date: string; routines: Routine[]; done: Set<string> };
 
@@ -88,44 +82,27 @@ export function useRoutinesToday(timezone: string | null, profiles: Profile[] | 
   // order until then; nothing is read from it.)
   const day = useHouseholdDay(timezone ?? 'UTC');
   const part = usePartOfDay(timezone ?? 'UTC');
-  const [loaded, setLoaded] = useState<Today | null>(null);
+  const date = day.date;
+  // Reads and the taps made here take turns (synced-read.ts): a read never lands over a tap in flight, and one follows each
+  // tap, so a change from another tablet that arrived meanwhile is shown too.
+  const read = useSyncedRead<Today>(
+    async () => {
+      const [routines, completed] = await Promise.all([loadRoutines(supabase), loadCompletions(supabase, date)]);
+      return { date, routines, done: new Set(completed) };
+    },
+    WALL_ROUTINE_TABLES,
+    timezone === null ? null : `${timezone} ${date}`,
+    // Over Household midnight the old day stays shown (unchecked: it is not settled) until the new day's first read lands.
+    { keepAcrossKeys: true },
+  );
+  const loaded = read.data;
   const [problems, setProblems] = useState<TickProblems>(noTickProblems);
-  const [failed, setFailed] = useState(false);
   // Whether the screen is offline when a tick fails, which decides what that tick says: read when it fails, not when it was made.
   const offline = useRef(false);
   const connection = useConnection();
   useEffect(() => {
     offline.current = connection === 'offline';
   });
-  // Reads and the taps made here take turns: a read never lands over a tap in flight, and one
-  // follows each tap, so a change from another tablet that arrived meanwhile is shown too.
-  const reader = useRef<SyncedReader | null>(null);
-
-  useEffect(() => {
-    if (timezone === null) return;
-    const date = day.date;
-    const next = createSyncedReader(
-      async () => {
-        const [routines, completed] = await Promise.all([loadRoutines(supabase), loadCompletions(supabase, date)]);
-        return { date, routines, done: new Set(completed) };
-      },
-      (today) => {
-        // A read that finds what the Wall already shows keeps the object it has: a new one is a new render of the whole shell.
-        setLoaded((held) => keepIfSame(held, today));
-        setFailed(false);
-      },
-      () => setFailed(true),
-    );
-    reader.current = next;
-    next.refresh();
-    const id = setInterval(() => next.refresh(), REFRESH_MS);
-    return () => {
-      next.dispose();
-      clearInterval(id);
-      reader.current = null;
-    };
-  }, [timezone, day.date]);
-  useRefetchOn(WALL_ROUTINE_TABLES,() => reader.current?.refresh());
 
   // Loaded for another day (midnight just passed): everything reads unchecked until the new day arrives.
   const settled = loaded !== null && loaded.date === day.date;
@@ -137,13 +114,20 @@ export function useRoutinesToday(timezone: string | null, profiles: Profile[] | 
   async function toggle(routine: Routine): Promise<boolean> {
     const date = day.date;
     const checking = !done.has(routine.id);
-    const publish = (update: (ids: Set<string>) => Set<string>) =>
-      setLoaded((prev) => (prev && prev.date === date ? { ...prev, done: update(prev.done) } : prev));
-    const tap = () =>
-      tickOptimistically(publish, routine.id, checking, () =>
-        checking ? completeRoutine(supabase, routine.id, date) : uncompleteRoutine(supabase, routine.id, date),
-      );
-    const stuck = await (reader.current ? reader.current.write(tap) : tap());
+    // Shown at once on the day it was made on; a failed save takes back this tick and no other.
+    const tick = (today: Today) => {
+      if (today.date !== date) return today;
+      const next = new Set(today.done);
+      if (checking) next.add(routine.id);
+      else next.delete(routine.id);
+      return { ...today, done: next };
+    };
+    let stuck = true;
+    try {
+      await read.write(() => (checking ? completeRoutine(supabase, routine.id, date) : uncompleteRoutine(supabase, routine.id, date)), tick);
+    } catch {
+      stuck = false;
+    }
     // Said for the day the tick was made on, so one that fails after midnight is never shown on the new day.
     setProblems((current) => afterTick(current, date, routine.profile_id, stuck, offline.current));
     return stuck;
@@ -153,7 +137,7 @@ export function useRoutinesToday(timezone: string | null, profiles: Profile[] | 
     date: timezone === null ? null : day.date,
     loaded: loaded !== null,
     settled,
-    failed,
+    failed: read.failed,
     part,
     problems: problemsOn(problems, day.date),
     groups,

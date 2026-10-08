@@ -1,13 +1,15 @@
 import { cn } from 'cn';
-import { ArrowDown, ArrowUp, Star, type LucideIcon } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type Ref } from 'react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
+import { Fragment, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { EmptyWords } from './components/EmptyWords';
+import { RoutineColumn, type ColumnLayout } from './components/RoutineColumn';
 import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
-import { EmptyRing, MAX_PIPS, PersonDisc, Pips, Tick } from './components/people';
+import { PersonDisc } from './components/people';
 import { Problem } from './components/phone';
 import { Button } from './components/ui/button';
 import type { Household } from './lib/household';
-import { PROFILE_PALETTE, loadProfiles, nextSortOrder, type Profile } from './lib/profiles';
+import { nextSortOrder } from './lib/ordering';
+import { loadProfiles, type Profile } from './lib/profiles';
 import {
   ROUTINE_TABLES,
   TIME_OF_DAY_GROUPS,
@@ -18,268 +20,40 @@ import {
   loadRoutines,
   maskOf,
   movedIdsInGroup,
-  partDone,
-  partView,
   reorderRoutines,
-  routineProgress,
   showsTimeOfDayHeadings,
-  tapFinishesProfile,
   updateRoutine,
   isScheduledOn,
   type Burst,
-  type PartView,
   type ChartPart,
   type Routine,
   type RoutineEdit,
   type TimeOfDay,
 } from './lib/routines';
 import { PictureField, RoutinePicture } from './lib/routine-pictures';
-import { useRefetchOn } from './lib/change-feed';
+import { useCardWrite } from './lib/use-card-write';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
-import { CHART_CHOICES, PART_ICON, WORDS, timeWord, useChartPart } from './lib/routine-chart';
+import { CHART_CHOICES, timeWord, useChartPart } from './lib/routine-chart';
 import { useOverflow } from './lib/use-overflow';
 import { useCelebration, type RoutinesToday } from './lib/use-routines-today';
 import { unnamed } from './lib/write-failure';
+import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
-// ---- The wall: the Routines chart, and the tile that Up next shares --------------------------------
+// ---- The wall: the Routines chart ---------------------------------------------------------------------------------
 
-// The pieces of one burst, one in each colour of the Profile palette: how far each flies sideways (as a
-// percentage of the group's width), how far it rises first and how far it then falls (rem, from where the
-// burst starts), and how far it turns (degrees). Fixed, so a burst looks the same each time and a render
-// stays pure. Each starts a little after the one before it (index.css), so the last piece is the last to land.
-const CONFETTI = [
-  [-40, -3, 6, -380],
-  [28, -4, 8, 460],
-  [-16, -4.5, 5, 300],
-  [44, -2.5, 7, -520],
-  [-48, -2, 8.5, 410],
-  [10, -5, 6, -300],
-  [-30, -3.5, 9, 560],
-  [38, -4, 5.5, -440],
-  [-4, -3, 7.5, 340],
-  [48, -2, 8.5, -480],
-] as const;
+// The Wall's layout for one Profile's column of the chart (the Routines are RoutineColumn's, shared with the phone's card): as tall as
+// what it holds, and the tiles scroll on their own when they do not fit, with a "More" button at their foot that says so
+// (OverflowButton).
+const COLUMN: ColumnLayout = {
+  className: 'person relative flex max-h-full min-h-0 max-w-md min-w-[17rem] flex-1 flex-col gap-2.5 rounded-3xl bg-person-soft p-3',
+  header: 'min-h-14',
+  disc: 56,
+};
 
-// A short burst of confetti over one Profile's group (a column of the chart, or Up next), starting `at` px down it: at
-// the Routine that was tapped, wherever the group is scrolled to. It is drawn over the group but never in the way of a tap
-// or of the layout, hidden from assistive technology (the words "All done" say it), and gone from the page once its last
-// piece has landed.
-export function Confetti({ at, onDone }: { at: number; onDone: () => void }) {
-  return (
-    <span aria-hidden className="confetti pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]" style={{ '--at': `${at}px` } as CSSProperties}>
-      {CONFETTI.map(([sideways, rise, fall, turn], index) => (
-        <span
-          key={index}
-          className="confetti-piece"
-          style={
-            {
-              backgroundColor: PROFILE_PALETTE[index]?.hex,
-              '--sideways': sideways,
-              '--rise': rise,
-              '--fall': fall,
-              '--turn': `${turn}deg`,
-              '--delay': `${index * 20}ms`,
-            } as CSSProperties
-          }
-          onAnimationEnd={index === CONFETTI.length - 1 ? onDone : undefined}
-        />
-      ))}
-    </span>
-  );
-}
+// In portrait (docs/specs/0009) the column is its natural height, with no foot of its own: the chart scrolls.
+const PORTRAIT_COLUMN: ColumnLayout = { ...COLUMN, className: COLUMN.className.replace('max-h-full ', '') };
 
-// A Routine's tile (docs/look.md, A Routine tile): the whole tile is the button, 80 px tall, with the picture in a 52 px disc,
-// the words on up to two lines and a 44 px ring. To do, the ring is the person's strong colour; done, the tile is filled
-// with their base colour and shows a tick, and its words stay as they are, not struck through. On the chart it is a card
-// on the person's column and says whether it is ticked. In Up next, which names the person under the words (`who`), it is
-// a tile on a card; a Routine ticked there stays in the done look for a moment (HOME_HOLD_MS), and tapped then it is unticked. The
-// name line carries the person's initial, so a child tells their tile from a sibling's by more than its colour and picture. When their
-// tick did not save (`problem`, Up next only) the sentence takes the place of the name line, inside the tile: a line of its own under
-// it would push the tiles below down from under the finger.
-export function RoutineTile({
-  routine,
-  color,
-  done = false,
-  who,
-  problem,
-  ref,
-  onTap,
-}: {
-  routine: Routine;
-  color: string;
-  done?: boolean;
-  who?: string;
-  problem?: string | undefined;
-  // Called with the button as it appears and with null as it goes (Up next watches that, to keep the keyboard's place).
-  ref?: Ref<HTMLButtonElement>;
-  onTap: (button: HTMLElement) => void;
-}) {
-  return (
-    <button
-      ref={ref}
-      type="button"
-      aria-pressed={done}
-      {...(who === undefined ? {} : { 'aria-label': `Mark ${routine.title} done for ${who}` })}
-      onClick={(event) => onTap(event.currentTarget)}
-      className={cn(
-        'person flex h-20 w-full items-center gap-3 rounded-[18px] px-2.5 text-left select-none transition-transform duration-75 active:translate-y-0.5',
-        done ? 'bg-person-base text-person-on-base' : cn('active:bg-accent', who === undefined ? 'bg-card' : 'bg-muted'),
-      )}
-      style={personStyle(color)}
-    >
-      <span
-        aria-hidden
-        className={cn('flex size-[52px] shrink-0 items-center justify-center rounded-full', done ? 'bg-person-done-disc text-person-done-picture' : 'bg-person-fill text-person-strong')}
-      >
-        <RoutinePicture picture={routine.picture} />
-      </span>
-      {who === undefined ? (
-        <span dir="auto" className={cn(WORDS, 'line-clamp-2 flex-1 text-[19px] leading-[1.2]', done ? 'font-semibold' : 'font-medium')}>
-          {routine.title}
-        </span>
-      ) : (
-        <span className="flex min-w-0 flex-1 flex-col">
-          {/* With a sentence beside it the Routine's words keep one line, so the tile (80 px) holds the sentence on up to three. */}
-          <span dir="auto" className={cn(WORDS, problem ? 'line-clamp-1' : 'line-clamp-2', 'text-[19px] leading-6', done ? 'font-semibold' : 'font-medium')}>
-            {routine.title}
-          </span>
-          {problem ? (
-            <span className="text-start text-[15px] leading-[18px]">{problem}</span>
-          ) : (
-            <span className="flex items-center gap-1.5">
-              <PersonDisc name={who} color={color} size={24} />
-              <span dir="auto" className={cn('min-w-0 truncate text-start text-sm leading-[1.2857]', !done && 'text-muted-foreground')}>
-                {who}
-              </span>
-            </span>
-          )}
-        </span>
-      )}
-      {done ? <Tick color={color} /> : <EmptyRing color={color} />}
-    </button>
-  );
-}
-
-// The small heading over a group of tiles: the part of the day (with its icon), Left from earlier or Any time.
-function GroupLabel({ icon: Icon, children, status }: { icon?: LucideIcon | undefined; children: ReactNode; status?: ReactNode }) {
-  return (
-    <div className="flex h-[22px] flex-none items-center justify-between gap-2">
-      <h4 className="flex items-center gap-1.5 px-1 text-[14.5px] leading-[18px] font-medium text-muted-foreground">
-        {Icon && <Icon aria-hidden className="size-4" />}
-        {children}
-      </h4>
-      {status}
-    </div>
-  );
-}
-
-// The tiles of one group: a list of Routine tiles on a person's colour, each the whole button.
-function Tiles({ list, profile, done, onTap }: { list: Routine[]; profile: Profile; done: ReadonlySet<string>; onTap: (routine: Routine, button: HTMLElement) => void }) {
-  return (
-    <ul className="flex flex-col gap-2.5">
-      {list.map((routine) => (
-        <li key={routine.id}>
-          <RoutineTile routine={routine} color={profile.color} done={done.has(routine.id)} onTap={(button) => onTap(routine, button)} />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-// What one Profile's column shows for the part of the day (or every part): the part's heading with its Done mark, its tiles, what is
-// left from earlier and the Routines for any time, or, on the whole day, every Routine under its part. The phone's card draws the same.
-// `view` is partView for the part, null on the whole day, and `finished` whether the Profile has done everything today.
-export function PartGroups({
-  profile,
-  routines,
-  done,
-  part,
-  view,
-  finished,
-  onTap,
-}: {
-  profile: Profile;
-  routines: Routine[];
-  done: ReadonlySet<string>;
-  part: ChartPart;
-  view: PartView | null;
-  finished: boolean;
-  onTap: (routine: Routine, button: HTMLElement) => void;
-}) {
-  const tiles = (list: Routine[]) => <Tiles list={list} profile={profile} done={done} onTap={onTap} />;
-  if (view === null || part === 'whole') {
-    return groupByTimeOfDay(routines).map((group) => (
-      <Fragment key={group.label}>
-        <GroupLabel icon={group.value === null ? undefined : PART_ICON[group.value]}>{group.label}</GroupLabel>
-        {tiles(group.routines)}
-      </Fragment>
-    ));
-  }
-  return (
-    <>
-      <GroupLabel
-        icon={PART_ICON[part]}
-        // Keyed by the part: a part already done is not announced when it is switched to, only a tick that makes it so is.
-        // And a finished day is announced once, by the heading ("Ben: All done"): this stays on the page, for the eye, and says
-        // nothing more to a screen reader then.
-        status={
-          <span key={part} role="status" className="flex items-center gap-1.5 text-[14.5px] leading-[18px] font-semibold">
-            {partDone(view, done) && (
-              <>
-                {!finished && (
-                  <span className="sr-only">
-                    {profile.name}: {timeWord(part)}{' '}
-                  </span>
-                )}
-                <span aria-hidden={finished || undefined} className="flex items-center gap-1.5">
-                  <Tick size={20} color={profile.color} strong />
-                  Done
-                </span>
-              </>
-            )}
-          </span>
-        }
-      >
-        {timeWord(part)}
-      </GroupLabel>
-      {view.own.length > 0 && tiles(view.own)}
-      {view.earlier.length > 0 && (
-        <>
-          <GroupLabel>Left from earlier</GroupLabel>
-          {tiles(view.earlier)}
-        </>
-      )}
-      {view.anytime.length > 0 && (
-        <>
-          <GroupLabel>Any time</GroupLabel>
-          {tiles(view.anytime)}
-        </>
-      )}
-      {view.own.length + view.earlier.length + view.anytime.length === 0 && <EmptyWords className="px-1">Nothing this {part}.</EmptyWords>}
-    </>
-  );
-}
-
-// The foot line under a column: how many Routines of earlier parts are done, with a tick for each of the first three. Nothing when none.
-export function DoneEarlier({ view, color }: { view: PartView; color: string }) {
-  if (view.doneEarlier === 0) return null;
-  return (
-    <div className="mt-1 flex h-6 flex-none items-center gap-2">
-      <span aria-hidden className="flex gap-1">
-        {Array.from({ length: Math.min(view.doneEarlier, 3) }, (_, index) => (
-          <Tick key={index} size={20} color={color} strong />
-        ))}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-sm leading-[1.2857] text-muted-foreground">{view.doneEarlier} done earlier today</span>
-    </div>
-  );
-}
-
-// One Profile's column of the chart: its disc, name and how far it is today, then the part of the day that is showing
-// (or every part), then the foot line for what was done earlier. It is as tall as what it holds, and the tiles scroll on
-// their own when they do not fit, with a "More" button at their foot that says so (OverflowButton). A Profile with nothing
-// today has the column and says so. In portrait (docs/specs/0009) it is its natural height, with no foot of its own: the chart scrolls.
 function Column({
   profile,
   routines,
@@ -298,93 +72,40 @@ function Column({
   done: Set<string>;
   part: ChartPart;
   held: ReadonlySet<string>;
-  // What the last tick of this Profile's that did not save says; empty when it was saved.
   problem: string | undefined;
   onToggle: (routine: Routine) => Promise<boolean>;
-  // Set while a burst plays over this column.
   burst: Burst | undefined;
-  // A tap on a Routine here finished the Profile, `at` px down the column; the burst's last piece has landed.
   onFinish: (at: number) => void;
   onLand: (id: number) => void;
   portrait: boolean;
 }) {
-  const { done: count, total } = routineProgress(routines, done);
-  const finished = total > 0 && count === total;
-  // With more Routines than pips, the count is all that says how far along they are, so it is read out.
-  const pips = total > 0 && total <= MAX_PIPS;
-  const view = part === 'whole' ? null : partView(routines, done, part, held);
-  const column = useRef<HTMLElement>(null);
   // Whether the tiles hold more than the column shows. The button is the tiles' last child, stuck to their foot, so a tick, a part
   // or a person coming and going is a render of this column and reads it again.
   const more = useOverflow('y', 'over');
-
-  function tap(routine: Routine, button: HTMLElement) {
-    if (column.current && tapFinishesProfile(routines, done, routine.id, !done.has(routine.id))) {
-      // Where the burst starts: the middle of the button, measured from the column's padding edge, which is the burst's own top.
-      const box = button.getBoundingClientRect();
-      const top = column.current.getBoundingClientRect().top + column.current.clientTop;
-      onFinish(box.top + box.height / 2 - top);
-    }
-    void onToggle(routine);
-  }
-
   return (
-    <section
-      ref={column}
-      aria-labelledby={`routines-${profile.id}`}
-      className={`person relative flex ${portrait ? '' : 'max-h-full '}min-h-0 max-w-md min-w-[17rem] flex-1 flex-col gap-2.5 rounded-3xl bg-person-soft p-3`}
-      style={personStyle(profile.color)}
-    >
-      <div className="flex min-h-14 flex-none items-center gap-3">
-        <PersonDisc name={profile.name} color={profile.color} size={56} />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          {/* A name is words too (WORDS): too long for the line it is hyphenated or broken, in two lines at most and then cut with an ellipsis, so
-              no letter is cut with nothing to show it. The heading is the whole name, which is what the column is labelled by. */}
-          <h3 id={`routines-${profile.id}`} dir="auto" className={cn(WORDS, 'line-clamp-2 font-display text-[26px] leading-[30px]')}>
-            {profile.name}
-          </h3>
-          <div className="flex items-center gap-1.5 text-[15px] leading-5">
-            {total === 0 && <span className="text-muted-foreground">Nothing today</span>}
-            {total > 0 && !finished && (
-              <span aria-hidden={pips || undefined} className="text-muted-foreground">
-                {count} of {total} done
-              </span>
-            )}
-            {/* Always on the page, so a screen reader hears "All done" when it appears and not when Routines load already done, and
-                whose it is, because it is heard from wherever the screen reader is. */}
-            <span role="status" className="flex items-center gap-1.5 font-semibold">
-              {finished && (
-                <>
-                  <span className="sr-only">{profile.name}: </span>
-                  <Star aria-hidden className="size-4 shrink-0" />
-                  All done
-                </>
-              )}
-            </span>
-          </div>
-        </div>
-      </div>
-      <Pips done={count} total={total} label={`${profile.name}: ${count} of ${total} ${total === 1 ? 'routine' : 'routines'} done`} color={profile.color} height={10} />
-      {total > 0 && (
+    <RoutineColumn
+      profile={profile}
+      routines={routines}
+      done={done}
+      part={part}
+      held={held}
+      problem={problem}
+      onToggle={onToggle}
+      burst={burst}
+      onFinish={onFinish}
+      onLand={onLand}
+      layout={portrait ? PORTRAIT_COLUMN : COLUMN}
+      tilesIn={(tiles) => (
         // The scrolling box has no padding, so the "More" button at its foot sticks flush with its end; the padding inside it is room for
         // a tile's focus ring, which the box would otherwise clip. At rest a tile may sit partly under the button; one that takes the
         // keyboard's focus is scrolled clear of it.
         <div ref={portrait ? undefined : more.scroller} className={portrait ? '-m-1' : cn('-m-1 min-h-0 overflow-y-auto', FOOT_CLEARANCE)}>
-          <div className="flex flex-col gap-2.5 p-1">
-            <PartGroups profile={profile} routines={routines} done={done} part={part} view={view} finished={finished} onTap={tap} />
-          </div>
+          <div className="flex flex-col gap-2.5 p-1">{tiles}</div>
           {/* The tiles are 4 px in from the box, so the button is. */}
           {!portrait && <OverflowButton control={more} of={`${profile.name}'s routines`} surface="person" className="px-1" />}
         </div>
       )}
-      {view !== null && <DoneEarlier view={view} color={profile.color} />}
-      {problem && (
-        <p role="alert" className="flex-none px-1 text-[15px] leading-5">
-          {problem}
-        </p>
-      )}
-      {burst !== undefined && <Confetti key={burst.id} at={burst.at} onDone={() => onLand(burst.id)} />}
-    </section>
+    />
   );
 }
 
@@ -455,7 +176,7 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
       {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
       {failed && !loaded && (
         <p role="alert" className="text-base">
-          Could not load routines. Check your connection.
+          {couldNotLoad('routines')}
         </p>
       )}
       {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
@@ -513,12 +234,16 @@ const timeOfDayChoices = [...TIME_OF_DAY_GROUPS.slice(-1), ...TIME_OF_DAY_GROUPS
 export function RoutineForm({
   profile,
   routine,
+  busy = false,
   onSave,
   onCancel,
 }: {
   profile: Profile;
   routine?: Routine;
-  onSave: (input: RoutineEdit) => Promise<boolean>;
+  // Whether the page is making a change: Save does nothing and is drawn `aria-disabled`.
+  busy?: boolean;
+  // Whether the Routine was saved; undefined when the page was busy and did nothing, which is not a failure.
+  onSave: (input: RoutineEdit) => Promise<boolean | undefined>;
   onCancel?: () => void;
 }) {
   const [title, setTitle] = useState(routine?.title ?? '');
@@ -541,15 +266,16 @@ export function RoutineForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (mask === 0 || saving) return;
+    if (mask === 0 || saving || busy) return;
     if (!title.trim()) {
       setAsked((count) => count + 1);
       return;
     }
     setSaving(true);
-    setFailed(false);
     const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture });
     setSaving(false);
+    // Nothing was done (the page was busy): what the form said of the last save stands.
+    if (saved === undefined) return;
     setFailed(!saved);
     if (saved && !routine) {
       setTitle('');
@@ -613,7 +339,7 @@ export function RoutineForm({
       <PictureField key={added} about={about} picture={picture} onChange={setPicture} />
       <div className="flex gap-3">
         {/* A page of forms has one primary: the Save of the Routine being edited. Adding is secondary. */}
-        <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" disabled={mask === 0 || saving}>
+        <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" aria-disabled={mask === 0 || saving || busy || undefined}>
           {routine ? 'Save' : 'Add routine'}
         </Button>
         {onCancel && (
@@ -633,51 +359,44 @@ export function RoutineForm({
   );
 }
 
+const NO_ROUTINES: Routine[] = [];
+
 export function RoutinesPage({ household }: { household: Household }) {
-  const [profiles, setProfiles] = useState<Profile[] | null>(null);
-  const [routines, setRoutines] = useState<Routine[]>([]);
-  const [problem, setProblem] = useState('');
+  // Read through the synced read; a change is written through it, then read back before the page moves on.
+  const read = useSyncedRead(
+    async () => {
+      const [profiles, routines] = await Promise.all([loadProfiles(supabase), loadRoutines(supabase)]);
+      return { profiles, routines };
+    },
+    ROUTINE_TABLES,
+    'routines',
+  );
+  const profiles = read.data?.profiles ?? null;
+  const routines = read.data?.routines ?? NO_ROUTINES;
+  // What the last change said when it failed, else that the page could not be read.
+  const [changeProblem, setProblem] = useState('');
+  const problem = changeProblem || (read.failed ? couldNotLoad('routines') : '');
   const [confirming, setConfirming] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   // Which Routine's form is open right now. A save that finishes late looks here, not at the render it began in.
   const editingNow = useRef<string | null>(null);
-  const [focusNext, setFocusNext] = useState<string | null>(null);
+  // One change at a time (the card write guard): the buttons are drawn `aria-disabled` from `busy`, and focus goes where the page says.
+  const card = useCardWrite();
+  const { busy } = card;
 
-  // Moves focus once the element it names is on screen; the swap unmounts whatever had it.
-  useEffect(() => {
-    if (focusNext === null) return;
-    document.getElementById(focusNext)?.focus();
-    setFocusNext(null);
-  }, [focusNext]);
-
-  const refresh = useCallback(async () => {
-    try {
-      const [foundProfiles, foundRoutines] = await Promise.all([loadProfiles(supabase), loadRoutines(supabase)]);
-      setProfiles(foundProfiles);
-      setRoutines(foundRoutines);
-    } catch {
-      setProblem('Could not load routines. Check your connection.');
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  useRefetchOn(ROUTINE_TABLES, () => void refresh());
-
-  // Runs one change, then reloads so the screen shows what the database holds. A failure is said in
-  // the status line; a form that says so itself, beside its Save, passes no failure.
-  async function change(work: () => Promise<void>, failure = ''): Promise<boolean> {
-    let ok = true;
-    try {
-      await work();
-      setProblem('');
-    } catch {
-      setProblem(failure);
-      ok = false;
-    }
-    await refresh();
-    return ok;
+  // Runs one change, then reads again so the screen shows what the database holds, before the next may begin. A failure is said in
+  // the status line at once; a form that says so itself, beside its Save, passes no failure. Says whether it was made, and nothing
+  // (undefined) when another change was on its way and this one did nothing. `landed` is what the page then does.
+  async function change(work: () => Promise<void>, failure = '', landed?: () => void): Promise<boolean | undefined> {
+    const outcome = await card.run(
+      async () => {
+        await read.write(work);
+        setProblem('');
+        await read.readBack();
+      },
+      { failed: () => setProblem(failure), landed },
+    );
+    return outcome === 'busy' ? undefined : outcome === 'done';
   }
 
   function startEditing(id: string) {
@@ -692,14 +411,12 @@ export function RoutinesPage({ household }: { household: Household }) {
     if (editingNow.current !== id) return;
     editingNow.current = null;
     setEditing(null);
-    setFocusNext(`edit-${id}`);
+    card.focus(`edit-${id}`);
   }
 
   // A failed save keeps the form open, with what was typed; the form says so itself.
-  async function save(id: string, input: RoutineEdit): Promise<boolean> {
-    const ok = await change(() => updateRoutine(supabase, id, input));
-    if (ok) stopEditing(id);
-    return ok;
+  async function save(id: string, input: RoutineEdit): Promise<boolean | undefined> {
+    return change(() => updateRoutine(supabase, id, input), '', () => stopEditing(id));
   }
 
   const ofProfile = (profileId: string) => routines.filter((routine) => routine.profile_id === profileId);
@@ -741,7 +458,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                   {time.routines.map((routine, index) => (
                     <li key={routine.id} className={cn('flex flex-col gap-2', editing !== routine.id && 'rounded-[14px] bg-muted p-3')}>
                       {editing === routine.id ? (
-                        <RoutineForm profile={profile} routine={routine} onSave={(input) => save(routine.id, input)} onCancel={() => stopEditing(routine.id)} />
+                        <RoutineForm profile={profile} routine={routine} busy={busy} onSave={(input) => save(routine.id, input)} onCancel={() => stopEditing(routine.id)} />
                       ) : (
                         <>
                           <div className="flex items-center gap-3">
@@ -760,9 +477,11 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 variant="delete"
                                 aria-label={`Archive ${routineName(routine)}`}
                                 className="h-12 flex-1 rounded-[14px]"
+                                aria-disabled={busy || undefined}
                                 onClick={() => {
+                                  if (card.isBusy()) return;
                                   setConfirming(null);
-                                  setFocusNext(`profile-${profile.id}`);
+                                  card.focus(`profile-${profile.id}`);
                                   void change(() => archiveRoutine(supabase, routine.id), 'Could not archive that routine. Try again.');
                                 }}
                               >
@@ -773,7 +492,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 className="h-12 rounded-[14px]"
                                 onClick={() => {
                                   setConfirming(null);
-                                  setFocusNext(`archive-${routine.id}`);
+                                  card.focus(`archive-${routine.id}`);
                                 }}
                               >
                                 Keep it
@@ -804,9 +523,10 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 className="size-12 rounded-full p-0"
                                 aria-label={`Move ${routineName(routine)} up`}
                                 disabled={index === 0}
-                                onClick={() =>
-                                  void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder routines. Try again.')
-                                }
+                                aria-disabled={busy || undefined}
+                                onClick={() => {
+                                  if (!card.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder routines. Try again.');
+                                }}
                               >
                                 <ArrowUp aria-hidden className="size-5" />
                               </Button>
@@ -815,9 +535,10 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 className="size-12 rounded-full p-0"
                                 aria-label={`Move ${routineName(routine)} down`}
                                 disabled={index === time.routines.length - 1}
-                                onClick={() =>
-                                  void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder routines. Try again.')
-                                }
+                                aria-disabled={busy || undefined}
+                                onClick={() => {
+                                  if (!card.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder routines. Try again.');
+                                }}
                               >
                                 <ArrowDown aria-hidden className="size-5" />
                               </Button>
@@ -833,6 +554,7 @@ export function RoutinesPage({ household }: { household: Household }) {
             <div className={own.length > 0 ? 'border-t border-border pt-4' : undefined}>
               <RoutineForm
                 profile={profile}
+                busy={busy}
                 onSave={(input) => change(() => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined))}
               />
             </div>

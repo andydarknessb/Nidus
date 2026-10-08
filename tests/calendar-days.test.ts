@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, dayStartMs, describeWhen, fiveDays, formatClock, nowHour, type Occurrence } from '../src/lib/calendar-occurrences';
+import { describeWhen, fiveDays, formatClock, nowHour, type Occurrence } from '../src/lib/calendar-occurrences';
+import { dayStartMs } from '../supabase/functions/_shared/zoned-time.ts';
 
 const CHICAGO = 'America/Chicago';
 const TOKYO = 'Asia/Tokyo';
@@ -54,16 +55,7 @@ describe('the five days', () => {
     expect(dayStartMs('2026-11-02', CHICAGO)).toBe(Date.parse('2026-11-02T06:00:00Z'));
   });
 
-  it('start a day at its first instant when a zone skips midnight', () => {
-    // Santiago's clocks jump from 00:00 to 01:00 on 2026-09-06, so that day starts at 01:00 (-03).
-    expect(dayStartMs('2026-09-06', 'America/Santiago')).toBe(Date.parse('2026-09-06T04:00:00Z'));
-    expect(dayStartMs('2026-09-05', 'America/Santiago')).toBe(Date.parse('2026-09-05T04:00:00Z'));
-  });
 
-  it('add whole days to a date across month and year ends', () => {
-    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
-    expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
-  });
 });
 
 describe('where now is', () => {

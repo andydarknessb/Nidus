@@ -14,26 +14,6 @@ const itemColumns = 'id, list_id, text, crossed_at, sort_order';
 
 // ---- Pure helpers -------------------------------------------------------------
 
-// Order the way the rail shows it: by position (the server breaks ties by age).
-export function byPosition<T extends { sort_order: number }>(rows: T[]): T[] {
-  return [...rows].sort((a, b) => a.sort_order - b.sort_order);
-}
-
-// New rows go to the bottom.
-export function nextSortOrder(rows: { sort_order: number }[]): number {
-  return rows.reduce((max, row) => Math.max(max, row.sort_order), -1) + 1;
-}
-
-// The ids in their new order after moving `id` by `offset` places (clamped to the ends).
-export function movedIds(ids: string[], id: string, offset: number): string[] {
-  const from = ids.indexOf(id);
-  if (from < 0) return ids;
-  const to = Math.min(Math.max(from + offset, 0), ids.length - 1);
-  const next = ids.filter((existing) => existing !== id);
-  next.splice(to, 0, id);
-  return next;
-}
-
 // Optimistic cross/uncross: what the screen shows before the server answers.
 export function withCrossed(items: ListItem[], id: string, crossed: boolean, now = new Date()): ListItem[] {
   return items.map((item) => (item.id === id ? { ...item, crossed_at: crossed ? now.toISOString() : null } : item));
@@ -179,45 +159,6 @@ export async function clearCompleted(client: SupabaseClient, listId: string): Pr
 export async function reorderItems(client: SupabaseClient, orderedIds: string[]): Promise<void> {
   const { error } = await client.rpc('reorder_list_items', { ids: orderedIds });
   if (error) throw error;
-}
-
-// ---- Optimistic updates ----------------------------------------------------------
-
-type Publish = (update: (current: ListItem[]) => ListItem[]) => void;
-
-// Shows the cross (or uncross) at once, then asks the server. If the server says
-// no, only that item goes back to what it was; other changes made meanwhile stay.
-// `before` is the rows as they were when the tap happened. Returns whether it stuck.
-export async function crossOptimistically(
-  publish: Publish,
-  id: string,
-  crossed: boolean,
-  before: ListItem[],
-  write: () => Promise<void>,
-): Promise<boolean> {
-  const previous = before.find((item) => item.id === id)?.crossed_at ?? null;
-  publish((current) => withCrossed(current, id, crossed));
-  try {
-    await write();
-    return true;
-  } catch {
-    publish((current) => current.map((item) => (item.id === id ? { ...item, crossed_at: previous } : item)));
-    return false;
-  }
-}
-
-// Same for "clear completed": the crossed items vanish at once and come back in
-// their places if the delete fails.
-export async function clearOptimistically(publish: Publish, before: ListItem[], write: () => Promise<void>): Promise<boolean> {
-  const removed = before.filter((item) => item.crossed_at !== null);
-  publish((current) => withoutCrossed(current));
-  try {
-    await write();
-    return true;
-  } catch {
-    publish((current) => byPosition([...current, ...removed]));
-    return false;
-  }
 }
 
 // The list a phone's Lists screen has open: the one chosen if it is still there, else the Pinned List, else the first. Null with no lists.

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { offsetMs } from '../../supabase/functions/_shared/zoned-time.ts';
-import { byPosition, movedIds, type Profile } from './profiles';
+import { householdTime } from '../../supabase/functions/_shared/zoned-time.ts';
+import { byPosition, movedIds } from './ordering';
+import type { Profile } from './profiles';
 
 // Routines and Routine Completions (CONTEXT.md). Every function takes the client
 // so the same code runs in the app (the global client) and in tests (a Household
@@ -34,9 +35,6 @@ export type RoutineInput = { title: string; days_of_week: number; time_of_day?: 
 // What an edit writes: all four fields, the time of day and the picture included (null is any time, and no picture). An
 // edit that left one out would clear it, so the type does not allow one.
 export type RoutineEdit = Required<RoutineInput>;
-
-// A calendar day in the Household Timezone: 'YYYY-MM-DD' and its weekday (Sunday = 0).
-export type HouseholdDay = { date: string; weekday: number };
 
 export const WEEKDAYS = [
   { bit: 0, name: 'Sunday', short: 'Sun' },
@@ -74,21 +72,6 @@ export function maskOf(weekdays: readonly number[]): number {
 
 export function isScheduledOn(mask: number, weekday: number): boolean {
   return (mask & (1 << weekday)) !== 0;
-}
-
-// The date and weekday at `now` in the Household Timezone. Never the machine's zone.
-export function householdDay(timezone: string, now: Date = new Date()): HouseholdDay {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
-  const [year, month, day] = [Number(part('year')), Number(part('month')), Number(part('day'))];
-  const date = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  // The weekday of a calendar date does not depend on any zone, so read it in UTC.
-  return { date, weekday: new Date(Date.UTC(year, month - 1, day)).getUTCDay() };
 }
 
 // The unarchived Routines scheduled for `weekday`, in their order.
@@ -173,15 +156,11 @@ export const PARTS: readonly TimeOfDay[] = ['morning', 'afternoon', 'evening'];
 const AFTERNOON_FROM = 12;
 const EVENING_FROM = 17;
 
-// The hour of the Household's wall clock at `now`, 0 to 23, daylight saving included. Never the machine's zone.
-function householdHour(timezone: string, now: Date): number {
-  return new Date(now.getTime() + offsetMs(now.getTime(), timezone)).getUTCHours();
-}
 
 // The part of the day `now` is in, by the Household's wall clock. On a 23 or 25 hour day it follows the clock on the wall
 // and not the hours that have passed, so the afternoon still begins at 12:00.
 export function partOfDay(timezone: string, now: Date = new Date()): TimeOfDay {
-  const hour = householdHour(timezone, now);
+  const hour = Math.floor(householdTime(now.getTime(), timezone).minutes / 60);
   return hour >= EVENING_FROM ? 'evening' : hour >= AFTERNOON_FROM ? 'afternoon' : 'morning';
 }
 
@@ -513,24 +492,3 @@ export async function uncompleteRoutine(client: SupabaseClient, routineId: strin
 }
 
 // ---- Optimistic updates ----------------------------------------------------------
-
-type Publish = (update: (checked: Set<string>) => Set<string>) => void;
-
-// Shows the tick (or untick) at once, then asks the server. If the server says no,
-// only that Routine goes back; other changes made meanwhile stay. Returns whether it stuck.
-export async function tickOptimistically(publish: Publish, routineId: string, checked: boolean, write: () => Promise<void>): Promise<boolean> {
-  const set = (value: boolean) => (current: Set<string>) => {
-    const next = new Set(current);
-    if (value) next.add(routineId);
-    else next.delete(routineId);
-    return next;
-  };
-  publish(set(checked));
-  try {
-    await write();
-    return true;
-  } catch {
-    publish(set(!checked));
-    return false;
-  }
-}

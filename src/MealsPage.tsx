@@ -3,16 +3,18 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { InBody } from './components/InBody';
 import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
-import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
+import { describePage, mealsPageDate } from './lib/calendar-occurrences';
+import { MEAL_PLAN_LIMITS, type WallDay } from './lib/paged-view';
 import { dialogKeys } from './lib/dialog';
-import { focusTitleIfLost } from './lib/focus';
 import { appBehind, holdBackground } from './lib/inert-behind';
-import { mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
-import { householdDay, WEEKDAYS } from './lib/routines';
-import { supabase } from './lib/supabase';
+import { mealGrid, nextMeal, nextMealWords, type Meal, type MealSlot } from './lib/meals';
+import { WEEKDAYS } from './lib/routines';
 import { dayLabel, dayName, SLOT_PICTURES, useMeals } from './lib/use-meals';
 import { useFailureWords } from './lib/use-failure-words';
+import { usePagedView } from './lib/use-paged-view';
 import { useHouseholdDay, useNow } from './lib/wall-hooks';
+import { dayStartMs, householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { couldNotLoad } from './lib/synced-read';
 
 // Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the header's button for the
 // next meal of today. Written by a Household Account or a Device, whichever session `supabase` holds.
@@ -28,26 +30,17 @@ export function MealsScreen({ timezone, date, onNavigate, portrait = false }: { 
   const today = useHouseholdDay(timezone).date;
   // The page is laid out from the start of today, so its days and the mark on today agree.
   const now = new Date(dayStartMs(today, timezone));
-  const anchor = pageStart('week', shownDate(date, today));
-  const days = pageDays('week', anchor, timezone, now);
-  const { previous, next } = paging('week', anchor, pagingWindowAround(today));
+  // Paging may disable or remove the button that was pressed: usePagedView puts focus on the page title instead of losing it, but only when
+  // it was lost, so paging by keyboard stays on the button that was pressed; on arrival it goes to the title, as on the other screens.
+  const { days, previous, next, limit, heading } = usePagedView({
+    view: 'week',
+    date,
+    now,
+    timezone,
+    limits: MEAL_PLAN_LIMITS,
+    takesFocusOnArrival: true,
+  });
   const open = (week: string) => onNavigate(mealsPageDate(week, today));
-  // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it, but only when it was lost
-  // (focusTitleIfLost), so paging by keyboard stays on the button that was pressed; on arrival it goes to the title, as on the other
-  // screens. It runs on the week the person chose (`date`), never on `anchor`, which also moves by itself at the week's turn while the
-  // page follows this week.
-  const heading = useRef<HTMLHeadingElement>(null);
-  const arrived = useRef(false);
-  useEffect(() => {
-    if (arrived.current) focusTitleIfLost(heading.current);
-    else {
-      arrived.current = true;
-      heading.current?.focus();
-    }
-  }, [date]);
-  // The week's grid is keyed on the anchor, so when it moves by itself (the week turning) the grid is new and focus inside it is gone:
-  // it goes to the title then, and focus that is anywhere else is left alone.
-  useEffect(() => focusTitleIfLost(heading.current), [anchor]);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -66,14 +59,9 @@ export function MealsScreen({ timezone, date, onNavigate, portrait = false }: { 
           {describePage(days)}
         </h2>
       </nav>
-      {/* Always mounted, so a screen reader announces the text when it appears. Meals page within the
-          calendar's window but are not what the mirror keeps, so these say only where the plan ends. */}
+      {/* Always mounted, so a screen reader announces the text when it appears. */}
       <p role="status" className="text-lg empty:hidden">
-        {previous === null
-          ? 'This is as far back as the meal plan goes.'
-          : next === null
-            ? 'This is as far ahead as the meal plan goes.'
-            : ''}
+        {limit}
       </p>
       {/* Keyed on the page so a turned page never shows the last page's Meals, and a failed read says so. */}
       <MealsGrid key={days[0]!.date} days={days} portrait={portrait} />
@@ -91,9 +79,8 @@ export type Editing = { date: string; slot: MealSlot; heading: string; meal: Mea
 // read that failed) the cells are disabled and show nothing, since a cell that looked empty and could be tapped would
 // invite writing over a Meal that is only not read yet.
 function MealsGrid({ days, portrait }: { days: WallDay[]; portrait: boolean }) {
-  const [saves, setSaves] = useState(0);
   const [editing, setEditing] = useState<Editing | null>(null);
-  const { meals, failed } = useMeals(days[0]!.date, days[days.length - 1]!.date, saves);
+  const { meals, failed, save } = useMeals(days[0]!.date, days[days.length - 1]!.date);
   const known = meals !== null;
   const rows = mealGrid(meals ?? [], days.map((day) => day.date));
   const template: CSSProperties = portrait
@@ -152,7 +139,7 @@ function MealsGrid({ days, portrait }: { days: WallDay[]; portrait: boolean }) {
     <section aria-label="Meal plan" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
       {failed && !known && (
         <p role="alert" className="p-4 text-xl">
-          Could not load meals. Check your connection.
+          {couldNotLoad('meals')}
         </p>
       )}
       {/* The padding is on the scrolling grid, so a focus ring has room inside what it clips. */}
@@ -175,11 +162,9 @@ function MealsGrid({ days, portrait }: { days: WallDay[]; portrait: boolean }) {
         <InBody>
           <MealSheet
             editing={editing}
+            save={save}
             onClose={() => setEditing(null)}
-            onSaved={() => {
-              setEditing(null);
-              setSaves((count) => count + 1);
-            }}
+            onSaved={() => setEditing(null)}
           />
         </InBody>
       )}
@@ -209,7 +194,7 @@ function DayHeading({ day }: { day: WallDay }) {
 // Focus moves onto the field on open, so the tablet's keyboard comes up at once, and back to the cell on close;
 // Close, Cancel and Escape close it without writing, and so does a tap on the scrim while the field still holds what
 // it opened with. A blank field is a clear.
-export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
+export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editing; save: (date: string, slot: MealSlot, title: string) => Promise<void>; onSaved: () => void; onClose: () => void }) {
   const dialog = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing.meal?.title ?? '');
@@ -251,7 +236,7 @@ export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onS
     setProblem('');
     setBusy(true);
     try {
-      await setMeal(supabase, editing.date, editing.slot, next);
+      await save(editing.date, editing.slot, next);
       onSaved();
     } catch (error) {
       setProblem(failureWords(error));

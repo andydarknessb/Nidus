@@ -1,83 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { GOOGLE_TOKEN_URL } from '../supabase/functions/_shared/google-token';
+import { syncWindow } from '../supabase/functions/calendar-sync/adapter';
 import {
-  GOOGLE_TOKEN_URL,
   handleCalendarSync,
-  syncWindow,
   type SyncDeps,
   type SyncSummary,
 } from '../supabase/functions/calendar-sync/handler';
 import { arrangeCalendar, arrangeEvents } from './support/calendar';
+import { eventCalls, fakeGoogle, type GoogleEvent } from './support/google';
 import { asHouseholdAccount, asServiceRole, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
 const SECRET = 'sync-secret-that-is-long-enough-to-matter';
 const NOW = Date.parse('2026-09-30T12:00:00Z');
-
-type GoogleEvent = {
-  id: string;
-  status?: string;
-  summary?: string;
-  description?: string;
-  location?: string;
-  start?: { date?: string; dateTime?: string; timeZone?: string };
-  end?: { date?: string; dateTime?: string; timeZone?: string };
-};
-
-// Google's HTTP API is the only fake: a token endpoint and a calendar's events endpoint.
-// `events` is keyed by Google calendar id; a number is an HTTP failure status for that calendar.
-type FakeOptions = {
-  events: Record<string, GoogleEvent[] | number>;
-  // refresh token -> true when Google still honours it.
-  refreshTokens?: Record<string, boolean>;
-  pageSize?: number;
-  syncToken?: string;
-  // What an incremental request (one carrying a sync token) gets back, keyed by that token: the
-  // changed events and the next token, or an HTTP failure status (410: the token expired).
-  incremental?: Record<string, { items: GoogleEvent[]; nextSyncToken?: string } | number>;
-};
-
-type Call = { url: URL; init?: RequestInit };
-
-function fakeGoogle(options: FakeOptions): { fetch: typeof fetch; calls: Call[] } {
-  const calls: Call[] = [];
-  const fake = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = new URL(String(input));
-    calls.push(init ? { url, init } : { url });
-    if (String(input) === GOOGLE_TOKEN_URL) {
-      const form = new URLSearchParams(String(init?.body));
-      const refresh = form.get('refresh_token') ?? '';
-      if (form.get('grant_type') !== 'refresh_token' || options.refreshTokens?.[refresh] === false) {
-        return Promise.resolve(Response.json({ error: 'invalid_grant' }, { status: 400 }));
-      }
-      return Promise.resolve(Response.json({ access_token: `access-for-${refresh}`, expires_in: 3600 }));
-    }
-    const match = /\/calendars\/([^/]+)\/events$/.exec(url.pathname);
-    if (!match) return Promise.resolve(new Response('unexpected', { status: 500 }));
-    const calendarId = decodeURIComponent(match[1]!);
-    const given = url.searchParams.get('syncToken');
-    if (given !== null) {
-      // Google refuses a delta that also names a window.
-      if (url.searchParams.has('timeMin') || url.searchParams.has('timeMax')) return Promise.resolve(new Response('{}', { status: 400 }));
-      const delta = options.incremental?.[given];
-      if (delta === undefined) return Promise.resolve(new Response('{}', { status: 410 }));
-      if (typeof delta === 'number') return Promise.resolve(new Response('{}', { status: delta }));
-      return Promise.resolve(Response.json({ items: delta.items, nextSyncToken: delta.nextSyncToken ?? 'sync-token-next' }));
-    }
-    const events = options.events[calendarId];
-    if (events === undefined) return Promise.resolve(new Response('{}', { status: 404 }));
-    if (typeof events === 'number') return Promise.resolve(new Response('{}', { status: events }));
-    const size = options.pageSize ?? 1000;
-    const offset = Number(url.searchParams.get('pageToken') ?? 0);
-    const items = events.slice(offset, offset + size);
-    const more = offset + size < events.length;
-    return Promise.resolve(
-      Response.json({
-        items,
-        ...(more ? { nextPageToken: String(offset + size) } : { nextSyncToken: options.syncToken ?? 'sync-token-1' }),
-      }),
-    );
-  };
-  return { fetch: fake as typeof fetch, calls };
-}
 
 // Scoped to the test's own Household: the local stack is shared, and a sync of everyone's accounts
 // would touch (and count) accounts other runs left there.
@@ -355,9 +289,6 @@ async function calendarState(calendarId: string) {
   return data;
 }
 
-function eventCalls(google: { calls: Call[] }): Call[] {
-  return google.calls.filter((call) => call.url.pathname.endsWith('/events'));
-}
 
 describe('an incremental sync', () => {
   it('asks only for changes since the sync token, with no window', async () => {

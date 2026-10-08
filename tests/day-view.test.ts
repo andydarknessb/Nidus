@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { offsetMs } from '../supabase/functions/_shared/zoned-time.ts';
-import { addDays, dayStartMs, pageDays, type Occurrence, type WallDay } from '../src/lib/calendar-occurrences';
+import { type Occurrence } from '../src/lib/calendar-occurrences';
+import { pageDays, type WallDay } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
 import { pillPeople } from '../src/lib/schedule';
 import { aboveLabel, blockTime, emptyRowWords, hourWindow, hourWords, hoursThatFit, planDay, whoWords, type DayPlan } from '../src/lib/day-view';
+import { addDays, dayStartMs, offsetMs } from '../supabase/functions/_shared/zoned-time.ts';
 
 // The Day view's rules, all pure: how many hours fit, which of them the grid shows, which events go in the row above it (all
 // day, then what ended before its first hour), which in the row below (what starts after its last), where each block sits and

@@ -14,6 +14,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0005-iphone-calendars.md` is the v5 spec: iPhone (iCloud) calendars mirrored from their public link.
 - `docs/specs/0006-household-invites.md` is the v6 spec: more than one Household Account, joined by a Household Invite link.
 - `docs/specs/0007-push-notifications.md` is the v7 spec: Web Push notifications to the grown-ups' phones, per phone, four kinds.
+- `docs/specs/0008-deeper-modules.md` is the v8 spec: deeper modules (the Household clock, one synced read, day events, the paged view, the card write guard, calendar provider adapters), with no visible change beyond its rulings.
 - `docs/specs/0009-the-wall-in-portrait.md` is the v9 spec: the Wall on a tablet hung upright (768 px and wider, taller than wide), with the Lenovo Tab P12 as the tablet.
 
 ## Conventions

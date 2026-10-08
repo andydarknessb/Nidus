@@ -1,4 +1,5 @@
 import { FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
+import type { SyncedRead } from './synced-read';
 
 // Calendar Accounts and Mirrored Calendars (CONTEXT.md). Every function takes the
 // client so the same code runs in the app and in tests against the local stack.
@@ -16,7 +17,10 @@ export type CalendarAccount = {
   google_email: string | null;
   status: CalendarAccountStatus;
   last_synced_at: string | null;
+  // For the logs: never shown and never compared. The words for a state come from the facts around it.
   last_error: string | null;
+  // iPhone calendar: the last read left some repeating events cut short by the sync's work limits.
+  truncated: boolean;
 };
 
 export type MirroredCalendar = {
@@ -38,7 +42,7 @@ export type MirroredCalendarChoice = { selected?: boolean; profile_id?: string |
 
 // Explicit column lists: `select *` on these tables is refused, because vault_secret_id
 // and sync_token are not granted to clients.
-const accountColumns = 'id, provider, google_email, status, last_synced_at, last_error';
+const accountColumns = 'id, provider, google_email, status, last_synced_at, last_error, truncated';
 const calendarColumns = 'id, calendar_account_id, google_calendar_id, name, color, profile_id, selected';
 
 export async function loadCalendarAccounts(client: SupabaseClient): Promise<CalendarAccount[]> {
@@ -83,32 +87,21 @@ export async function addIphoneCalendar(client: SupabaseClient, url: string): Pr
   throw new AddRefused(typeof words === 'string' ? words : IPHONE_ADD_FAILED);
 }
 
-// What the Add button's press came to, for the card to show.
-export type PressAddResult =
-  | { kind: 'ignored' }
+// What an Add's answer comes to, for the card to show.
+export type AddAnswer =
   | { kind: 'added'; clear: boolean; say: string }
   | { kind: 'refused'; words: string }
   | { kind: 'failed'; error: unknown };
 
-// One press of Add. `state.adding` is the guard: a press while a link is being added is ignored, and the flag is down again when
-// the answer is. The field is cleared on success only if it still holds the link that was sent, so what was typed meanwhile is kept.
-export async function pressAdd(options: {
-  link: string;
-  state: { adding: boolean };
-  current: () => string;
-  add: (url: string) => Promise<void>;
-}): Promise<PressAddResult> {
-  const { state } = options;
-  if (state.adding) return { kind: 'ignored' };
-  state.adding = true;
+// Sends the pasted link (trimmed) and says what the answer comes to; it never throws. The field is cleared on success only if it still
+// holds the link that was sent, so what was typed meanwhile is kept. One press at a time is the card write guard's, not this.
+export async function sendLink(options: { link: string; current: () => string; add: (url: string) => Promise<void> }): Promise<AddAnswer> {
   const sent = options.link.trim();
   try {
     await options.add(sent);
     return { kind: 'added', clear: options.current().trim() === sent, say: IPHONE_ADDED };
   } catch (error) {
     return error instanceof AddRefused ? { kind: 'refused', words: error.message } : { kind: 'failed', error };
-  } finally {
-    state.adding = false;
   }
 }
 
@@ -121,30 +114,31 @@ export async function updateMirroredCalendar(
   if (error) throw error;
 }
 
+// A calendar's switch or its person, through the synced read that shows the calendars: shown at once, gone back if the write fails,
+// and written in the order asked for that calendar (`queues` holds each calendar's last write), so the last asked is the last
+// written. Rejects as the write does.
+export function chooseCalendar<T extends { calendars: MirroredCalendar[] }>(
+  read: Pick<SyncedRead<T>, 'write'>,
+  queues: Record<string, Promise<void>>,
+  client: SupabaseClient,
+  id: string,
+  choice: MirroredCalendarChoice,
+): Promise<void> {
+  const turn = (queues[id] ?? Promise.resolve()).then(() => updateMirroredCalendar(client, id, choice));
+  queues[id] = turn.then(
+    () => undefined,
+    () => undefined,
+  );
+  return read.write(
+    () => turn,
+    (shown) => ({ ...shown, calendars: shown.calendars.map((row) => (row.id === id ? { ...row, ...choice } : row)) }),
+  );
+}
+
 // Deletes the account; the database drops its Vault secret and its Mirrored Calendars with it.
 export async function removeCalendarAccount(client: SupabaseClient, id: string): Promise<void> {
   const { error } = await client.from('calendar_accounts').delete().eq('id', id);
   if (error) throw error;
-}
-
-// What the screen has asked of a calendar that has not been answered yet (one field, or both asked at different moments).
-export type PendingChoice = { selected?: boolean; profile_id?: string | null };
-
-// A calendar as the screen shows it while its changes are on their way: what is stored with what was asked laid over it, so that a
-// tick shows at once and a person chosen shows at once.
-export function shownCalendar(calendar: MirroredCalendar, pending: PendingChoice | undefined): MirroredCalendar {
-  return pending === undefined ? calendar : { ...calendar, ...pending };
-}
-
-// What is still pending of a calendar once `answered` has been answered, whether it landed or failed: a field that is still what
-// that change asked for is no longer pending (it is stored, or it goes back to what is stored), and a field asked for again since,
-// which has an answer of its own to wait for, stays. Nothing left is undefined.
-export function stillPending(pending: PendingChoice | undefined, answered: PendingChoice): PendingChoice | undefined {
-  if (pending === undefined) return undefined;
-  const left: PendingChoice = { ...pending };
-  if ('selected' in answered && left.selected === answered.selected) delete left.selected;
-  if ('profile_id' in answered && left.profile_id === answered.profile_id) delete left.profile_id;
-  return Object.keys(left).length === 0 ? undefined : left;
 }
 
 // The account's calendars, selected ones first, the way the screen lists them.
@@ -184,18 +178,19 @@ export function lastSyncedText(lastSyncedAt: string | null, nowMs: number): stri
 // (docs/calendar-sync.md), so a failure mends itself unless the sign-in itself has gone.
 export const UPDATE_FAILED_WORDS = 'Connected, but the last update failed. Nidus tries again every 5 minutes.';
 
-// The note the sync writes on an iPhone calendar it read but could not expand in full (the same sentence as
-// FEED_TRUNCATED_MESSAGE in the calendar-sync function; a test holds the two together), and what the screen says of it.
-export const ICLOUD_TRUNCATED_NOTE = 'Some repeating events in this calendar cannot be shown in full.';
+// What the screen says of an iPhone calendar whose last read left some repeating events cut short.
 export const ICLOUD_TRUNCATED_WORDS = 'Connected. Some repeating events cannot be shown in full.';
 
-// How the settings screen says an account is doing. `last_error` is whatever the sync wrote when it failed, which is for the
-// logs: it is never shown. The exceptions are the two sentences the sync writes itself, in the family's words (spec 0005): an
-// iPhone calendar whose link broke, which tells them what to do, and an active one whose repeating events were cut short.
-export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error'> & Partial<Pick<CalendarAccount, 'provider'>>): string {
-  if (account.status === 'needs_reauth') return account.provider === 'icloud' && account.last_error ? account.last_error : 'Needs to be connected again';
-  if (account.provider === 'icloud' && account.last_error === ICLOUD_TRUNCATED_NOTE) return ICLOUD_TRUNCATED_WORDS;
-  return account.last_error ? UPDATE_FAILED_WORDS : 'Connected';
+// What it says of an iPhone calendar whose link has stopped working, and what to do about it.
+export const ICLOUD_LINK_GONE_WORDS = 'This link no longer works. Turn on Public Calendar again and paste the new link.';
+
+// How the settings screen says an account is doing, from the facts on its row: its status, its provider and `truncated`. `last_error`
+// is whatever the sync logged when it failed: it only says that an update failed, and is never shown or compared.
+export function accountStatusText(account: Pick<CalendarAccount, 'status' | 'last_error' | 'truncated'> & Partial<Pick<CalendarAccount, 'provider'>>): string {
+  if (account.status === 'needs_reauth') return account.provider === 'icloud' ? ICLOUD_LINK_GONE_WORDS : 'Needs to be connected again';
+  // A failed update wins over cut-short repeats: a failure is what the family saw before there was a flag.
+  if (account.last_error) return UPDATE_FAILED_WORDS;
+  return account.provider === 'icloud' && account.truncated ? ICLOUD_TRUNCATED_WORDS : 'Connected';
 }
 
 // What the wall needs to know about each account to say whether the mirror is behind.

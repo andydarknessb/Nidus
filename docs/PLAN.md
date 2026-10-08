@@ -170,6 +170,25 @@ push_deliveries       subscription_id, key (pk together), sent_at
 list_items            + added_by (default auth.uid())
 ```
 
+
+## v8: deeper modules
+
+Settled on 2026-10-07 from an architecture review the owner approved in full. The spec is [0008](specs/0008-deeper-modules.md); tracker #144, tickets #145 to #156.
+
+### Decisions
+
+- **One rule for skipped and repeated times**: RFC 5545 everywhere (skipped: forward by the gap; repeated: the first). The iPhone sync's floating-time fix (#145) ships to master first.
+- **No visible change** beyond: one refresh timing (30 s, 5 s after a failure), a month that loads as a whole, a calendar the sync did not reach left untouched, a failed write that takes back only itself.
+- **Replace, don't layer**: tests of helpers that become internal move to the new interface case for case.
+- **Plain TypeScript cores, thin hooks**: stateful modules are tested below React; no DOM test library.
+- **Facts, not sentences** between the sync and Settings: `truncated` on the Calendar Account; `last_error` is for logs only.
+
+### Tables
+
+```
+calendar_accounts    + truncated boolean not null default false
+```
+
 ## v9: the Wall in portrait
 
 Settled on 2026-10-07 when the owner asked for the Wall to fit the Lenovo Tab P12 (12.7 inches, 2944 by 1840, 16:10) hung either way. The spec is [0009](specs/0009-the-wall-in-portrait.md); the sizes are in [look.md](look.md), "Portrait". It qualifies "one or two Android tablets in landscape" above: landscape or portrait, as the household hangs it.

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { FEED_TOO_LARGE_MESSAGE, FEED_TRUNCATED_MESSAGE, GOOGLE_TOKEN_URL, handleCalendarSync, type SyncDeps, type SyncSummary } from '../supabase/functions/calendar-sync/handler';
+import { GOOGLE_TOKEN_URL } from '../supabase/functions/_shared/google-token';
+import { handleCalendarSync, type SyncDeps, type SyncSummary } from '../supabase/functions/calendar-sync/handler';
 import { arrangeCalendar } from './support/calendar';
+import { fakeGoogle, type GoogleEvent } from './support/google';
+import { fakeICloud, type FeedReply } from './support/icloud';
+import { mixed } from './support/outside-http';
 import { asHouseholdAccount, asServiceRole, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
 // The sync of an iPhone (iCloud) calendar through the one seam: the local stack, the service role
@@ -9,40 +13,12 @@ import { asHouseholdAccount, asServiceRole, createHousehold, destroyHousehold, t
 
 const SECRET = 'sync-secret-that-is-long-enough-to-matter';
 const NOW = Date.parse('2026-09-30T12:00:00Z');
-const GOOGLE_EVENTS = /\/calendars\/([^/]+)\/events$/;
-
-// What a feed server says to a link: a feed with its validators, 304, or a failure.
-type Reply = { text: string; etag?: string; lastModified?: string } | number | 'unreachable';
 
 let linkCounter = 0;
 const newLink = () => `https://p12-caldav.icloud.com/published/2/secret-token-${Date.now().toString(36)}-${(linkCounter += 1)}`;
 
-type Call = { url: string; headers: Headers };
-
-function fakeWorld(feeds: Map<string, Reply>, googleEvents: Record<string, unknown[]> = {}) {
-  const calls: Call[] = [];
-  const fake = (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = String(input);
-    calls.push({ url, headers: new Headers(init?.headers) });
-    if (url === GOOGLE_TOKEN_URL) return Response.json({ access_token: 'access', expires_in: 3600 });
-    const google = GOOGLE_EVENTS.exec(new URL(url).pathname);
-    if (google) return Response.json({ items: googleEvents[decodeURIComponent(google[1]!)] ?? [], nextSyncToken: 'g-token' });
-    const reply = feeds.get(url);
-    if (reply === undefined) return new Response('missing', { status: 404 });
-    if (reply === 'unreachable') throw new TypeError(`fetch failed for ${url}`);
-    if (typeof reply === 'number') return new Response('', { status: reply });
-    const headers = new Headers();
-    if (reply.etag) headers.set('ETag', reply.etag);
-    if (reply.lastModified) headers.set('Last-Modified', reply.lastModified);
-    const sent = new Headers(init?.headers);
-    // A real server answers 304 to a validator it issued.
-    if ((reply.etag && sent.get('If-None-Match') === reply.etag) || (!reply.etag && reply.lastModified && sent.get('If-Modified-Since') === reply.lastModified)) {
-      return new Response(null, { status: 304 });
-    }
-    return new Response(reply.text, { headers });
-  }) as typeof fetch;
-  return { fetch: fake, calls };
-}
+// Both providers' requests go through the one injected `fetch`, logged in order.
+const fakeWorld = (feeds: Map<string, FeedReply>, googleEvents: Record<string, GoogleEvent[]> = {}) => mixed(fakeGoogle({ events: googleEvents }), fakeICloud(feeds));
 
 const feedOf = (...events: string[]) =>
   ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Apple Inc.//iPhone OS 18.0//EN', 'X-WR-CALNAME:Family', ...events, 'END:VCALENDAR', '']
@@ -111,9 +87,16 @@ async function rowsOf(calendarId: string) {
 async function accountOf(accountId: string) {
   const { data, error } = await asServiceRole()
     .from('calendar_accounts')
-    .select('status, last_synced_at, last_error')
+    .select('status, last_synced_at, last_error, truncated')
     .eq('id', accountId)
-    .single<{ status: string; last_synced_at: string | null; last_error: string | null }>();
+    .single<{ status: string; last_synced_at: string | null; last_error: string | null; truncated: boolean }>();
+  if (error) throw error;
+  return data;
+}
+
+// Every column the service role can read, for "left exactly as it was".
+async function wholeRowOf(accountId: string) {
+  const { data, error } = await asServiceRole().from('calendar_accounts').select('*').eq('id', accountId).single();
   if (error) throw error;
   return data;
 }
@@ -138,7 +121,7 @@ describe('a first sync of an iPhone calendar', () => {
     const theirs = await arrangeIcloud(account, other, 'Work');
     await admin.from('mirrored_calendars').update({ profile_id: profile!.id }).eq('id', mine.calendarId);
 
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist, swim), etag: '"v1"' }], [other, { text: feedOf(), etag: '"w1"' }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(dentist, swim), etag: '"v1"' }], [other, { text: feedOf(), etag: '"w1"' }]]));
     const summary = await syncOk(deps(account, world));
 
     expect(summary).toMatchObject({ accounts: 2, calendars: 2, events: 4, errors: [] });
@@ -170,7 +153,7 @@ describe('a first sync of an iPhone calendar', () => {
     expect(household!.timezone).toBe('America/Chicago');
     const link = newLink();
     const { calendarId } = await arrangeIcloud(account, link);
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(vevent('f', 'Floating', 'DTSTART:20261014T090000'), vevent('d', 'Birthday', 'DTSTART;VALUE=DATE:20261015')) }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(vevent('f', 'Floating', 'DTSTART:20261014T090000'), vevent('d', 'Birthday', 'DTSTART;VALUE=DATE:20261015')) }]]));
     await syncOk(deps(account, world));
     expect((await rowsOf(calendarId)).map((row) => [row.title, row.starts_at, row.is_all_day])).toEqual([
       ['Floating', '2026-10-14T14:00:00+00:00', false],
@@ -185,7 +168,7 @@ describe('a later sync', () => {
     const account = await arrange();
     const link = newLink();
     const { calendarId } = await arrangeIcloud(account, link);
-    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist, swim), etag: '"v1"' }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: feedOf(dentist, swim), etag: '"v1"' }]]);
     const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
     const before = await rowsOf(calendarId);
@@ -214,7 +197,7 @@ describe('a later sync', () => {
     const account = await arrange();
     const link = newLink();
     const { accountId, calendarId } = await arrangeIcloud(account, link);
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist), etag: '"v1"', lastModified: 'Tue, 29 Sep 2026 10:00:00 GMT' }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(dentist), etag: '"v1"', lastModified: 'Tue, 29 Sep 2026 10:00:00 GMT' }]]));
     const first = deps(account, world);
     await syncOk(first);
     const before = await rowsOf(calendarId);
@@ -238,7 +221,7 @@ describe('a later sync', () => {
     const link = newLink();
     const { calendarId } = await arrangeIcloud(account, link);
     const weekly = vevent('weekly', 'Weekly', 'DTSTART:20261006T230000Z\nDTEND:20261007T000000Z\nRRULE:FREQ=WEEKLY');
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(weekly), etag: '"v1"' }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(weekly), etag: '"v1"' }]]));
     const first = deps(account, world);
     await syncOk(first);
     const before = await rowsOf(calendarId);
@@ -270,7 +253,7 @@ describe('a later sync', () => {
     const account = await arrange();
     const link = newLink();
     const { calendarId } = await arrangeIcloud(account, link);
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist), etag: '"v1"' }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(dentist), etag: '"v1"' }]]));
     await syncOk(deps(account, world));
     const admin = asServiceRole();
     await admin.from('mirrored_calendars').update({ selected: false }).eq('id', calendarId);
@@ -288,7 +271,7 @@ describe('when the feed says no', () => {
     const account = await arrange();
     const link = newLink();
     const { accountId, calendarId } = await arrangeIcloud(account, link);
-    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist), etag: '"v1"' }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: feedOf(dentist), etag: '"v1"' }]]);
     const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
 
@@ -296,10 +279,9 @@ describe('when the feed says no', () => {
     const summary = await syncOk(deps(account, world));
 
     expect(summary.errors).toHaveLength(1);
-    expect(await accountOf(accountId)).toMatchObject({
-      status: 'needs_reauth',
-      last_error: 'This link no longer works. Turn on Public Calendar again and paste the new link.',
-    });
+    // The link is gone is a fact (status); last_error is only the log's note of it.
+    expect(await accountOf(accountId)).toMatchObject({ status: 'needs_reauth', truncated: false });
+    expect((await accountOf(accountId)).last_error).not.toBeNull();
     expect(await rowsOf(calendarId)).toHaveLength(1);
 
     // And it is left alone until the link is replaced.
@@ -313,7 +295,7 @@ describe('when the feed says no', () => {
     const link = newLink();
     const broken = await arrangeIcloud(account, link);
     const google = await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'refresh-A' });
-    const feeds = new Map<string, Reply>([[link, { text: 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:cut\r\nDTSTART:20261014T140000Z\r\n' }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:cut\r\nDTSTART:20261014T140000Z\r\n' }]]);
     const world = fakeWorld(feeds, {
       cal: [{ id: 'standup', summary: 'Standup', start: { dateTime: '2026-10-05T09:00:00-05:00' }, end: { dateTime: '2026-10-05T09:30:00-05:00' } }],
     });
@@ -349,7 +331,7 @@ describe('when the feed says no', () => {
     const account = await arrange();
     const link = newLink();
     await arrangeIcloud(account, link);
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf() }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf() }]]));
     await syncOk(deps(account, world));
     expect(world.calls.map((call) => call.url)).toEqual([link]);
   });
@@ -364,7 +346,7 @@ describe('a run with more feed than it can read', () => {
   const MINUTE = 60_000;
 
   async function arrangeFeeds(account: HouseholdAccount, count: number, text: string) {
-    const feeds = new Map<string, Reply>();
+    const feeds = new Map<string, FeedReply>();
     const calendars: { accountId: string; calendarId: string; link: string }[] = [];
     for (let index = 0; index < count; index += 1) {
       const link = newLink();
@@ -385,7 +367,7 @@ describe('a run with more feed than it can read', () => {
     return data!.last_attempted_at === null ? null : Date.parse(data!.last_attempted_at);
   };
 
-  it('shares one step budget across the feeds: the first is read as far as its cap, the others are left as they were and say so', async () => {
+  it('shares one step budget across the feeds: the first is read as far as its cap, one more starts and does not fit, and the last is not reached and left as it was', async () => {
     const account = await arrange();
     const { feeds, calendars } = await arrangeFeeds(account, 3, feedOf(dentist));
     for (const c of calendars) feeds.set(c.link, { text: feedOf(dentist), etag: '"v1"' });
@@ -393,15 +375,21 @@ describe('a run with more feed than it can read', () => {
     await syncOk(deps(account, world));
     const changed = vevent('changed', 'Changed', 'DTSTART:20261009T150000Z\nDTEND:20261009T160000Z');
     for (const c of calendars) feeds.set(c.link, { text: heavy(changed), etag: '"v2"' });
+    const before = await Promise.all(calendars.map((c) => wholeRowOf(c.accountId)));
 
     const summary = await syncOk(deps(account, world));
 
     const states = await Promise.all(calendars.map(stateOf));
-    const skipped = states.filter((state) => state.account.last_error === FEED_TOO_LARGE_MESSAGE);
-    const read = states.filter((state) => state.account.last_error === FEED_TRUNCATED_MESSAGE);
+    const skipped = states.filter((state) => !state.account.truncated);
+    const read = states.filter((state) => state.account.truncated);
     expect(read).toHaveLength(1);
     expect(skipped).toHaveLength(2);
-    expect(summary.errors).toHaveLength(2);
+    // Of the two not stored, one started on what the first left and did not fit (a failure, for the logs); the other was not reached
+    // at all, which is no failure: nothing is told of it, and its row is exactly as it was.
+    expect(summary.errors).toHaveLength(1);
+    const unreached = states.flatMap((state, index) => (skipped.includes(state) && state.account.last_error === null ? [index] : []));
+    expect(unreached).toHaveLength(1);
+    expect(await wholeRowOf(calendars[unreached[0]!]!.accountId)).toEqual(before[unreached[0]!]);
     // A feed that was not read keeps its events and its validator, and stays active.
     for (const state of skipped) {
       expect(state.account.status).toBe('active');
@@ -422,9 +410,13 @@ describe('a run with more feed than it can read', () => {
     // Run 0: none has been tried, so by id. P takes the run's steps, and has been tried. Q takes what is
     // left and is not stored, but it never had a whole run, so it was not really tried; R found nothing
     // left. Both are as new as they were.
+    const rBefore = await wholeRowOf(r.accountId);
     await syncOk(at(0));
-    expect((await accountOf(p.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
-    for (const c of [q, r]) expect((await accountOf(c.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(await accountOf(p.accountId)).toMatchObject({ truncated: true, last_error: null });
+    // Q failed to fit and stored nothing; R was not reached at all, and is exactly as it was.
+    expect((await accountOf(q.accountId)).truncated).toBe(false);
+    expect((await accountOf(q.accountId)).last_error).not.toBeNull();
+    expect(await wholeRowOf(r.accountId)).toEqual(rBefore);
     expect(await attemptedOf(p.accountId)).toBe(NOW);
     expect(await attemptedOf(q.accountId)).toBeNull();
     expect(await attemptedOf(r.accountId)).toBeNull();
@@ -433,21 +425,24 @@ describe('a run with more feed than it can read', () => {
 
     // Run 1: Q, never tried and first by id, has the whole run. P is behind it.
     await syncOk(at(1));
-    expect((await accountOf(q.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
-    // P was read before and keeps its note; R was never read and says it was not.
-    expect((await accountOf(p.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
-    expect((await accountOf(r.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect((await accountOf(q.accountId)).truncated).toBe(true);
+    // P was read before and is still cut short. R found what Q left too little, started and did not fit: a failure for the logs,
+    // with nothing stored, no read moved and no stamp kept.
+    expect((await accountOf(p.accountId)).truncated).toBe(true);
+    expect(await accountOf(r.accountId)).toMatchObject({ truncated: false, last_synced_at: null });
+    expect((await accountOf(r.accountId)).last_error).not.toBeNull();
+    expect(await attemptedOf(r.accountId)).toBeNull();
     expect(await attemptedOf(q.accountId)).toBe(NOW + 5 * MINUTE);
     expect(await attemptedOf(p.accountId)).toBe(NOW);
 
     // Run 2: R, never tried, goes first.
     await syncOk(at(2));
-    expect((await accountOf(r.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect((await accountOf(r.accountId)).truncated).toBe(true);
     expect(await attemptedOf(r.accountId)).toBe(NOW + 10 * MINUTE);
 
     // Run 3: P, tried longest ago, goes first.
     await syncOk(at(3));
-    expect((await accountOf(p.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect((await accountOf(p.accountId)).truncated).toBe(true);
   }, 120_000);
 
   it('does not send a feed to the back for failing to fit what an earlier feed left: it keeps its place and gets a whole run next time', async () => {
@@ -462,8 +457,9 @@ describe('a run with more feed than it can read', () => {
 
     // Run 0: A is stored, B is not, and B had less than a whole run: it was not really tried.
     await syncOk(at(0));
-    expect((await accountOf(a.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
-    expect((await accountOf(b.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect((await accountOf(a.accountId)).truncated).toBe(true);
+    expect(await accountOf(b.accountId)).toMatchObject({ truncated: false, last_synced_at: null });
+    expect((await accountOf(b.accountId)).last_error).not.toBeNull();
     expect(await attemptedOf(a.accountId)).toBe(NOW);
     expect(await attemptedOf(b.accountId)).toBeNull();
     expect(await rowsOf(b.calendarId)).toEqual([]);
@@ -471,7 +467,7 @@ describe('a run with more feed than it can read', () => {
     // Run 1: B goes first, has the whole run, and stores what its rule reached.
     await syncOk(at(1));
     expect((await rowsOf(b.calendarId)).map((row) => row.title)).toContain('Dentist');
-    expect(await accountOf(b.accountId)).toMatchObject({ status: 'active', last_error: FEED_TRUNCATED_MESSAGE });
+    expect(await accountOf(b.accountId)).toMatchObject({ status: 'active', truncated: true, last_error: null });
     expect(await attemptedOf(b.accountId)).toBe(NOW + 5 * MINUTE);
   }, 120_000);
 
@@ -485,12 +481,14 @@ describe('a run with more feed than it can read', () => {
     for (const c of calendars) await asServiceRole().from('calendar_accounts').update({ last_attempted_at: new Date(NOW - 3_600_000).toISOString() }).eq('id', c.accountId);
     await asServiceRole().from('calendar_accounts').update({ last_attempted_at: new Date(NOW - 60_000).toISOString() }).eq('id', last.accountId);
     const world = fakeWorld(feeds);
+    const before = await wholeRowOf(last.accountId);
 
     await syncOk(deps(account, world));
 
     expect(world.calls.map((call) => call.url)).not.toContain(plain);
     expect(await rowsOf(last.calendarId)).toEqual([]);
-    expect(await accountOf(last.accountId)).toMatchObject({ status: 'active', last_error: FEED_TOO_LARGE_MESSAGE });
+    // Not reached: the row is exactly as it was, its place in line included.
+    expect(await wholeRowOf(last.accountId)).toEqual(before);
     expect(await attemptedOf(last.accountId)).toBe(NOW - 60_000);
 
     // Only the first heavy feed had the whole run, and goes back; the other two keep their places. Each
@@ -500,21 +498,22 @@ describe('a run with more feed than it can read', () => {
     expect(await rowsOf(last.calendarId)).toEqual([]);
     await syncOk({ ...deps(account, world), now: () => NOW + 10 * MINUTE });
     expect((await rowsOf(last.calendarId)).map((row) => row.title)).toEqual(['Dentist']);
-    expect(await accountOf(last.accountId)).toMatchObject({ status: 'active', last_error: null });
+    expect(await accountOf(last.accountId)).toMatchObject({ status: 'active', last_error: null, truncated: false });
   }, 60_000);
 
-  it('keeps a note a skipped feed already has, and says it was not read when it has none', async () => {
+  it('leaves a skipped feed’s row exactly as it was, whatever it held: a truncated flag stays, an old error stays, and nothing new is written', async () => {
     const account = await arrange();
     const { feeds, calendars } = await arrangeFeeds(account, 3, feedOf(dentist, runaway('a')));
     const [, noted, bare] = calendars as [(typeof calendars)[number], (typeof calendars)[number], (typeof calendars)[number]];
-    await asServiceRole().from('calendar_accounts').update({ last_error: FEED_TRUNCATED_MESSAGE }).eq('id', noted.accountId);
+    await asServiceRole().from('calendar_accounts').update({ truncated: true }).eq('id', noted.accountId);
+    await asServiceRole().from('calendar_accounts').update({ last_error: 'Could not read the iPhone calendar (timed out).' }).eq('id', bare.accountId);
+    const before = await Promise.all([noted, bare].map((c) => wholeRowOf(c.accountId)));
     let t = 0;
 
     // The first feed's walk is the run's whole time: the other two are skipped without being read.
     await syncOk({ ...deps(account, fakeWorld(feeds)), clock: () => (t += 1) });
 
-    expect((await accountOf(noted.accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
-    expect((await accountOf(bare.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(await Promise.all([noted, bare].map((c) => wholeRowOf(c.accountId)))).toEqual(before);
   }, 60_000);
 
   it('rotates a feed whose parse and added dates spend the run’s time, without walking a step, to the back once it has had the run to itself, so the feeds behind it store their repeating series on the next runs', async () => {
@@ -539,11 +538,13 @@ RDATE:${dates}`);
 
     // Run 0: the heavy feed is first (by id), spends the run's time with no steps, and is not stored. The
     // others find the time gone: not fetched, not tried, nothing stored.
+    const before = await Promise.all([p, q].map((c) => wholeRowOf(c.accountId)));
     await syncOk(at(0));
-    expect((await accountOf(heavyOne.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(await accountOf(heavyOne.accountId)).toMatchObject({ truncated: false, last_synced_at: null });
+    expect((await accountOf(heavyOne.accountId)).last_error).not.toBeNull();
     expect(await attemptedOf(heavyOne.accountId)).toBe(NOW);
-    for (const c of [p, q]) {
-      expect((await accountOf(c.accountId)).last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    for (const [index, c] of [p, q].entries()) {
+      expect(await wholeRowOf(c.accountId)).toEqual(before[index]);
       expect(await attemptedOf(c.accountId)).toBeNull();
       expect(await rowsOf(c.calendarId)).toEqual([]);
     }
@@ -572,10 +573,12 @@ RDATE:${dates}`);
     const summary = await syncOk({ ...deps(account, world), clock: () => (t += 1) });
 
     const [first, second] = await Promise.all(calendars.map(stateOf)) as [Awaited<ReturnType<typeof stateOf>>, Awaited<ReturnType<typeof stateOf>>];
-    expect(first.account.last_error).toBe(FEED_TOO_LARGE_MESSAGE);
+    expect(first.account).toMatchObject({ truncated: false, last_synced_at: null });
+    expect(first.account.last_error).not.toBeNull();
     expect(first.rows).toEqual([]);
-    expect(second.account.last_error).toBe(FEED_TOO_LARGE_MESSAGE);
-    expect(summary.errors).toHaveLength(2);
+    expect(second.account).toMatchObject({ truncated: false, last_synced_at: null, last_error: null });
+    // The first failed (it was tried and did not fit); the second was not reached, which is no failure.
+    expect(summary.errors).toHaveLength(1);
     // The first walked until the time was up, so it was tried; the second found no time left at all, and was not.
     expect(await attemptedOf(calendars[0]!.accountId)).toBe(NOW);
     expect(await attemptedOf(calendars[1]!.accountId)).toBeNull();
@@ -586,12 +589,12 @@ RDATE:${dates}`);
     for (const text of [feedOf(runaway('a'), dentist), feedOf(dentist, runaway('a')), feedOf(runaway('a'), dentist, runaway('b', 1701))]) {
       const link = newLink();
       const { accountId, calendarId } = await arrangeIcloud(account, link);
-      const world = fakeWorld(new Map<string, Reply>([[link, { text, etag: '"v1"' }]]));
+      const world = fakeWorld(new Map<string, FeedReply>([[link, { text, etag: '"v1"' }]]));
 
       await syncOk(deps(account, world));
 
       expect((await rowsOf(calendarId)).map((row) => row.title)).toEqual(['Dentist']);
-      expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: FEED_TRUNCATED_MESSAGE });
+      expect(await accountOf(accountId)).toMatchObject({ status: 'active', truncated: true, last_error: null });
       expect(Date.parse((await accountOf(accountId)).last_synced_at!)).toBe(NOW);
       expect(JSON.parse((await tokenOf(calendarId))!)).toEqual({ etag: '"v1"', lastModified: null, truncated: true });
     }
@@ -604,56 +607,72 @@ RDATE:${dates}`);
     const hostile = ['FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30', 'FREQ=SECONDLY;BYMONTH=1', 'FREQ=MINUTELY;BYMONTH=1'].map((rule, index) =>
       vevent(`h${index}`, 'Hostile', `DTSTART:20260201T000000Z\nRRULE:${rule}\nRDATE:20261010T150000Z`),
     );
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(...hostile, dentist), etag: '"v1"' }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(...hostile, dentist), etag: '"v1"' }]]));
     const began = Date.now();
 
     await syncOk({ ...deps(account, world), clock: () => performance.now() });
 
     expect(Date.now() - began).toBeLessThan(10_000);
     expect((await rowsOf(calendarId)).map((row) => row.title)).toEqual(['Dentist', 'Hostile', 'Hostile', 'Hostile']);
-    expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: FEED_TRUNCATED_MESSAGE });
+    expect(await accountOf(accountId)).toMatchObject({ status: 'active', truncated: true, last_error: null });
   }, 60_000);
 
-  it('clears the note when a later read of the feed is whole', async () => {
+  it('clears the truncated flag when a later read of the feed is whole', async () => {
     const account = await arrange();
     const link = newLink();
     const { accountId } = await arrangeIcloud(account, link);
-    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist, runaway('a')) }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: feedOf(dentist, runaway('a')) }]]);
     const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
-    expect((await accountOf(accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect((await accountOf(accountId)).truncated).toBe(true);
 
     feeds.set(link, { text: feedOf(dentist) });
     await syncOk(deps(account, world));
-    expect((await accountOf(accountId)).last_error).toBeNull();
+    expect((await accountOf(accountId)).truncated).toBe(false);
   }, 60_000);
 
-  it('keeps the note on a 304, because what is stored is still what was cut, and drops it when a later read is whole', async () => {
+  it('leaves the truncated flag as it was when the next read fails: the row says a failure, and the repeats are still cut short', async () => {
+    const account = await arrange();
+    const link = newLink();
+    const { accountId } = await arrangeIcloud(account, link);
+    const feeds = new Map<string, FeedReply>([[link, { text: feedOf(dentist, runaway('a')), etag: '"v1"' }]]);
+    const world = fakeWorld(feeds);
+    await syncOk(deps(account, world));
+    expect((await accountOf(accountId)).truncated).toBe(true);
+
+    feeds.set(link, 500);
+    await syncOk({ ...deps(account, world), now: () => NOW + 5 * MINUTE });
+
+    expect(await accountOf(accountId)).toMatchObject({ truncated: true, status: 'active' });
+    expect((await accountOf(accountId)).last_error).not.toBeNull();
+  }, 60_000);
+
+  it('keeps the truncated flag on a 304, because what is stored is still what was cut, and drops it when a later read is whole', async () => {
     const account = await arrange();
     const link = newLink();
     const { accountId, calendarId } = await arrangeIcloud(account, link);
-    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist, runaway('a')), etag: '"v1"' }]]);
+    const feeds = new Map<string, FeedReply>([[link, { text: feedOf(dentist, runaway('a')), etag: '"v1"' }]]);
     const world = fakeWorld(feeds);
     await syncOk(deps(account, world));
-    expect((await accountOf(accountId)).last_error).toBe(FEED_TRUNCATED_MESSAGE);
+    expect((await accountOf(accountId)).truncated).toBe(true);
     expect(JSON.parse((await tokenOf(calendarId))!)).toEqual({ etag: '"v1"', lastModified: null, truncated: true });
 
     const later = { ...deps(account, world), now: () => NOW + 5 * MINUTE };
     await syncOk(later);
     expect(world.calls.at(-1)!.headers.get('If-None-Match')).toBe('"v1"');
-    expect(await accountOf(accountId)).toMatchObject({ status: 'active', last_error: FEED_TRUNCATED_MESSAGE });
+    expect(await accountOf(accountId)).toMatchObject({ status: 'active', truncated: true, last_error: null });
     expect(Date.parse((await accountOf(accountId)).last_synced_at!)).toBe(NOW + 5 * MINUTE);
     expect((await rowsOf(calendarId)).map((row) => row.title)).toEqual(['Dentist']);
 
     feeds.set(link, { text: feedOf(dentist), etag: '"v2"' });
     await syncOk({ ...later, now: () => NOW + 10 * MINUTE });
-    expect((await accountOf(accountId)).last_error).toBeNull();
+    expect(await accountOf(accountId)).toMatchObject({ truncated: false, last_error: null });
     expect(JSON.parse((await tokenOf(calendarId))!)).toEqual({ etag: '"v2"', lastModified: null });
 
     // And a 304 after a whole read has no note to keep.
     await syncOk({ ...later, now: () => NOW + 15 * MINUTE });
     expect(world.calls.at(-1)!.headers.get('If-None-Match')).toBe('"v2"');
-    expect((await accountOf(accountId)).last_error).toBeNull();
+    expect(await accountOf(accountId)).toMatchObject({ truncated: false, last_error: null });
   }, 60_000);
 });
 
@@ -664,7 +683,7 @@ describe('the order of a run', () => {
     // The iPhone calendar is made first, so only the run's own ordering can put Google ahead of it.
     await arrangeIcloud(account, link);
     await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'refresh-A' });
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf() }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf() }]]), { cal: [] });
 
     await syncOk(deps(account, world));
 
@@ -677,7 +696,7 @@ describe('the order of a run', () => {
   it('takes the iPhone calendars by when they were last tried, never-tried first, then by id, whatever was last read', async () => {
     const account = await arrange();
     const made: { accountId: string; link: string }[] = [];
-    const feeds = new Map<string, Reply>();
+    const feeds = new Map<string, FeedReply>();
     for (let index = 0; index < 4; index += 1) {
       const link = newLink();
       feeds.set(link, { text: feedOf() });
@@ -702,7 +721,7 @@ describe('the order of a run', () => {
     const link = newLink();
     const { accountId } = await arrangeIcloud(account, link);
     const google = await arrangeCalendar(account, { googleCalendarId: 'cal', refreshToken: 'refresh-A' });
-    const world = fakeWorld(new Map<string, Reply>([[link, { text: feedOf(dentist) }]]));
+    const world = fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(dentist) }]]), { cal: [] });
     const seen: (string | null)[] = [];
     const spy = (async (input: string | URL | Request, init?: RequestInit) => {
       if (String(input) === link) {

@@ -1,6 +1,7 @@
-// Household Timezone arithmetic shared by the sync Edge Function (which converts all-day
-// events on ingest) and the wall (which lays days out). Plain Intl, no Deno globals, so the
-// same code runs under Node, the browser and Deno, and cannot drift between them.
+// The Household clock: every question about the Household Date (CONTEXT.md) and the time of day
+// on it, for the Wall, the phone and every Edge Function. Nothing else computes a Household Date,
+// a day's start or the instant of a time of day. Plain Intl, no Deno globals, so the same code
+// runs under Node, the browser and Deno, and cannot drift between them.
 
 // Building an Intl.DateTimeFormat is the slow part of every conversion; one per zone is enough.
 const formatters = new Map<string, Intl.DateTimeFormat>();
@@ -49,19 +50,54 @@ export function dayStartMs(date: string, timezone: string): number {
   const wall = Date.UTC(year, month - 1, day);
   const first = wall - offsetMs(wall, timezone);
   const start = wall - offsetMs(first, timezone);
-  if (localDate(start, timezone) === date) return start;
+  if (householdTime(start, timezone).date === date) return start;
   // Midnight does not exist that day (a few zones, such as Santiago, change their clocks at
   // midnight): the day begins at the first instant whose local date is `date`.
   let low = wall - 15 * 3_600_000;
   let high = wall + 15 * 3_600_000;
   while (high - low > 1000) {
     const middle = Math.floor((low + high) / 2000) * 1000;
-    if (localDate(middle, timezone) < date) low = middle;
+    if (householdTime(middle, timezone).date < date) low = middle;
     else high = middle;
   }
   return high;
 }
 
-function localDate(timestamp: number, timezone: string): string {
-  return new Date(timestamp + offsetMs(timestamp, timezone)).toISOString().slice(0, 10);
+// The instant `time` ('HH:MM') on `date` is on the wall clock of `timezone`, by wallClockMs's rule.
+export function instantAt(date: string, time: string, timezone: string): number {
+  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
+  const [hour, minute] = time.split(':').map(Number) as [number, number];
+  return wallClockMs(Date.UTC(year, month - 1, day, hour, minute), timezone);
+}
+
+// `date` ('YYYY-MM-DD') moved by whole days. A calendar date does not depend on any zone.
+export function addDays(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+export type HouseholdTime = { date: string; weekday: number; minutes: number };
+
+// The Household Date ('YYYY-MM-DD'), its weekday (Sunday 0) and the minutes since its midnight on
+// the wall clock, at the instant `ms`.
+export function householdTime(ms: number, timezone: string): HouseholdTime {
+  const local = new Date(ms + offsetMs(ms, timezone));
+  return { date: local.toISOString().slice(0, 10), weekday: local.getUTCDay(), minutes: local.getUTCHours() * 60 + local.getUTCMinutes() };
+}
+
+export type HouseholdDay = { date: string; weekday: number };
+
+// The Household Date and its weekday at `now`. Never the machine's zone.
+export function householdDay(timezone: string, now: Date = new Date()): HouseholdDay {
+  const { date, weekday } = householdTime(now.getTime(), timezone);
+  return { date, weekday };
+}
+
+// Whether the span from `start` to `end` is on the day from `day.startMs` to `day.endMs` (the next
+// day's start): it starts before the day ends and ends after the day starts, so one ending exactly
+// at midnight is not on the next day. A span of no length overlaps nothing, so it is on the day its
+// instant falls in.
+export function spanIsOn(start: number, end: number, day: { startMs: number; endMs: number }): boolean {
+  if (end <= start) return start >= day.startMs && start < day.endMs;
+  return start < day.endMs && end > day.startMs;
 }
