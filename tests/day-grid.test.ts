@@ -132,14 +132,14 @@ describe('the grid', () => {
     const html = grid(plan([event('Piano lesson with Mrs. Okonkwo', OCT1, '17:00', '18:00', ['p-ava', 'p-cory'])]), OCT1);
     const classes = (tag: string) => (/class="([^"]*)"/.exec(tag)?.[1] ?? '').split(' ');
     const tag = block(html, 'Piano lesson');
-    expect(classes(tag)).toEqual(expect.arrayContaining(['max-[768px]:flex-wrap', 'max-[768px]:gap-y-0.5']));
+    expect(classes(tag)).toEqual(expect.arrayContaining(['phone:flex-wrap', 'phone:gap-y-0.5']));
     const title = /<span class="([^"]*)">Piano lesson with Mrs\. Okonkwo<\/span>/.exec(inner(html, 'Piano lesson'))![1]!.split(' ');
-    expect(title).toEqual(expect.arrayContaining(['max-[768px]:basis-full', 'max-[768px]:line-clamp-1', 'min-w-0']));
+    expect(title).toEqual(expect.arrayContaining(['phone:basis-full', 'phone:line-clamp-1', 'min-w-0']));
     // The time gives way before the discs do, and the discs (shrink-0, as on the tablet) are drawn after it.
     const time = /<span class="([^"]*)">5:00 to 6:00 PM<\/span>/.exec(inner(html, 'Piano lesson'))![1]!.split(' ');
-    expect(time).toEqual(expect.arrayContaining(['max-[768px]:min-w-0', 'max-[768px]:truncate']));
+    expect(time).toEqual(expect.arrayContaining(['phone:min-w-0', 'phone:truncate']));
     expect(inner(html, 'Piano lesson')).toMatch(/5:00 to 6:00 PM<\/span>[\s\S]*<span class="relative flex shrink-0">/);
-    // None of it changes at 768 px and wider: every phone class is a max-[768px]: variant, so the tablet keeps its line clamp and its time.
+    // None of it changes at 768 px and wider: every phone class is a phone: variant, so the tablet keeps its line clamp and its time.
     expect(classes(tag)).toEqual(expect.arrayContaining(['gap-3', 'pl-3.5']));
     expect(title).toContain('line-clamp-2');
     expect(time).toContain('min-w-max');
@@ -171,8 +171,8 @@ describe('the grid', () => {
     const alone = grid(plan([event('Family dinner', OCT1, '19:00', '20:00')]));
     const shared = grid(plan([event('Family dinner', OCT1, '19:00', '20:00'), event('Piano', OCT1, '19:00', '20:00')]));
     const onNow = (html: string) => (/<span class="([^"]*)">On now<\/span>/.exec(html)?.[1] ?? '').split(' ');
-    expect(onNow(alone)).not.toContain('max-[768px]:hidden');
-    expect(onNow(shared)).toContain('max-[768px]:hidden');
+    expect(onNow(alone)).not.toContain('phone:hidden');
+    expect(onNow(shared)).toContain('phone:hidden');
     // Still there for a screen reader, and the ring is still drawn.
     expect(shared).toContain('on now');
     expect(count(shared, 'shadow-[inset_0_0_0_2.5px_var(--foreground)]')).toBe(2);
@@ -326,7 +326,7 @@ describe('the rows above and below the grid', () => {
     it('hide the button below 768 px, where a finger moves the row, and keep it from 768 px', () => {
       for (const html of [earlier(says(true)), later(says(true, true))]) {
         const classes = button(html);
-        expect(classes).toContain('max-[768px]:hidden');
+        expect(classes).toContain('phone:hidden');
         // The tablet side has no rule of its own that the phone's could lose to, or win against.
         expect(classes).not.toMatch(/ (sm|md|lg):/);
       }

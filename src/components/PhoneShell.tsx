@@ -23,7 +23,10 @@ const BAR = '5rem + 1px';
 const ADD_BOTTOM = `calc(${BAR} + 1rem + env(safe-area-inset-bottom))`;
 // The status line sits above Add event (the button is 3.5 rem), so that it never covers it: 8 px of air over the button.
 const STATUS_FOOT = `calc(${BAR} + 1rem + 3.5rem + 0.5rem + env(safe-area-inset-bottom))`;
-// The column's foot: the bar, 16 px, the button and 16 px more, so nothing ends under either.
+// The column's foot: the bar, 16 px, the button and 16 px more, so nothing ends under either. On a phone on its side (the document's
+// data-phone is "side": under 544 px tall by the held layout, src/lib/home-layout.ts, so the keyboard does not do it) the column also
+// keeps 88 px clear at its right (16, the button, 16), since the screen is too short to scroll a pager's Next or a list's plus out from
+// under Add event.
 const COLUMN_FOOT = `calc(${BAR} + 1rem + 3.5rem + 1rem + env(safe-area-inset-bottom))`;
 
 // A tab: an icon at 24 over its word at 14, 56 tall, radius 14. Below 380 px wide the word's letters are a little closer (tracking-tight), so that "Calendar" clears the 2 px ring of the
@@ -175,7 +178,7 @@ export function PhoneShell({
   return (
     <>
       <PhoneHeader household={household} today={today} forecast={forecast} owner={owner} />
-      <main className="flex min-w-0 flex-col gap-3 px-4 pt-3" style={{ paddingBottom: COLUMN_FOOT }}>
+      <main className="flex min-w-0 flex-col gap-3 px-4 pt-3 [[data-phone=side]_&]:pr-22" style={{ paddingBottom: COLUMN_FOOT }}>
         {strip}
         {children}
       </main>

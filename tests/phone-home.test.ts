@@ -69,12 +69,12 @@ describe('the phone Home', () => {
   });
 
   it('draws the frame before the Household is read 22 round on a phone, like the cards', () => {
-    expect(home(null)).toContain('<section aria-label="Calendar" class="rounded-3xl bg-card max-[768px]:rounded-[22px]">');
+    expect(home(null)).toContain('<section aria-label="Calendar" class="rounded-3xl bg-card phone:rounded-[22px]">');
   });
 
   it('shows Up next at 22 round, and says no em-dash anywhere', () => {
     const html = home('America/Chicago');
-    expect(html).toMatch(/aria-label="Up next" class="[^"]*max-\[768px\]:rounded-\[22px\]/);
+    expect(html).toMatch(/aria-label="Up next" class="[^"]*phone:rounded-\[22px\]/);
     expect(html).not.toContain('—');
   });
 });
@@ -88,46 +88,46 @@ describe('the people strip on a phone', () => {
   it('is one row that scrolls sideways with no scroll bar, 52 tall', () => {
     const html = strip(family);
     const row = classesOf(html.slice(0, html.indexOf('>') + 1));
-    expect(row).toEqual(expect.arrayContaining(['max-[768px]:overflow-x-auto', 'max-[768px]:h-13', 'max-[768px]:[scrollbar-width:none]']));
+    expect(row).toEqual(expect.arrayContaining(['phone:overflow-x-auto', 'phone:h-13', 'phone:[scrollbar-width:none]']));
   });
 
   it('bleeds the row to the screen edge with the gutter as its own padding, so the last pill is cut at the screen edge', () => {
     const html = strip(family);
-    expect(classesOf(html.slice(0, html.indexOf('>') + 1))).toEqual(expect.arrayContaining(['max-[768px]:-mx-4', 'max-[768px]:px-4', 'max-[768px]:scroll-px-4']));
+    expect(classesOf(html.slice(0, html.indexOf('>') + 1))).toEqual(expect.arrayContaining(['phone:-mx-4', 'phone:px-4', 'phone:scroll-px-4']));
   });
 
   it('keeps the row height while the Profiles are read, on a phone too, and gives Everyone a least width, not a fixed one', () => {
-    expect(renderToStaticMarkup(createElement(PeopleStrip, { profiles: null, routines, filter: createProfileFilter(), pressed: [] }))).toContain('max-[768px]:h-13');
+    expect(renderToStaticMarkup(createElement(PeopleStrip, { profiles: null, routines, filter: createProfileFilter(), pressed: [] }))).toContain('phone:h-13');
     const everyone = pills(strip(family))[0]!;
-    expect(classesOf(everyone)).toEqual(expect.arrayContaining(['max-[768px]:min-w-[132px]']));
-    expect(classesOf(everyone)).not.toContain('max-[768px]:w-[132px]');
+    expect(classesOf(everyone)).toEqual(expect.arrayContaining(['phone:min-w-[132px]']));
+    expect(classesOf(everyone)).not.toContain('phone:w-[132px]');
   });
 
   it('has every pill 132 wide and 52 tall that does not shrink, Everyone first, and the name\'s minimum width gives way to it', () => {
     const [everyone, ...people] = pills(strip(family));
     expect(everyone).toContain('aria-pressed');
-    expect(classesOf(everyone!)).toEqual(expect.arrayContaining(['max-[768px]:h-13', 'max-[768px]:min-w-[132px]']));
+    expect(classesOf(everyone!)).toEqual(expect.arrayContaining(['phone:h-13', 'phone:min-w-[132px]']));
     expect(people).toHaveLength(2);
     for (const pill of people) {
-      expect(classesOf(pill)).toEqual(expect.arrayContaining(['max-[768px]:h-13', 'max-[768px]:w-[132px]', 'max-[768px]:min-w-[132px]!', 'max-[768px]:flex-none']));
+      expect(classesOf(pill)).toEqual(expect.arrayContaining(['phone:h-13', 'phone:w-[132px]', 'phone:min-w-[132px]!', 'phone:flex-none']));
     }
   });
 
   it('draws a 36 px disc and shows the pips, and has no "More people" button below 768', () => {
     const html = strip(family);
-    expect(html).toContain('max-[768px]:size-9!');
+    expect(html).toContain('phone:size-9!');
     expect(html).not.toContain('More people');
     const ava = family[0]!;
     const withRoutines: RoutinesToday = { ...routines, groups: [{ profile: ava, routines: [{ id: 'r1', profile_id: ava.id, title: 'Teeth', days_of_week: 127, time_of_day: null, sort_order: 0, archived_at: null, picture: null }] }] };
     const progress = renderToStaticMarkup(createElement(PeopleStrip, { profiles: family, routines: withRoutines, filter: createProfileFilter(), pressed: [] }));
-    expect(progress).toContain('hidden @min-[9.6rem]:block max-[768px]:block');
+    expect(progress).toContain('hidden @min-[9.6rem]:block phone:block');
     expect(progress).toContain('role="progressbar"');
   });
 
   it('puts no phone class on an element with an sm: or md: class of the same kind, which would win between 640 and 767 px', () => {
     for (const tag of strip(family).match(/<[a-z][^>]*>/g) ?? []) {
       const classes = classesOf(tag);
-      if (classes.some((name) => name.startsWith('max-[768px]:'))) expect(classes.filter((name) => /^(sm|md|lg):/.test(name))).toEqual([]);
+      if (classes.some((name) => name.startsWith('phone:'))) expect(classes.filter((name) => /^(sm|md|lg):/.test(name))).toEqual([]);
     }
   });
 });

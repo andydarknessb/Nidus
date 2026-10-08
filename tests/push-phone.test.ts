@@ -88,10 +88,28 @@ function worker(clients: FakeClient[] = []) {
   const listeners = new Map<string, Listener>();
   const shown: { title: string; options: Record<string, unknown> }[] = [];
   const opened: string[] = [];
+  const subscribed: unknown[] = [];
+  const marked = new Map<string, string>();
   const self = {
     addEventListener: (type: string, listener: Listener) => listeners.set(type, listener),
+    caches: {
+      open: (name: string) =>
+        Promise.resolve({
+          put: (request: string, response: Response) => response.text().then((text) => void marked.set(`${name} ${request}`, text)),
+          match: (request: string) => {
+            const text = marked.get(`${name} ${request}`);
+            return Promise.resolve(text === undefined ? undefined : new Response(text));
+          },
+        }),
+    },
     registration: {
       scope: SCOPE,
+      pushManager: {
+        subscribe: (options: unknown) => {
+          subscribed.push(options);
+          return Promise.resolve({ endpoint: `https://push.example/new${subscribed.length > 1 ? subscribed.length : ''}` });
+        },
+      },
       showNotification: (title: string, options: Record<string, unknown>) => {
         shown.push({ title, options });
         return Promise.resolve();
@@ -119,13 +137,49 @@ function worker(clients: FakeClient[] = []) {
     const close = vi.fn();
     return fire('notificationclick', { notification: { close, data: url === undefined ? undefined : { url } } }).then(() => close);
   };
-  return { listeners, shown, opened, fire, push, click };
+  return { listeners, shown, opened, subscribed, marked, fire, push, click };
 }
 
 describe('public/sw.js', () => {
-  it('listens for activation, push and a tap, and for nothing else: no fetch handler, so it never touches a page load', () => {
-    expect([...worker().listeners.keys()].sort()).toEqual(['activate', 'notificationclick', 'push']);
+  it('listens for activation, push, a tap and a rotated subscription, and for nothing else: no fetch handler, so it never touches a page load', () => {
+    expect([...worker().listeners.keys()].sort()).toEqual(['activate', 'notificationclick', 'push', 'pushsubscriptionchange']);
     expect(source).not.toMatch(/['"]fetch['"]/);
+  });
+
+  describe('when the push service rotates the endpoint', () => {
+    const KEY = new Uint8Array([4, 1, 2, 3]).buffer;    const rotated = { oldSubscription: { endpoint: 'https://push.example/old', options: { applicationServerKey: KEY } } };
+
+    it('subscribes again with the old subscription\'s key and leaves a marker of the old and the new endpoint in a cache of its own', async () => {
+      const w = worker();
+      expect(await w.fire('pushsubscriptionchange', rotated)).toBe(1);
+      expect(w.subscribed).toEqual([{ userVisibleOnly: true, applicationServerKey: KEY }]);
+      expect([...w.marked.values()].map((text) => JSON.parse(text))).toEqual([{ old: 'https://push.example/old', new: 'https://push.example/new' }]);
+      expect([...w.marked.keys()]).toEqual(['nidus-push-rotation /push-rotation']);
+    });
+
+    it('chains a second rotation before the page has healed the first: the marker keeps the first old endpoint', async () => {
+      const w = worker();
+      await w.fire('pushsubscriptionchange', rotated);
+      await w.fire('pushsubscriptionchange', { oldSubscription: { endpoint: 'https://push.example/new', options: { applicationServerKey: KEY } } });
+      expect([...w.marked.values()].map((text) => JSON.parse(text))).toEqual([{ old: 'https://push.example/old', new: 'https://push.example/new2' }]);
+    });
+
+    it('starts a fresh marker when the earlier one is for an unrelated endpoint', async () => {
+      const w = worker();
+      await w.fire('pushsubscriptionchange', rotated);
+      await w.fire('pushsubscriptionchange', { oldSubscription: { endpoint: 'https://push.example/elsewhere', options: { applicationServerKey: KEY } } });
+      expect([...w.marked.values()].map((text) => JSON.parse(text))).toEqual([{ old: 'https://push.example/elsewhere', new: 'https://push.example/new2' }]);
+    });
+
+    it.each([
+      ['no old subscription', {}],
+      ['an old subscription with no key', { oldSubscription: { endpoint: 'https://push.example/old', options: {} } }],
+    ])('does nothing for %s', async (_name, event) => {
+      const w = worker();
+      await w.fire('pushsubscriptionchange', event);
+      expect(w.subscribed).toEqual([]);
+      expect(w.marked.size).toBe(0);
+    });
   });
 
   it('takes over the open pages when it activates', async () => {

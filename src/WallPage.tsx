@@ -21,7 +21,7 @@ import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/
 import { supabase } from './lib/supabase';
 import { useStatusLine } from './lib/status-line';
 import { localStore, writeLastMode } from './lib/mode';
-import { useHomeLayout } from './lib/home-layout';
+import { homeGrid, useHomeLayout } from './lib/home-layout';
 import { useForecast } from './lib/use-forecast';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useLightMode, useWallMode } from './lib/use-mode';
@@ -259,7 +259,8 @@ function HomeShell({ owner }: { owner: boolean }) {
   // How many days and Up next tiles Home holds at this screen's size, and whether the screen is a phone (below 768 px wide), which
   // swaps the chrome below and follows the phone's own light or dark setting.
   const home = useHomeLayout();
-  // The Add event sheet is the layout's, so it closes when the layout swaps (a window resized across 768 px).
+  // The Add event sheet is the phone's or the tablet's, so it closes when the layout swaps (a window resized across 768 px). It sits in the
+  // same frame in landscape and in portrait, so turning the tablet leaves it open.
   useEffect(() => setAdding(false), [home.phone]);
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
@@ -359,7 +360,7 @@ function HomeShell({ owner }: { owner: boolean }) {
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
           timezone ? (
-            <RoutinesChart routines={routines} />
+            <RoutinesChart routines={routines} portrait={home.portrait} />
           ) : (
             // The chart before the Household is read: a frame that says "Loading", or that the read failed, as Up next does.
             <section aria-label="Routines" className="rounded-3xl bg-card p-4">
@@ -375,27 +376,27 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : route.view === 'meals' ? (
           // Meals is a screen of its own, not a calendar view: it takes the same slot, and before the Household is read it is an empty frame, or says it could not be read.
           timezone ? (
-            <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} />
+            <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} portrait={home.portrait} />
           ) : (
             <BeforeHousehold label="Meals" failed={view.failed} words={couldNotLoad('meals')} />
           )
         ) : route.view === 'lists' ? (
           // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
-          <ListsScreen />
+          <ListsScreen portrait={home.portrait} />
         ) : route.view !== 'home' && timezone ? (
-          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
+          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} portrait={home.portrait} />
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day, Week or Month.
           <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
         ) : (
-        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_min(20rem,max(320px,27vw))] gap-4">
+        <div className={homeGrid(home.portrait)}>
           {timezone ? (
             <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
           ) : (
             <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
           )}
-          <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} onOpenRoutines={openRoutines} onOpenLists={openLists} />
+          <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} row={home.portrait} onOpenRoutines={openRoutines} onOpenLists={openLists} />
         </div>
         )}
         {sheet}
