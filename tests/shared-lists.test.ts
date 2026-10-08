@@ -9,8 +9,6 @@ import {
   loadLists,
   loadPinnedListId,
   loadPinnedListName,
-  movedIds,
-  nextSortOrder,
   renameList,
   reorderItems,
   reorderLists,
@@ -454,19 +452,6 @@ describe('list ordering and optimistic helpers', () => {
     text: id,
     crossed_at,
     sort_order,
-  });
-
-  it('new rows go to the bottom', () => {
-    expect(nextSortOrder([])).toBe(0);
-    expect(nextSortOrder([item('a', 0), item('b', 4)])).toBe(5);
-  });
-
-  it('moves an id by an offset and clamps at the ends', () => {
-    expect(movedIds(['a', 'b', 'c'], 'c', -1)).toEqual(['a', 'c', 'b']);
-    expect(movedIds(['a', 'b', 'c'], 'a', 1)).toEqual(['b', 'a', 'c']);
-    expect(movedIds(['a', 'b', 'c'], 'a', -1)).toEqual(['a', 'b', 'c']);
-    expect(movedIds(['a', 'b', 'c'], 'c', 1)).toEqual(['a', 'b', 'c']);
-    expect(movedIds(['a', 'b'], 'zzz', 1)).toEqual(['a', 'b']);
   });
 
   it('crosses and uncrosses one item without touching the others', () => {

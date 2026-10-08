@@ -84,33 +84,10 @@ export async function addIphoneCalendar(client: SupabaseClient, url: string): Pr
   throw new AddRefused(typeof words === 'string' ? words : IPHONE_ADD_FAILED);
 }
 
-// What the Add button's press came to, for the card to show.
-export type PressAddResult =
-  | { kind: 'ignored' }
-  | { kind: 'added'; clear: boolean; say: string }
-  | { kind: 'refused'; words: string }
-  | { kind: 'failed'; error: unknown };
-
-// One press of Add. `state.adding` is the guard: a press while a link is being added is ignored, and the flag is down again when
-// the answer is. The field is cleared on success only if it still holds the link that was sent, so what was typed meanwhile is kept.
-export async function pressAdd(options: {
-  link: string;
-  state: { adding: boolean };
-  current: () => string;
-  add: (url: string) => Promise<void>;
-}): Promise<PressAddResult> {
-  const { state } = options;
-  if (state.adding) return { kind: 'ignored' };
-  state.adding = true;
-  const sent = options.link.trim();
-  try {
-    await options.add(sent);
-    return { kind: 'added', clear: options.current().trim() === sent, say: IPHONE_ADDED };
-  } catch (error) {
-    return error instanceof AddRefused ? { kind: 'refused', words: error.message } : { kind: 'failed', error };
-  } finally {
-    state.adding = false;
-  }
+// Whether the link field still holds the link that was sent (spaces round it do not count): only then is it cleared on success, so
+// what was typed while the link was being added is kept.
+export function stillHolds(field: string, sent: string): boolean {
+  return field.trim() === sent;
 }
 
 export async function updateMirroredCalendar(

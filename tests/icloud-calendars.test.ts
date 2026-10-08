@@ -1,7 +1,7 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { handleCalendarConnect, type ConnectDeps } from '../supabase/functions/calendar-connect/handler';
-import { AddRefused, IPHONE_ADDED, IPHONE_ADD_FAILED, addIphoneCalendar, calendarsOfAccount, loadCalendarAccounts, loadMirroredCalendars, pressAdd, removeCalendarAccount, updateMirroredCalendar } from '../src/lib/calendar-accounts';
+import { AddRefused, IPHONE_ADDED, IPHONE_ADD_FAILED, addIphoneCalendar, calendarsOfAccount, loadCalendarAccounts, loadMirroredCalendars, removeCalendarAccount, stillHolds, updateMirroredCalendar } from '../src/lib/calendar-accounts';
 import { PROFILE_PALETTE, createProfile } from '../src/lib/profiles';
 import { arrangeEvents } from './support/calendar';
 import {
@@ -364,53 +364,17 @@ describe('addIphoneCalendar', () => {
   });
 });
 
-describe('pressing Add', () => {
-  const press = (add: (url: string) => Promise<void>, over: { link?: string; current?: () => string; state?: { adding: boolean } } = {}) => {
-    const state = over.state ?? { adding: false };
-    return { state, result: pressAdd({ link: over.link ?? `  ${LINK} `, state, current: over.current ?? (() => LINK), add }) };
-  };
-
-  it('sends the link trimmed, clears the field, says the status line, and puts the guard down', async () => {
-    const sent: string[] = [];
-    const { state, result } = press(async (url) => void sent.push(url));
-    expect(state.adding).toBe(true);
-    expect(await result).toEqual({ kind: 'added', clear: true, say: 'Added. First sync within 5 minutes.' });
+describe('the Add button’s field', () => {
+  it('says what was added', () => {
     expect(IPHONE_ADDED).toBe('Added. First sync within 5 minutes.');
-    expect(sent).toEqual([LINK]);
-    expect(state.adding).toBe(false);
   });
 
-  it('keeps what was typed while it was adding: the field clears only if it still holds the link that was sent', async () => {
-    expect(await press(async () => undefined, { current: () => `${LINK}2` }).result).toMatchObject({ kind: 'added', clear: false });
-    expect(await press(async () => undefined, { current: () => '' }).result).toMatchObject({ kind: 'added', clear: false });
+  it('keeps what was typed while it was adding: the field clears only if it still holds the link that was sent', () => {
+    expect(stillHolds(LINK, LINK)).toBe(true);
+    expect(stillHolds(`${LINK}2`, LINK)).toBe(false);
+    expect(stillHolds('', LINK)).toBe(false);
     // Spaces around the same link are the same link.
-    expect(await press(async () => undefined, { current: () => ` ${LINK}` }).result).toMatchObject({ kind: 'added', clear: true });
-  });
-
-  it('lets the route’s words reach the field, and leaves the field alone', async () => {
-    const result = await press(async () => Promise.reject(new AddRefused('That calendar is already on the Wall.'))).result;
-    expect(result).toEqual({ kind: 'refused', words: 'That calendar is already on the Wall.' });
-  });
-
-  it('hands any other failure back for the page to word, and puts the guard down', async () => {
-    const offline = new TypeError('Failed to fetch');
-    const { state, result } = press(async () => Promise.reject(offline));
-    expect(await result).toEqual({ kind: 'failed', error: offline });
-    expect(state.adding).toBe(false);
-  });
-
-  it('ignores a second press while one is adding, sends nothing for it, and lets a later one through', async () => {
-    let finish!: () => void;
-    const sent: string[] = [];
-    const slow = (url: string) => new Promise<void>((resolve) => (sent.push(url), (finish = resolve)));
-    const first = press(slow);
-    const second = press(async (url) => void sent.push(`second ${url}`), { state: first.state });
-    expect(await second.result).toEqual({ kind: 'ignored' });
-    expect(first.state.adding).toBe(true);
-    finish();
-    expect(await first.result).toMatchObject({ kind: 'added' });
-    expect(sent).toEqual([LINK]);
-    expect(await press(async () => undefined, { state: first.state }).result).toMatchObject({ kind: 'added' });
+    expect(stillHolds(` ${LINK}`, LINK)).toBe(true);
   });
 });
 

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { householdTime } from '../../supabase/functions/_shared/zoned-time.ts';
-import { byPosition, movedIds, type Profile } from './profiles';
+import { byPosition, movedIds } from './ordering';
+import type { Profile } from './profiles';
 
 // Routines and Routine Completions (CONTEXT.md). Every function takes the client
 // so the same code runs in the app (the global client) and in tests (a Household
