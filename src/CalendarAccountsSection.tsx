@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
   accountStatusText,
   addIphoneCalendar,
-  pressAdd,
+  sendLink,
   calendarsOfAccount,
   chooseCalendar,
   lastSyncedText,
@@ -19,6 +19,7 @@ import {
 } from '@/lib/calendar-accounts';
 import { loadProfiles, type Profile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
+import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem } from '@/lib/use-write-problem';
 import { useStatusLine } from '@/lib/status-line';
 import { type Said } from '@/lib/write-failure';
@@ -272,25 +273,19 @@ export function CalendarAccountsSection() {
   const [notice, setNotice] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
-  const [removing, setRemoving] = useState(false);
   const [iphoneLink, setIphoneLink] = useState('');
-  const [adding, setAdding] = useState(false);
-  // The guard against a second press, and what the field holds now (a press's answer comes after more may have been typed).
-  const addState = useRef({ adding: false });
+  // Removing an account and adding an iPhone calendar are each one at a time (the card write guard), and independent of each other.
+  // The field's value now is kept apart (a press's answer comes after more may have been typed).
+  const removal = useCardWrite(problems);
+  const addition = useCardWrite(problems);
+  const removing = removal.busy;
+  const adding = addition.busy;
   const iphoneLinkNow = useRef('');
   const say = useStatusLine();
   // For each calendar, its writes in the order they were asked, so that the last asked is the last written.
   const writes = useRef<Record<string, Promise<void>>>({});
-  const [focusNext, setFocusNext] = useState<string | null>(null);
   // Ticks each minute so "last synced N minutes ago" keeps up without a reload.
   const [now, setNow] = useState(() => Date.now());
-
-  // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
-  useEffect(() => {
-    if (focusNext === null) return;
-    document.getElementById(focusNext)?.focus();
-    setFocusNext(null);
-  }, [focusNext]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000);
@@ -346,39 +341,37 @@ export function CalendarAccountsSection() {
 
 
   async function remove(account: CalendarAccount) {
-    if (removing) return;
-    setRemoving(true);
-    let failed = false;
-    try {
-      await read.write(() => removeCalendarAccount(supabase, account.id));
-      problems.clear(removePlace(account.id));
-      if (account.provider === 'icloud') say('iPhone calendar removed.');
-      else setNotice('Account removed.');
-    } catch (error) {
-      failed = true;
-      problems.fail(removePlace(account.id), error);
-    }
-    setRemoving(false);
-    if (!failed) {
-      // The account is gone and with it the button that asked: focus goes to the first control of its card.
-      setConfirming(null);
-      setFocusNext(account.provider === 'icloud' ? IPHONE_LINK : 'connect-google');
-    }
+    await removal.run(
+      async () => {
+        await read.write(() => removeCalendarAccount(supabase, account.id));
+        problems.clear(removePlace(account.id));
+        if (account.provider === 'icloud') say('iPhone calendar removed.');
+        else setNotice('Account removed.');
+      },
+      {
+        place: removePlace(account.id),
+        // The account is gone and with it the button that asked: focus goes to the first control of its card.
+        landed: () => {
+          setConfirming(null);
+          return account.provider === 'icloud' ? IPHONE_LINK : 'connect-google';
+        },
+      },
+    );
   }
 
-  // Adds the pasted link as an iPhone calendar (pressAdd says what each answer comes to). The route's own words are said under the
-  // field when it refuses; any other failure is worded as every write on this page is.
+  // Adds the pasted link as an iPhone calendar (sendLink says what the answer comes to). The route's own words are said under the field
+  // when it refuses; any other failure is worded as every write on this page is.
   async function addIphone() {
-    setAdding(true);
-    const result = await pressAdd({ link: iphoneLink, state: addState.current, current: () => iphoneLinkNow.current, add: (url) => read.write(() => addIphoneCalendar(supabase, url)) });
-    if (result.kind === 'ignored') return;
-    setAdding(false);
-    if (result.kind === 'added') {
-      problems.clear(ADD_IPHONE);
-      if (result.clear) changeIphoneLink('');
-      say(result.say);
-    } else if (result.kind === 'refused') problems.say(ADD_IPHONE, result.words);
-    else problems.fail(ADD_IPHONE, result.error);
+    await addition.run(() => sendLink({ link: iphoneLink, current: () => iphoneLinkNow.current, add: (url) => read.write(() => addIphoneCalendar(supabase, url)) }), {
+      landed: (answer) => {
+        if (answer.kind === 'added') {
+          problems.clear(ADD_IPHONE);
+          if (answer.clear) changeIphoneLink('');
+          say(answer.say);
+        } else if (answer.kind === 'refused') problems.say(ADD_IPHONE, answer.words);
+        else problems.fail(ADD_IPHONE, answer.error);
+      },
+    });
   }
   function changeIphoneLink(value: string) {
     iphoneLinkNow.current = value;
@@ -404,7 +397,7 @@ export function CalendarAccountsSection() {
       onCancelRemove={() => {
         problems.clear(removePlace(account.id));
         setConfirming(null);
-        setFocusNext(removeButtonId(account.id));
+        removal.focus(removeButtonId(account.id));
       }}
       onRemove={() => void remove(account)}
     />

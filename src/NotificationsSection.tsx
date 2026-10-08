@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { EmptyRing, Tick } from '@/components/people';
 import { Card, Field, Problem, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { REMINDER_MINUTES, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
 import { loadPinnedListName } from '@/lib/shared-lists';
 import { supabase } from '@/lib/supabase';
+import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
 import { useSyncedRead } from '@/lib/synced-read';
 
@@ -153,17 +154,9 @@ export function NotificationsSection() {
   const [status, setStatus] = useState<NotificationsStatus>('idle');
   const loadProblem = read.failed ? LOAD_FAILED : null;
   const problems = useWriteProblem();
-  // One write at a time: the ref is the guard, the state is what is drawn (`aria-disabled`, never `disabled`).
-  const working = useRef(false);
-  const [busy, setBusy] = useState(false);
-  const [focusNext, setFocusNext] = useState<string | null>(null);
-
-  // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
-  useEffect(() => {
-    if (focusNext === null) return;
-    document.getElementById(focusNext)?.focus();
-    setFocusNext(null);
-  }, [focusNext]);
+  // One write at a time (the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes afterwards.
+  const card = useCardWrite(problems);
+  const { busy } = card;
 
   useEffect(() => {
     if (support !== 'supported') return;
@@ -187,22 +180,17 @@ export function NotificationsSection() {
   // One write, alone: what it did is the status; what it could not do, in `said`'s words, is under the buttons. `landed` is what the
   // card shows from its result until the read that follows it, which also says what is so after one that failed (a subscription gone
   // from the server is off).
-  async function write<T>(run: () => Promise<T>, done: (result: T) => void, said?: { failed: string; offline: string }, landed?: (result: T) => PushState) {
-    if (working.current) return;
-    working.current = true;
-    setBusy(true);
-    // What was said of the last write is old, so that a repeat is said again.
-    setStatus('idle');
-    try {
-      const result = await read.write(run, undefined, landed && ((result) => () => landed(result)));
-      problems.clear(PLACE);
-      done(result);
-    } catch (error) {
-      problems.fail(PLACE, error, said ? { said } : {});
-    } finally {
-      working.current = false;
-      setBusy(false);
-    }
+  async function write<T>(run: () => Promise<T>, done: (result: T) => string | undefined | void, said?: { failed: string; offline: string }, landed?: (result: T) => PushState) {
+    await card.run(
+      async () => {
+        // What was said of the last write is old, so that a repeat is said again.
+        setStatus('idle');
+        const result = await read.write(run, undefined, landed && ((result) => () => landed(result)));
+        problems.clear(PLACE);
+        return result;
+      },
+      { place: PLACE, words: said ? { said } : {}, landed: done },
+    );
   }
 
   return (
@@ -218,10 +206,7 @@ export function NotificationsSection() {
       onTurnOn={() =>
         void write(
           turnOnNotifications,
-          (next) => {
-            if (next.kind === 'on') setFocusNext(FIRST_SWITCH);
-            if (next.kind === 'denied') setFocusNext(DENIED);
-          },
+          (next) => (next.kind === 'on' ? FIRST_SWITCH : next.kind === 'denied' ? DENIED : undefined),
           TURN_ON_SAID,
           (next) => next,
         )
@@ -229,7 +214,7 @@ export function NotificationsSection() {
       onTurnOff={() =>
         void write(
           turnOffNotifications,
-          () => setFocusNext(TURN_ON),
+          () => TURN_ON,
           TURN_OFF_SAID,
           () => ({ kind: 'off' }),
         )

@@ -1,14 +1,12 @@
 import { useRef, useState } from 'react';
+import { byPosition, movedIds, nextSortOrder } from './ordering';
 import { supabase } from './supabase';
 import {
   addItem,
-  byPosition,
   clearCompleted,
   loadItems,
   loadLists,
   loadPinnedListId,
-  movedIds,
-  nextSortOrder,
   reorderItems,
   setCrossed,
   withCrossed,

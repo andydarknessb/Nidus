@@ -55,26 +55,6 @@ export function initialOf(name: string): string {
   return [...name.trim()][0]?.toUpperCase() ?? '';
 }
 
-// Order the way the screen shows it: by position.
-export function byPosition<T extends { sort_order: number }>(rows: T[]): T[] {
-  return [...rows].sort((a, b) => a.sort_order - b.sort_order);
-}
-
-// New Profiles go to the bottom.
-export function nextSortOrder(rows: { sort_order: number }[]): number {
-  return rows.reduce((max, row) => Math.max(max, row.sort_order), -1) + 1;
-}
-
-// The ids in their new order after moving `id` by `offset` places (clamped to the ends).
-export function movedIds(ids: string[], id: string, offset: number): string[] {
-  const from = ids.indexOf(id);
-  if (from < 0) return ids;
-  const to = Math.min(Math.max(from + offset, 0), ids.length - 1);
-  const next = ids.filter((existing) => existing !== id);
-  next.splice(to, 0, id);
-  return next;
-}
-
 // The colour a new person starts on: the one the fewest people have, and the first in the palette among those tied. So it is the
 // first colour nobody has (a gap is filled before the end is extended), and once all ten are taken it is the one least shared.
 // A colour is compared as the palette writes it, in lower case: one stored in capitals is the same colour, and one that is not in
