@@ -16,7 +16,8 @@ grant select (truncated) on public.calendar_accounts to authenticated;
 -- The sentences the old sync stored. The first became the flag; the second is simply gone.
 update public.calendar_accounts
 set truncated = true
-where last_error = 'Some repeating events in this calendar cannot be shown in full.';
+where provider = 'icloud'
+  and last_error = 'Some repeating events in this calendar cannot be shown in full.';
 
 update public.calendar_accounts
 set last_error = null

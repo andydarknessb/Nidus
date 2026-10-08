@@ -391,7 +391,7 @@ describe('a run with more feed than it can read', () => {
     return data!.last_attempted_at === null ? null : Date.parse(data!.last_attempted_at);
   };
 
-  it('shares one step budget across the feeds: the first is read as far as its cap, the others are left as they were and say so', async () => {
+  it('shares one step budget across the feeds: the first is read as far as its cap, one more starts and does not fit, and the last is not reached and left as it was', async () => {
     const account = await arrange();
     const { feeds, calendars } = await arrangeFeeds(account, 3, feedOf(dentist));
     for (const c of calendars) feeds.set(c.link, { text: feedOf(dentist), etag: '"v1"' });
@@ -439,6 +439,7 @@ describe('a run with more feed than it can read', () => {
     expect(await accountOf(p.accountId)).toMatchObject({ truncated: true, last_error: null });
     // Q failed to fit and stored nothing; R was not reached at all, and is exactly as it was.
     expect((await accountOf(q.accountId)).truncated).toBe(false);
+    expect((await accountOf(q.accountId)).last_error).not.toBeNull();
     expect(await wholeRowOf(r.accountId)).toEqual(rBefore);
     expect(await attemptedOf(p.accountId)).toBe(NOW);
     expect(await attemptedOf(q.accountId)).toBeNull();
@@ -449,10 +450,12 @@ describe('a run with more feed than it can read', () => {
     // Run 1: Q, never tried and first by id, has the whole run. P is behind it.
     await syncOk(at(1));
     expect((await accountOf(q.accountId)).truncated).toBe(true);
-    // P was read before and is still cut short; R was never read, and has never been touched.
+    // P was read before and is still cut short. R found what Q left too little, started and did not fit: a failure for the logs,
+    // with nothing stored, no read moved and no stamp kept.
     expect((await accountOf(p.accountId)).truncated).toBe(true);
-    expect((await accountOf(r.accountId)).truncated).toBe(false);
-    expect((await accountOf(r.accountId)).last_synced_at).toBeNull();
+    expect(await accountOf(r.accountId)).toMatchObject({ truncated: false, last_synced_at: null });
+    expect((await accountOf(r.accountId)).last_error).not.toBeNull();
+    expect(await attemptedOf(r.accountId)).toBeNull();
     expect(await attemptedOf(q.accountId)).toBe(NOW + 5 * MINUTE);
     expect(await attemptedOf(p.accountId)).toBe(NOW);
 
@@ -480,6 +483,7 @@ describe('a run with more feed than it can read', () => {
     await syncOk(at(0));
     expect((await accountOf(a.accountId)).truncated).toBe(true);
     expect(await accountOf(b.accountId)).toMatchObject({ truncated: false, last_synced_at: null });
+    expect((await accountOf(b.accountId)).last_error).not.toBeNull();
     expect(await attemptedOf(a.accountId)).toBe(NOW);
     expect(await attemptedOf(b.accountId)).toBeNull();
     expect(await rowsOf(b.calendarId)).toEqual([]);
@@ -561,6 +565,7 @@ RDATE:${dates}`);
     const before = await Promise.all([p, q].map((c) => wholeRowOf(c.accountId)));
     await syncOk(at(0));
     expect(await accountOf(heavyOne.accountId)).toMatchObject({ truncated: false, last_synced_at: null });
+    expect((await accountOf(heavyOne.accountId)).last_error).not.toBeNull();
     expect(await attemptedOf(heavyOne.accountId)).toBe(NOW);
     for (const [index, c] of [p, q].entries()) {
       expect(await wholeRowOf(c.accountId)).toEqual(before[index]);
@@ -593,6 +598,7 @@ RDATE:${dates}`);
 
     const [first, second] = await Promise.all(calendars.map(stateOf)) as [Awaited<ReturnType<typeof stateOf>>, Awaited<ReturnType<typeof stateOf>>];
     expect(first.account).toMatchObject({ truncated: false, last_synced_at: null });
+    expect(first.account.last_error).not.toBeNull();
     expect(first.rows).toEqual([]);
     expect(second.account).toMatchObject({ truncated: false, last_synced_at: null, last_error: null });
     // The first failed (it was tried and did not fit); the second was not reached, which is no failure.
@@ -647,6 +653,22 @@ RDATE:${dates}`);
     feeds.set(link, { text: feedOf(dentist) });
     await syncOk(deps(account, world));
     expect((await accountOf(accountId)).truncated).toBe(false);
+  }, 60_000);
+
+  it('leaves the truncated flag as it was when the next read fails: the row says a failure, and the repeats are still cut short', async () => {
+    const account = await arrange();
+    const link = newLink();
+    const { accountId } = await arrangeIcloud(account, link);
+    const feeds = new Map<string, Reply>([[link, { text: feedOf(dentist, runaway('a')), etag: '"v1"' }]]);
+    const world = fakeWorld(feeds);
+    await syncOk(deps(account, world));
+    expect((await accountOf(accountId)).truncated).toBe(true);
+
+    feeds.set(link, 500);
+    await syncOk({ ...deps(account, world), now: () => NOW + 5 * MINUTE });
+
+    expect(await accountOf(accountId)).toMatchObject({ truncated: true, status: 'active' });
+    expect((await accountOf(accountId)).last_error).not.toBeNull();
   }, 60_000);
 
   it('keeps the truncated flag on a 304, because what is stored is still what was cut, and drops it when a later read is whole', async () => {
