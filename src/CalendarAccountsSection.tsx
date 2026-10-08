@@ -5,16 +5,14 @@ import { Card, Confirm, Field, Problem, fieldClass, helpClass, labelClass, statu
 import { Button } from '@/components/ui/button';
 import {
   accountStatusText,
-  AddRefused,
-  IPHONE_ADDED,
   addIphoneCalendar,
+  sendLink,
   calendarsOfAccount,
   chooseCalendar,
   lastSyncedText,
   loadCalendarAccounts,
   loadMirroredCalendars,
   removeCalendarAccount,
-  stillHolds,
   startCalendarConnect,
   type CalendarAccount,
   type MirroredCalendar,
@@ -361,22 +359,17 @@ export function CalendarAccountsSection() {
     );
   }
 
-  // Adds the pasted link as an iPhone calendar. The route's own words are said under the field when it refuses; any other failure is
-  // worded as every write on this page is. The field is cleared on success only if it still holds the link that was sent, so what
-  // was typed meanwhile is kept.
+  // Adds the pasted link as an iPhone calendar (sendLink says what the answer comes to). The route's own words are said under the field
+  // when it refuses; any other failure is worded as every write on this page is.
   async function addIphone() {
-    const sent = iphoneLink.trim();
-    await addition.run(() => read.write(() => addIphoneCalendar(supabase, sent)), {
-      place: ADD_IPHONE,
-      failed: (error) => {
-        if (!(error instanceof AddRefused)) return false;
-        problems.say(ADD_IPHONE, error.message);
-        return true;
-      },
-      landed: () => {
-        problems.clear(ADD_IPHONE);
-        if (stillHolds(iphoneLinkNow.current, sent)) changeIphoneLink('');
-        say(IPHONE_ADDED);
+    await addition.run(() => sendLink({ link: iphoneLink, current: () => iphoneLinkNow.current, add: (url) => read.write(() => addIphoneCalendar(supabase, url)) }), {
+      landed: (answer) => {
+        if (answer.kind === 'added') {
+          problems.clear(ADD_IPHONE);
+          if (answer.clear) changeIphoneLink('');
+          say(answer.say);
+        } else if (answer.kind === 'refused') problems.say(ADD_IPHONE, answer.words);
+        else problems.fail(ADD_IPHONE, answer.error);
       },
     });
   }

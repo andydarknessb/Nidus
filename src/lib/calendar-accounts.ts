@@ -84,10 +84,22 @@ export async function addIphoneCalendar(client: SupabaseClient, url: string): Pr
   throw new AddRefused(typeof words === 'string' ? words : IPHONE_ADD_FAILED);
 }
 
-// Whether the link field still holds the link that was sent (spaces round it do not count): only then is it cleared on success, so
-// what was typed while the link was being added is kept.
-export function stillHolds(field: string, sent: string): boolean {
-  return field.trim() === sent;
+// What an Add's answer comes to, for the card to show.
+export type AddAnswer =
+  | { kind: 'added'; clear: boolean; say: string }
+  | { kind: 'refused'; words: string }
+  | { kind: 'failed'; error: unknown };
+
+// Sends the pasted link (trimmed) and says what the answer comes to; it never throws. The field is cleared on success only if it still
+// holds the link that was sent, so what was typed meanwhile is kept. One press at a time is the card write guard's, not this.
+export async function sendLink(options: { link: string; current: () => string; add: (url: string) => Promise<void> }): Promise<AddAnswer> {
+  const sent = options.link.trim();
+  try {
+    await options.add(sent);
+    return { kind: 'added', clear: options.current().trim() === sent, say: IPHONE_ADDED };
+  } catch (error) {
+    return error instanceof AddRefused ? { kind: 'refused', words: error.message } : { kind: 'failed', error };
+  }
 }
 
 export async function updateMirroredCalendar(

@@ -1,7 +1,7 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { handleCalendarConnect, type ConnectDeps } from '../supabase/functions/calendar-connect/handler';
-import { AddRefused, IPHONE_ADDED, IPHONE_ADD_FAILED, addIphoneCalendar, calendarsOfAccount, loadCalendarAccounts, loadMirroredCalendars, removeCalendarAccount, stillHolds, updateMirroredCalendar } from '../src/lib/calendar-accounts';
+import { AddRefused, IPHONE_ADDED, IPHONE_ADD_FAILED, addIphoneCalendar, calendarsOfAccount, loadCalendarAccounts, loadMirroredCalendars, removeCalendarAccount, sendLink, updateMirroredCalendar } from '../src/lib/calendar-accounts';
 import { PROFILE_PALETTE, createProfile } from '../src/lib/profiles';
 import { arrangeEvents } from './support/calendar';
 import {
@@ -364,17 +364,32 @@ describe('addIphoneCalendar', () => {
   });
 });
 
-describe('the Add button’s field', () => {
-  it('says what was added', () => {
+describe('what an Add comes to', () => {
+  const press = (add: (url: string) => Promise<void>, over: { link?: string; current?: () => string } = {}) =>
+    sendLink({ link: over.link ?? `  ${LINK} `, current: over.current ?? (() => LINK), add });
+
+  it('sends the link trimmed, clears the field, and says what the status line says', async () => {
+    const sent: string[] = [];
+    expect(await press(async (url) => void sent.push(url))).toEqual({ kind: 'added', clear: true, say: 'Added. First sync within 5 minutes.' });
     expect(IPHONE_ADDED).toBe('Added. First sync within 5 minutes.');
+    expect(sent).toEqual([LINK]);
   });
 
-  it('keeps what was typed while it was adding: the field clears only if it still holds the link that was sent', () => {
-    expect(stillHolds(LINK, LINK)).toBe(true);
-    expect(stillHolds(`${LINK}2`, LINK)).toBe(false);
-    expect(stillHolds('', LINK)).toBe(false);
+  it('keeps what was typed while it was adding: the field clears only if it still holds the link that was sent', async () => {
+    expect(await press(async () => undefined, { current: () => `${LINK}2` })).toMatchObject({ kind: 'added', clear: false });
+    expect(await press(async () => undefined, { current: () => '' })).toMatchObject({ kind: 'added', clear: false });
     // Spaces around the same link are the same link.
-    expect(stillHolds(` ${LINK}`, LINK)).toBe(true);
+    expect(await press(async () => undefined, { current: () => ` ${LINK}` })).toMatchObject({ kind: 'added', clear: true });
+  });
+
+  it('lets the route’s words reach the field, and leaves the field alone', async () => {
+    const result = await press(async () => Promise.reject(new AddRefused('That calendar is already on the Wall.')));
+    expect(result).toEqual({ kind: 'refused', words: 'That calendar is already on the Wall.' });
+  });
+
+  it('hands any other failure back for the page to word', async () => {
+    const offline = new TypeError('Failed to fetch');
+    expect(await press(async () => Promise.reject(offline))).toEqual({ kind: 'failed', error: offline });
   });
 });
 
