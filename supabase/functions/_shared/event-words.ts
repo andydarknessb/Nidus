@@ -65,7 +65,7 @@ export type TimeForm = 'pill' | 'block' | 'line' | 'sheet';
 //          clocks repeat) for an event that lies within the day; any other says what the pill says.
 //   line   the start without its ":00", "10 AM" or "9:30 AM", for the month's line, which has room for little else; ""
 //          for an event that says no time (all day, or one that began earlier).
-//   sheet  "Tue, Sep 30, 9:00 AM to 10:00 AM", "Wed, Sep 30 to Fri, Oct 2, all day": the dates too, for an event given
+//   sheet  "Wed, Sep 30, 9:00 AM to 10:00 AM", "Wed, Sep 30 to Fri, Oct 2, all day": the dates too, for an event given
 //          by its zone alone.
 export function timeWords(time: EventTime, form: TimeForm): string {
   const { start, end, timezone } = time;
