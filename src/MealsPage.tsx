@@ -51,7 +51,7 @@ export function MealsScreen({ timezone, date, onNavigate, portrait = false }: { 
       <p role="status" className="text-lg empty:hidden">
         {limit}
       </p>
-      {/* Keyed on the page so a turned page never shows the last page's Meals, and a failed read says so. */}
+      {/* Keyed on the page, so a turned page starts with its sheet closed. */}
       <MealsGrid key={days[0]!.date} plan={plan} portrait={portrait} />
     </div>
   );

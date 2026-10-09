@@ -67,7 +67,7 @@ function MealsWeek({ timezone, date, onNavigate }: { timezone: string; date: str
       <p role="status" className="text-base text-muted-foreground empty:hidden">
         {limit}
       </p>
-      {/* Keyed on the week, so a turned page never shows the last week's Meals or keeps its picked day. */}
+      {/* Keyed on the week, so a turned page starts with its sheet closed. */}
       <MealsDay key={days[0]!.date} plan={plan} />
     </div>
   );

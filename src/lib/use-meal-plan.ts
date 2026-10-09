@@ -42,10 +42,21 @@ export function useMealPlan({
   const page = usePagedView({ view: 'week', date, now: new Date(dayStartMs(today, timezone)), timezone, limits: MEAL_PLAN_LIMITS, ...focus });
   const from = page.days[0]!.date;
 
-  // The week each read was made for goes with it, so a turned page starts with nothing shown and never shows the last page's Meals (the
-  // read is only cleared once the page has drawn).
-  const read = useSyncedRead(async () => ({ from, meals: await loadMeals(supabase, from, page.days[6]!.date) }), MEAL_TABLES, from);
+  // The week each read was made for goes with it, a failure too, so a turned page starts with nothing shown: it never shows the last
+  // page's Meals nor says the last page's read failed (the synced read is only cleared once the page has drawn).
+  const read = useSyncedRead(
+    async () => {
+      try {
+        return { from, meals: await loadMeals(supabase, from, page.days[6]!.date) };
+      } catch (error) {
+        throw Object.assign(new Error('The Meals were not read', { cause: error }), { from });
+      }
+    },
+    MEAL_TABLES,
+    from,
+  );
   const meals = read.data?.from === from ? read.data.meals : null;
+  const failed = read.failed && (read.error as { from?: string } | null)?.from === from;
   // Plans or clears one cell, shown at once and taken back if it does not go through; it rejects as the write does.
   const save = (day: string, slot: MealSlot, title: string) =>
     read.write(
@@ -67,7 +78,7 @@ export function useMealPlan({
     next: next === null ? null : () => open(next),
     heading: page.heading,
     // 'loading' until a read has landed, 'failed' when the first read did not (a later failure keeps what is shown), else 'ready'.
-    state: meals !== null ? ('ready' as const) : read.failed ? ('failed' as const) : ('loading' as const),
+    state: meals !== null ? ('ready' as const) : failed ? ('failed' as const) : ('loading' as const),
     save,
     pick: (picked: string) => setChosen({ week: from, date: picked }),
   };
