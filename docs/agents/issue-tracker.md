@@ -20,3 +20,11 @@ Issues and specs for this repo live as GitHub issues in `andydarknessb/Nidus`. U
 ## Closing issues from pull requests
 
 Pull requests merge into `master`, the default branch, so `Closes #N` in a PR body closes the ticket natively on merge. Reference the ticket, never the spec.
+
+## Triage proposals and approval
+
+The fleet's Principal posts one `## Triage proposal (advisory)` comment on each unrouted issue and applies `triage-proposed`; nothing acts on it until the fleet's Arbiter (session `ar-nidus`, fleet ADR 0017) or the owner rules. The proposal's `Open:` field is a question the Principal could not answer; the Arbiter answers it or escalates.
+
+The Arbiter posts one `## Verdict` comment opening `Endorsed`, `Endorsed with: <edits or answer>`, `Returned` (numbered reasons; the Principal re-proposes once) or `Escalated: <class> - <question>` (the one shape that reaches the owner; classes product-intent, money, user-promise, rule-change, disagreement). An Endorsement is a Ruling the moment it is posted: the fleet then posts `## Ruling`, applies `ready-for-agent`, `ready-for-human` or `needs-info`, and removes `triage-proposed`.
+
+The owner's `Approved`, `Approved with: <edits>`, `Re-propose` and `Veto` comments stay the owner's and win when first. A fleet hook refuses any fleet comment beginning `Approved`, and any beginning `Endorsed`, `Returned`, `Escalated:` or `## Verdict` from a session other than the Arbiter.
