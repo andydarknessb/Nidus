@@ -7,6 +7,14 @@ import type { EmptyListCard as EmptyListCardType, ListCard as ListCardType, List
 // is given. They import the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to load
 // them (as tests/phone-settings.test.ts does for the phone's pages).
 
+// What the list card's items hook says, set per test; unset, the real hook runs (the tests below that render whole screens).
+const hook = vi.hoisted(() => ({ items: null as null | { items: unknown[]; loaded: boolean; problem: string } }));
+vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/lib/use-shared-lists')>();
+  const noop = async () => undefined;
+  return { ...original, useItems: (listId: string) => (hook.items ? { ...hook.items, add: noop, toggle: noop, clear: noop } : original.useItems(listId)) };
+});
+
 let ListsScreen: typeof ListsScreenType;
 let ListCard: typeof ListCardType;
 let PinnedListCard: typeof PinnedListCardType;
@@ -56,6 +64,42 @@ describe("Home's list card while it waits for the lists", () => {
     const html = renderToStaticMarkup(createElement(PinnedListCard, { onOpenLists: () => undefined }));
     expect(html).toMatch(/<p class="text-base text-muted-foreground">Loading<\/p>/);
     expect(html).not.toContain('<h2');
+  });
+});
+
+describe("the Wall's list card count", () => {
+  const list = { id: 'l-1', name: 'Groceries', sort_order: 0 };
+  const items = [
+    { id: 'i-1', list_id: 'l-1', text: 'Milk', crossed_at: null, sort_order: 0 },
+    { id: 'i-2', list_id: 'l-1', text: 'Eggs', crossed_at: '2026-10-09T08:00:00Z', sort_order: 1 },
+  ];
+  const card = (state: { items: unknown[]; loaded: boolean; problem: string }) => {
+    hook.items = state;
+    try {
+      return renderToStaticMarkup(createElement(ListCard, { list, pinned: false, portrait: false }));
+    } finally {
+      hook.items = null;
+    }
+  };
+
+  it('says how many are left to get, in the count and the label, once the items are read', () => {
+    const html = card({ items, loaded: true, problem: '' });
+    expect(words(html)).toContain('1 to get');
+    expect(html).toContain('aria-label="Groceries, 1 to get"');
+  });
+
+  it('says no count, and only the name in the label, before the items are read', () => {
+    const html = card({ items: [], loaded: false, problem: '' });
+    expect(words(html)).not.toContain('to get');
+    expect(html).toContain('aria-label="Groceries"');
+  });
+
+  it('says no count, never "0 to get", when the last read or write failed', () => {
+    for (const items_ of [[], items]) {
+      const html = card({ items: items_, loaded: true, problem: 'Could not save. Check your connection.' });
+      expect(words(html)).not.toContain('to get');
+      expect(html).toContain('aria-label="Groceries"');
+    }
   });
 });
 

@@ -9,6 +9,8 @@ import {
   HOME_HOLD_MS,
   homeRows,
   homeWindow,
+  leftToGet,
+  listChipName,
   loadLists,
   loadPinnedListId,
   pinnedFirst,
@@ -130,14 +132,15 @@ export function PinnedMark() {
 // its own: the screen scrolls, and its title wraps (up to three lines cost nothing) where a landscape card's is cut with an ellipsis.
 export function ListCard({ list, pinned, portrait }: { list: SharedList; pinned: boolean; portrait: boolean }) {
   const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
-  const left = withoutCrossed(items).length;
-  const crossed = items.length - left;
+  // The phone's rule: no count until a read or write has landed, and none after one fails (never "0 to get" from items not read).
+  const left = leftToGet(loaded, problem, items);
+  const crossed = items.length - withoutCrossed(items).length;
   const rows = useRef<HTMLUListElement>(null);
   // Whether the items hold more than the card shows. The button is the items' last child, stuck to their foot.
   const more = useOverflow('y', 'over');
 
   return (
-    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className={`flex ${portrait ? '' : 'max-h-full '}${portrait ? 'w-auto' : 'w-(--card-w)'} shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3`}>
+    <section aria-label={listChipName(list.name, left)} className={`flex ${portrait ? '' : 'max-h-full '}${portrait ? 'w-auto' : 'w-(--card-w)'} shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3`}>
       <div className="flex min-h-13 shrink-0 items-center gap-3">
         {/* One picture for every list: there is no picture on a Shared List to choose. */}
         <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -146,7 +149,7 @@ export function ListCard({ list, pinned, portrait }: { list: SharedList; pinned:
         <h3 id={titleId(list.id)} tabIndex={-1} className={`min-w-0 flex-1 ${portrait ? 'break-words' : 'truncate'} font-display text-2xl leading-[30px]`}>
           {list.name}
         </h3>
-        {loaded && <span className="shrink-0 text-[15px] text-muted-foreground">{left} to get</span>}
+        {left !== null && <span className="shrink-0 text-[15px] text-muted-foreground">{left} to get</span>}
       </div>
       {pinned && <PinnedMark />}
       <AddRow
