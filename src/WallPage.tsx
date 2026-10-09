@@ -84,7 +84,7 @@ export function WallPage() {
         if (live) setState((prev) => (prev.kind === 'paired' && prev.owner ? prev : { kind: 'paired', owner: true }));
         return HEARTBEAT_MS;
       }
-      if (await touchDevice()) {
+      if (await touchDevice(supabase)) {
         pairing = undefined;
         if (live) setState((prev) => (prev.kind === 'paired' && !prev.owner ? prev : { kind: 'paired', owner: false }));
         return HEARTBEAT_MS;
@@ -93,7 +93,7 @@ export function WallPage() {
       // tablet learns this: one revoked at night, whose code cannot be fetched yet, does not paint dark first when it is
       // loaded again. Then show a code that still has time on it.
       writeLastMode(localStore(), 'light');
-      if (!pairing || pairing.expiresAt.getTime() <= Date.now()) pairing = await requestPairingCode();
+      if (!pairing || pairing.expiresAt.getTime() <= Date.now()) pairing = await requestPairingCode(supabase);
       const shown = pairing;
       if (live) setState((prev) => (prev.kind === 'unpaired' && prev.pairing === shown ? prev : { kind: 'unpaired', pairing: shown }));
       return CLAIM_POLL_MS;
