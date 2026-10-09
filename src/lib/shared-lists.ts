@@ -166,7 +166,8 @@ export function pickedList(lists: SharedList[], pinnedId: string | null, choice:
   return lists.find((list) => list.id === choice)?.id ?? pinnedFirst(lists, pinnedId)[0]?.id ?? null;
 }
 
-// What a list's chip is called on the phone, as a screen reader hears it: "Groceries, 4 to get". Until the list's items are read it is the name alone.
+// What a list's chip on the phone and its card on the Wall are called, as a screen reader hears it: "Groceries, 4 to get". While the count is
+// not known (`leftToGet` is null) it is the name alone.
 export function listChipName(name: string, left: number | null): string {
   return left === null ? name : `${name}, ${left} to get`;
 }
