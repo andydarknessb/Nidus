@@ -1,217 +1,148 @@
-import { describe, expect, it } from 'vitest';
-import { HOME_HOLD_MS, homeRows, homeWindow, pinnedFirst, rowsThatFit, type ListItem, type SharedList } from '../src/lib/shared-lists';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { ListCard as ListCardType } from '../src/components/ListCard';
 
-// Pure rules for a Shared List's card on the Wall: how many rows Home's card holds, which rows it draws, and which list comes
-// first on the Lists screen. They run without the local stack.
+// The Shared List card, rendered to markup in both sizes (the Wall's `card` and the phone's), so what is asserted is what the browser is
+// given. It imports the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to load it
+// (as tests/phone-meals-lists.test.ts does).
 
-// Home's card, from the drawing (v2/home.js): a row is 48 px and the gap between rows 8.
-const ROW = 48;
-const GAP = 8;
-const fit = (count: number, room: number) => rowsThatFit({ count, room, row: ROW, gap: GAP });
+// What the card's items hook says, set per test.
+const hook = vi.hoisted(() => ({ items: null as null | { items: unknown[]; loaded: boolean; problem: string } }));
+vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/lib/use-shared-lists')>();
+  const noop = async () => undefined;
+  return { ...original, useItems: (listId: string) => (hook.items ? { ...hook.items, add: noop, toggle: noop, clear: noop } : original.useItems(listId)) };
+});
 
-describe('rowsThatFit', () => {
-  it('shows nothing for a list with no rows, whatever the room', () => {
-    expect(fit(0, 0)).toBe(0);
-    expect(fit(0, 500)).toBe(0);
+let ListCard: typeof ListCardType;
+let titleId: (listId: string) => string;
+beforeAll(async () => {
+  vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+  vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+  ({ ListCard } = await import('../src/components/ListCard'));
+  ({ titleId } = await import('../src/lib/use-shared-lists'));
+});
+
+const words = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+const list = { id: 'l-1', name: 'Groceries', sort_order: 0 };
+const milk = { id: 'i-1', list_id: 'l-1', text: 'Milk', crossed_at: null, sort_order: 0 };
+const eggs = { id: 'i-2', list_id: 'l-1', text: 'Eggs', crossed_at: '2026-10-09T08:00:00Z', sort_order: 1 };
+const items = [milk, eggs];
+
+type State = { items: unknown[]; loaded: boolean; problem: string };
+const render = (size: 'card' | 'phone', state: State, props: { pinned?: boolean; portrait?: boolean } = {}) => {
+  hook.items = state;
+  try {
+    return renderToStaticMarkup(createElement(ListCard, { list, size, pinned: props.pinned ?? false, portrait: props.portrait ?? false }));
+  } finally {
+    hook.items = null;
+  }
+};
+
+describe.each(['card', 'phone'] as const)('the Shared List card, %s size', (size) => {
+  const card = (state: State, props?: { pinned?: boolean; portrait?: boolean }) => render(size, state, props);
+
+  it('says how many are left to get, in the count and the label, once the items are read', () => {
+    const html = card({ items, loaded: true, problem: '' });
+    expect(words(html)).toContain('1 to get');
+    expect(html).toContain('aria-label="Groceries, 1 to get"');
   });
 
-  it('shows every row when they all fit', () => {
-    // Three rows are 3 x 48 + 2 x 8 = 160 tall.
-    expect(fit(3, 160)).toBe(3);
-    expect(fit(3, 400)).toBe(3);
-    expect(fit(1, 48)).toBe(1);
+  it('says no count, and only the name in the label, before the items are read', () => {
+    const html = card({ items: [], loaded: false, problem: '' });
+    expect(words(html)).not.toContain('to get');
+    expect(html).toContain('aria-label="Groceries"');
   });
 
-  it('shows as many as fit when they do not all fit', () => {
-    // Two rows are 104 tall, three 160, four 216.
-    expect(fit(10, 104)).toBe(2);
-    expect(fit(10, 159)).toBe(2);
-    expect(fit(10, 160)).toBe(3);
-    expect(fit(10, 215)).toBe(3);
-    expect(fit(10, 216)).toBe(4);
-    expect(fit(3, 159)).toBe(2);
-  });
-
-  it('shows no row when not even one fits, down to no room at all', () => {
-    expect(fit(5, 47)).toBe(0);
-    expect(fit(5, 0)).toBe(0);
-    expect(fit(5, -20)).toBe(0);
-  });
-
-  it('is the card at three heights: two rows at 250 px, one at 200, and exactly two at 244 under a 336 px Up next', () => {
-    // The card's own parts: 24 of padding, a 48 heading, a 52 add row and two 8 gaps. 250 px leaves 110, 200 leaves 60, and 244
-    // (the 596 px of the right column at 1280 x 800, less Up next and a 16 gap) leaves 104.
-    const room = (card: number) => card - 24 - 48 - 52 - 16;
-    expect(fit(4, room(250))).toBe(2);
-    expect(fit(4, room(200))).toBe(1);
-    expect(fit(4, room(244))).toBe(2);
-  });
-
-  it('is never more than the rows there are, and never negative', () => {
-    for (let count = 0; count <= 12; count += 1) {
-      for (let room = -50; room <= 700; room += 1) {
-        const shown = fit(count, room);
-        expect(shown).toBeGreaterThanOrEqual(0);
-        expect(shown).toBeLessThanOrEqual(count);
-      }
+  it('says no count, never "0 to get", when the last read or write failed', () => {
+    for (const held of [[], items]) {
+      const html = card({ items: held, loaded: true, problem: 'Could not save. Check your connection.' });
+      expect(words(html)).not.toContain('to get');
+      expect(html).toContain('aria-label="Groceries"');
     }
   });
 
-  it('shows what fits, and no fewer than would: one row more would not have fitted', () => {
-    for (let count = 1; count <= 12; count += 1) {
-      for (let room = 0; room <= 700; room += 1) {
-        const shown = fit(count, room);
-        const height = (rows: number) => rows * ROW + Math.max(rows - 1, 0) * GAP;
-        if (shown > 0) expect(height(shown), `${shown} of ${count} rows in ${room}`).toBeLessThanOrEqual(room);
-        if (shown < count) expect(height(shown + 1), `one more of ${count} rows in ${room}`).toBeGreaterThan(room);
-      }
-    }
+  it('says "Nothing on this list." once an empty list is read, and not before or beside a problem', () => {
+    expect(words(card({ items: [], loaded: true, problem: '' }))).toContain('Nothing on this list.');
+    expect(words(card({ items: [], loaded: false, problem: '' }))).not.toContain('Nothing on this list.');
+    expect(words(card({ items: [], loaded: true, problem: 'Could not load this list. Check your connection.' }))).not.toContain('Nothing on this list.');
+    expect(words(card({ items, loaded: true, problem: '' }))).not.toContain('Nothing on this list.');
   });
 
-  it('never shows fewer rows for more room', () => {
-    for (let count = 0; count <= 12; count += 1) {
-      let before = 0;
-      for (let room = 0; room <= 700; room += 1) {
-        const shown = fit(count, room);
-        expect(shown, `${count} rows in ${room}`).toBeGreaterThanOrEqual(before);
-        before = shown;
-      }
-    }
-  });
-});
-
-describe('homeWindow', () => {
-  const items = (count: number, crossed = 0): ListItem[] =>
-    Array.from({ length: count }, (_, index) => ({ id: `i${index}`, list_id: 'l', text: `Item ${index}`, crossed_at: index < crossed ? '2026-10-01T12:00:00Z' : null, sort_order: index }));
-
-  it('on a phone shows up to the limit and counts the rest still to get: 9 items with a limit of 6 is 6 shown and 3 more', () => {
-    expect(homeWindow({ rows: items(9), limit: 6, room: null })).toEqual({ shown: 6, hidden: 3 });
+  it('says what did not save in an alert, after the rows', () => {
+    const html = card({ items, loaded: true, problem: 'Could not save. Check your connection.' });
+    expect(html).toMatch(/<p role="alert"[^>]*>Could not save\. Check your connection\.<\/p>/);
+    expect(html.indexOf('Milk')).toBeLessThan(html.indexOf('role="alert"'));
+    expect(card({ items, loaded: true, problem: '' })).not.toContain('role="alert"');
   });
 
-  it('on a phone shows all of 4 items, and leaves none out', () => {
-    expect(homeWindow({ rows: items(4), limit: 6, room: null })).toEqual({ shown: 4, hidden: 0 });
+  it('names Clear for the items crossed off and the list, and draws it only when something is crossed off', () => {
+    expect(card({ items, loaded: true, problem: '' })).toContain('aria-label="Clear 1 crossed off from Groceries"');
+    expect(words(card({ items, loaded: true, problem: '' }))).toContain('Clear 1 crossed off');
+    expect(card({ items: [milk], loaded: true, problem: '' })).not.toContain('Clear');
   });
 
-  it('on a phone does not look at the room, and counts only items still to get among the rows left out', () => {
-    expect(homeWindow({ rows: [...items(7, 0)].map((item, index) => (index === 6 ? { ...item, crossed_at: '2026-10-01T12:00:00Z' } : item)), limit: 6, room: 0 })).toEqual({ shown: 6, hidden: 0 });
+  it('puts the focus Clear takes on the title: reached by script, not by Tab, with the id focusTitle looks for', () => {
+    expect(card({ items, loaded: true, problem: '' })).toMatch(new RegExp(`<h3 id="${titleId(list.id)}" tabindex="-1" class="[^"]*">Groceries</h3>`));
   });
 
-  it("with no limit is the tablet's: as many rows as the room holds, none before the room is measured", () => {
-    expect(homeWindow({ rows: items(9), room: 5 * ROW + 4 * GAP })).toEqual({ shown: 5, hidden: 4 });
-    expect(homeWindow({ rows: items(3), room: 400 })).toEqual({ shown: 3, hidden: 0 });
-    expect(homeWindow({ rows: items(9), room: null })).toEqual({ shown: 0, hidden: 9 });
+  it('marks the Pinned List in words, and no other', () => {
+    expect(words(card({ items, loaded: true, problem: '' }, { pinned: true }))).toContain('On the home screen');
+    expect(words(card({ items, loaded: true, problem: '' }))).not.toContain('On the home screen');
   });
 
-  // A row on Home is 3 rem and rows are half a rem apart, so at 130 percent text (a root font size of 20.8 px) a row is 62.4 px and the
-  // gap 10.4: the room that holds five rows at 16 px holds only three, not the five it would if the rows were counted as 48 px.
-  it('counts the rows in rem: the room that holds five rows at 16 px holds three at 20.8 px, and two at 32 px', () => {
-    const room = 5 * ROW + 4 * GAP;
-    expect(homeWindow({ rows: items(9), room, rem: 16 })).toEqual({ shown: 5, hidden: 4 });
-    expect(homeWindow({ rows: items(9), room, rem: 20.8 })).toEqual({ shown: 3, hidden: 6 });
-    expect(homeWindow({ rows: items(9), room, rem: 32 })).toEqual({ shown: 2, hidden: 7 });
-    expect(homeWindow({ rows: items(9), room })).toEqual({ shown: 5, hidden: 4 });
+  it('draws the add row and a row for every item', () => {
+    const html = card({ items, loaded: true, problem: '' });
+    expect(html).toContain('aria-label="Add an item to Groceries"');
+    expect(html).toContain('>Milk<');
+    expect(html).toContain('>Eggs<');
   });
 });
 
-describe('homeRows', () => {
-  // An instant, not a date: this rule is a length of time and takes no zone.
-  const NOW = Date.parse('2026-10-01T19:21:00-05:00');
-  const SECOND = 1_000;
-  const item = (id: string, crossedAt: number | null = null): ListItem => ({
-    id,
-    list_id: 'groceries',
-    text: id,
-    crossed_at: crossedAt === null ? null : new Date(crossedAt).toISOString(),
-    sort_order: 0,
-  });
-  const ids = (rows: ListItem[]) => rows.map((row) => row.id);
-  // What was crossed off on this card, and when.
-  const here = (entries: Record<string, number>) => new Map(Object.entries(entries));
+describe('the Wall size', () => {
+  const card = (portrait: boolean) => render('card', { items, loaded: true, problem: '' }, { portrait });
 
-  it('holds a row for four seconds', () => {
-    expect(HOME_HOLD_MS).toBe(4 * SECOND);
+  it('is the section of the Wall: the snap width in landscape, its natural width in portrait', () => {
+    expect(card(false)).toContain('w-(--card-w) shrink-0 snap-start');
+    expect(card(false)).not.toContain('w-auto');
+    expect(card(true)).toContain('w-auto shrink-0 snap-start');
+    expect(card(true)).not.toContain('w-(--card-w)');
   });
 
-  it('draws the items still to get, in the list\x27s order', () => {
-    const items = [item('milk'), item('eggs'), item('bananas')];
-    expect(ids(homeRows(items, here({}), NOW))).toEqual(['milk', 'eggs', 'bananas']);
-    expect(homeRows([], here({}), NOW)).toEqual([]);
+  it('cuts a landscape title with an ellipsis and wraps a portrait one', () => {
+    const title = (portrait: boolean) => /<h3 [^>]*class="([^"]*)"/.exec(card(portrait))?.[1]?.split(' ') ?? [];
+    expect(title(true)).toContain('break-words');
+    expect(title(true)).not.toContain('truncate');
+    expect(title(false)).toContain('truncate');
+    expect(title(false)).not.toContain('break-words');
   });
 
-  it('keeps an item crossed off on this card where it was, for four seconds', () => {
-    // Eggs was crossed off here a second ago: it stays between Milk and Bananas.
-    const items = [item('milk'), item('eggs', NOW - SECOND), item('bananas')];
-    expect(ids(homeRows(items, here({ eggs: NOW - SECOND }), NOW))).toEqual(['milk', 'eggs', 'bananas']);
-    // And still does a moment before the four seconds are up.
-    expect(ids(homeRows(items, here({ eggs: NOW - HOME_HOLD_MS + 1 }), NOW))).toEqual(['milk', 'eggs', 'bananas']);
+  it('scrolls its items inside a landscape card, with the overflow foot, and lets a portrait card be as tall as its items', () => {
+    expect(card(false)).toContain('overflow-y-auto');
+    expect(card(true)).not.toContain('overflow-y-auto');
   });
 
-  it('lets it go four seconds after it was crossed off', () => {
-    const items = [item('milk'), item('eggs', NOW - HOME_HOLD_MS), item('bananas')];
-    expect(ids(homeRows(items, here({ eggs: NOW - HOME_HOLD_MS }), NOW))).toEqual(['milk', 'bananas']);
-    expect(ids(homeRows(items, here({ eggs: NOW - HOME_HOLD_MS - 60 * SECOND }), NOW))).toEqual(['milk', 'bananas']);
-  });
-
-  it('gives each row its own four seconds, from the moment it was crossed off', () => {
-    // Milk was crossed off five seconds ago and Eggs one second ago: Milk has gone, and Eggs has three seconds left.
-    const items = [item('milk', NOW - 5 * SECOND), item('eggs', NOW - SECOND), item('bananas')];
-    const crossed = here({ milk: NOW - 5 * SECOND, eggs: NOW - SECOND });
-    expect(ids(homeRows(items, crossed, NOW))).toEqual(['eggs', 'bananas']);
-    expect(ids(homeRows(items, crossed, NOW + 3 * SECOND - 1))).toEqual(['eggs', 'bananas']);
-    expect(ids(homeRows(items, crossed, NOW + 3 * SECOND))).toEqual(['bananas']);
-  });
-
-  it('draws an item that was crossed off here and put back as an open row, however long ago', () => {
-    const items = [item('milk'), item('eggs'), item('bananas')];
-    expect(ids(homeRows(items, here({ eggs: NOW - SECOND }), NOW))).toEqual(['milk', 'eggs', 'bananas']);
-    expect(ids(homeRows(items, here({ eggs: NOW - 60 * SECOND }), NOW))).toEqual(['milk', 'eggs', 'bananas']);
-  });
-
-  it('never draws an item crossed off anywhere else', () => {
-    // Coffee is crossed off, but not on this card: it is for the Lists screen until someone clears it.
-    const items = [item('milk'), item('coffee', NOW - SECOND), item('bananas')];
-    expect(ids(homeRows(items, here({}), NOW))).toEqual(['milk', 'bananas']);
-    // Nor does another item's entry bring it back.
-    expect(ids(homeRows(items, here({ milk: NOW - SECOND }), NOW))).toEqual(['milk', 'bananas']);
-  });
-
-  it('does not draw an item deleted elsewhere, though this card remembers crossing it off', () => {
-    const items = [item('milk'), item('bananas')];
-    expect(ids(homeRows(items, here({ eggs: NOW - SECOND }), NOW))).toEqual(['milk', 'bananas']);
-  });
-
-  it('does not change the items it is given', () => {
-    const items = [item('milk'), item('eggs', NOW - SECOND)];
-    homeRows(items, here({}), NOW);
-    expect(ids(items)).toEqual(['milk', 'eggs']);
+  it('draws a picture beside the name', () => {
+    expect(card(false)).toContain('lucide-list');
   });
 });
 
-describe('pinnedFirst', () => {
-  const list = (id: string, sortOrder: number): SharedList => ({ id, name: id, sort_order: sortOrder });
-  const groceries = list('groceries', 0);
-  const costco = list('costco', 1);
-  const camping = list('camping', 2);
-  const ids = (lists: SharedList[]) => lists.map((each) => each.id);
+describe('the phone size', () => {
+  const html = () => render('phone', { items, loaded: true, problem: '' });
 
-  it('puts the Pinned List first and keeps the others in their order', () => {
-    expect(ids(pinnedFirst([groceries, costco, camping], 'camping'))).toEqual(['camping', 'groceries', 'costco']);
-    expect(ids(pinnedFirst([groceries, costco, camping], 'costco'))).toEqual(['costco', 'groceries', 'camping']);
+  it('is a phone card: 22 round, 12 inside', () => {
+    expect(html()).toContain('rounded-[22px]');
+    expect(html()).not.toContain('snap-start');
   });
 
-  it('leaves the order alone when the Pinned List is already first', () => {
-    expect(ids(pinnedFirst([groceries, costco, camping], 'groceries'))).toEqual(['groceries', 'costco', 'camping']);
+  it('draws no picture and no scrolling box of its own', () => {
+    expect(html()).not.toContain('lucide-list');
+    expect(html()).not.toContain('overflow-y-auto');
   });
 
-  it('leaves the order alone when no list is pinned, or the pinned one is gone', () => {
-    expect(ids(pinnedFirst([groceries, costco, camping], null))).toEqual(['groceries', 'costco', 'camping']);
-    expect(ids(pinnedFirst([groceries, costco, camping], 'deleted'))).toEqual(['groceries', 'costco', 'camping']);
-    expect(pinnedFirst([], 'groceries')).toEqual([]);
-  });
-
-  it('does not change the list it is given', () => {
-    const lists = [groceries, costco, camping];
-    pinnedFirst(lists, 'camping');
-    expect(ids(lists)).toEqual(['groceries', 'costco', 'camping']);
+  it('draws the 56 px add row', () => {
+    expect(html()).toContain('h-14');
   });
 });

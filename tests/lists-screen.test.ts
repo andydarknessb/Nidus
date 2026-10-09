@@ -1,28 +1,19 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import type { EmptyListCard as EmptyListCardType, ListCard as ListCardType, ListsScreen as ListsScreenType, PinnedListCard as PinnedListCardType } from '../src/SharedListsPage';
+import type { EmptyListCard as EmptyListCardType, ListsScreen as ListsScreenType, PinnedListCard as PinnedListCardType } from '../src/SharedListsPage';
 
 // The Lists screen and Home's list card as the Wall first draws them, rendered to markup so that what is asserted is what the browser
 // is given. They import the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to load
 // them (as tests/phone-settings.test.ts does for the phone's pages).
 
-// What the list card's items hook says, set per test; unset, the real hook runs (the tests below that render whole screens).
-const hook = vi.hoisted(() => ({ items: null as null | { items: unknown[]; loaded: boolean; problem: string } }));
-vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../src/lib/use-shared-lists')>();
-  const noop = async () => undefined;
-  return { ...original, useItems: (listId: string) => (hook.items ? { ...hook.items, add: noop, toggle: noop, clear: noop } : original.useItems(listId)) };
-});
-
 let ListsScreen: typeof ListsScreenType;
-let ListCard: typeof ListCardType;
 let PinnedListCard: typeof PinnedListCardType;
 let EmptyListCard: typeof EmptyListCardType;
 beforeAll(async () => {
   vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
-  ({ ListsScreen, ListCard, PinnedListCard, EmptyListCard } = await import('../src/SharedListsPage'));
+  ({ ListsScreen, PinnedListCard, EmptyListCard } = await import('../src/SharedListsPage'));
 });
 
 const words = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -67,42 +58,6 @@ describe("Home's list card while it waits for the lists", () => {
   });
 });
 
-describe("the Wall's list card count", () => {
-  const list = { id: 'l-1', name: 'Groceries', sort_order: 0 };
-  const items = [
-    { id: 'i-1', list_id: 'l-1', text: 'Milk', crossed_at: null, sort_order: 0 },
-    { id: 'i-2', list_id: 'l-1', text: 'Eggs', crossed_at: '2026-10-09T08:00:00Z', sort_order: 1 },
-  ];
-  const card = (state: { items: unknown[]; loaded: boolean; problem: string }) => {
-    hook.items = state;
-    try {
-      return renderToStaticMarkup(createElement(ListCard, { list, pinned: false, portrait: false }));
-    } finally {
-      hook.items = null;
-    }
-  };
-
-  it('says how many are left to get, in the count and the label, once the items are read', () => {
-    const html = card({ items, loaded: true, problem: '' });
-    expect(words(html)).toContain('1 to get');
-    expect(html).toContain('aria-label="Groceries, 1 to get"');
-  });
-
-  it('says no count, and only the name in the label, before the items are read', () => {
-    const html = card({ items: [], loaded: false, problem: '' });
-    expect(words(html)).not.toContain('to get');
-    expect(html).toContain('aria-label="Groceries"');
-  });
-
-  it('says no count, never "0 to get", when the last read or write failed', () => {
-    for (const items_ of [[], items]) {
-      const html = card({ items: items_, loaded: true, problem: 'Could not save. Check your connection.' });
-      expect(words(html)).not.toContain('to get');
-      expect(html).toContain('aria-label="Groceries"');
-    }
-  });
-});
-
 describe('the Lists screen', () => {
   const screen = () => renderToStaticMarkup(createElement(ListsScreen));
 
@@ -124,17 +79,6 @@ describe('the Lists screen', () => {
     const landscape = renderToStaticMarkup(createElement(ListsScreen, { portrait: false }));
     expect(portrait).toContain('grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-4');
     expect(portrait).not.toContain('--card-w');
-    const list = { id: 'l-1', name: 'Groceries', sort_order: 0 };
-    const card = (isPortrait: boolean) => renderToStaticMarkup(createElement(ListCard, { list, pinned: false, portrait: isPortrait }));
-    expect(card(true)).not.toContain('w-(--card-w)');
-    expect(card(true)).toContain('w-auto shrink-0 snap-start');
-    expect(card(false)).toContain('w-(--card-w) shrink-0 snap-start');
-    // A portrait card's title wraps; a landscape card's is cut, class for class as it was.
-    const title = (isPortrait: boolean) => /<h3 [^>]*class="([^"]*)"/.exec(card(isPortrait))?.[1]?.split(' ') ?? [];
-    expect(title(true)).toContain('break-words');
-    expect(title(true)).not.toContain('truncate');
-    expect(title(false)).toContain('truncate');
-    expect(title(false)).not.toContain('break-words');
     // The row as it was before portrait: master's own class string, character for character.
     expect(landscape).toContain(
       '<div class="flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto [--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]"><div class="contents">',
