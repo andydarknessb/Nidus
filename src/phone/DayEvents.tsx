@@ -4,9 +4,10 @@ import type { WallDay } from '../lib/paged-view';
 import { focusElement } from '../lib/focus';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, scheduleColumns } from '../lib/schedule';
-import type { DayEventsRead } from '../lib/wall-hooks';
+import { dayState, type DayEventsRead } from '../lib/wall-hooks';
 import { EmptyWords } from '../components/EmptyWords';
 import { EventPill } from '../components/EventPill';
+import { ReadState } from '../components/ReadState';
 import { EventSheets, type OpenEvent } from '../components/EventSheets';
 
 // The picked day of the phone's Week and Month (docs/specs/0004-the-wall-on-a-phone.md): its full date as a heading, then its events as
@@ -41,16 +42,14 @@ export function DayEvents({
       <h3 className="text-[15px] leading-5 font-medium text-muted-foreground">{describeCell(day.date, null)}</h3>
       {beyond ? (
         <EmptyWords>Beyond the calendar's range.</EmptyWords>
-      ) : events.problem ? (
-        <p role={announce ? 'alert' : undefined} className="text-base">
-          {events.problem}
-        </p>
-      ) : occurrences === null ? (
-        <EmptyWords>Loading</EmptyWords>
-      ) : pills.length === 0 ? (
-        <EmptyWords>{day.isToday ? 'Nothing scheduled today.' : 'Nothing scheduled.'}</EmptyWords>
       ) : (
-        pills.map((pill) => <EventPill key={pill.occurrence.id} pill={pill} day={day} people={pillPeople(pill.occurrence, people)} onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })} />)
+        <ReadState of="the calendar" read={{ state: dayState(events, occurrences) }} announce={announce}>
+          {pills.length === 0 ? (
+            <EmptyWords>{day.isToday ? 'Nothing scheduled today.' : 'Nothing scheduled.'}</EmptyWords>
+          ) : (
+            pills.map((pill) => <EventPill key={pill.occurrence.id} pill={pill} day={day} people={pillPeople(pill.occurrence, people)} onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })} />)
+          )}
+        </ReadState>
       )}
       <EventSheets
         open={open}

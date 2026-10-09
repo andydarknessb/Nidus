@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { couldNotLoad, startSyncedRead, type SyncedState } from '../src/lib/synced-read';
+import { createCardWrite } from '../src/lib/card-write';
+import { changeThrough, couldNotLoad, startSyncedRead, type SyncedState } from '../src/lib/synced-read';
 
 // The synced read (spec 0008) with a `load` the test resolves by hand: no stack needed. A screen
 // shows its own change at once, and a change from another Device may arrive while that write is
@@ -81,27 +82,40 @@ describe('startSyncedRead', () => {
       expect(reads).toHaveLength(2);
       reads[1]!.reject(new Error('down'));
       await settle();
-      expect(last()).toMatchObject({ data: ['a'], failed: true, unread: false });
+      expect(last()).toMatchObject({ data: ['a'], state: 'ready', failed: true });
       await vi.advanceTimersByTimeAsync(4_999);
       expect(reads).toHaveLength(2);
       await vi.advanceTimersByTimeAsync(1);
       expect(reads).toHaveLength(3);
     });
 
-    it('says unread only while nothing has ever loaded, and keeps what is shown when a later read fails', async () => {
+    // The read state the screens' ladder draws (ReadState): loading, then failed or ready; a failure after something has landed is
+    // still ready, with `failed` the flag beside it for the header's lost-connection line.
+    it('is failed only while nothing has ever loaded, and keeps what is shown when a later read fails', async () => {
       const { read, reads, last } = harness();
       reads[0]!.reject(new Error('offline'));
       await settle();
-      expect(last()).toMatchObject({ data: null, failed: true, unread: true });
+      expect(last()).toMatchObject({ data: null, state: 'failed', failed: true });
       expect(last()!.error).toEqual(new Error('offline'));
       read.poke();
       reads[1]!.resolve(['a']);
       await settle();
-      expect(last()).toEqual({ data: ['a'], failed: false, unread: false, error: null });
+      expect(last()).toEqual({ data: ['a'], state: 'ready', failed: false, error: null });
       read.poke();
       reads[2]!.reject(new Error('offline'));
       await settle();
-      expect(last()).toMatchObject({ data: ['a'], failed: true, unread: false });
+      expect(last()).toMatchObject({ data: ['a'], state: 'ready', failed: true });
+    });
+
+    // Nothing is said before the first read lands: the hook's own start is 'loading'.
+    it('says failed, then ready when a later read lands, for a read that fails first and works second', async () => {
+      const { read, reads, states } = harness();
+      reads[0]!.reject(new Error('offline'));
+      await settle();
+      read.poke();
+      reads[1]!.resolve(['a']);
+      await settle();
+      expect(states.map((state) => state.state)).toEqual(['failed', 'ready']);
     });
 
     it('keeps the shown object when a read finds the same data, and says nothing new', async () => {
@@ -316,8 +330,84 @@ describe('startSyncedRead', () => {
       await read.write(async () => undefined, (done) => [...done, 'ava']);
       reads[1]!.reject(new Error('offline'));
       await settle();
-      expect(last()).toMatchObject({ data: ['ava'], failed: true, unread: false });
+      expect(last()).toMatchObject({ data: ['ava'], state: 'ready', failed: true });
     });
+  });
+});
+
+// A change (spec 0011): the card write guard, then the write, then the read-back, behind one call.
+describe('changeThrough', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function changing() {
+    const h = harness();
+    const card = createCardWrite();
+    return { ...h, card, change: changeThrough<string[]>(h.read, card) };
+  }
+
+  it('is done once the work landed and the read after it has settled, and says what landed only then', async () => {
+    const { reads, change } = changing();
+    reads[0]!.resolve(['a']);
+    await settle();
+    const told: string[] = [];
+    const work = deferred<string>();
+    let outcome: string | undefined;
+    void change(() => work.promise, { landed: (value) => void told.push(value) }).then((result) => (outcome = result));
+    work.resolve('saved');
+    await settle();
+    // The write is done and its read has begun: not done yet.
+    expect(reads).toHaveLength(2);
+    expect(told).toEqual([]);
+    expect(outcome).toBeUndefined();
+    reads[1]!.resolve(['a', 'b']);
+    await settle();
+    expect(told).toEqual(['saved']);
+    expect(outcome).toBe('done');
+  });
+
+  it('is failed when the work threw: said first, no read-back waited for, and the guard let go', async () => {
+    const { card, change, reads } = changing();
+    reads[0]!.resolve(['a']);
+    await settle();
+    const heard: unknown[] = [];
+    const landed = vi.fn();
+    const outcome = await change(() => Promise.reject(new Error('no')), { failed: (error) => void heard.push(error), landed });
+    expect(outcome).toBe('failed');
+    expect(heard).toEqual([new Error('no')]);
+    expect(landed).not.toHaveBeenCalled();
+    expect(card.state().busy).toBe(false);
+  });
+
+  it('is busy, and does nothing, while another change is on its way', async () => {
+    const { card, change, reads } = changing();
+    reads[0]!.resolve(['a']);
+    await settle();
+    const first = deferred<void>();
+    const firstOutcome = change(() => first.promise);
+    expect(card.state().busy).toBe(true);
+    const work = vi.fn(async () => undefined);
+    const landed = vi.fn();
+    await expect(change(work, { landed })).resolves.toBe('busy');
+    expect(work).not.toHaveBeenCalled();
+    expect(landed).not.toHaveBeenCalled();
+    first.resolve();
+    await settle();
+    reads[1]!.resolve(['a']);
+    await expect(firstOutcome).resolves.toBe('done');
+    expect(card.state().busy).toBe(false);
+  });
+
+  it('shows what the write landed with from its result until the read after it, and goes on to the focus the card names', async () => {
+    const { reads, change, card, shown } = changing();
+    reads[0]!.resolve(['a', 'b']);
+    await settle();
+    const outcome = change(async () => 'b', { showing: (gone) => (items) => items.filter((item) => item !== gone), landed: () => 'next' });
+    await settle();
+    expect(shown()[shown().length - 1]).toEqual(['a']);
+    reads[1]!.resolve(['a']);
+    await expect(outcome).resolves.toBe('done');
+    expect(card.state().focus).toBe('next');
   });
 });
 

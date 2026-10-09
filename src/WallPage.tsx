@@ -5,7 +5,7 @@ import { formatCountdown } from './lib/device-format';
 import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
 import { BeforeHousehold } from './components/BeforeHousehold';
 import { ChangeFeedProvider } from './components/ChangeFeedProvider';
-import { EmptyWords } from './components/EmptyWords';
+import { ReadState } from './components/ReadState';
 import { HomeRail } from './components/HomeRail';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { NavigationRail } from './components/NavigationRail';
@@ -32,7 +32,7 @@ import { PhoneWall } from './PhoneWall';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
 import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
-import { couldNotLoad, useSyncedRead } from './lib/synced-read';
+import { useSyncedRead } from './lib/synced-read';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
 const HEARTBEAT_MS = 30_000;
@@ -365,13 +365,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           ) : (
             // The chart before the Household is read: a frame that says "Loading", or that the read failed, as Up next does.
             <section aria-label="Routines" className="rounded-3xl bg-card p-4">
-              {view.failed ? (
-                <p role="alert" className="text-base">
-                  {couldNotLoad('routines')}
-                </p>
-              ) : (
-                <EmptyWords>Loading</EmptyWords>
-              )}
+              <ReadState of="routines" read={{ state: view.failed ? 'failed' : 'loading' }} />
             </section>
           )
         ) : route.view === 'meals' ? (
@@ -379,7 +373,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           timezone ? (
             <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} portrait={home.portrait} />
           ) : (
-            <BeforeHousehold label="Meals" failed={view.failed} words={couldNotLoad('meals')} />
+            <BeforeHousehold label="Meals" failed={view.failed} of="meals" />
           )
         ) : route.view === 'lists' ? (
           // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
@@ -389,13 +383,13 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day, Week or Month.
-          <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
+          <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />
         ) : (
         <div className={homeGrid(home.portrait)}>
           {timezone ? (
             <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
           ) : (
-            <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
+            <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />
           )}
           <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} row={home.portrait} onOpenRoutines={openRoutines} onOpenLists={openLists} />
         </div>

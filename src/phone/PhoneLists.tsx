@@ -2,11 +2,11 @@ import { Pin } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { EmptyWords } from '../components/EmptyWords';
 import { ListCard } from '../components/ListCard';
+import { ReadState } from '../components/ReadState';
 import { Button } from '../components/ui/button';
 import { leftToGet, listChipName, pinnedFirst, pickedList, type SharedList } from '../lib/shared-lists';
 import { useItems, useLists } from '../lib/use-shared-lists';
 import { SideScroll } from './parts';
-import { couldNotLoad } from '../lib/synced-read';
 
 // The phone's Lists tab (spec 0004, "Lists"): a row of list chips that scrolls sideways, the Pinned List first, then the picked list's
 // card. The card is the Wall's own (ListCard, at the phone size), so its items read and write as it does, as a Device and as the
@@ -56,18 +56,13 @@ export function PhoneLists() {
 }
 
 function Lists() {
-  const { read, failed } = useLists();
-  if (read === null) {
-    return failed ? (
-      <p role="alert" className="text-base">
-        {couldNotLoad('lists')}
-      </p>
-    ) : (
-      <EmptyWords>Loading</EmptyWords>
-    );
-  }
-  if (read.lists.length === 0) return <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>;
-  return <ListsBody lists={read.lists} pinnedId={read.pinnedId} />;
+  const lists = useLists();
+  const { read } = lists;
+  return (
+    <ReadState of="lists" read={lists}>
+      {read && (read.lists.length === 0 ? <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords> : <ListsBody lists={read.lists} pinnedId={read.pinnedId} />)}
+    </ReadState>
+  );
 }
 
 function ListsBody({ lists, pinnedId }: { lists: SharedList[]; pinnedId: string | null }) {

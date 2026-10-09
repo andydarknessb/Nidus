@@ -24,7 +24,7 @@ const group = (who: Profile, count: number): ProfileRoutines => ({ profile: who,
 const ticked = (who: Profile, count: number) => routines(who, count).map((routine) => routine.id);
 
 function today(groups: ProfileRoutines[], done: string[] = []): RoutinesToday {
-  return { date: '2026-10-01', loaded: true, settled: true, failed: false, part: 'evening', problems: {}, groups, columns: groups, done: new Set(done), finished: new Set(), toggle: async () => true };
+  return { date: '2026-10-01', state: 'ready', settled: true, failed: false, part: 'evening', problems: {}, groups, columns: groups, done: new Set(done), finished: new Set(), toggle: async () => true };
 }
 
 function strip(profiles: Profile[] | null, groups: ProfileRoutines[] = [], done: string[] = [], pressed: string[] = []): string {

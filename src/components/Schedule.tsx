@@ -11,6 +11,7 @@ import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
 import { EventPill } from './EventPill';
 import { EventSheets, type OpenEvent } from './EventSheets';
 import { BODY_CLEARANCE, OverflowButton } from './OverflowButton';
+import { ReadState } from './ReadState';
 import { Button } from './ui/button';
 import { DayWeather } from './Weather';
 
@@ -244,11 +245,7 @@ export function Schedule({
 
   return (
     <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col rounded-3xl bg-card p-2">
-      {events.problem && (
-        <p role="alert" className="p-4 text-xl">
-          {events.problem}
-        </p>
-      )}
+      <ReadState of="the calendar" read={events} say="failed" alert="p-4 text-xl" />
       {rows ? (
         <DayRows columns={columns} profiles={profiles ?? []} pageWindow={pageWindow} onOpenDay={onOpenDay} onOpen={openEvent} forecast={forecast} weatherOn={weatherOn} />
       ) : (

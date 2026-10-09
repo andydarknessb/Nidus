@@ -6,6 +6,7 @@ import type { Profile } from '../lib/profiles';
 import { WEEKDAYS } from '../lib/routines';
 import { useDayEvents } from '../lib/wall-hooks';
 import { CELL_HEAD_REM, CELL_LINE_REM, DayCell } from './MonthCell';
+import { ReadState } from './ReadState';
 
 // The month view's grid: the weekday names and a row per week. Each day inside the mirror's window is one
 // button that opens that day (MonthCell.tsx). It lists the day's occurrences a line each, as many as fit, and says how many
@@ -71,11 +72,7 @@ export function MonthGrid({
           </div>
         ))}
       </div>
-      {events.problem && (
-        <p role="alert" className="p-4 text-xl">
-          {events.problem}
-        </p>
-      )}
+      <ReadState of="the calendar" read={events} say="failed" alert="p-4 text-xl" />
       <div ref={rows} style={{ gridTemplateRows: `repeat(${weeks.length}, minmax(0, 1fr))` }} className="grid min-h-0 flex-1 divide-y divide-border">
         {weeks.map((days) => (
           <WeekCells

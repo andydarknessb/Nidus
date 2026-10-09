@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { householdTime } from '../../supabase/functions/_shared/zoned-time.ts';
 import { byPosition, movedIds } from './ordering';
 import type { Profile } from './profiles';
+import type { ReadStateName } from './synced-read';
 
 // Routines and Routine Completions (CONTEXT.md). Every function takes the client
 // so the same code runs in the app (the global client) and in tests (a Household
@@ -266,6 +267,15 @@ export function pickedPerson(input: {
   if (columns.length === 0) return null;
   if (settled) return firstPick(columns, done, part);
   return failed ? columns[0]!.profile.id : null;
+}
+
+// What the Routines say of their read, for ReadState (spec 0011). The synced read stays date-agnostic, so the Routines map their own
+// `settled` onto the state they hand on: what was read for another day (just after Household midnight, or before the Household
+// Timezone names the day) is not ready, it is loading; and a read that is failing with nothing for today is failed, so the screens say
+// so rather than leave "Loading" for ever.
+export function routinesState(settled: boolean, read: { state: ReadStateName; failed: boolean }): ReadStateName {
+  if (settled) return read.state;
+  return read.failed ? 'failed' : 'loading';
 }
 
 // ---- Up next -------------------------------------------------------------------------------------

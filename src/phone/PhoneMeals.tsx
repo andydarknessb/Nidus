@@ -1,8 +1,8 @@
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { BeforeHousehold } from '../components/BeforeHousehold';
-import { EmptyWords } from '../components/EmptyWords';
 import { InBody } from '../components/InBody';
+import { ReadState } from '../components/ReadState';
 import { Button } from '../components/ui/button';
 import { describeCell, type WallRoute } from '../lib/calendar-occurrences';
 import { MEAL_SLOTS, type Meal } from '../lib/meals';
@@ -10,7 +10,6 @@ import { SLOT_PICTURES, useMealPlan } from '../lib/use-meal-plan';
 import { MealSheet, type Editing } from '../MealsPage';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { DayChips, Pager, PhoneCard } from './parts';
-import { couldNotLoad } from '../lib/synced-read';
 
 // The phone's Meals tab (spec 0004, "Meals"): the pager by week, then a card with seven day chips, the picked day's heading and its
 // four slots as rows. It reads through the Meals screen's own reader (useMealPlan) and opens the Meals screen's own sheet (MealSheet), so
@@ -48,7 +47,7 @@ export function SlotRow({ label, slot, meal, heard, onOpen }: { label: string; s
 }
 
 export function PhoneMeals({ route, timezone, view, openMeals }: PhoneScreenProps & { route: Extract<WallRoute, { view: 'meals' }> }) {
-  if (!timezone) return <BeforeHousehold label="Meals" failed={view.failed} words={couldNotLoad('meals')} />;
+  if (!timezone) return <BeforeHousehold label="Meals" failed={view.failed} of="meals" />;
   return <MealsWeek timezone={timezone} date={route.date} onNavigate={openMeals} />;
 }
 
@@ -76,7 +75,7 @@ function MealsWeek({ timezone, date, onNavigate }: { timezone: string; date: str
 // One week's card: the chips, the picked day and its four slots. The picked day is the plan's (until a chip is pressed it is today when the
 // week holds it, else the Sunday, and it follows Household midnight); the sheet's state is the card's own.
 function MealsDay({ plan }: { plan: ReturnType<typeof useMealPlan> }) {
-  const { days, today, picked: day, pick, state, save, cellFor } = plan;
+  const { days, today, picked: day, pick, save, cellFor } = plan;
   const [editing, setEditing] = useState<Editing | null>(null);
   const picked = day.date;
 
@@ -84,12 +83,7 @@ function MealsDay({ plan }: { plan: ReturnType<typeof useMealPlan> }) {
     <PhoneCard label="Meal plan">
       <DayChips label="Days of this week" dates={days.map((entry) => entry.date)} today={today} picked={picked} onPick={pick} />
       <h3 className="px-1 text-[15px] leading-5 font-medium text-muted-foreground">{describeCell(picked, null)}</h3>
-      {state === 'failed' && (
-        <p role="alert" className="px-1 text-base">
-          {couldNotLoad('meals')}
-        </p>
-      )}
-      {state === 'loading' && <EmptyWords className="px-1">Loading</EmptyWords>}
+      <ReadState of="meals" read={plan} className="px-1" alert="px-1 text-base" />
       {MEAL_SLOTS.map(({ slot, label }) => {
         const { meal, heard, sheet } = cellFor(day, slot);
         return <SlotRow key={slot} label={label} slot={slot} meal={meal} heard={heard} onOpen={() => setEditing(sheet)} />;

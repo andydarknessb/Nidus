@@ -14,7 +14,7 @@ import {
   type ListItem,
   type SharedList,
 } from './shared-lists';
-import { couldNotLoad, useSyncedRead } from './synced-read';
+import { couldNotLoad, useSyncedRead, type ReadStateName } from './synced-read';
 import { useFailureWords } from './use-failure-words';
 
 // The Shared Lists' readers and writers as hooks, one for the Wall's cards and the phone's screens alike (SharedListsPage.tsx draws
@@ -45,7 +45,7 @@ export function useItems(listId: string) {
   const fail = (problem: string) => setSaid({ listId, problem });
   const written = said.listId === listId ? said.problem : '';
   // Items already shown stay when a later read fails; the header says the connection is gone.
-  const problem = written || (read.unread ? couldNotLoad('this list') : '');
+  const problem = written || (read.state === 'failed' ? couldNotLoad('this list') : '');
 
   // Adding does not wait for the server: the item shows at once, as a row that is not stored yet, and the stored row takes its place
   // when the server has answered. If it cannot be added the row goes and the card says so. Returns the item as stored, or null when
@@ -104,12 +104,12 @@ export function useItems(listId: string) {
   }
 
   // Loaded once a read has landed, or the first one failed (the card then says so).
-  return { items, loaded: read.data !== null || read.unread, problem, add, toggle, clear, move };
+  return { items, loaded: read.state !== 'loading', problem, add, toggle, clear, move };
 }
 
 // Every Shared List and which one is pinned, read again when a list or the Household changes. `read` is null until the
-// first read has landed; a read that fails after that keeps what is shown.
-export function useLists(): { read: { lists: SharedList[]; pinnedId: string | null } | null; failed: boolean } {
+// first read has landed (`state` says whether it is on its way or failed); a read that fails after that keeps what is shown.
+export function useLists(): { read: { lists: SharedList[]; pinnedId: string | null } | null; state: ReadStateName } {
   const read = useSyncedRead(
     async () => {
       const [pinnedId, lists] = await Promise.all([loadPinnedListId(supabase), loadLists(supabase)]);
@@ -118,7 +118,7 @@ export function useLists(): { read: { lists: SharedList[]; pinnedId: string | nu
     LIST_TABLES,
     'lists',
   );
-  return { read: read.data, failed: read.failed };
+  return { read: read.data, state: read.state };
 }
 
 // What a card's title is called on the page, so that focus can be put on it from the phone's list editor, which is not the component that

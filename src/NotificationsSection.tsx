@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { REMINDER_MINUTES, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
 import { loadPinnedListName } from '@/lib/shared-lists';
 import { supabase } from '@/lib/supabase';
-import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
 import { useSyncedRead } from '@/lib/synced-read';
 
@@ -148,15 +147,15 @@ const NO_TABLES = [] as const;
 
 export function NotificationsSection() {
   const [support] = useState<PushSupport>(() => (typeof window === 'undefined' ? 'unsupported' : pushSupport()));
-  const read = useSyncedRead<PushState>(() => readPushState(supabase), NO_TABLES, support === 'supported' ? 'push' : null);
+  const problems = useWriteProblem();
+  const read = useSyncedRead<PushState>(() => readPushState(supabase), NO_TABLES, support === 'supported' ? 'push' : null, { problems });
   const state = read.data;
   const [listName, setListName] = useState<string | null>(null);
   const [status, setStatus] = useState<NotificationsStatus>('idle');
   const loadProblem = read.failed ? LOAD_FAILED : null;
-  const problems = useWriteProblem();
-  // One write at a time (the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes afterwards.
-  const card = useCardWrite(problems);
-  const { busy } = card;
+  // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
+  // afterwards.
+  const { busy } = read;
 
   useEffect(() => {
     if (support !== 'supported') return;
@@ -181,15 +180,15 @@ export function NotificationsSection() {
   // card shows from its result until the read that follows it, which also says what is so after one that failed (a subscription gone
   // from the server is off).
   async function write<T>(run: () => Promise<T>, done: (result: T) => string | undefined | void, said?: { failed: string; offline: string }, landed?: (result: T) => PushState) {
-    await card.run(
+    await read.change(
       async () => {
         // What was said of the last write is old, so that a repeat is said again.
         setStatus('idle');
-        const result = await read.write(run, undefined, landed && ((result) => () => landed(result)));
+        const result = await run();
         problems.clear(PLACE);
         return result;
       },
-      { place: PLACE, words: said ? { said } : {}, landed: done },
+      { place: PLACE, words: said ? { said } : {}, landed: done, showing: landed && ((result) => () => landed(result)) },
     );
   }
 

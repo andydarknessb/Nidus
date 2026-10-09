@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { InBody } from './components/InBody';
+import { ReadState } from './components/ReadState';
 import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
 import { describePage } from './lib/calendar-occurrences';
@@ -12,7 +13,6 @@ import { MEAL_SLOTS, nextMealWords, type MealSlot } from './lib/meals';
 import { WEEKDAYS } from './lib/routines';
 import { useFailureWords } from './lib/use-failure-words';
 import { SLOT_PICTURES, useMealPlan, useNextMeal } from './lib/use-meal-plan';
-import { couldNotLoad } from './lib/synced-read';
 
 // Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the header's button for the
 // next meal of today. Written by a Household Account or a Device, whichever session `supabase` holds.
@@ -121,15 +121,13 @@ function MealsGrid({ plan, portrait }: { plan: ReturnType<typeof useMealPlan>; p
 
   return (
     <section aria-label="Meal plan" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
-      {state === 'failed' && (
-        <p role="alert" className="p-4 text-xl">
-          {couldNotLoad('meals')}
-        </p>
-      )}
+      <ReadState of="meals" read={plan} say="failed" alert="p-4 text-xl" />
       {/* The padding is on the scrolling grid, so a focus ring has room inside what it clips. */}
       <div style={template} className="grid min-h-0 flex-1 gap-[8px] overflow-y-auto p-2">
         {/* The first read's own line, in the corner so the grid does not shift when it lands. */}
-        <div className="flex items-center px-3 text-sm text-muted-foreground">{state === 'loading' ? 'Loading' : null}</div>
+        <div className="flex items-center px-3 text-sm text-muted-foreground">
+          <ReadState of="meals" read={plan} say="loading" className="text-sm" />
+        </div>
         {/* Both forms are one flat list of keyed headings and cells, so turning the tablet moves them and keeps each cell. */}
         {portrait
           ? [
