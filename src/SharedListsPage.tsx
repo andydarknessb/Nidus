@@ -23,7 +23,6 @@ import { rootFontSize } from './lib/home-layout';
 import type { Household } from './lib/household';
 import { focusElement } from './lib/focus';
 import { useStatusLine } from './lib/status-line';
-import { useCardWrite } from './lib/use-card-write';
 import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
 import { useOverflow } from './lib/use-overflow';
 import { unnamed } from './lib/write-failure';
@@ -32,6 +31,7 @@ import { ListCard } from './components/ListCard';
 import { BODY_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, Tick } from './components/people';
 import { Problem } from './components/phone';
+import { ReadState } from './components/ReadState';
 import { Button } from './components/ui/button';
 import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
@@ -132,7 +132,8 @@ export function PinnedMark() {
 // as fit at 17 rem, each its row-mates' width (and with fewer cards than fit, the cards share the row), 16 apart and each its natural height, and the screen scrolls as one column with the shared "More"
 // foot; there is no sideways "More".
 export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
-  const { read, failed } = useLists();
+  const lists = useLists();
+  const { read } = lists;
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
   // The row of cards, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row;
   // in portrait the box is the screen's column and the button is its foot.
@@ -161,11 +162,7 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
           {!portrait && <OverflowButton control={row} of="lists" className="h-12" />}
         </div>
       </div>
-      {failed && read === null && (
-        <p role="alert" className="text-xl">
-          {couldNotLoad('lists')}
-        </p>
-      )}
+      <ReadState of="lists" read={lists} say="failed" alert="text-xl" />
       {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
       {portrait ? (
         <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
@@ -333,7 +330,8 @@ export function EmptyListCard({ lists, onOpenLists, phone = false }: { lists: nu
 
 // The pinned Shared List, under Up next in Home's right column.
 export function PinnedListCard({ onOpenLists, limit }: { onOpenLists: () => void; limit?: number | undefined }) {
-  const { read, failed } = useLists();
+  const lists = useLists();
+  const { read } = lists;
   // undefined until the first read; null when no list is pinned (or the pinned one is gone).
   const pinned = read ? (read.lists.find((list) => list.id === read.pinnedId) ?? null) : undefined;
   if (pinned) return <HomeList key={pinned.id} list={pinned} onOpenLists={onOpenLists} limit={limit} />;
@@ -341,12 +339,7 @@ export function PinnedListCard({ onOpenLists, limit }: { onOpenLists: () => void
 
   return (
     <aside aria-label="Pinned list" className={HOME_CARD}>
-      {!failed && <EmptyWords>Loading</EmptyWords>}
-      {failed && (
-        <p role="alert" className="text-base">
-          {couldNotLoad('lists')}
-        </p>
-      )}
+      <ReadState of="lists" read={lists} />
     </aside>
   );
 }
@@ -438,18 +431,16 @@ export function SharedListsPage({ household }: { household: Household }) {
   const renameProblem = renaming ? unnamed('list', renaming.asked, renaming.name) : null;
   const [confirming, setConfirming] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  // One change at a time (the card write guard): the buttons are drawn `aria-disabled` from `busy`.
-  const card = useCardWrite();
-  const { busy } = card;
+  // One change at a time (read.change, the card write guard): the buttons are drawn `aria-disabled` from `busy`.
+  const { busy } = read;
 
   // Runs one change, then reads again so the screen shows what the database holds, before the next may begin. A failure is said
   // at once. Says whether it was made; false too when another change was on its way and this one did nothing.
   async function change(work: () => Promise<void>, failure: string): Promise<boolean> {
-    const outcome = await card.run(
+    const outcome = await read.change(
       async () => {
-        await read.write(work);
+        await work();
         setProblem('');
-        await read.readBack();
       },
       { failed: () => setProblem(failure) },
     );
@@ -458,7 +449,7 @@ export function SharedListsPage({ household }: { household: Household }) {
 
   async function create(event: FormEvent) {
     event.preventDefault();
-    if (card.isBusy()) return;
+    if (read.isBusy()) return;
     if (!newName.trim()) {
       setAskedNew((count) => count + 1);
       return;
@@ -472,7 +463,7 @@ export function SharedListsPage({ household }: { household: Household }) {
 
   async function rename(event: FormEvent) {
     event.preventDefault();
-    if (!renaming || card.isBusy()) return;
+    if (!renaming || read.isBusy()) return;
     if (!renaming.name.trim()) {
       setRenaming({ ...renaming, asked: renaming.asked + 1 });
       return;
@@ -486,7 +477,7 @@ export function SharedListsPage({ household }: { household: Household }) {
   }
 
   async function move(id: string, offset: number) {
-    if (card.isBusy()) return;
+    if (read.isBusy()) return;
     const ids = movedIds((lists ?? []).map((list) => list.id), id, offset);
     await change(() => reorderLists(supabase, ids), 'Could not reorder lists. Try again.');
   }
@@ -494,7 +485,7 @@ export function SharedListsPage({ household }: { household: Household }) {
   // The Delete that was pressed goes with its list: focus goes at once to the title of the list beside it, or to "New list" when it was
   // the only one, so it never falls to the page; and back to this list's Delete if the delete did not go through.
   async function remove(id: string) {
-    if (card.isBusy()) return;
+    if (read.isBusy()) return;
     const ids = (lists ?? []).map((list) => list.id);
     const beside = ids[ids.indexOf(id) + 1] ?? ids[ids.indexOf(id) - 1];
     setConfirming(null);
@@ -600,7 +591,7 @@ export function SharedListsPage({ household }: { household: Household }) {
                     className={ACTION}
                     aria-disabled={busy || undefined}
                     onClick={() => {
-                      if (!card.isBusy()) void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.');
+                      if (!read.isBusy()) void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.');
                     }}
                   >
                     Show on home screen

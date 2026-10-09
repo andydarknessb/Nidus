@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { createProfile, deleteProfile, firstFreeColor, loadProfiles, reorderProfiles, updateProfile } from '@/lib/profiles';
 import { movedIds, nextSortOrder } from '@/lib/ordering';
 import { supabase } from '@/lib/supabase';
-import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem } from '@/lib/use-write-problem';
 import { giveName } from '@/lib/write-failure';
 import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
@@ -46,15 +45,15 @@ function FormTitle({ draft, title }: { draft: PersonDraft; title: string }) {
 export function ProfilesSection({ householdId }: { householdId: string }) {
   // Read through the synced read. A trouble reading, which a read that works takes away, is kept apart from what a write said of
   // itself: a good read says nothing of it.
-  const read = useSyncedRead(() => loadProfiles(supabase), PROFILE_TABLES, 'profiles');
+  const problems = useWriteProblem();
+  // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
+  // afterwards.
+  const read = useSyncedRead(() => loadProfiles(supabase), PROFILE_TABLES, 'profiles', { problems });
+  const { busy } = read;
   const profiles = read.data;
   const loadProblem = read.failed ? couldNotLoad('people') : null;
-  const problems = useWriteProblem();
   const [adding, setAdding] = useState<PersonDraft | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
-  // One write at a time (the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes afterwards.
-  const card = useCardWrite(problems);
-  const { busy } = card;
 
   // Runs a write. While it is on its way the buttons are `aria-disabled` and do nothing, never `disabled`: a button that is
   // disabled while it has focus drops it to the page. What an earlier try said stays where it is until this one answers, so that
@@ -62,11 +61,10 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   // (offline that read tries for seconds, and the person is not waiting on it). A write that lands is read back before the form
   // closes, so what it shows is what is stored; `landed` is what the card then does, and returns where focus goes.
   async function change(place: string, write: () => Promise<void>, landed: () => string | void, refusal?: string) {
-    await card.run(
+    await read.change(
       async () => {
-        await read.write(write);
+        await write();
         problems.clear(place);
-        await read.readBack();
       },
       { place, words: refusal === undefined ? {} : { refusal }, landed },
     );
@@ -160,7 +158,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                       onCancel={() => {
                         closeForms();
                         setEditing({ ...editing, deleting: false });
-                        card.focus(controlId(profile.id, 'delete'));
+                        read.focus(controlId(profile.id, 'delete'));
                       }}
                       onDelete={() => void remove(profile.id)}
                     />
@@ -184,7 +182,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                               if (busy) return;
                               closeForms();
                               setEditing(null);
-                              card.focus(controlId(profile.id, 'edit'));
+                              read.focus(controlId(profile.id, 'edit'));
                             }}
                           >
                             Cancel
@@ -287,7 +285,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                 if (busy) return;
                 closeForms();
                 setAdding(null);
-                card.focus(ADD_ID);
+                read.focus(ADD_ID);
               }}
             >
               Cancel

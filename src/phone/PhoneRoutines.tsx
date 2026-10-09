@@ -3,13 +3,13 @@ import { useState } from 'react';
 import { BeforeHousehold } from '../components/BeforeHousehold';
 import { EmptyWords } from '../components/EmptyWords';
 import { PersonDisc } from '../components/people';
+import { ReadState } from '../components/ReadState';
 import { RoutineColumn, type ColumnLayout } from '../components/RoutineColumn';
 import { Button } from '../components/ui/button';
 import { personStyle } from '../lib/look';
 import { CHART_CHOICES, useChartPart } from '../lib/routine-chart';
 import { pickedPerson } from '../lib/routines';
 import { stripPeople, type StripPerson } from '../lib/schedule';
-import { couldNotLoad } from '../lib/synced-read';
 import { useCelebration } from '../lib/use-routines-today';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { Segmented, SideScroll } from './parts';
@@ -48,7 +48,7 @@ function PersonChip({ person, picked, onPick }: { person: StripPerson; picked: b
 const CARD: ColumnLayout = { className: 'person relative flex flex-col gap-2.5 rounded-[22px] bg-person-soft p-3', header: 'min-h-13', disc: 52 };
 
 export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProps, 'timezone' | 'view' | 'routines'>) {
-  const { loaded, settled, failed, problems, columns, done, toggle } = routines;
+  const { settled, failed, problems, columns, done, toggle } = routines;
   const { shown, held, pick } = useChartPart(routines);
   // The person picked: the first pick, then whoever is tapped. State, so a tick that finishes someone never moves the card.
   const [picked, setPicked] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProp
   // A burst belongs to the card on the screen: the one for a person left behind is gone, so it never plays again on the way back.
   const celebration = useCelebration({ date: routines.date, finished: new Set(showing !== null && routines.finished.has(showing) ? [showing] : []) });
 
-  if (!timezone) return <BeforeHousehold label="Routines" failed={view.failed} words={couldNotLoad('routines')} />;
+  if (!timezone) return <BeforeHousehold label="Routines" failed={view.failed} of="routines" />;
 
   const column = columns.find(({ profile }) => profile.id === showing);
   const people = stripPeople(
@@ -71,15 +71,11 @@ export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProp
       <h2 id="phone-routines-title" className="sr-only">
         Routines
       </h2>
-      {!loaded && !failed && <EmptyWords>Loading</EmptyWords>}
       {/* Whatever has been read stays on screen over a lost connection, and the header says so. With nothing read for today (at the
           start, or just after Household midnight) the words say so rather than leave "Loading" for ever. */}
-      {failed && !settled && (
-        <p role="alert" className="text-base">
-          {couldNotLoad('routines')}
-        </p>
-      )}
-      {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
+      <ReadState of="routines" read={routines}>
+        {columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
+      </ReadState>
       {columns.length > 0 && (
         <>
           <SideScroll label="People">
@@ -88,7 +84,7 @@ export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProp
             ))}
           </SideScroll>
           <Segmented label="Part of the day" options={PARTS_OF_THE_DAY} value={shown} onChange={pick} />
-          {column ? (
+          {column && (
             <RoutineColumn
               key={column.profile.id}
               profile={column.profile}
@@ -103,8 +99,6 @@ export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProp
               onFinish={(at) => celebration.start(column.profile.id, at)}
               onLand={(id) => celebration.land(column.profile.id, id)}
             />
-          ) : (
-            !failed && <EmptyWords>Loading</EmptyWords>
           )}
         </>
       )}

@@ -12,6 +12,7 @@ import { forecastDay, type Forecast } from '../lib/weather';
 import { HourGrid, PillRow } from './DayGrid';
 import { EventSheets, type OpenEvent } from './EventSheets';
 import { MonthGrid } from './MonthGrid';
+import { ReadState } from './ReadState';
 import { Schedule } from './Schedule';
 import { Button } from './ui/button';
 import { DayWeather } from './Weather';
@@ -244,11 +245,7 @@ export function DayView({
       aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`}
       className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card p-3 phone:rounded-[22px]"
     >
-      {events.problem && (
-        <p role="alert" className="px-4 py-2 text-xl">
-          {events.problem}
-        </p>
-      )}
+      <ReadState of="the calendar" read={events} say="failed" alert="px-4 py-2 text-xl" />
       <PillRow
         label={aboveLabel(plan.above, day)}
         name="All day and earlier"

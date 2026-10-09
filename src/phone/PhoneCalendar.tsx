@@ -14,7 +14,6 @@ import { DayEvents } from './DayEvents';
 import { DayChips, Pager, PhoneCard, Segmented } from './parts';
 import { PhoneMonth } from './PhoneMonth';
 import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
-import { couldNotLoad } from '../lib/synced-read';
 
 // The phone's Calendar tab (docs/specs/0004-the-wall-on-a-phone.md, Screens, Calendar): under the people strip, which the shell draws,
 // a control of three (Day, Week, Month) and a pager, then the view for one day at a time. The control changes the address as the
@@ -27,8 +26,6 @@ const VIEWS: readonly { value: CalendarView; label: string }[] = [
   { value: 'month', label: 'Month' },
 ];
 
-const COULD_NOT_LOAD = couldNotLoad('the calendar');
-
 // The Day view's box: the hours it shows are the whole hours that fit between its Earlier and Later rows, so it is given a height. It is
 // the screen's height less about 26.5 rem for what is above it (the header, the strip, the control and the pager) and below (the bar,
 // Add event and the gaps), and never under 36 rem, which holds eight hours. On a screen shorter than that the box keeps its 36 rem and
@@ -36,7 +33,7 @@ const COULD_NOT_LOAD = couldNotLoad('the calendar');
 const DAY_BOX = 'h-[max(36rem,calc(100svh-26.5rem))]';
 
 export function PhoneCalendar({ route, timezone, view, added, profiles, openView }: PhoneScreenProps & { route: Extract<WallRoute, { view: CalendarView }> }) {
-  if (!timezone) return <BeforeHousehold label="Calendar" failed={view.failed} words={COULD_NOT_LOAD} />;
+  if (!timezone) return <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />;
   return <Calendar timezone={timezone} route={route} added={added} profiles={profiles} openView={openView} />;
 }
 

@@ -1,15 +1,14 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { BeforeHousehold as BeforeHouseholdType, PairingScreen as PairingScreenType, WallFrame as WallFrameType } from '../src/WallPage';
+import type { PairingScreen as PairingScreenType, WallFrame as WallFrameType } from '../src/WallPage';
 import type { WallHeader as WallHeaderType } from '../src/components/WallHeader';
 
-// The two screens the Wall draws before it has a Household: the frame that stands in for a screen until the Household is read, and the
-// pairing screen of a tablet that has no Household yet. Rendered to markup, so that what is asserted is what the browser is given. The
+// The pairing screen of a tablet that has no Household yet, and the Wall's frame (the frame that stands in for a screen until the
+// Household is read is read-state.test.ts's). Rendered to markup, so that what is asserted is what the browser is given. The
 // page imports the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to load it
 // (as tests/lists-screen.test.ts does).
 
-let BeforeHousehold: typeof BeforeHouseholdType;
 let PairingScreen: typeof PairingScreenType;
 let WallFrame: typeof WallFrameType;
 let WallHeader: typeof WallHeaderType;
@@ -18,7 +17,7 @@ beforeAll(async () => {
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
   // The pairing screen says where to go from the address the tablet is at.
   vi.stubGlobal('window', { location: { origin: 'https://nidus.example' } });
-  ({ BeforeHousehold, PairingScreen, WallFrame } = await import('../src/WallPage'));
+  ({ PairingScreen, WallFrame } = await import('../src/WallPage'));
   ({ WallHeader } = await import('../src/components/WallHeader'));
 });
 afterAll(() => {
@@ -26,22 +25,6 @@ afterAll(() => {
 });
 
 const words = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-
-describe('the frame that stands in for a screen until the Household is read', () => {
-  const frame = (failed: boolean) => renderToStaticMarkup(createElement(BeforeHousehold, { label: 'Meals', failed, words: 'Could not load meals. Check your connection.' }));
-
-  it('says "Loading" while the read is on its way, in the one style every empty state has', () => {
-    const html = frame(false);
-    expect(html).toMatch(/<p class="text-base text-muted-foreground p-4">Loading<\/p>/);
-    expect(html).not.toContain('role="alert"');
-  });
-
-  it('says the screen\'s own words once the read has failed, and no longer says it is loading', () => {
-    const html = frame(true);
-    expect(html).toMatch(/<p role="alert"[^>]*>Could not load meals\. Check your connection\.<\/p>/);
-    expect(html).not.toContain('Loading');
-  });
-});
 
 describe('the pairing screen', () => {
   const screen = () => renderToStaticMarkup(createElement(PairingScreen, { pairing: { code: 'K7M2QX', expiresAt: new Date(Date.now() + 9 * 60_000) } }));

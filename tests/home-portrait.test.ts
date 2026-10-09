@@ -21,7 +21,7 @@ afterAll(() => {
 
 const noop = () => undefined;
 const classesOf = (tag: string) => (/class="([^"]*)"/.exec(tag)?.[1] ?? '').replaceAll('&amp;', '&').replaceAll('&gt;', '>').split(' ');
-const routines: RoutinesToday = { date: '2026-10-01', loaded: true, settled: true, failed: false, part: 'evening', problems: {}, groups: [], columns: [], done: new Set(), finished: new Set(), toggle: async () => true };
+const routines: RoutinesToday = { date: '2026-10-01', state: 'ready', settled: true, failed: false, part: 'evening', problems: {}, groups: [], columns: [], done: new Set(), finished: new Set(), toggle: async () => true };
 const rail = (row: boolean) => renderToStaticMarkup(createElement(HomeRail, { routines, failed: false, tiles: 3, row, onOpenRoutines: noop, onOpenLists: noop }));
 // The rail's own box, and the box that holds the Pinned List.
 const box = (html: string) => classesOf(html.slice(0, html.indexOf('>') + 1));

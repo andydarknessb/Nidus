@@ -2,9 +2,9 @@
 // delete a person, a change on the Routines and Lists pages) is done one at a time. A press while one is on its way does nothing;
 // the guard is let go on every exit, a throw included; and the card says where focus goes once the action has landed. Choices that
 // stack up (a calendar's switch, a tick, a list item) are not one-shot actions and do not come through here: they are pending
-// changes on the synced read. The state holder is plain TypeScript, as the status line is, so a test needs no screen;
-// use-card-write.ts wires it to a card and draws `aria-disabled` from `busy`, never `disabled`: a button that is disabled while it
-// has focus drops it to the page.
+// changes on the synced read. The state holder is plain TypeScript, as the status line is, so a test needs no screen. It is the
+// synced read's own, behind `read.change` (synced-read.ts: the guard, then the write, then the read-back), which wires it to a card
+// and draws `aria-disabled` from `busy`, never `disabled`: a button that is disabled while it has focus drops it to the page.
 
 // What a write-problem failure may be worded with: the words for a value the database refused, and for an action that is not a save.
 export type FailWords = { refusal?: string; said?: { failed: string; offline: string } } | undefined;
