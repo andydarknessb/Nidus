@@ -10,4 +10,4 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 | `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
 | `wontfix`                  | `wontfix`            | Will not be actioned                     |
 
-Fleet-only labels, outside the five roles: `spec` (a `/to-spec` parent), `fleet-escalation` (needs Cory's ruling), `triage-proposed` (the Principal's advisory proposal awaiting an `Approved` comment).
+Fleet-only labels, outside the five roles: `spec` (a `/to-spec` parent), `fleet-escalation` (needs Cory's ruling), `triage-proposed` (the Principal's advisory proposal, awaiting the Arbiter's `## Verdict` or the owner's `Approved` comment; removed by whoever applies a routing label).
