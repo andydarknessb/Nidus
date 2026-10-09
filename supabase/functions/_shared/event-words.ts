@@ -18,6 +18,8 @@ export type EventTime = {
   // Says "All day": an all-day event, or a timed one that covers the day from end to end. Only a day
   // given with its instants can be covered.
   allDay: boolean;
+  // The event itself is all day (its own flag): unlike `allDay`, not a timed event that happens to cover the day.
+  allDayEvent: boolean;
   // A timed event that began on an earlier day.
   continues: boolean;
   // Ends by the end of the day (an event ending at midnight ends on the day before it).
@@ -37,6 +39,7 @@ export function eventTime(occurrence: EventSpan, day: EventDay): EventTime {
   const from = householdTime(start, day.timezone);
   const to = householdTime(end, day.timezone);
   return {
+    allDayEvent: occurrence.is_all_day,
     allDay: occurrence.is_all_day || (window !== null && start <= window.startMs && end >= window.endMs),
     continues: window !== null && start < window.startMs,
     endsHere: window === null || end <= window.endMs,
@@ -64,7 +67,8 @@ export type TimeForm = 'pill' | 'block' | 'line' | 'sheet';
 //   block  "4:00 to 4:45 PM" (one AM or PM when both ends share it, "11:30 AM to 12:30 PM" when not, the zones when the
 //          clocks repeat) for an event that lies within the day; any other says what the pill says.
 //   line   the start without its ":00", "10 AM" or "9:30 AM", for the month's line, which has room for little else; ""
-//          for an event that says no time (all day, or one that began earlier).
+//          for an event that says no time (an all-day event, or one that began earlier). A timed event that covers the
+//          day still has its start here, though its pill says "All day".
 //   sheet  "Wed, Sep 30, 9:00 AM to 10:00 AM", "Wed, Sep 30 to Fri, Oct 2, all day": the dates too, for an event given
 //          by its zone alone.
 export function timeWords(time: EventTime, form: TimeForm): string {
@@ -81,7 +85,7 @@ export function timeWords(time: EventTime, form: TimeForm): string {
       return fromPeriod === toPeriod ? `${from} to ${to} ${toPeriod}` : `${from} ${fromPeriod} to ${to} ${toPeriod}`;
     }
     case 'line':
-      return time.allDay || time.continues ? '' : formatClock(start, timezone).replace(':00', '');
+      return time.allDayEvent || time.continues ? '' : formatClock(start, timezone).replace(':00', '');
     case 'sheet': {
       const date = (ms: number) => dateWords.day(ms, timezone);
       const sameDay = (a: number, b: number) => householdTime(a, timezone).date === householdTime(b, timezone).date;

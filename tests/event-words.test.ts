@@ -112,6 +112,12 @@ describe('the month line', () => {
     expect(say(span('2026-09-29T05:00:00Z', '2026-09-30T05:00:00Z', true), day, 'line')).toBe('');
     expect(say(span('2026-09-28T20:00:00Z', '2026-09-29T15:00:00Z'), day, 'line')).toBe('');
   });
+
+  it('keeps the start of a timed event that covers the day from midnight to midnight, though its pill says "All day"', () => {
+    expect(say(span('2026-09-29T05:00:00Z', '2026-09-30T05:00:00Z'), day, 'line')).toBe('12 AM');
+    expect(say(span('2026-09-29T05:00:00Z', '2026-09-30T20:00:00Z'), day, 'line')).toBe('12 AM');
+    expect(say(span('2026-09-29T05:00:00Z', '2026-09-30T05:00:00Z'), day, 'pill')).toBe('All day');
+  });
 });
 
 describe('the details sheet', () => {
@@ -147,8 +153,9 @@ describe('the facts', () => {
     expect(lunch).toMatchObject({ allDay: false, continues: false, endsHere: true, clocksRepeat: false, start: Date.parse('2026-10-01T17:00:00Z'), end: Date.parse('2026-10-01T18:00:00Z') });
     expect(eventTime(span('2026-09-30T20:00:00Z', '2026-10-01T15:00:00Z'), today)).toMatchObject({ allDay: false, continues: true, endsHere: true });
     expect(eventTime(span('2026-10-02T03:00:00Z', '2026-10-02T13:00:00Z'), today)).toMatchObject({ allDay: false, continues: false, endsHere: false });
-    expect(eventTime(span('2026-10-01T05:00:00Z', '2026-10-02T05:00:00Z', true), today)).toMatchObject({ allDay: true });
-    expect(eventTime(span('2026-09-30T14:00:00Z', '2026-10-03T14:00:00Z'), today)).toMatchObject({ allDay: true, continues: true, endsHere: false });
+    expect(eventTime(span('2026-10-01T05:00:00Z', '2026-10-02T05:00:00Z', true), today)).toMatchObject({ allDay: true, allDayEvent: true });
+    // A timed event that covers the day says "All day", but is not an all-day event.
+    expect(eventTime(span('2026-09-30T14:00:00Z', '2026-10-03T14:00:00Z'), today)).toMatchObject({ allDay: true, allDayEvent: false, continues: true, endsHere: false });
   });
 
   it('say that the clocks repeat when an event that starts and ends on one day ends at or before its start on the clock', () => {
@@ -206,13 +213,14 @@ describe('the nights the clocks change', () => {
       expect(say(event, day, 'line')).toBe('');
     });
 
-    it(`says "All day" in ${zone} for a timed event that covers the whole day of a change, whatever its length in hours`, () => {
+    it(`says "All day" in ${zone} for a timed event that covers the whole day of a change, whatever its length in hours, and the line says its start`, () => {
       for (const night of [back, forward]) {
         const day = dayOf(night.date, zone) as { startMs: number; endMs: number; timezone: string };
         const event = span(new Date(day.startMs).toISOString(), new Date(day.endMs).toISOString());
         expect(say(event, day, 'pill')).toBe('All day');
         expect(say(event, day, 'block')).toBe('All day');
-        expect(say(event, day, 'line')).toBe('');
+        // The line keeps its old rule: only an all-day event or one that began earlier says no time.
+        expect(say(event, day, 'line')).toBe('12 AM');
       }
     });
   }
