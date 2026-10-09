@@ -4,31 +4,27 @@ import { BeforeHousehold } from '../components/BeforeHousehold';
 import { EmptyWords } from '../components/EmptyWords';
 import { InBody } from '../components/InBody';
 import { Button } from '../components/ui/button';
-import { describeCell, mealsPageDate, type WallRoute } from '../lib/calendar-occurrences';
-import { MEAL_PLAN_LIMITS, type WallDay } from '../lib/paged-view';
-import { mealGrid, mealsPickedDay, slotRowName, type Meal } from '../lib/meals';
-import { pageWords } from '../lib/phone-calendar';
-import { usePagedView } from '../lib/use-paged-view';
-import { useHouseholdDay } from '../lib/wall-hooks';
-import { dayName, SLOT_PICTURES, sheetFor, useMeals } from '../lib/use-meals';
+import { describeCell, type WallRoute } from '../lib/calendar-occurrences';
+import { MEAL_SLOTS, type Meal } from '../lib/meals';
+import { SLOT_PICTURES, useMealPlan } from '../lib/use-meal-plan';
 import { MealSheet, type Editing } from '../MealsPage';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { DayChips, Pager, PhoneCard } from './parts';
-import { dayStartMs } from '../../supabase/functions/_shared/zoned-time.ts';
 import { couldNotLoad } from '../lib/synced-read';
 
 // The phone's Meals tab (spec 0004, "Meals"): the pager by week, then a card with seven day chips, the picked day's heading and its
-// four slots as rows. It reads through the Meals screen's own reader (useMeals) and opens the Meals screen's own sheet (MealSheet), so
+// four slots as rows. It reads through the Meals screen's own reader (useMealPlan) and opens the Meals screen's own sheet (MealSheet), so
 // saving and clearing a Meal are the tablet's, and nothing is read that the tablet does not read.
 
 // One slot of the picked day: a 68 px button (taller only if the Meal's words take a second line). The slot's picture in a 40 px disc,
 // the slot's name over the Meal or "Add a meal" with a plus. A planned Meal is on --everyone, an empty slot on --muted, so neither
 // rests on a tint alone: the words say which.
-export function SlotRow({ label, slot, day, meal, onOpen }: { label: string; slot: keyof typeof SLOT_PICTURES; day: WallDay; meal: Meal | null | undefined; onOpen: () => void }) {
+// `heard` is the name a screen reader hears (cellFor).
+export function SlotRow({ label, slot, meal, heard, onOpen }: { label: string; slot: keyof typeof SLOT_PICTURES; meal: Meal | null | undefined; heard: string; onOpen: () => void }) {
   const Picture = SLOT_PICTURES[slot];
   return (
     <Button
-      aria-label={slotRowName(label, dayName(day), meal)}
+      aria-label={heard}
       disabled={meal === undefined}
       onClick={onOpen}
       className={`h-auto min-h-17 w-full justify-start gap-3 rounded-2xl px-3 py-2 text-left whitespace-normal ${meal ? 'bg-everyone' : 'bg-muted'}`}
@@ -59,68 +55,44 @@ export function PhoneMeals({ route, timezone, view, openMeals }: PhoneScreenProp
 // The week the screen is on, laid out as the Meals screen lays it out: `date` is the page's anchor (null for this week), pulled into the
 // window the calendar pages within and snapped to its Sunday. `onNavigate` opens a week by its Sunday, or null for the week that holds today.
 function MealsWeek({ timezone, date, onNavigate }: { timezone: string; date: string | null; onNavigate: (date: string | null) => void }) {
-  const today = useHouseholdDay(timezone).date;
-  const now = new Date(dayStartMs(today, timezone));
-  // Paging may disable the button that was pressed: usePagedView puts focus on the pager's words instead of losing it (and only if it was
+  // Paging may disable the button that was pressed: the plan puts focus on the pager's words instead of losing it (and only if it was
   // lost: paging by keyboard stays on the button pressed). It never moves when the screen opens, which would scroll the page.
-  const { days, previous, next, limit, heading } = usePagedView({
-    view: 'week',
-    date,
-    now,
-    timezone,
-    limits: MEAL_PLAN_LIMITS,
-    takesFocusOnArrival: false,
-    preventScroll: true,
-  });
-  const open = (week: string) => onNavigate(mealsPageDate(week, today));
+  const plan = useMealPlan({ timezone, date, onNavigate, focus: { takesFocusOnArrival: false, preventScroll: true } });
+  const { days, previous, next, limit, heading, words } = plan;
 
   return (
     <div className="flex flex-col gap-3">
-      <Pager words={pageWords(days, today)} previousLabel="Previous week" nextLabel="Next week" onPrevious={previous ? () => open(previous) : null} onNext={next ? () => open(next) : null} headingRef={heading} />
+      <Pager words={words} previousLabel="Previous week" nextLabel="Next week" onPrevious={previous} onNext={next} headingRef={heading} />
       {/* Always mounted, so a screen reader announces the words when they appear. */}
       <p role="status" className="text-base text-muted-foreground empty:hidden">
         {limit}
       </p>
-      {/* Keyed on the week, so a turned page never shows the last week's Meals or keeps its picked day. */}
-      <MealsDay key={days[0]!.date} days={days} today={today} />
+      {/* Keyed on the week, so a turned page starts with its sheet closed. */}
+      <MealsDay key={days[0]!.date} plan={plan} />
     </div>
   );
 }
 
-// One week's card: the chips, the picked day and its four slots. The picked day is the screen's own state; until a chip is pressed it
-// is today when the week holds it, else the Sunday (mealsPickedDay), and it follows Household midnight.
-function MealsDay({ days, today }: { days: WallDay[]; today: string }) {
-  const dates = days.map((day) => day.date);
-  const [choice, setChoice] = useState<string | null>(null);
+// One week's card: the chips, the picked day and its four slots. The picked day is the plan's (until a chip is pressed it is today when the
+// week holds it, else the Sunday, and it follows Household midnight); the sheet's state is the card's own.
+function MealsDay({ plan }: { plan: ReturnType<typeof useMealPlan> }) {
+  const { days, today, picked: day, pick, state, save, cellFor } = plan;
   const [editing, setEditing] = useState<Editing | null>(null);
-  const { meals, failed, save } = useMeals(dates[0]!, dates[6]!);
-  const known = meals !== null;
-  const picked = mealsPickedDay(dates, choice, today);
-  const day = days[dates.indexOf(picked)]!;
-  const rows = mealGrid(meals ?? [], [picked]);
+  const picked = day.date;
 
   return (
     <PhoneCard label="Meal plan">
-      <DayChips label="Days of this week" dates={dates} today={today} picked={picked} onPick={setChoice} />
+      <DayChips label="Days of this week" dates={days.map((entry) => entry.date)} today={today} picked={picked} onPick={pick} />
       <h3 className="px-1 text-[15px] leading-5 font-medium text-muted-foreground">{describeCell(picked, null)}</h3>
-      {failed && !known && (
+      {state === 'failed' && (
         <p role="alert" className="px-1 text-base">
           {couldNotLoad('meals')}
         </p>
       )}
-      {!known && !failed && <EmptyWords className="px-1">Loading</EmptyWords>}
-      {rows.map((row) => {
-        const meal = known ? row.cells[0]! : undefined;
-        return (
-          <SlotRow
-            key={row.slot}
-            label={row.label}
-            slot={row.slot}
-            day={day}
-            meal={meal}
-            onOpen={() => setEditing(sheetFor(day, row, meal ?? null))}
-          />
-        );
+      {state === 'loading' && <EmptyWords className="px-1">Loading</EmptyWords>}
+      {MEAL_SLOTS.map(({ slot, label }) => {
+        const { meal, heard, sheet } = cellFor(day, slot);
+        return <SlotRow key={slot} label={label} slot={slot} meal={meal} heard={heard} onOpen={() => setEditing(sheet)} />;
       })}
       {editing && (
         // Drawn in the body, outside the page it holds inert while it is open (InBody).
