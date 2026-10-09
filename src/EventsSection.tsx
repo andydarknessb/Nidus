@@ -4,7 +4,8 @@ import { EventDiscs } from './components/EventPill';
 import { Card } from './components/phone';
 import { Button } from './components/ui/button';
 import { NativeEventSheet } from './components/NativeEventSheet';
-import { describeWhen, type Occurrence } from './lib/calendar-occurrences';
+import { eventTime, timeWords } from '../supabase/functions/_shared/event-words.ts';
+import type { Occurrence } from './lib/calendar-occurrences';
 import type { Household } from './lib/household';
 import { loadUpcomingNativeEvents } from './lib/native-events';
 import { loadProfiles, type Profile } from './lib/profiles';
@@ -28,7 +29,7 @@ export function EventRow({ event, profiles, timezone, onOpen }: { event: Occurre
           <Pin aria-hidden className="mt-1 size-4 shrink-0" />
           <span className="min-w-0 break-words">{event.title}</span>
         </span>
-        <span className="text-sm leading-5 font-normal text-muted-foreground">{describeWhen(event, timezone)}</span>
+        <span className="text-sm leading-5 font-normal text-muted-foreground">{timeWords(eventTime(event, { timezone }), 'sheet')}</span>
       </span>
       <span className="sr-only">For {people.kind === 'everyone' ? 'everyone' : listNames(people.names)}</span>
       <EventDiscs people={people} />

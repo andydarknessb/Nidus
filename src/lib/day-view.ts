@@ -1,6 +1,7 @@
-import { clocksRepeat, dayOccurrences, formatClock, formatClockWithZone, nowHour, wallHour, type Occurrence } from './calendar-occurrences';
+import { eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
+import { dayOccurrences, nowHour, wallHour, type Occurrence } from './calendar-occurrences';
 import type { WallDay } from './paged-view';
-import { listNames, pillTime, saysAllDay, scheduleColumns, type Pill, type PillPeople } from './schedule';
+import { listNames, saysAllDay, scheduleColumns, type Pill, type PillPeople } from './schedule';
 
 // The Day view (docs/look.md; spec 0003, Day view): the one view that keeps the hour grid. An hour is 3 rem, 48 px at the
 // default text size and the smallest thing a finger can hit, so an hour-long event is exactly that tall and no block is ever
@@ -77,7 +78,7 @@ export function hourWindow({ occurrences, day, now, fit }: { occurrences: Occurr
 // ---- The day ---------------------------------------------------------------------------------------
 
 // One event in the grid. `pill` is the event as the schedule's pill has it (its colours, discs and name come from the pill's
-// rules), with `time` as the block says it: "4:00 to 4:45 PM". `topHour` and `bottomHour` are where it is drawn, in wall clock
+// rules), with `time` as the block says it (event words, 'block'): "4:00 to 4:45 PM". `topHour` and `bottomHour` are where it is drawn, in wall clock
 // hours inside the window and at least an hour apart, so a quarter hour is drawn an hour tall and one that would run past the
 // end of the grid is drawn up from it. `lane` and `lanes` put the events that overlap side by side (never more than two);
 // `narrow` leaves the right of the second lane to the "+N" that stands for the rest. `cluster` counts the clusters of the day in time
@@ -198,7 +199,7 @@ export function planDay({ occurrences, day, now, fit }: { occurrences: Occurrenc
     const inside = bottom === top ? top >= window.startHour && top < window.endHour : top < window.endHour && bottom > window.startHour;
     if (inside) {
       const [slotTop, slotBottom] = slotOf(top, bottom, window);
-      drawn.push({ pill: { ...pill, time: blockTime(pill.occurrence, day) }, slot: { top: slotTop, bottom: slotBottom } });
+      drawn.push({ pill: { ...pill, time: timeWords(eventTime(pill.occurrence, day), 'block') }, slot: { top: slotTop, bottom: slotBottom } });
     } else if (top < window.startHour) {
       earlier.push(pill);
     } else {
@@ -261,20 +262,6 @@ export function planDay({ occurrences, day, now, fit }: { occurrences: Occurrenc
 }
 
 // ---- Words -----------------------------------------------------------------------------------------
-
-// What a block says of its time: "4:00 to 4:45 PM", with one AM or PM when both ends share it, and "11:30 AM to 12:30 PM"
-// when they do not. An event of no length, or one that began on an earlier day or goes on to a later one, says what the
-// schedule's pill says ("4:00 PM", "Until 2:00 AM", "10:00 PM"): the range is for an event that lies within the day.
-export function blockTime(occurrence: Occurrence, day: WallDay): string {
-  const start = Date.parse(occurrence.starts_at);
-  const end = Date.parse(occurrence.ends_at);
-  if (start < day.startMs || end > day.endMs || end <= start) return pillTime(occurrence, day);
-  // The night the clocks go back, an hour is on the clock twice: "1:00 to 1:00 AM" says nothing, so the zones tell the two apart.
-  if (clocksRepeat(start, end, day.timezone)) return `${formatClockWithZone(start, day.timezone)} to ${formatClockWithZone(end, day.timezone)}`;
-  const [from = '', fromPeriod = ''] = formatClock(start, day.timezone).split(/\s+/);
-  const [to = '', toPeriod = ''] = formatClock(end, day.timezone).split(/\s+/);
-  return fromPeriod === toPeriod ? `${from} to ${to} ${toPeriod}` : `${from} ${fromPeriod} to ${to} ${toPeriod}`;
-}
 
 // An hour on the gutter: "12 AM", "4 PM".
 export function hourWords(hour: number): string {

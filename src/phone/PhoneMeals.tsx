@@ -4,7 +4,8 @@ import { BeforeHousehold } from '../components/BeforeHousehold';
 import { InBody } from '../components/InBody';
 import { ReadState } from '../components/ReadState';
 import { Button } from '../components/ui/button';
-import { describeCell, type WallRoute } from '../lib/calendar-occurrences';
+import { type WallRoute } from '../lib/calendar-occurrences';
+import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { MEAL_SLOTS, type Meal } from '../lib/meals';
 import { SLOT_PICTURES, useMealPlan } from '../lib/use-meal-plan';
 import { MealSheet, type Editing } from '../MealsPage';
@@ -82,7 +83,7 @@ function MealsDay({ plan }: { plan: ReturnType<typeof useMealPlan> }) {
   return (
     <PhoneCard label="Meal plan">
       <DayChips label="Days of this week" dates={days.map((entry) => entry.date)} today={today} picked={picked} onPick={pick} />
-      <h3 className="px-1 text-[15px] leading-5 font-medium text-muted-foreground">{describeCell(picked, null)}</h3>
+      <h3 className="px-1 text-[15px] leading-5 font-medium text-muted-foreground">{dateWords.cell(picked, null)}</h3>
       <ReadState of="meals" read={plan} className="px-1" alert="px-1 text-base" />
       {MEAL_SLOTS.map(({ slot, label }) => {
         const { meal, heard, sheet } = cellFor(day, slot);

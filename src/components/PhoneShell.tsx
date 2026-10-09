@@ -1,6 +1,7 @@
 import { CalendarDays, CircleCheck, House, List, Plus, Settings, Utensils, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
-import { formatDate, navigationRailDate, type WallRoute } from '../lib/calendar-occurrences';
+import { navigationRailDate, type WallRoute } from '../lib/calendar-occurrences';
+import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import type { CalendarView } from '../lib/paged-view';
 import type { Household } from '../lib/household';
 import { useNow } from '../lib/wall-hooks';
@@ -94,7 +95,7 @@ function NameAndDate({ name, timezone }: { name: string; timezone: string }) {
   return (
     <div className="flex min-w-min flex-1 flex-col">
       <h1 className="truncate text-[13px] leading-4 font-medium text-muted-foreground [contain:inline-size]">{name}</h1>
-      <p className="font-display text-[26px] leading-8 whitespace-nowrap">{formatDate(now, timezone)}</p>
+      <p className="font-display text-[26px] leading-8 whitespace-nowrap">{dateWords.day(now, timezone)}</p>
     </div>
   );
 }

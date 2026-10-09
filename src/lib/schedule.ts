@@ -1,4 +1,5 @@
-import { dayOccurrences, describeCell, formatClock, type Occurrence } from './calendar-occurrences';
+import { dateWords, eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
+import { dayOccurrences, type Occurrence } from './calendar-occurrences';
 import type { WallDay } from './paged-view';
 import type { Profile } from './profiles';
 import { routineProgress, WEEKDAYS, type ProfileRoutines } from './routines';
@@ -19,18 +20,7 @@ export type ScheduleColumn = { day: WallDay; pills: Pill[] };
 
 // Whether a pill on `day` says "All day": an all-day event, or a timed event that covers the day from end to end.
 export function saysAllDay(occurrence: Occurrence, day: WallDay): boolean {
-  return occurrence.is_all_day || (Date.parse(occurrence.starts_at) <= day.startMs && Date.parse(occurrence.ends_at) >= day.endMs);
-}
-
-// What a pill says under its title on `day`: "All day" on each day an all-day event covers and on a day a timed event
-// covers from end to end; "Until 2:00 AM" on the last day of a timed event that began on an earlier one; otherwise the
-// start time, "9:00 AM". It reads the event's real span, as the month's cells do, never the padding the hour grid gives
-// a short event.
-export function pillTime(occurrence: Occurrence, day: WallDay): string {
-  if (saysAllDay(occurrence, day)) return 'All day';
-  const start = Date.parse(occurrence.starts_at);
-  if (start < day.startMs) return `Until ${formatClock(Date.parse(occurrence.ends_at), day.timezone)}`;
-  return formatClock(start, day.timezone);
+  return eventTime(occurrence, day).allDay;
 }
 
 // Whether the pill of `occurrence` on `day` is the one that is on now: a timed event that has started and not ended, in
@@ -52,14 +42,15 @@ export function whenEnded(occurrence: Occurrence, day: WallDay, now: Date): numb
 }
 
 // A column for each of `days`: the occurrences on that day, all-day first, then by start, then by title
-// (dayOccurrences, which the month's cells use), each with the words under its title. The Profile filter has been
+// (dayOccurrences, which the month's cells use), each with the words under its title (the pill form of event words,
+// which reads the event's real span, never the padding the hour grid gives a short event). The Profile filter has been
 // applied to `occurrences` already, where they are read.
 export function scheduleColumns(occurrences: Occurrence[], days: WallDay[], now: Date): ScheduleColumn[] {
   return days.map((day) => ({
     day,
     pills: dayOccurrences(occurrences, day).map((occurrence) => ({
       occurrence,
-      time: pillTime(occurrence, day),
+      time: timeWords(eventTime(occurrence, day), 'pill'),
       onNow: isOnNow(occurrence, day, now),
       endedAt: whenEnded(occurrence, day, now),
     })),
@@ -164,7 +155,7 @@ export function pillName(pill: Pill, day: WallDay, people: PillPeople): string {
   return [
     occurrence.title,
     people.kind === 'everyone' ? 'everyone' : listNames(people.names),
-    describeCell(day.date, null),
+    dateWords.cell(day.date, null),
     pill.time,
     pill.onNow ? 'on now' : '',
     occurrence.source === 'native' ? 'added here' : '',

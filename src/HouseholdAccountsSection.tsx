@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Plus, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { formatDate, formatDateWithYear } from '@/lib/calendar-occurrences';
+import { dateWords } from '../supabase/functions/_shared/event-words.ts';
 import {
   cancelHouseholdInvite,
   createHouseholdInvite,
@@ -78,7 +78,7 @@ type ViewProps = {
 // What the section draws, from what it is told: each of its states is rendered in tests/household-accounts-section.test.ts.
 export function HouseholdAccountsView(props: ViewProps) {
   const { accounts, invite, userId, timezone, canShare, open, busy, status, loadProblem, problemAt } = props;
-  const date = (when: Date) => formatDate(when.getTime(), timezone);
+  const date = (when: Date) => dateWords.day(when.getTime(), timezone);
   // A tap while a write is on its way does nothing; the button says so with `aria-disabled`, never `disabled`.
   const guarded = (action: () => void) => () => {
     if (!busy) action();
@@ -94,7 +94,7 @@ export function HouseholdAccountsView(props: ViewProps) {
       <ul className="flex flex-col gap-2">
         {accounts?.map((account) => {
           const id = account.authUserId;
-          const since = formatDateWithYear(account.createdAt.getTime(), timezone);
+          const since = dateWords.dayWithYear(account.createdAt.getTime(), timezone);
           if (id === userId) {
             return (
               <li key={id} className={`${rowClass} flex items-center bg-muted`}>

@@ -8,7 +8,7 @@ import { personStyle } from '../lib/look';
 import {
   addedSentence,
   blankEventForm,
-  clockWords,
+  timeInputWords,
   dayChoices,
   deleteNativeEvent,
   eventFormFromOccurrence,
@@ -103,7 +103,7 @@ function StepButton({ name, stuck, step, children }: { name: string; stuck: bool
 // header's clock sets it. The time is a live region that says which time it is ("Starts 9:15 AM") with a real space before the
 // AM or PM, so a screen reader hears what changed.
 function Stepper({ id, words, noun, time, earlierStuck, laterStuck, onStep }: { id: string; words: string; noun: string; time: string; earlierStuck: boolean; laterStuck: boolean; onStep: (direction: 1 | -1) => boolean }) {
-  const [clock, meridiem] = clockWords(time).split(' ');
+  const [clock, meridiem] = timeInputWords(time).split(' ');
   return (
     <div role="group" aria-labelledby={id} className="flex min-w-0 flex-col gap-2">
       <span id={id} className={caption}>

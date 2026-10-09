@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { formatClock, formatDate } from '../src/lib/calendar-occurrences';
+import { dateWords, formatClock } from '../supabase/functions/_shared/event-words.ts';
 import { msUntilHouseholdMidnight, watchHouseholdDay, watchMinute } from '../src/lib/household-day';
 import { type HouseholdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
@@ -143,7 +143,7 @@ describe('the header clock', () => {
   });
 
   // The time and date the header shows at this instant, in the Household Timezone.
-  const header = (timezone: string) => `${formatClock(Date.now(), timezone)} ${formatDate(Date.now(), timezone)}`;
+  const header = (timezone: string) => `${formatClock(Date.now(), timezone)} ${dateWords.day(Date.now(), timezone)}`;
 
   it('turns its minute on the minute, not up to half a minute late', () => {
     vi.setSystemTime(at('2026-09-30T14:42:30'));

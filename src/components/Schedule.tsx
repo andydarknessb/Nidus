@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { describeCell, type Occurrence } from '../lib/calendar-occurrences';
+import { type Occurrence } from '../lib/calendar-occurrences';
+import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { canOpenDay, pagingWindow, type PagingWindow, type WallDay } from '../lib/paged-view';
 import { focusElement } from '../lib/focus';
 import type { Profile } from '../lib/profiles';
@@ -137,7 +138,7 @@ function DayColumn({
   useLayoutEffect(measure);
 
   return (
-    <section aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`} className={cn('flex min-h-0 min-w-0 flex-col gap-2 rounded-[18px] p-1.5', day.isToday && 'bg-muted')}>
+    <section aria-label={`${dateWords.cell(day.date, null)}${day.isToday ? ', today' : ''}`} className={cn('flex min-h-0 min-w-0 flex-col gap-2 rounded-[18px] p-1.5', day.isToday && 'bg-muted')}>
       <DayHeading day={day} onOpenDay={onOpenDay} weather={weather} room={room} className="flex-none" />
       <div ref={list} className="relative flex min-h-0 flex-1 flex-col gap-2">
         {pills.map((pill, index) => (
@@ -189,7 +190,7 @@ export function DayRows({
     <div ref={more.scroller} className="min-h-0 flex-1 overflow-y-auto">
       <div className={cn('flex flex-col gap-3', BODY_CLEARANCE)}>
         {columns.map(({ day, pills }) => (
-          <section key={day.date} aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`} className={cn('flex flex-none gap-2 rounded-[18px] p-1.5', day.isToday && 'bg-muted')}>
+          <section key={day.date} aria-label={`${dateWords.cell(day.date, null)}${day.isToday ? ', today' : ''}`} className={cn('flex flex-none gap-2 rounded-[18px] p-1.5', day.isToday && 'bg-muted')}>
             <DayHeading day={day} onOpenDay={canOpenDay(day.date, pageWindow) ? onOpenDay : null} weather={forecastDay(forecast, day.date)} room={weatherOn} className="w-[9.6rem] flex-none" />
             <div className="flex min-w-0 flex-1 flex-wrap content-start gap-2">
               {pills.map((pill) => (

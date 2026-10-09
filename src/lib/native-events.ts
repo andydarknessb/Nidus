@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { formatClock, formatDate, occurrenceColumns, type Occurrence } from './calendar-occurrences';
+import { occurrenceColumns, type Occurrence } from './calendar-occurrences';
+import { formatClock, dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { WEEKDAYS } from './routines';
 import { addDays, dayStartMs, householdDay, instantAt } from '../../supabase/functions/_shared/zoned-time.ts';
 
@@ -61,7 +62,7 @@ export function eventFormToInput(form: EventForm, timezone: string): NativeEvent
       // An end after its start on the clock can still be at or before it here: a time inside the hour the clocks skip does
       // not exist, and moves on by the hour (wallMs). Say which time that is, not that the end is before the start.
       const skipped = form.endTime > form.startTime ? [form.startTime, form.endTime].find((time) => clock(instantAt(form.date, time, timezone), timezone) !== time) : undefined;
-      return { problem: skipped ? `The clocks go forward on this day, so there is no ${clockWords(skipped)}. Pick another time.` : 'The event must end after it starts.' };
+      return { problem: skipped ? `The clocks go forward on this day, so there is no ${timeInputWords(skipped)}. Pick another time.` : 'The event must end after it starts.' };
     }
   }
   return {
@@ -138,8 +139,8 @@ export function stepEnd(form: EventForm, direction: 1 | -1): EventForm {
   return { ...form, endTime: timeOf(within(quarterFrom(end, direction), earliest, LAST_END)) };
 }
 
-// 'HH:MM' on the wall clock as a stepper shows it: "2:00 PM".
-export function clockWords(time: string): string {
+// The value of a time input, 'HH:MM', as a stepper shows it: "2:00 PM". (An event's own time is said by event words.)
+export function timeInputWords(time: string): string {
   return formatClock(Date.UTC(1970, 0, 1, 0, minutesOf(time) ?? 0), 'UTC');
 }
 
@@ -198,7 +199,7 @@ export function isUntouched(form: EventForm, opened: EventForm): boolean {
 type EventWhen = Pick<NativeEventInput, 'title' | 'starts_at' | 'is_all_day'>;
 const whenSentence = (verb: 'Added' | 'Saved', input: EventWhen, timezone: string): string => {
   const start = Date.parse(input.starts_at);
-  return `${verb} ${input.title}: ${formatDate(start, timezone)}, ${input.is_all_day ? 'all day' : formatClock(start, timezone)}`;
+  return `${verb} ${input.title}: ${dateWords.day(start, timezone)}, ${input.is_all_day ? 'all day' : formatClock(start, timezone)}`;
 };
 
 // ...once an event is added.

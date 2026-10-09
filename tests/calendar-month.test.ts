@@ -2,9 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cellLines,
   dayOccurrences,
-  describeCell,
   describeMonth,
-  formatCompactClock,
   isTightCell,
   linesPerCell,
   monthMinRem,
@@ -13,8 +11,6 @@ import {
 import { monthWeeks } from '../src/lib/paged-view';
 
 const CHICAGO = 'America/Chicago';
-const TOKYO = 'Asia/Tokyo';
-const KOLKATA = 'Asia/Kolkata';
 
 const TODAY = '2026-10-01';
 
@@ -230,42 +226,6 @@ describe('how many lines fit', () => {
     expect(fit(32 + 24 - 1)).toBe(1);
     expect(fit(32)).toBe(1);
     expect(fit(0)).toBe(1);
-  });
-});
-
-describe('the time on a month line', () => {
-  const at = (iso: string, timezone: string) => formatCompactClock(Date.parse(iso), timezone);
-
-  it('drops ":00" on the hour and keeps the minutes otherwise', () => {
-    expect(at('2026-09-29T15:00:00Z', CHICAGO)).toBe('10 AM');
-    expect(at('2026-09-29T14:30:00Z', CHICAGO)).toBe('9:30 AM');
-    expect(at('2026-09-29T14:05:00Z', CHICAGO)).toBe('9:05 AM');
-    expect(at('2026-09-29T17:00:00Z', CHICAGO)).toBe('12 PM');
-    expect(at('2026-09-30T05:00:00Z', CHICAGO)).toBe('12 AM');
-    expect(at('2026-09-30T04:59:00Z', CHICAGO)).toBe('11:59 PM');
-  });
-
-  it('reads the time in the Household Timezone, minutes included', () => {
-    // 15:30Z is half past ten in Chicago but on the hour in Kolkata (UTC+5:30), and 15:00Z is midnight in Tokyo.
-    expect(at('2026-09-29T15:30:00Z', CHICAGO)).toBe('10:30 AM');
-    expect(at('2026-09-29T15:30:00Z', KOLKATA)).toBe('9 PM');
-    expect(at('2026-09-29T15:00:00Z', TOKYO)).toBe('12 AM');
-  });
-});
-
-describe('what a screen reader hears of a cell', () => {
-  it('gives the full date and how many events the day holds', () => {
-    expect(describeCell('2026-10-01', 3)).toBe('Thursday, October 1, 3 events');
-    expect(describeCell('2027-01-31', 12)).toBe('Sunday, January 31, 12 events');
-  });
-
-  it('says "no events" for an empty day and "1 event" for one', () => {
-    expect(describeCell('2026-10-02', 0)).toBe('Friday, October 2, no events');
-    expect(describeCell('2026-10-03', 1)).toBe('Saturday, October 3, 1 event');
-  });
-
-  it('gives only the date until the day has been read, so a day not yet known is never called free', () => {
-    expect(describeCell('2026-10-01', null)).toBe('Thursday, October 1');
   });
 });
 

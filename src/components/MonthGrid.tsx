@@ -84,7 +84,6 @@ export function MonthGrid({
             events={days.every((day) => !canOpenDay(day.date, window)) ? null : events}
             profiles={profiles ?? []}
             lines={lines}
-            timezone={timezone}
             onOpenDay={onOpenDay}
           />
         ))}
@@ -101,7 +100,6 @@ function WeekCells({
   events,
   profiles,
   lines,
-  timezone,
   onOpenDay,
 }: {
   days: WallDay[];
@@ -110,7 +108,6 @@ function WeekCells({
   events: DayEvents | null;
   profiles: readonly Profile[];
   lines: number;
-  timezone: string;
   onOpenDay: (date: string) => void;
 }) {
   return (
@@ -124,7 +121,6 @@ function WeekCells({
           occurrences={events === null ? null : events.on(day)}
           profiles={profiles}
           lines={lines}
-          timezone={timezone}
           onOpen={onOpenDay}
         />
       ))}

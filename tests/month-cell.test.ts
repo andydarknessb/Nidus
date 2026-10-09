@@ -50,7 +50,7 @@ const native = (title: string, profileIds: string[] = []) => event(title, profil
 type Options = { occurrences?: Occurrence[] | null; profiles?: Profile[]; lines?: number; inMonth?: boolean; beyond?: boolean };
 
 function cell(date: string, { occurrences = [], profiles = FAMILY, lines = 3, inMonth = true, beyond = false }: Options = {}): string {
-  return renderToStaticMarkup(createElement(DayCell, { day: dayOf(date), inMonth, beyond, occurrences, profiles, lines, timezone: CHICAGO, onOpen: () => undefined }));
+  return renderToStaticMarkup(createElement(DayCell, { day: dayOf(date), inMonth, beyond, occurrences, profiles, lines, onOpen: () => undefined }));
 }
 
 const count = (html: string, text: string) => html.split(text).length - 1;
