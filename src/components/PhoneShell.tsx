@@ -1,14 +1,15 @@
 import { CalendarDays, CircleCheck, House, List, Plus, Settings, Utensils, type LucideIcon } from 'lucide-react';
-import { useEffect, type ComponentProps, type ReactNode } from 'react';
-import { formatDate, navigationRailDate, type CalendarView, type WallRoute } from '../lib/calendar-occurrences';
+import { useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
+import { formatDate, navigationRailDate, type WallRoute } from '../lib/calendar-occurrences';
+import type { CalendarView } from '../lib/paged-view';
 import type { Household } from '../lib/household';
-import { householdDay } from '../lib/routines';
 import { useNow } from '../lib/wall-hooks';
 import type { Forecast } from '../lib/weather';
 import { ConnectionBadge } from './ConnectionBadge';
 import { Button } from './ui/button';
 import { SyncBadge } from './WallHeader';
 import { WeatherNow } from './Weather';
+import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // The Wall on a phone (docs/specs/0004-the-wall-on-a-phone.md; docs/look.md, "The phone"): below 768 px wide the navigation
 // rail and the landscape grid give way to a header, one column that the document scrolls (no box inside it, so the phone's own
@@ -22,7 +23,10 @@ const BAR = '5rem + 1px';
 const ADD_BOTTOM = `calc(${BAR} + 1rem + env(safe-area-inset-bottom))`;
 // The status line sits above Add event (the button is 3.5 rem), so that it never covers it: 8 px of air over the button.
 const STATUS_FOOT = `calc(${BAR} + 1rem + 3.5rem + 0.5rem + env(safe-area-inset-bottom))`;
-// The column's foot: the bar, 16 px, the button and 16 px more, so nothing ends under either.
+// The column's foot: the bar, 16 px, the button and 16 px more, so nothing ends under either. On a phone on its side (the document's
+// data-phone is "side": under 544 px tall by the held layout, src/lib/home-layout.ts, so the keyboard does not do it) the column also
+// keeps 88 px clear at its right (16, the button, 16), since the screen is too short to scroll a pager's Next or a list's plus out from
+// under Add event.
 const COLUMN_FOOT = `calc(${BAR} + 1rem + 3.5rem + 1rem + env(safe-area-inset-bottom))`;
 
 // A tab: an icon at 24 over its word at 14, 56 tall, radius 14. Below 380 px wide the word's letters are a little closer (tracking-tight), so that "Calendar" clears the 2 px ring of the
@@ -30,7 +34,7 @@ const COLUMN_FOOT = `calc(${BAR} + 1rem + 3.5rem + 1rem + env(safe-area-inset-bo
 // draws the Selected look, so it never rests on colour alone.
 function Tab({ icon: Icon, label, current = false, ...props }: { icon: LucideIcon; label: string; current?: boolean } & Omit<ComponentProps<typeof Button>, 'children'>) {
   return (
-    <Button variant="quiet" aria-current={current ? 'page' : undefined} className="h-14 min-w-0 flex-1 flex-col gap-0.5 rounded-[14px] px-0 text-sm font-medium whitespace-normal max-[380px]:tracking-tight" {...props}>
+    <Button variant="quiet" aria-current={current ? 'page' : undefined} className="h-14 min-w-fit flex-1 flex-col gap-0.5 rounded-[14px] px-0 text-sm font-medium whitespace-normal max-[380px]:tracking-tight" {...props}>
       <Icon aria-hidden className="size-6" />
       {label}
     </Button>
@@ -59,8 +63,14 @@ export function PhoneTabs({
   onLists: () => void;
 }) {
   const onCalendar = route.view === 'day' || route.view === 'week' || route.view === 'month';
+  // At larger text the five tabs are wider than the screen and the bar scrolls sideways: the current tab is brought into view, so the bar
+  // never opens with the tab that says where you are out of sight.
+  const bar = useRef<HTMLElement>(null);
+  useEffect(() => {
+    bar.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [route.view]);
   return (
-    <nav aria-label="Wall sections" className="fixed inset-x-0 bottom-0 z-20 flex gap-1 border-t border-border bg-card px-1 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+    <nav ref={bar} aria-label="Wall sections" className="fixed inset-x-0 bottom-0 z-20 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-border bg-card px-1 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <Tab icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
       <Tab
         icon={CalendarDays}
@@ -168,7 +178,7 @@ export function PhoneShell({
   return (
     <>
       <PhoneHeader household={household} today={today} forecast={forecast} owner={owner} />
-      <main className="flex min-w-0 flex-col gap-3 px-4 pt-3" style={{ paddingBottom: COLUMN_FOOT }}>
+      <main className="flex min-w-0 flex-col gap-3 px-4 pt-3 [[data-phone=side]_&]:pr-22" style={{ paddingBottom: COLUMN_FOOT }}>
         {strip}
         {children}
       </main>

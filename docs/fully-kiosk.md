@@ -1,6 +1,6 @@
 # Fully Kiosk Browser setup
 
-The wall is an Android tablet in landscape running [Fully Kiosk Browser](https://www.fully-kiosk.com/). Fully Kiosk owns everything about the screen's behaviour; the app never dims, sleeps or locks anything itself (`docs/PLAN.md`, Home screen).
+The wall is an Android tablet, a Lenovo Tab P12 (12.7 inches, 2944 by 1840, 16:10, an LCD), running [Fully Kiosk Browser](https://www.fully-kiosk.com/). Fully Kiosk owns everything about the screen's behaviour; the app never dims, sleeps or locks anything itself (`docs/PLAN.md`, Home screen). The Wall may also be an Elo 2402L touch monitor on a Windows PC, set up in `docs/windows-kiosk.md`.
 
 Do this once per tablet, after the production site is deployed (`docs/go-live.md`).
 
@@ -10,9 +10,13 @@ Settings, Web Content Settings, Start URL: the production site's root, for examp
 
 Turn on Reload on Internet Reconnect, and set Auto Reload on Idle to a few hours as a safety net. The wall reconnects on its own, but a stuck page is cheaper to reload than to diagnose.
 
-## Landscape lock
+## Orientation
 
-Settings, Device Management, Screen Orientation: Landscape. The layout is designed for 16:10 landscape and has no portrait form.
+Settings, Device Management, Screen Orientation: Landscape or Portrait, as the tablet hangs. The Wall has a form for each (`docs/look.md`, "Portrait") and follows the viewport; the app never locks an orientation itself, so Auto works too, though a tablet on a wall is better locked.
+
+## Display size and font size
+
+Leave the tablet's Display size (Android Settings, Display) at the default: it sets the device pixel ratio, and the default (near 1.7 on the P12, so about 1730 by 1080 CSS px in landscape and 1080 by 1730 in portrait) is what the Wall is checked at. Use the tablet's Font size for larger text: the Wall grows every rem with it and holds its layout to 130 percent (`docs/look.md`, "Larger text").
 
 ## No app-side dimming
 

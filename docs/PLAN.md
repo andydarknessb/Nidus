@@ -103,7 +103,7 @@ Settled on 2026-10-06 when the owner approved the phone drawings on the design c
 
 ### Decisions
 
-- **The Wall is not only for a tablet**: "one or two Android tablets in landscape" above stays the Devices' setting, and the Household Account may open the Wall on a phone. Below 768 px of viewport width it is laid out for a phone; at 768 px and wider nothing changes. The width alone decides, never the user agent or a per-Device setting.
+- **The Wall is not only for a tablet**: "one or two Android tablets in landscape" above stays the Devices' setting, and the Household Account may open the Wall on a phone. Below 768 px of viewport width it is laid out for a phone; at 768 px and wider nothing changes (until v9's portrait). The width alone decides, never the user agent or a per-Device setting. Settled 2026-10-07 (#176): a phone on its side, wider than 768 px, is a phone too: below 544 px of height, the Wall's least height, which no tablet of the Wall's kind is under.
 - **Five tabs**: Home, Calendar (Day, Week and Month behind one control), Routines, Meals, Lists, at the foot. Add event is a round button above them. Settings is a gear in the header, for the owner only.
 - **No clock** in the phone's header: the date, the weather and the gear.
 - **The phone's mode is the phone's**: it follows `prefers-color-scheme`. The Household's Appearance and the switch are for the Wall's tablets.
@@ -170,3 +170,63 @@ push_deliveries       subscription_id, key (pk together), sent_at
 list_items            + added_by (default auth.uid())
 ```
 
+
+## v8: deeper modules
+
+Settled on 2026-10-07 from an architecture review the owner approved in full. The spec is [0008](specs/0008-deeper-modules.md); tracker #144, tickets #145 to #156.
+
+### Decisions
+
+- **One rule for skipped and repeated times**: RFC 5545 everywhere (skipped: forward by the gap; repeated: the first). The iPhone sync's floating-time fix (#145) ships to master first.
+- **No visible change** beyond: one refresh timing (30 s, 5 s after a failure), a month that loads as a whole, a calendar the sync did not reach left untouched, a failed write that takes back only itself.
+- **Replace, don't layer**: tests of helpers that become internal move to the new interface case for case.
+- **Plain TypeScript cores, thin hooks**: stateful modules are tested below React; no DOM test library.
+- **Facts, not sentences** between the sync and Settings: `truncated` on the Calendar Account; `last_error` is for logs only.
+
+### Tables
+
+```
+calendar_accounts    + truncated boolean not null default false
+```
+
+## v9: the Wall in portrait
+
+Settled on 2026-10-07 when the owner asked for the Wall to fit the Lenovo Tab P12 (12.7 inches, 2944 by 1840, 16:10) hung either way. The spec is [0009](specs/0009-the-wall-in-portrait.md); the sizes are in [look.md](look.md), "Portrait". It qualifies "one or two Android tablets in landscape" above: landscape or portrait, as the household hangs it.
+
+### Decisions
+
+- **Portrait is the tablet's second form**: at 768 px and wider, a viewport taller than it is wide, by the viewport alone. Below 768 px it is a phone whatever its height. Landscape changes nothing, at any size.
+- **The chrome is the Wall's**: the rail at the left, the header, the people strip, the switch, the Household's Appearance. No tabs, no gear.
+- **Five screens use the height**: Home puts the days across the top and Up next beside the Pinned List under them; Week is seven rows; Meals turns, days down and slots across; the Routines chart and the Lists screen wrap. Month, Day and the sheets keep their form and give way by their own rules.
+- **The orientation is the kiosk's**: Fully Kiosk's Screen Orientation setting; the manifest asks for none and the app never locks one.
+- **No new data**: no migration.
+
+## v10: the Wall on a 24-inch screen
+
+Settled on 2026-10-08 when the owner asked for the Wall to fit an Elo 2402L touch monitor (24 inches, 1920 by 1080, 16:9) on a Windows PC, hung either way. The spec is [0010](specs/0010-the-wall-on-a-24-inch-screen.md); the sizes are in [look.md](look.md), "A 24-inch screen"; the host is [windows-kiosk.md](windows-kiosk.md). It qualifies "one or two Android tablets" above: a Device may be a PC's browser.
+
+### Decisions
+
+- **The rules hold**: the viewport alone decides, and by it the Elo is a Wall both ways, 1920 by 1080 in landscape (five days, three tiles) and 1080 by 1920 in portrait (four days, and the tiles the height holds). No rule reads the screen.
+- **The host decides the orientation and the size**: Windows' display orientation turns the screen, and Chrome runs in kiosk mode with a profile folder that keeps its storage, since the Device's pairing lives there. The app locks no orientation.
+- **Larger text is the browser's font size**, held at 130 percent; zoom shrinks the viewport and is held to 125 percent. At 150 percent in portrait the Wall is a phone by its rule.
+- **Nothing scales up for the panel**: the look's tokens, parts and sizes are unchanged at 92 pixels per inch.
+- **The Device is a tablet or a PC's browser**: pairing, the Pairing Code, the heartbeat and what a Device may write do not change.
+- **Portrait's Routines and Lists are a grid**: columns and cards at least 17 rem, as many to a row as fit, each its row-mates' width; the P12 gets it too.
+- **Home in portrait fills the height**: Up next shows the tiles a third of the height holds, never fewer than three; the lower row follows; the P12 gets it too.
+- **No new data**: no migration.
+
+## v10: deeper screens
+
+Settled on 2026-10-09 from an architecture review the owner approved in full, two rounds of rulings. The spec is [0011](specs/0011-deeper-screens.md); tracker #198, tickets #199 to #205. It continues v8 one layer up: the screens.
+
+### Decisions
+
+- **One visible change**: a list whose last read or write failed shows no count on the Wall, as on the phone. It ships to master first.
+- **One module each** for the Shared List card, the Meal Plan week, an event's time words (facts then words, shared with push-notify), the Wall's routes, the read state (with the card write behind `change`) and the lib client convention (the client as the first argument, everywhere).
+- **Meal Plan** enters the glossary.
+- **v8's rulings hold**: replace don't layer, plain cores with thin hooks, facts not sentences, no DOM test library.
+
+### Tables
+
+No migration.

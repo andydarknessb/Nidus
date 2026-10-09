@@ -1,6 +1,6 @@
 # Nidus
 
-A wall-mounted family calendar and organizer for a single household, shown on a tablet running as a kiosk. Mirrors the household's external calendars and adds household-only routines and lists.
+A wall-mounted family calendar and organizer for a single household, shown on a tablet or a touch screen running as a kiosk. Mirrors the household's external calendars and adds household-only routines and lists.
 
 ## Language
 
@@ -19,7 +19,7 @@ A person in the Household, used for attribution and colour-coding. Has no creden
 _Avoid_: User, member, account, kiosk
 
 **Device**:
-A tablet paired to a Household so it can show the display without a sign-in. It may read everything, tick Routines and list items, plan Meals, and manage Native Events, but never administer the Household. A Device is not a Profile.
+A tablet, or a PC's browser driving a touch screen, paired to a Household so it can show the display without a sign-in. It may read everything, tick Routines and list items, plan Meals, and manage Native Events, but never administer the Household. A Device is not a Profile.
 _Avoid_: Kiosk profile, terminal
 
 **Pairing Code**:
@@ -32,10 +32,14 @@ _Avoid_: Pairing Code, share code, membership
 
 **Push Subscription**:
 One browser on one phone, signed in as a Household Account, that has turned on notifications. It holds the browser's Web Push endpoint and which of the four kinds that phone gets (event reminders, morning summary, Routines not done, added to the list). It belongs to its Household Account and goes when that account is removed. A Device never has one.
-_Avoid_: device (a Device is a tablet), token, registration
+_Avoid_: device (a Device is a tablet or a screen's PC), token, registration
 
 **Household Timezone**:
 The one timezone stored on the Household. All display, rollover and reset logic uses it; source calendar timezones are converted on ingest.
+
+**Household Date**:
+A calendar date on the Household Timezone's clock. It begins at Household midnight, whatever zone the screen or the server is in. A time on a Household Date that the clocks skip moves forward by the skipped gap; a time that happens twice is the first one.
+_Avoid_: Local date, today (on its own)
 
 **Appearance**:
 How the Household wants the Wall to look: Auto (light from sunrise to sunset, dark otherwise), Light or Dark. The Household Account sets it. A screen's own switch overrides it on that screen until the next sunrise or sunset; that override is not stored on the Household.
@@ -54,6 +58,10 @@ _Avoid_: Sub-calendar, feed, source
 **Synced Event**:
 One occurrence of an event mirrored read-only from a Mirrored Calendar. Recurring events are stored as expanded occurrences (Google expands them; an iCloud feed's rules are expanded by the sync). Nidus never edits or writes it back.
 _Avoid_: External event, imported event
+
+**Profile Filter**:
+The people pressed on a screen's people strip; none pressed means everyone. It narrows which events a calendar shows to those for a pressed person or for the whole Household. An event that shows still names all its people; only a summary of who has something on a day (the phone month's dots) names just the pressed ones.
+_Avoid_: Person filter, chip filter
 
 **Native Event**:
 An event created in Nidus that exists only in Nidus and is never pushed to any provider.
@@ -82,3 +90,7 @@ _Avoid_: Favourite list, default list
 **Meal**:
 What the Household plans to eat for one slot (breakfast, lunch, dinner or snack) on one Household date. Free text, at most one per slot per day; the Household Account or a Device writes, changes or clears it.
 _Avoid_: Recipe, menu, meal plan entry
+
+**Meal Plan**:
+The Household's Meals for one week, Sunday to Saturday, with today's week as the page it opens on. The Wall shows the whole week; a phone shows one picked day of it.
+_Avoid_: Menu, week view, meal planner

@@ -1,25 +1,13 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import {
-  describeCell,
-  describeMonth,
-  describePage,
-  fiveDays,
-  pageDays,
-  pageStart,
-  paging,
-  pagingWindow,
-  shownDate,
-  type CalendarView,
-  type WallDay,
-} from '../lib/calendar-occurrences';
+import { useContext, useLayoutEffect, useRef, useState } from 'react';
+import { describeCell, describeMonth, describePage, fiveDays } from '../lib/calendar-occurrences';
 import { aboveLabel, emptyRowWords, HOUR_REM, hoursThatFit, planDay } from '../lib/day-view';
-import { focusEvent, focusTitleIfLost } from '../lib/focus';
+import { CALENDAR_LIMITS, pageStart, type CalendarView, type WallDay } from '../lib/paged-view';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
-import { householdDay } from '../lib/routines';
 import { useOverflow } from '../lib/use-overflow';
-import { useNow, useOccurrences } from '../lib/wall-hooks';
+import { usePagedView } from '../lib/use-paged-view';
+import { useDayEvents, useNow } from '../lib/wall-hooks';
 import { forecastDay, type Forecast } from '../lib/weather';
 import { HourGrid, PillRow } from './DayGrid';
 import { EventSheets, type OpenEvent } from './EventSheets';
@@ -80,7 +68,7 @@ const PAGE_ARROW = 'size-12 rounded-full bg-card p-0';
 // The week, day and month views: the week is the schedule with seven columns, the day the hour grid and a month a grid
 // of its own, each under a header to page back and forward within the synced window and jump to today. `date` is the
 // page's anchor (null for today); a date outside the window is pulled to its nearest end. A touch anywhere on the page
-// keeps the Profile filter open.
+// keeps the Profile filter open. `portrait` (from the Wall's one read of the window, WallPage) draws the week as seven rows, not columns.
 export function PagedCalendar({
   timezone,
   view,
@@ -90,6 +78,7 @@ export function PagedCalendar({
   forecast = null,
   weatherOn = false,
   profiles,
+  portrait = false,
 }: {
   timezone: string;
   view: CalendarView;
@@ -99,33 +88,24 @@ export function PagedCalendar({
   forecast?: Forecast | null;
   weatherOn?: boolean;
   profiles: Profile[] | null;
+  portrait?: boolean;
 }) {
   const now = useNow(timezone);
   const { touch } = useContext(ProfileFilterContext);
-  const window = pagingWindow(timezone, now);
-  const today = householdDay(timezone, now).date;
-  const anchor = pageStart(view, shownDate(date, today));
+  // The page, and focus on its title (usePagedView): paging may disable or remove the button that was pressed, so focus goes to the title
+  // when it was lost and stays on the button when a person pages by keyboard; arriving on another view (from the navigation rail, or a day
+  // opened from the week or the month) puts it on the title, as on the other screens; and it is where focus goes on the Day view when the
+  // event it would return to has been deleted.
+  const { today, window, anchor, days, previous, next, limit, heading } = usePagedView({
+    view,
+    date,
+    now,
+    timezone,
+    limits: CALENDAR_LIMITS,
+    takesFocusOnArrival: true,
+  });
   // A week or a day is a run of days; a month is a grid of weeks of its own.
-  const days = view === 'month' ? null : pageDays(view, anchor, timezone, now);
   const day = view === 'day' ? days?.[0] : undefined;
-  const { previous, next } = paging(view, anchor, window);
-  // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it, but only when it was
-  // lost (focusTitleIfLost), so paging by keyboard stays on the button that was pressed. Arriving on another view (from the navigation
-  // rail, or a day opened from the week or the month) puts it on the title, as on the other screens. It is also where focus goes on the
-  // Day view when the event it would return to has been deleted. It runs on what the person chose (the view and the date they opened),
-  // never on `anchor`, which also moves by itself while the page follows today (at Household midnight, at the start of a week or a
-  // month) and would take focus from whatever they were on.
-  const heading = useRef<HTMLHeadingElement>(null);
-  const shown = useRef<CalendarView | null>(null);
-  useEffect(() => {
-    if (shown.current !== view) {
-      shown.current = view;
-      heading.current?.focus();
-    } else focusTitleIfLost(heading.current);
-  }, [view, date]);
-  // The page's contents are keyed on the anchor, so when it moves by itself (Household midnight, a week or a month turning) they are
-  // new and whatever had focus in them is gone: it goes to the title then, and focus that is anywhere else is left alone.
-  useEffect(() => focusTitleIfLost(heading.current), [anchor]);
 
   return (
     <div className="flex min-h-0 flex-col gap-4" onPointerDownCapture={touch}>
@@ -157,11 +137,7 @@ export function PagedCalendar({
       </nav>
       {/* Always mounted, so a screen reader announces the text when it appears. */}
       <p role="status" className="text-lg empty:hidden">
-        {previous === null
-          ? 'This is as far back as the calendar goes. It keeps one month of past events.'
-          : next === null
-            ? 'This is as far ahead as the calendar goes. It keeps six months of upcoming events.'
-            : ''}
+        {limit}
       </p>
       {/* Keyed on the view and the page, so a turned page, or the other view starting on the same day, never shows the last page's events, and a failed read says so. */}
       {days && view === 'week' ? (
@@ -176,6 +152,7 @@ export function PagedCalendar({
           forecast={forecast}
           weatherOn={weatherOn}
           profiles={profiles}
+          rows={portrait}
         />
       ) : day ? (
         <DayView key={`${view}:${day.date}`} timezone={timezone} now={now} day={day} version={version} profiles={profiles} focusHeading={() => heading.current?.focus()} />
@@ -230,12 +207,11 @@ export function DayView({
   profiles: Profile[] | null;
   focusHeading: () => void;
 }) {
-  // The event tapped and the sheet it opened, and a count of the edits made here, so the read runs again after one.
+  // The event tapped and the sheet it opened.
   const [open, setOpen] = useState<OpenEvent>(null);
-  const [edits, setEdits] = useState(0);
-  // An edit made here counts into `version`, so it reads again like an event added around the calendar.
-  const { occurrences, failed } = useOccurrences([day], version + edits);
-  const loaded = profiles !== null && occurrences !== null;
+  const events = useDayEvents([day], version, profiles);
+  const occurrences = events.occurrences;
+  const loaded = occurrences !== null;
   const people = profiles ?? [];
 
   // The room for the grid is what is left between the row above it and the row below it, which keep their height: the hours that
@@ -266,11 +242,11 @@ export function DayView({
   return (
     <section
       aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`}
-      className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card p-3 max-[768px]:rounded-[22px]"
+      className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card p-3 phone:rounded-[22px]"
     >
-      {failed && occurrences === null && (
+      {events.problem && (
         <p role="alert" className="px-4 py-2 text-xl">
-          Could not load the calendar. Check your connection.
+          {events.problem}
         </p>
       )}
       <PillRow
@@ -311,12 +287,9 @@ export function DayView({
         timezone={timezone}
         date={day.date}
         profiles={people}
-        occurrences={occurrences}
-        onEdited={() => setEdits((count) => count + 1)}
-        // After an event is deleted from its sheet, or moved by an edit: to its new pill or block if it is still on the day, else the title.
-        returnFocus={(occurrence) => {
-          if (!focusEvent(occurrence.id)) focusHeading();
-        }}
+        events={events}
+        // After an event is deleted from its sheet, or moved by an edit, and is not on the day any more: the title.
+        focusPlace={focusHeading}
       />
     </section>
   );

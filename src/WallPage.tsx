@@ -13,16 +13,15 @@ import { PeopleStrip } from './components/PeopleStrip';
 import { PhoneShell } from './components/PhoneShell';
 import { StatusLineProvider } from './components/StatusLine';
 import { WallHeader, WallTime } from './components/WallHeader';
-import { useChangeTick } from './lib/change-feed';
-import { mealsPath, onCalendarScreen, parseWallRoute, wallDate, wallPath, type CalendarView, type WallRoute } from './lib/calendar-occurrences';
-import { householdDay } from './lib/routines';
-import { householdViewAfter, loadHousehold, type Household, type HouseholdView } from './lib/household';
+import { mealsPath, onCalendarScreen, parseWallRoute, wallDate, wallPath, type WallRoute } from './lib/calendar-occurrences';
+import type { CalendarView } from './lib/paged-view';
+import { loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { deviceStorage, gateWords, recallHousehold, rememberHousehold } from './lib/remembered-household';
 import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useStatusLine } from './lib/status-line';
 import { localStore, writeLastMode } from './lib/mode';
-import { useHomeLayout } from './lib/home-layout';
+import { homeGrid, useHomeLayout } from './lib/home-layout';
 import { useForecast } from './lib/use-forecast';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useLightMode, useWallMode } from './lib/use-mode';
@@ -32,16 +31,14 @@ import { MealsScreen } from './MealsPage';
 import { PhoneWall } from './PhoneWall';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
+import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
 const HEARTBEAT_MS = 30_000;
 // While showing a code, ask often so a claim is noticed within seconds.
 const CLAIM_POLL_MS = 3_000;
 const RETRY_MS = 5_000;
-// Same cadence as the Routines read, so a changed Household Timezone reaches the wall within a read.
-const HOUSEHOLD_REFRESH_MS = 30_000;
-// After a failed Household read, retry sooner.
-const HOUSEHOLD_RETRY_MS = 5_000;
 
 // What the Household read listens to: a change to this table reads it again.
 const HOUSEHOLD_TABLES = ['households'] as const;
@@ -170,11 +167,12 @@ export function PairingScreen({ pairing }: { pairing: PairingCode }) {
 
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-8 p-8 text-center">
-      <h1 className="font-display text-[40px] leading-[44px]">Pair this tablet</h1>
+      <h1 className="font-display text-[40px] leading-[44px]">Pair this screen</h1>
       <p className="max-w-2xl text-2xl">
         On your phone, open {window.location.origin}/settings, <span className="whitespace-nowrap">sign in,</span> and enter this code.
       </p>
-      <p className="font-display text-9xl leading-none tracking-[0.2em] pl-[0.2em]">{pairing.code}</p>
+      {/* At 768 px wide the 8 rem code with its tracking was wider than the screen, so it shrinks to 15vw below 853 px. */}
+      <p className="font-display text-[min(8rem,15vw)] leading-none tracking-[0.2em] pl-[0.2em]">{pairing.code}</p>
       <p role="timer" className="text-2xl">
         {remaining > 0 ? `Code expires in ${formatCountdown(remaining)}` : 'Getting a new code'}
       </p>
@@ -225,8 +223,6 @@ const VIEW_TITLES: Record<WallRoute['view'], string> = { home: 'Home', day: 'Day
 // the next meal, on every screen but Meals.
 function HomeShell({ owner }: { owner: boolean }) {
   const [route, openView, openHome, openMeals, openRoutines, openLists] = useWallRoute();
-  // The Household Timezone decides which day Up next and the Routines chart show; none until it is read.
-  const [view, setView] = useState<HouseholdView>({ household: null, failed: false });
   // Each view names itself in the document's title.
   useDocumentTitle(VIEW_TITLES[route.view]);
   // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
@@ -248,36 +244,24 @@ function HomeShell({ owner }: { owner: boolean }) {
   // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(0);
-  const householdChanges = useChangeTick(HOUSEHOLD_TABLES);
-  useEffect(() => {
-    let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function read() {
-      let outcome: { household: Household } | { failed: true };
-      try {
-        outcome = { household: await loadHousehold() };
-      } catch {
-        outcome = { failed: true };
-      }
-      if (!live) return;
-      if ('household' in outcome) rememberHousehold(deviceStorage(), outcome.household);
-      setView((prev) => householdViewAfter(prev, outcome));
-      // After a failed read retry sooner, so Up next appears once the connection is back.
-      timer = setTimeout(() => void read(), 'household' in outcome ? HOUSEHOLD_REFRESH_MS : HOUSEHOLD_RETRY_MS);
-    }
-
-    void read();
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [householdChanges]);
+  // The Household, read through the synced read (every 30 seconds, 5 after a failure, and at once when it changes). The Household
+  // Timezone decides which day Up next and the Routines chart show; none until it is read. Each read is remembered on the tablet.
+  const household = useSyncedRead<Household>(
+    async () => {
+      const read = await loadHousehold();
+      rememberHousehold(deviceStorage(), read);
+      return read;
+    },
+    HOUSEHOLD_TABLES,
+    'household',
+  );
+  const view = useMemo<HouseholdView>(() => ({ household: household.data, failed: household.failed }), [household.data, household.failed]);
   const timezone = view.household?.timezone ?? null;
   // How many days and Up next tiles Home holds at this screen's size, and whether the screen is a phone (below 768 px wide), which
   // swaps the chrome below and follows the phone's own light or dark setting.
   const home = useHomeLayout();
-  // The Add event sheet is the layout's, so it closes when the layout swaps (a window resized across 768 px).
+  // The Add event sheet is the phone's or the tablet's, so it closes when the layout swaps (a window resized across 768 px). It sits in the
+  // same frame in landscape and in portrait, so turning the tablet leaves it open.
   useEffect(() => setAdding(false), [home.phone]);
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
@@ -377,13 +361,13 @@ function HomeShell({ owner }: { owner: boolean }) {
       <ProfileFilterContext.Provider value={filterView}>
         {route.view === 'routines' ? (
           timezone ? (
-            <RoutinesChart routines={routines} />
+            <RoutinesChart routines={routines} portrait={home.portrait} />
           ) : (
             // The chart before the Household is read: a frame that says "Loading", or that the read failed, as Up next does.
             <section aria-label="Routines" className="rounded-3xl bg-card p-4">
               {view.failed ? (
                 <p role="alert" className="text-base">
-                  Could not load routines. Check your connection.
+                  {couldNotLoad('routines')}
                 </p>
               ) : (
                 <EmptyWords>Loading</EmptyWords>
@@ -393,27 +377,27 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : route.view === 'meals' ? (
           // Meals is a screen of its own, not a calendar view: it takes the same slot, and before the Household is read it is an empty frame, or says it could not be read.
           timezone ? (
-            <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} />
+            <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} portrait={home.portrait} />
           ) : (
-            <BeforeHousehold label="Meals" failed={view.failed} words="Could not load meals. Check your connection." />
+            <BeforeHousehold label="Meals" failed={view.failed} words={couldNotLoad('meals')} />
           )
         ) : route.view === 'lists' ? (
           // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
-          <ListsScreen />
+          <ListsScreen portrait={home.portrait} />
         ) : route.view !== 'home' && timezone ? (
-          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
+          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} portrait={home.portrait} />
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day, Week or Month.
-          <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
+          <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
         ) : (
-        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_20rem] gap-4">
+        <div className={homeGrid(home.portrait)}>
           {timezone ? (
             <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
           ) : (
-            <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
+            <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
           )}
-          <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} onOpenRoutines={openRoutines} onOpenLists={openLists} />
+          <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} row={home.portrait} onOpenRoutines={openRoutines} onOpenLists={openLists} />
         </div>
         )}
         {sheet}
@@ -427,7 +411,7 @@ function HomeShell({ owner }: { owner: boolean }) {
 // (`contents`), so what it holds is laid out by the grid as if it were not there.
 export function WallFrame({ rail, header, strip, children }: { rail: ReactNode; header: ReactNode; strip?: ReactNode; children: ReactNode }) {
   return (
-    <div className="grid h-svh grid-cols-[6rem_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
+    <div className="grid h-svh min-h-[34rem] grid-cols-[min(6rem,max(96px,12vw))_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-4 p-4">
       {rail}
       <div className="flex min-w-0 flex-col gap-3">
         {header}

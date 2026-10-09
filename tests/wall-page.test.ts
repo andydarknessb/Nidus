@@ -47,7 +47,7 @@ describe('the pairing screen', () => {
   const screen = () => renderToStaticMarkup(createElement(PairingScreen, { pairing: { code: 'K7M2QX', expiresAt: new Date(Date.now() + 9 * 60_000) } }));
 
   it('has its title in the display face', () => {
-    expect(screen()).toMatch(/<h1 class="font-display [^"]*">Pair this tablet<\/h1>/);
+    expect(screen()).toMatch(/<h1 class="font-display [^"]*">Pair this screen<\/h1>/);
   });
 
   it('has its code in the display face, whose figures are lining and tabular, spaced out by letter-spacing, and in no monospace face', () => {
@@ -56,6 +56,9 @@ describe('the pairing screen', () => {
     expect(code).not.toBeNull();
     const classes = (code?.[1] ?? '').split(' ');
     expect(classes).toContain('font-display');
+    // At 768 px wide the code fits: 8 rem at most, 15vw below that.
+    expect(classes).toContain('text-[min(8rem,15vw)]');
+    expect(classes).not.toContain('text-9xl');
     expect(classes.some((name) => name.startsWith('tracking-'))).toBe(true);
     // The space after the last letter is as much as the space before the first, so the code sits in the middle.
     expect(classes).toContain('pl-[0.2em]');
@@ -119,7 +122,7 @@ describe("the Wall's frame", () => {
 
   it('draws as it did: the rail, the header and the screen are grid items, the main having no box of its own', () => {
     const html = frame();
-    expect(html).toMatch(/^<div class="grid h-svh grid-cols-\[6rem_minmax\(0,1fr\)\] grid-rows-\[auto_minmax\(0,1fr\)\] gap-4 p-4">/);
+    expect(html).toMatch(/^<div class="grid h-svh min-h-\[34rem\] grid-cols-\[min\(6rem,max\(96px,12vw\)\)_minmax\(0,1fr\)\] grid-rows-\[auto_minmax\(0,1fr\)\] gap-4 p-4">/);
     expect(html).toMatch(/<main class="contents">/);
     expect(html.indexOf('Wall sections')).toBeLessThan(html.indexOf('<header'));
     expect(html.indexOf('<header')).toBeLessThan(html.indexOf('<main'));

@@ -1,4 +1,5 @@
-import { dayOccurrences, describeCell, formatClock, type Occurrence, type WallDay } from './calendar-occurrences';
+import { dayOccurrences, describeCell, formatClock, type Occurrence } from './calendar-occurrences';
+import type { WallDay } from './paged-view';
 import type { Profile } from './profiles';
 import { routineProgress, WEEKDAYS, type ProfileRoutines } from './routines';
 

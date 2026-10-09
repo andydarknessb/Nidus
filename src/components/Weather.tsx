@@ -54,7 +54,7 @@ export function WeatherNow({ forecast, unit, today, phone = false }: { forecast:
         </>
       )}
       {day && (!phone || !reading) && (
-        <span className="flex flex-col text-sm leading-[18px] text-muted-foreground">
+        <span className="flex flex-col text-sm leading-[1.2857] text-muted-foreground">
           <span>High {day.high}°</span>
           <span>Low {day.low}°</span>
         </span>
@@ -69,7 +69,7 @@ export function DayWeather({ day }: { day: ForecastDay | undefined }) {
   if (!day) return null;
   const { words, icon } = describeWeather(day.code);
   return (
-    <span role="img" aria-label={`${words}, high ${day.high}, low ${day.low}`} className="inline-flex items-center gap-1 text-sm leading-[18px] font-normal text-muted-foreground">
+    <span role="img" aria-label={`${words}, high ${day.high}, low ${day.low}`} className="inline-flex items-center gap-1 text-sm leading-[1.2857] font-normal text-muted-foreground">
       <Glyph icon={icon} className="size-[15px] shrink-0" />
       <span>
         {day.high}° / {day.low}°

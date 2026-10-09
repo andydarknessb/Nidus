@@ -1,18 +1,20 @@
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { InBody } from './components/InBody';
 import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
-import { dayStartMs, describePage, mealsPageDate, pageDays, pageStart, paging, pagingWindowAround, shownDate, type WallDay } from './lib/calendar-occurrences';
+import { describePage, mealsPageDate } from './lib/calendar-occurrences';
+import { MEAL_PLAN_LIMITS, type WallDay } from './lib/paged-view';
 import { dialogKeys } from './lib/dialog';
-import { focusTitleIfLost } from './lib/focus';
 import { appBehind, holdBackground } from './lib/inert-behind';
-import { mealGrid, nextMeal, nextMealWords, setMeal, type Meal, type MealSlot } from './lib/meals';
-import { householdDay, WEEKDAYS } from './lib/routines';
-import { supabase } from './lib/supabase';
+import { mealGrid, nextMeal, nextMealWords, type Meal, type MealSlot } from './lib/meals';
+import { WEEKDAYS } from './lib/routines';
 import { dayLabel, dayName, SLOT_PICTURES, useMeals } from './lib/use-meals';
 import { useFailureWords } from './lib/use-failure-words';
+import { usePagedView } from './lib/use-paged-view';
 import { useHouseholdDay, useNow } from './lib/wall-hooks';
+import { dayStartMs, householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { couldNotLoad } from './lib/synced-read';
 
 // Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the header's button for the
 // next meal of today. Written by a Household Account or a Device, whichever session `supabase` holds.
@@ -23,30 +25,22 @@ import { useHouseholdDay, useNow } from './lib/wall-hooks';
 // follows as the weeks turn), pulled into the window the calendar pages within and snapped to its
 // Sunday, as the week view does. `onNavigate` opens a week by its Sunday, or by null when it holds
 // today (Today, and paging back onto it), which a Wall left there then follows as the weeks turn.
-export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; date: string | null; onNavigate: (date: string | null) => void }) {
+// `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright turns the plan (docs/specs/0009).
+export function MealsScreen({ timezone, date, onNavigate, portrait = false }: { timezone: string; date: string | null; onNavigate: (date: string | null) => void; portrait?: boolean }) {
   const today = useHouseholdDay(timezone).date;
   // The page is laid out from the start of today, so its days and the mark on today agree.
   const now = new Date(dayStartMs(today, timezone));
-  const anchor = pageStart('week', shownDate(date, today));
-  const days = pageDays('week', anchor, timezone, now);
-  const { previous, next } = paging('week', anchor, pagingWindowAround(today));
+  // Paging may disable or remove the button that was pressed: usePagedView puts focus on the page title instead of losing it, but only when
+  // it was lost, so paging by keyboard stays on the button that was pressed; on arrival it goes to the title, as on the other screens.
+  const { days, previous, next, limit, heading } = usePagedView({
+    view: 'week',
+    date,
+    now,
+    timezone,
+    limits: MEAL_PLAN_LIMITS,
+    takesFocusOnArrival: true,
+  });
   const open = (week: string) => onNavigate(mealsPageDate(week, today));
-  // Paging may disable or remove the button that was pressed: put focus on the page title instead of losing it, but only when it was lost
-  // (focusTitleIfLost), so paging by keyboard stays on the button that was pressed; on arrival it goes to the title, as on the other
-  // screens. It runs on the week the person chose (`date`), never on `anchor`, which also moves by itself at the week's turn while the
-  // page follows this week.
-  const heading = useRef<HTMLHeadingElement>(null);
-  const arrived = useRef(false);
-  useEffect(() => {
-    if (arrived.current) focusTitleIfLost(heading.current);
-    else {
-      arrived.current = true;
-      heading.current?.focus();
-    }
-  }, [date]);
-  // The week's grid is keyed on the anchor, so when it moves by itself (the week turning) the grid is new and focus inside it is gone:
-  // it goes to the title then, and focus that is anywhere else is left alone.
-  useEffect(() => focusTitleIfLost(heading.current), [anchor]);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -65,17 +59,12 @@ export function MealsScreen({ timezone, date, onNavigate }: { timezone: string; 
           {describePage(days)}
         </h2>
       </nav>
-      {/* Always mounted, so a screen reader announces the text when it appears. Meals page within the
-          calendar's window but are not what the mirror keeps, so these say only where the plan ends. */}
+      {/* Always mounted, so a screen reader announces the text when it appears. */}
       <p role="status" className="text-lg empty:hidden">
-        {previous === null
-          ? 'This is as far back as the meal plan goes.'
-          : next === null
-            ? 'This is as far ahead as the meal plan goes.'
-            : ''}
+        {limit}
       </p>
       {/* Keyed on the page so a turned page never shows the last page's Meals, and a failed read says so. */}
-      <MealsGrid key={days[0]!.date} days={days} />
+      <MealsGrid key={days[0]!.date} days={days} portrait={portrait} />
     </div>
   );
 }
@@ -85,89 +74,97 @@ export type Editing = { date: string; slot: MealSlot; heading: string; meal: Mea
 
 // A heading row of days over a row for each slot, each row starting with the slot's picture and name. Each cell is
 // one button, at least 48 px either way, that opens the sheet; a planned Meal is on --everyone and an empty slot is a
-// quiet plus on --muted. The rows share the height the screen has. Until the Meals have been read (and after a first
+// quiet plus on --muted. The rows share the height the screen has. In portrait the grid is turned: the slots across the
+// top, a row for each day, the day's heading first, and the same cells. Until the Meals have been read (and after a first
 // read that failed) the cells are disabled and show nothing, since a cell that looked empty and could be tapped would
 // invite writing over a Meal that is only not read yet.
-function MealsGrid({ days }: { days: WallDay[] }) {
-  const [saves, setSaves] = useState(0);
+function MealsGrid({ days, portrait }: { days: WallDay[]; portrait: boolean }) {
   const [editing, setEditing] = useState<Editing | null>(null);
-  const { meals, failed } = useMeals(days[0]!.date, days[days.length - 1]!.date, saves);
+  const { meals, failed, save } = useMeals(days[0]!.date, days[days.length - 1]!.date);
   const known = meals !== null;
   const rows = mealGrid(meals ?? [], days.map((day) => day.date));
-  const template: CSSProperties = {
-    // The slot column is 7 rem and the heading row 3.875 rem (the weekday's 18 px, 2, the 38 px date and 4 to spare); a
-    // day never narrows past a finger.
-    gridTemplateColumns: `7rem repeat(${days.length}, minmax(3rem, 1fr))`,
-    gridTemplateRows: `3.875rem repeat(${rows.length}, minmax(min-content, 1fr))`,
+  const template: CSSProperties = portrait
+    ? // Turned: the days' column is 6 rem (the heading and the corner's "Loading"), the slots share the width and never narrow past 3 rem,
+      // and the days share the height, each at least as tall as its Meal's words.
+      { gridTemplateColumns: `6rem repeat(${rows.length}, minmax(3rem, 1fr))`, gridTemplateRows: `auto repeat(${days.length}, minmax(min-content, 1fr))` }
+    : {
+        // The slot column is 7 rem (at larger text no more than 112 px or 11 percent of the screen, whichever is more, so the days keep
+        // their room) and the heading row 3.875 rem (the weekday's 18 px, 2, the 38 px date and 4 to spare); a day never narrows past a finger.
+        gridTemplateColumns: `min(7rem, max(112px, 11vw)) repeat(${days.length}, minmax(3rem, 1fr))`,
+        gridTemplateRows: `3.875rem repeat(${rows.length}, minmax(min-content, 1fr))`,
+      };
+  const slotHeading = ({ slot, label }: (typeof rows)[number]) => {
+    const Picture = SLOT_PICTURES[slot];
+    return (
+      <h3 key={slot} className="flex min-w-0 flex-col items-center justify-center gap-1.5 text-[15px] leading-5 font-semibold">
+        <span aria-hidden className="flex size-10 items-center justify-center rounded-full bg-everyone">
+          <Picture className="size-[22px]" />
+        </span>
+        {label}
+      </h3>
+    );
+  };
+  const cell = (row: (typeof rows)[number], index: number) => {
+    const meal = row.cells[index]!;
+    const day = days[index]!;
+    // The sheet's title is drawn short; the cell is heard in full.
+    const heading = `${row.label}, ${dayLabel(day)}`;
+    const heard = `${row.label}, ${dayName(day)}`;
+    return (
+      <Button
+        key={`${day.date} ${row.slot}`}
+        disabled={!known}
+        onClick={() => setEditing({ date: day.date, slot: row.slot, heading, meal })}
+        // Corners of 14 and 10 px inside, as an event pill has; a Meal's words start at the top left and are
+        // clamped to three lines (the whole of them are in the sheet), an empty slot's plus is in the middle.
+        className={`h-auto min-h-12 min-w-0 rounded-[14px] p-[10px] text-left text-[15px] leading-[19px] font-medium whitespace-normal ${meal ? 'items-start justify-start bg-everyone' : 'text-muted-foreground'}`}
+      >
+        {/* The name a screen reader hears: "Dinner, Thursday 1: Tacos", or "Dinner, Thursday 1: nothing planned. Add a meal"; while the Meals are unknown, just "Dinner, Thursday 1". */}
+        <span className="sr-only">{known ? `${heard}: ` : heard}</span>
+        {meal ? (
+          <span dir="auto" className="line-clamp-3 min-w-0 flex-1 text-start wrap-anywhere">{meal.title}</span>
+        ) : (
+          known && (
+            <>
+              <Plus aria-hidden className="size-[22px]" />
+              <span className="sr-only">nothing planned. Add a meal</span>
+            </>
+          )
+        )}
+      </Button>
+    );
   };
 
   return (
     <section aria-label="Meal plan" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-card">
       {failed && !known && (
         <p role="alert" className="p-4 text-xl">
-          Could not load meals. Check your connection.
+          {couldNotLoad('meals')}
         </p>
       )}
       {/* The padding is on the scrolling grid, so a focus ring has room inside what it clips. */}
-      <div style={template} className="grid min-h-0 flex-1 gap-2 overflow-y-auto p-2">
+      <div style={template} className="grid min-h-0 flex-1 gap-[8px] overflow-y-auto p-2">
         {/* The first read's own line, in the corner so the grid does not shift when it lands. */}
         <div className="flex items-center px-3 text-sm text-muted-foreground">{!known && !failed ? 'Loading' : null}</div>
-        {days.map((day) => (
-          <DayHeading key={day.date} day={day} />
-        ))}
-        {rows.map((row) => {
-          const Picture = SLOT_PICTURES[row.slot];
-          return (
-            <Fragment key={row.slot}>
-              <h3 className="flex min-w-0 flex-col items-center justify-center gap-1.5 text-[15px] leading-5 font-semibold">
-                <span aria-hidden className="flex size-10 items-center justify-center rounded-full bg-everyone">
-                  <Picture className="size-[22px]" />
-                </span>
-                {row.label}
-              </h3>
-              {row.cells.map((meal, index) => {
-                const day = days[index]!;
-                // The sheet's title is drawn short; the cell is heard in full.
-                const heading = `${row.label}, ${dayLabel(day)}`;
-                const heard = `${row.label}, ${dayName(day)}`;
-                return (
-                  <Button
-                    key={day.date}
-                    disabled={!known}
-                    onClick={() => setEditing({ date: day.date, slot: row.slot, heading, meal })}
-                    // Corners of 14 and 10 px inside, as an event pill has; a Meal's words start at the top left and are
-                    // clamped to three lines (the whole of them are in the sheet), an empty slot's plus is in the middle.
-                    className={`h-auto min-h-12 min-w-0 rounded-[14px] p-2.5 text-left text-[15px] leading-[19px] font-medium whitespace-normal ${meal ? 'items-start justify-start bg-everyone' : 'text-muted-foreground'}`}
-                  >
-                    {/* The name a screen reader hears: "Dinner, Thursday 1: Tacos", or "Dinner, Thursday 1: nothing planned. Add a meal"; while the Meals are unknown, just "Dinner, Thursday 1". */}
-                    <span className="sr-only">{known ? `${heard}: ` : heard}</span>
-                    {meal ? (
-                      <span dir="auto" className="line-clamp-3 min-w-0 flex-1 text-start wrap-anywhere">{meal.title}</span>
-                    ) : (
-                      known && (
-                        <>
-                          <Plus aria-hidden className="size-[22px]" />
-                          <span className="sr-only">nothing planned. Add a meal</span>
-                        </>
-                      )
-                    )}
-                  </Button>
-                );
-              })}
-            </Fragment>
-          );
-        })}
+        {/* Both forms are one flat list of keyed headings and cells, so turning the tablet moves them and keeps each cell. */}
+        {portrait
+          ? [
+              ...rows.map(slotHeading),
+              ...days.flatMap((day, index) => [<DayHeading key={day.date} day={day} />, ...rows.map((row) => cell(row, index))]),
+            ]
+          : [
+              ...days.map((day) => <DayHeading key={day.date} day={day} />),
+              ...rows.flatMap((row) => [slotHeading(row), ...row.cells.map((_, index) => cell(row, index))]),
+            ]}
       </div>
       {editing && (
         // Drawn in the body, outside the page it holds inert while it is open (InBody).
         <InBody>
           <MealSheet
             editing={editing}
+            save={save}
             onClose={() => setEditing(null)}
-            onSaved={() => {
-              setEditing(null);
-              setSaves((count) => count + 1);
-            }}
+            onSaved={() => setEditing(null)}
           />
         </InBody>
       )}
@@ -187,7 +184,7 @@ function DayHeading({ day }: { day: WallDay }) {
       aria-label={`${dayName(day)}${day.isToday ? ', today' : ''}`}
       className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[14px] font-normal ${day.isToday ? 'bg-muted' : ''}`}
     >
-      <span className={`text-sm leading-[18px] ${day.isToday ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{day.isToday ? 'Today' : short}</span>
+      <span className={`text-sm leading-[1.2857] ${day.isToday ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{day.isToday ? 'Today' : short}</span>
       <span className={`flex h-[38px] items-center justify-center font-display leading-none ${day.isToday ? 'size-[38px] rounded-full bg-primary text-[21px] text-primary-foreground' : 'text-[22px]'}`}>{date}</span>
     </h3>
   );
@@ -197,7 +194,7 @@ function DayHeading({ day }: { day: WallDay }) {
 // Focus moves onto the field on open, so the tablet's keyboard comes up at once, and back to the cell on close;
 // Close, Cancel and Escape close it without writing, and so does a tap on the scrim while the field still holds what
 // it opened with. A blank field is a clear.
-export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onSaved: () => void; onClose: () => void }) {
+export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editing; save: (date: string, slot: MealSlot, title: string) => Promise<void>; onSaved: () => void; onClose: () => void }) {
   const dialog = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing.meal?.title ?? '');
@@ -239,7 +236,7 @@ export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onS
     setProblem('');
     setBusy(true);
     try {
-      await setMeal(supabase, editing.date, editing.slot, next);
+      await save(editing.date, editing.slot, next);
       onSaved();
     } catch (error) {
       setProblem(failureWords(error));
@@ -254,7 +251,7 @@ export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onS
 
   return (
     <div
-      className={`fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-scrim p-4 min-[768px]:items-center min-[768px]:p-8 ${PHONE_SCRIM}`}
+      className={`fixed inset-0 z-20 flex items-center justify-center overflow-y-auto bg-scrim p-8 ${PHONE_SCRIM}`}
       // A press on the scrim must not take focus off the field: the browser would hand it to the page behind, and
       // Escape would then reach nothing.
       onMouseDown={(event) => {
@@ -273,7 +270,7 @@ export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onS
         noValidate
         onSubmit={submit}
         onKeyDown={(event) => dialogKeys(event, close)}
-        className={`flex w-full max-w-lg flex-col gap-[18px] rounded-[28px] bg-card p-6 outline-none ${PHONE_FRAME} max-[768px]:min-h-0`}
+        className={`flex w-full max-w-lg flex-col gap-[18px] rounded-[28px] bg-card p-6 outline-none ${PHONE_FRAME} phone:min-h-0`}
       >
         <SheetHandle />
         <div className="flex h-12 items-center justify-between gap-4">
@@ -286,7 +283,7 @@ export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onS
         </div>
         {/* On a phone the field and what is said of it scroll between the title row and the buttons; on the Wall the box is not there
             (display: contents), and the sheet is as it was. */}
-        <div className="flex min-h-0 flex-col gap-[18px] max-[768px]:overflow-y-auto min-[768px]:contents">
+        <div className="contents phone:flex phone:min-h-0 phone:flex-col phone:gap-[18px] phone:overflow-y-auto">
           <label className="flex flex-col gap-2">
             <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
             <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
@@ -295,7 +292,7 @@ export function MealSheet({ editing, onSaved, onClose }: { editing: Editing; onS
             {problem}
           </p>
         </div>
-        <div className="flex max-[768px]:flex-none flex-wrap items-center justify-end gap-3">
+        <div className="flex phone:flex-none flex-wrap items-center justify-end gap-3">
           {editing.meal && (
             <Button className="mr-auto h-14 px-6 text-[17px]" disabled={busy} onClick={() => void write('')}>
               Clear
@@ -351,7 +348,7 @@ function NextMealButton({ timezone, onOpen }: { timezone: string; onOpen: () => 
         <Picture className="size-6" />
       </span>
       <span className="flex min-w-0 flex-col text-left">
-        <span className="truncate text-sm leading-[18px] text-muted-foreground">{words}</span>
+        <span className="truncate text-sm leading-[1.2857] text-muted-foreground">{words}</span>
         <span dir="auto" className="truncate font-display text-[22px] leading-7">{next.title}</span>
       </span>
       <ChevronRight aria-hidden className="size-[22px] text-muted-foreground" strokeWidth={2.2} />

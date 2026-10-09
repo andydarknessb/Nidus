@@ -2,7 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { CELL_HEAD_REM, CELL_LINE_REM, DayCell } from '../src/components/MonthCell';
-import { linesPerCell, monthWeeks, type Occurrence } from '../src/lib/calendar-occurrences';
+import { linesPerCell, type Occurrence } from '../src/lib/calendar-occurrences';
+import { monthWeeks } from '../src/lib/paged-view';
 import { personStyle, TOKENS, type Mode } from '../src/lib/look';
 import { contrastRatio, type Profile } from '../src/lib/profiles';
 
@@ -215,7 +216,7 @@ describe('an event line', () => {
   it('stays one line, cut short with an ellipsis, and can never push its cell wider', () => {
     const title = 'x'.repeat(200);
     const html = cell('2026-10-01', { occurrences: [native(title, ['p-ava'])] });
-    expect(spanWith(html, title)).toEqual(expect.arrayContaining(['truncate', 'min-w-0']));
+    expect(spanWith(html, title)).toEqual(expect.arrayContaining(['truncate', 'min-w-[1.25em]']));
     expect(classesOf(lineTag(html))).toEqual(expect.arrayContaining(['flex', 'min-w-0', 'overflow-hidden', 'h-5.5']));
     expect(html).not.toContain('line-clamp');
     expect(html).not.toContain('whitespace-normal');
@@ -302,7 +303,20 @@ describe('who an event line is for, at its end', () => {
       const end = /<span class="([^"]*\bml-auto\b[^"]*)">/.exec(html)?.[1]?.split(' ') ?? [];
       expect(end, ids.join()).toEqual(expect.arrayContaining(['ml-auto', 'shrink-0']));
     }
-    expect(spanWith(lineOf(['p-ava']), 'Standup')).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
+    expect(spanWith(lineOf(['p-ava']), 'Standup')).toEqual(expect.arrayContaining(['min-w-[1.25em]', 'truncate']));
+  });
+
+  it('hides the pin in a cell under 7 rem wide, cuts the end of the time when it must, and never a disc', () => {
+    const html = cell('2026-10-01', { occurrences: [native('Plumber coming', ['p-ava', 'p-cory'])] });
+    expect(classesOf(/<button[^>]*>/.exec(html)?.[0] ?? '')).toContain('@container');
+    expect(classesOf(lineTag(html))).toContain('@max-[7rem]:gap-0.5');
+    expect(spanWith(html, '9 AM')).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
+    expect(spanWith(html, '9 AM')).not.toContain('shrink-0');
+    // The title takes no part in the shrinking, so the time is not cut while the title can still give way.
+    // It keeps 1.25 em, room for its ellipsis, so a cut title always shows its ellipsis.
+    expect(spanWith(html, 'Plumber coming')).toEqual(expect.arrayContaining(['min-w-[1.25em]', 'max-w-max', 'flex-1', 'truncate']));
+    expect(/<svg[^>]*data-testid="native-mark"[^>]*>/.exec(html)?.[0]).toMatch(/class="[^"]*\bshrink-0\b[^"]*@max-\[7rem\]:hidden/);
+    expect(/<span class="([^"]*\bml-auto\b[^"]*)">/.exec(html)?.[1]).toContain('shrink-0');
   });
 
   it('keeps the line 22 px tall, with the pin and the time before the title', () => {
@@ -377,5 +391,28 @@ describe("a cell's lines at the Wall's size", () => {
 
   it('is 2 lines for a month of 5 weeks on the first and last pages, with the line of words above the grid', () => {
     expect(lines(463, 5)).toBe(2);
+  });
+});
+
+// A cell the room leaves no line for (lines 0, isTightCell, at larger text, issue #69): its date and, beside it, how many events the day holds as
+// a number; no line, no "+N more" and no words for the count, which its name says. A day with none says nothing but its date.
+describe('a day cell too short for a line under its date', () => {
+  const three = [event('Piano', [CORY.id]), event('Swim', [SAM.id]), event('Soccer', [AVA.id])];
+
+  it('shows the date and the count of the day beside it, and no line', () => {
+    const html = cell('2026-10-01', { occurrences: three, lines: 0 });
+    expect(count(html, 'data-testid="event-line"')).toBe(0);
+    expect(html).not.toContain('more');
+    expect(html).toMatch(/<span aria-hidden="true" data-testid="cell-count" class="[^"]*">3<\/span>/);
+    expect(nameOf(html)).toContain('3 events');
+  });
+
+  it('says nothing but the date for a day with no events, or one not read yet', () => {
+    expect(cell('2026-10-02', { occurrences: [], lines: 0 })).not.toContain('cell-count');
+    expect(cell('2026-10-02', { occurrences: null, lines: 0 })).not.toContain('cell-count');
+  });
+
+  it('is as it was with a line or more: no count beside the date', () => {
+    expect(cell('2026-10-01', { occurrences: three, lines: 3 })).not.toContain('cell-count');
   });
 });

@@ -6,7 +6,7 @@ import { EmptyWords } from './EmptyWords';
 // The tablet's shell and the phone's screens (src/PhoneWall.tsx) draw the same one.
 export function BeforeHousehold({ label, failed, words }: { label: string; failed: boolean; words: string }) {
   return (
-    <section aria-label={label} className="rounded-3xl bg-card max-[768px]:rounded-[22px]">
+    <section aria-label={label} className="rounded-3xl bg-card phone:rounded-[22px]">
       {failed ? (
         <p role="alert" className="p-4 text-xl">
           {words}

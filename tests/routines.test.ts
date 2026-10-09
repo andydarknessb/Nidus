@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_PALETTE, createProfile, deleteProfile, movedIds, type Profile } from '../src/lib/profiles';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { movedIds } from '../src/lib/ordering';
+import { PROFILE_PALETTE, createProfile, deleteProfile, type Profile } from '../src/lib/profiles';
 import {
   ROUTINE_TABLES,
   TIME_OF_DAY_GROUPS,
@@ -12,7 +13,6 @@ import {
   finishedProfiles,
   groupByProfile,
   groupByTimeOfDay,
-  householdDay,
   isScheduledOn,
   loadCompletions,
   loadRoutines,
@@ -23,7 +23,6 @@ import {
   routineProgress,
   showsTimeOfDayHeadings,
   tapFinishesProfile,
-  tickOptimistically,
   todaysRoutines,
   uncompleteRoutine,
   updateRoutine,
@@ -43,12 +42,13 @@ import {
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
+import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { startSyncedRead } from '../src/lib/synced-read';
 
 const red = PROFILE_PALETTE[0].hex;
 const blue = PROFILE_PALETTE[7].hex;
 
 const MON = 1;
-const TUE = 2;
 const WED = 3;
 const SAT = 6;
 const SUN = 0;
@@ -90,40 +90,6 @@ describe('weekday schedule', () => {
     expect(isScheduledOn(weekdaysOnly, MON)).toBe(true);
     expect(isScheduledOn(weekdaysOnly, SAT)).toBe(false);
     expect(isScheduledOn(weekdaysOnly, SUN)).toBe(false);
-  });
-});
-
-describe('the Household day', () => {
-  it('is the date and weekday in the Household Timezone, not the machine\'s', () => {
-    // 03:30 UTC on Tuesday the 29th is still Monday evening in Chicago (CDT, UTC-5).
-    const instant = new Date('2026-09-29T03:30:00Z');
-    expect(householdDay('America/Chicago', instant)).toEqual({ date: '2026-09-28', weekday: MON });
-    expect(householdDay('UTC', instant)).toEqual({ date: '2026-09-29', weekday: TUE });
-    // Auckland is already Wednesday the 30th at 12:00 UTC (NZDT, UTC+13).
-    expect(householdDay('Pacific/Auckland', new Date('2026-09-29T12:00:00Z'))).toEqual({ date: '2026-09-30', weekday: WED });
-  });
-
-  it('rolls over exactly at Household midnight', () => {
-    expect(householdDay('America/Chicago', new Date('2026-09-29T04:59:59Z'))).toEqual({ date: '2026-09-28', weekday: MON });
-    expect(householdDay('America/Chicago', new Date('2026-09-29T05:00:00Z'))).toEqual({ date: '2026-09-29', weekday: TUE });
-  });
-
-  it('follows daylight saving changes', () => {
-    // Chicago falls back on 2026-11-01: 05:30Z is 00:30 CDT, 06:30Z is 00:30 CST, both the 1st.
-    expect(householdDay('America/Chicago', new Date('2026-11-01T05:30:00Z')).date).toBe('2026-11-01');
-    expect(householdDay('America/Chicago', new Date('2026-11-01T06:30:00Z')).date).toBe('2026-11-01');
-    expect(householdDay('America/Chicago', new Date('2026-11-02T05:59:00Z')).date).toBe('2026-11-01');
-    expect(householdDay('America/Chicago', new Date('2026-11-02T06:00:00Z')).date).toBe('2026-11-02');
-  });
-
-  it('steps by calendar days, where stepping by 24 hours repeats a date on a 25 hour day', () => {
-    expect(addDays('2026-10-01', -1)).toBe('2026-09-30');
-    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
-    // 23:30 CST, the last hour of the 25 hour day: 24 hours back is still the 1st, one calendar day back is the 31st.
-    const lastHour = new Date('2026-11-02T05:30:00Z');
-    expect(householdDay('America/Chicago', lastHour).date).toBe('2026-11-01');
-    expect(householdDay('America/Chicago', new Date(lastHour.getTime() - 24 * 60 * 60 * 1000)).date).toBe('2026-11-01');
-    expect(addDays('2026-11-01', -1)).toBe('2026-10-31');
   });
 });
 
@@ -284,48 +250,6 @@ describe('moving a Routine inside its time of day group', () => {
         expect(movedIdsInGroup(plain, id, offset)).toEqual(movedIds(['x', 'y', 'z'], id, offset));
       }
     }
-  });
-});
-
-describe('optimistic tick', () => {
-  function screen(initial: string[]) {
-    let checked = new Set(initial);
-    return {
-      publish: (update: (ids: Set<string>) => Set<string>) => {
-        checked = update(checked);
-      },
-      get: () => [...checked].sort(),
-    };
-  }
-
-  it('shows the tick before the server answers and keeps it when the write lands', async () => {
-    const view = screen([]);
-    let shownWhileWriting: string[] = [];
-    const stuck = await tickOptimistically(view.publish, 'r1', true, async () => {
-      shownWhileWriting = view.get();
-    });
-    expect(shownWhileWriting).toEqual(['r1']);
-    expect(stuck).toBe(true);
-    expect(view.get()).toEqual(['r1']);
-  });
-
-  it('rolls a failed tick back, leaving other changes alone', async () => {
-    const view = screen(['r2']);
-    const stuck = await tickOptimistically(view.publish, 'r1', true, async () => {
-      view.publish((ids) => new Set([...ids, 'r3']));
-      throw new Error('offline');
-    });
-    expect(stuck).toBe(false);
-    expect(view.get()).toEqual(['r2', 'r3']);
-  });
-
-  it('rolls a failed untick back to checked', async () => {
-    const view = screen(['r1']);
-    const stuck = await tickOptimistically(view.publish, 'r1', false, async () => {
-      throw new Error('offline');
-    });
-    expect(stuck).toBe(false);
-    expect(view.get()).toEqual(['r1']);
   });
 });
 
@@ -866,6 +790,31 @@ describe('routines', () => {
 
     await uncompleteRoutine(wall, pills.id, today);
     expect(await loadCompletions(wall, today)).toEqual([]);
+  });
+
+  it('a Device ticking through the synced read shows its tick and a completion another screen made meanwhile', async () => {
+    const { arranged, phone, profile, householdId } = await household('The Andersons');
+    const pills = await createRoutine(phone, householdId, profile.id, { title: 'Vitamins', days_of_week: everyDay }, 0);
+    const walk = await createRoutine(phone, householdId, profile.id, { title: 'Walk', days_of_week: everyDay }, 1);
+    const wall = await device(arranged);
+    const today = householdDay(arranged.household.timezone).date;
+    const shown: (string[] | null)[] = [];
+    const read = startSyncedRead<string[]>({ load: () => loadCompletions(wall, today), onChange: (state) => shown.push(state.data) });
+    try {
+      await vi.waitFor(() => expect(shown.at(-1)).toEqual([]));
+      // The phone ticks the walk while the wall's own tick is in flight; the read after the wall's tick shows both.
+      await read.write(
+        async () => {
+          await completeRoutine(phone, walk.id, today);
+          await completeRoutine(wall, pills.id, today);
+        },
+        (done) => [...done, pills.id],
+      );
+      expect(shown).toContainEqual([pills.id]);
+      await vi.waitFor(() => expect([...(shown.at(-1) ?? [])].sort()).toEqual([pills.id, walk.id].sort()));
+    } finally {
+      read.stop();
+    }
   });
 
   it("a Household Account ticks a Routine too", async () => {

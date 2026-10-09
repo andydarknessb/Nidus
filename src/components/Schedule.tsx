@@ -1,13 +1,16 @@
 import { cn } from 'cn';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { canOpenDay, describeCell, pagingWindow, type Occurrence, type WallDay } from '../lib/calendar-occurrences';
-import { focusElement, focusEvent } from '../lib/focus';
+import { describeCell, type Occurrence } from '../lib/calendar-occurrences';
+import { canOpenDay, pagingWindow, type PagingWindow, type WallDay } from '../lib/paged-view';
+import { focusElement } from '../lib/focus';
 import type { Profile } from '../lib/profiles';
 import { dayHeadingName, headingLabel, pillPeople, pillsToShow, scheduleColumns, type ScheduleColumn } from '../lib/schedule';
-import { useOccurrences } from '../lib/wall-hooks';
+import { useDayEvents } from '../lib/wall-hooks';
+import { useOverflow } from '../lib/use-overflow';
 import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
 import { EventPill } from './EventPill';
 import { EventSheets, type OpenEvent } from './EventSheets';
+import { BODY_CLEARANCE, OverflowButton } from './OverflowButton';
 import { Button } from './ui/button';
 import { DayWeather } from './Weather';
 
@@ -27,7 +30,7 @@ function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | n
   const date = Number(day.date.slice(8));
   const words = (
     <>
-      <span className={cn('text-sm leading-[18px]', day.isToday ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground')}>{headingLabel(day)}</span>
+      <span className={cn('text-sm leading-[1.2857]', day.isToday ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground')}>{headingLabel(day)}</span>
       {day.isToday ? (
         <span className="grid size-[38px] place-items-center rounded-full bg-primary font-display text-[21px] leading-none text-primary-foreground">{date}</span>
       ) : (
@@ -54,6 +57,21 @@ function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | n
         </span>
       )}
     </h2>
+  );
+}
+
+// A day's heading and, while the Household has a place (`room`), a line for its forecast under it, empty for a day it does not cover,
+// so a column is as tall before the forecast arrives as after. It is the head of a column and of a row.
+function DayHeading({ day, onOpenDay, weather, room, className }: { day: WallDay; onOpenDay: ((date: string) => void) | null; weather: ForecastDay | undefined; room: boolean; className: string }) {
+  return (
+    <div className={className}>
+      <ColumnHeading day={day} onOpen={onOpenDay && (() => onOpenDay(day.date))} />
+      {room && (
+        <div className="flex h-[18px] items-center justify-center">
+          <DayWeather day={weather} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -119,15 +137,7 @@ function DayColumn({
 
   return (
     <section aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`} className={cn('flex min-h-0 min-w-0 flex-col gap-2 rounded-[18px] p-1.5', day.isToday && 'bg-muted')}>
-      <div className="flex-none">
-        <ColumnHeading day={day} onOpen={onOpenDay && (() => onOpenDay(day.date))} />
-        {/* A line for the forecast while the Household has a place, empty for a day it does not cover, so a column is as tall before the forecast arrives as after. */}
-        {room && (
-          <div className="flex h-[18px] items-center justify-center">
-            <DayWeather day={weather} />
-          </div>
-        )}
-      </div>
+      <DayHeading day={day} onOpenDay={onOpenDay} weather={weather} room={room} className="flex-none" />
       <div ref={list} className="relative flex min-h-0 flex-1 flex-col gap-2">
         {pills.map((pill, index) => (
           <EventPill
@@ -152,10 +162,54 @@ function DayColumn({
   );
 }
 
+// Week in portrait (docs/specs/0009): a row for each day, one under another 12 px apart, in the card the columns fill. A row is the
+// day's heading in a 9.6 rem column, then its pills, 220 px wide and 8 px apart, wrapping, in the order of the column. Every pill is
+// drawn, so a row is as tall as its pills; an empty day says nothing. When the rows are taller than the card it scrolls as a column,
+// with the shared "More" foot (OverflowButton), named for the week.
+export function DayRows({
+  columns,
+  profiles,
+  pageWindow,
+  onOpenDay,
+  onOpen,
+  forecast,
+  weatherOn,
+}: {
+  columns: ScheduleColumn[];
+  profiles: readonly Profile[];
+  pageWindow: PagingWindow;
+  onOpenDay: (date: string) => void;
+  onOpen: (occurrence: Occurrence, date: string) => void;
+  forecast: Forecast | null;
+  weatherOn: boolean;
+}) {
+  const more = useOverflow('y', 'over');
+  return (
+    <div ref={more.scroller} className="min-h-0 flex-1 overflow-y-auto">
+      <div className={cn('flex flex-col gap-3', BODY_CLEARANCE)}>
+        {columns.map(({ day, pills }) => (
+          <section key={day.date} aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`} className={cn('flex flex-none gap-2 rounded-[18px] p-1.5', day.isToday && 'bg-muted')}>
+            <DayHeading day={day} onOpenDay={canOpenDay(day.date, pageWindow) ? onOpenDay : null} weather={forecastDay(forecast, day.date)} room={weatherOn} className="w-[9.6rem] flex-none" />
+            <div className="flex min-w-0 flex-1 flex-wrap content-start gap-2">
+              {pills.map((pill) => (
+                <div key={pill.occurrence.id} className="flex w-[220px] flex-none">
+                  <EventPill pill={pill} day={day} people={pillPeople(pill.occurrence, profiles)} onOpen={(occurrence) => onOpen(occurrence, day.date)} />
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+      <OverflowButton control={more} of="the week" />
+    </div>
+  );
+}
+
 // The calendar of Home and Week: a column for each of `days`, reading what the Profile filter lets through. `version`
 // changes when the screen around the calendar has written an event, so it reads again at once; `forecast` is the
 // Household's weather and `weatherOn` says it has a place. `onOpenDay` opens a day from its heading; a day beyond the
-// paging window is only a heading. `profiles` colour the pills: null until they are read, and the pills wait for them.
+// paging window is only a heading. `profiles` colour the pills: null until they are read, and the pills wait for them. `rows` draws
+// the days as rows (DayRows), not columns.
 export function Schedule({
   timezone,
   now,
@@ -165,6 +219,7 @@ export function Schedule({
   forecast,
   weatherOn,
   profiles,
+  rows = false,
 }: {
   timezone: string;
   now: Date;
@@ -174,51 +229,52 @@ export function Schedule({
   forecast: Forecast | null;
   weatherOn: boolean;
   profiles: Profile[] | null;
+  rows?: boolean;
 }) {
   const [open, setOpen] = useState<OpenEvent>(null);
-  // An edit made here counts into `version`, so it reads again like an event added around the calendar.
-  const [edits, setEdits] = useState(0);
-  const { occurrences, failed } = useOccurrences(days, version + edits);
+  const events = useDayEvents(days, version, profiles);
   const pageWindow = pagingWindow(timezone, now);
-  const columns = scheduleColumns(profiles === null ? [] : (occurrences ?? []), days, now);
+  const columns = scheduleColumns(events.occurrences ?? [], days, now);
   // The day of the column the event that a sheet is open for was tapped in: where focus goes if that event is not on the screen any more.
   const openedOn = useRef(days[0]!.date);
+  const openEvent = (occurrence: Occurrence, date: string) => {
+    openedOn.current = date;
+    setOpen({ sheet: 'details', occurrence });
+  };
 
   return (
     <section aria-label="Calendar" className="flex min-h-0 flex-1 flex-col rounded-3xl bg-card p-2">
-      {failed && occurrences === null && (
+      {events.problem && (
         <p role="alert" className="p-4 text-xl">
-          Could not load the calendar. Check your connection.
+          {events.problem}
         </p>
       )}
-      <div style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-x-1.5">
-        {columns.map((column) => (
-          <DayColumn
-            key={column.day.date}
-            column={column}
-            profiles={profiles ?? []}
-            onOpenDay={canOpenDay(column.day.date, pageWindow) ? onOpenDay : null}
-            onOpen={(occurrence) => {
-              openedOn.current = column.day.date;
-              setOpen({ sheet: 'details', occurrence });
-            }}
-            weather={forecastDay(forecast, column.day.date)}
-            room={weatherOn}
-          />
-        ))}
-      </div>
+      {rows ? (
+        <DayRows columns={columns} profiles={profiles ?? []} pageWindow={pageWindow} onOpenDay={onOpenDay} onOpen={openEvent} forecast={forecast} weatherOn={weatherOn} />
+      ) : (
+        <div style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-x-1.5">
+          {columns.map((column) => (
+            <DayColumn
+              key={column.day.date}
+              column={column}
+              profiles={profiles ?? []}
+              onOpenDay={canOpenDay(column.day.date, pageWindow) ? onOpenDay : null}
+              onOpen={(occurrence) => openEvent(occurrence, column.day.date)}
+              weather={forecastDay(forecast, column.day.date)}
+              room={weatherOn}
+            />
+          ))}
+        </div>
+      )}
       <EventSheets
         open={open}
         onChange={setOpen}
         timezone={timezone}
         date={days[0]!.date}
         profiles={profiles ?? []}
-        occurrences={occurrences}
-        onEdited={() => setEdits((count) => count + 1)}
-        // After an event is deleted from its sheet, or moved by an edit: to its pill if it is still in a column, else the heading of its day.
-        returnFocus={(occurrence) => {
-          if (!focusEvent(occurrence.id)) focusElement(document.querySelector<HTMLElement>(`[data-day="${openedOn.current}"]`));
-        }}
+        events={events}
+        // After an event is deleted from its sheet, or moved by an edit, and is in no column: the heading of its day.
+        focusPlace={() => focusElement(document.querySelector<HTMLElement>(`[data-day="${openedOn.current}"]`))}
       />
     </section>
   );

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { ArrowDown, ArrowUp, ChevronRight, List, Pin, Plus } from 'lucide-react';
+import { movedIds, nextSortOrder } from './lib/ordering';
 import { supabase } from './lib/supabase';
 import {
   createList,
@@ -8,10 +9,10 @@ import {
   HOME_HOLD_MS,
   homeRows,
   homeWindow,
+  leftToGet,
+  listChipName,
   loadLists,
   loadPinnedListId,
-  movedIds,
-  nextSortOrder,
   pinnedFirst,
   renameList,
   reorderLists,
@@ -20,18 +21,20 @@ import {
   type ListItem,
   type SharedList,
 } from './lib/shared-lists';
+import { rootFontSize } from './lib/home-layout';
 import type { Household } from './lib/household';
-import { useRefetchOn } from './lib/change-feed';
 import { focusElement } from './lib/focus';
 import { useStatusLine } from './lib/status-line';
+import { useCardWrite } from './lib/use-card-write';
 import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
 import { useOverflow } from './lib/use-overflow';
 import { unnamed } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
-import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
+import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, Tick } from './components/people';
 import { Problem } from './components/phone';
 import { Button } from './components/ui/button';
+import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
 // ---- The wall ------------------------------------------------------------------------
 
@@ -113,7 +116,7 @@ export function AddRow({ listName, size = 'wall', onAdd }: { listName: string; s
 // The mark on the Pinned List, on the Wall's card and on the phone's.
 export function PinnedMark() {
   return (
-    <p className="flex h-8 shrink-0 items-center gap-2 self-start rounded-full bg-muted px-3 text-sm text-muted-foreground">
+    <p className="flex min-h-8 shrink-0 items-center gap-2 self-start rounded-full bg-muted px-3 py-0.5 text-sm text-muted-foreground">
       <Pin aria-hidden className="size-4" />
       On the home screen
     </p>
@@ -125,26 +128,28 @@ export function PinnedMark() {
 // One Shared List as a card: its picture, name and how many items are left to get, whether it is the Pinned List, the field
 // that adds an item, then its items, which scroll inside the card when the card is shorter than the list, with a "More" button
 // at their foot that says so (OverflowButton). A card is as tall as its items, up to the height of the screen. Items are crossed
-// off here and cleared; reordering is for the phone.
-function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
+// off here and cleared; reordering is for the phone. In portrait (docs/specs/0009) it is its natural height, every item, with no foot of
+// its own: the screen scrolls, and its title wraps (up to three lines cost nothing) where a landscape card's is cut with an ellipsis.
+export function ListCard({ list, pinned, portrait }: { list: SharedList; pinned: boolean; portrait: boolean }) {
   const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
-  const left = withoutCrossed(items).length;
-  const crossed = items.length - left;
+  // The phone's rule: no count until a read or write has landed, and none after one fails (never "0 to get" from items not read).
+  const left = leftToGet(loaded, problem, items);
+  const crossed = items.length - withoutCrossed(items).length;
   const rows = useRef<HTMLUListElement>(null);
   // Whether the items hold more than the card shows. The button is the items' last child, stuck to their foot.
   const more = useOverflow('y', 'over');
 
   return (
-    <section aria-label={loaded ? `${list.name}, ${left} left` : list.name} className="flex max-h-full w-(--card-w) shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3">
-      <div className="flex h-13 shrink-0 items-center gap-3">
+    <section aria-label={listChipName(list.name, left)} className={`flex ${portrait ? '' : 'max-h-full '}${portrait ? 'w-auto' : 'w-(--card-w)'} shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3`}>
+      <div className="flex min-h-13 shrink-0 items-center gap-3">
         {/* One picture for every list: there is no picture on a Shared List to choose. */}
         <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
           <List className="size-[22px]" />
         </span>
-        <h3 id={titleId(list.id)} tabIndex={-1} className="min-w-0 flex-1 truncate font-display text-2xl leading-[30px]">
+        <h3 id={titleId(list.id)} tabIndex={-1} className={`min-w-0 flex-1 ${portrait ? 'break-words' : 'truncate'} font-display text-2xl leading-[30px]`}>
           {list.name}
         </h3>
-        {loaded && <span className="shrink-0 text-[15px] text-muted-foreground">{left} to get</span>}
+        {left !== null && <span className="shrink-0 text-[15px] text-muted-foreground">{left} to get</span>}
       </div>
       {pinned && <PinnedMark />}
       <AddRow
@@ -166,7 +171,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
       {loaded && items.length === 0 && <EmptyWords className="shrink-0">Nothing on this list.</EmptyWords>}
       {items.length > 0 && (
         // At rest an item may sit partly under the "More" button at their foot; one that takes the focus, or is added, is scrolled clear of it.
-        <div ref={more.scroller} className={`min-h-0 overflow-y-auto ${FOOT_CLEARANCE}`}>
+        <div ref={portrait ? undefined : more.scroller} className={portrait ? undefined : `min-h-0 overflow-y-auto ${FOOT_CLEARANCE}`}>
           <ul ref={rows} className="flex flex-col gap-2">
             {items.map((item) => (
               <li key={item.id} className="shrink-0">
@@ -174,7 +179,7 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
               </li>
             ))}
           </ul>
-          <OverflowButton control={more} of={list.name} />
+          {!portrait && <OverflowButton control={more} of={list.name} />}
         </div>
       )}
       {/* What did not save is said at the card's foot, where "Clear crossed off" sits, and never above the rows: a line over them would
@@ -205,42 +210,57 @@ function ListCard({ list, pinned }: { list: SharedList; pinned: boolean }) {
 // The Wall's Lists screen: every Shared List as a card, the Pinned List first. Three cards fill the screen's width. With more,
 // the fourth shows in part and the row scrolls sideways, and the heading row holds a "More lists" button that says so, so a list
 // is never left off the screen with no sign of it; each card still scrolls its own items up and down.
-export function ListsScreen() {
+// `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). A card is then never
+// under 17 rem, as at larger text, so the title of a list is not left with 75 px of a 227 px card. The cards then sit in a grid, as many to a row
+// as fit at 17 rem, each its row-mates' width (and with fewer cards than fit, the cards share the row), 16 apart and each its natural height, and the screen scrolls as one column with the shared "More"
+// foot; there is no sideways "More".
+export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
   const { read, failed } = useLists();
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
-  // The row of cards, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row.
-  const row = useOverflow('x');
+  // The row of cards, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row;
+  // in portrait the box is the screen's column and the button is its foot.
+  const row = useOverflow(portrait ? 'y' : 'x', portrait ? 'over' : undefined);
   // Focus goes to the screen's title on arrival, as on the Routines chart and the calendar pages, rather than falling to the page when
   // the link that opened this (Home's list card) goes with the screen it was on.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
 
+  // Three cards fill the width, or 3.2 with more; in landscape, never under 17 rem from larger text (as master drew it). Portrait is a grid.
+  const cardSize =
+    cards.length > 3
+      ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%,calc((1rem_-_16px)*1000)))]'
+      : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]';
+  const shown = cards.map((list) => <ListCard key={list.id} list={list} pinned={list.id === read?.pinnedId} portrait={portrait} />);
+
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <div className="flex h-12 shrink-0 items-center justify-between gap-4">
+      <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h2 ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
           Lists
         </h2>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <p className="text-[15px] text-muted-foreground">The owner adds lists in Settings.</p>
           {/* The heading row is 48 px, and the button is the row's height. */}
-          <OverflowButton control={row} of="lists" className="h-12" />
+          {!portrait && <OverflowButton control={row} of="lists" className="h-12" />}
         </div>
       </div>
       {failed && read === null && (
         <p role="alert" className="text-xl">
-          Could not load lists. Check your connection.
+          {couldNotLoad('lists')}
         </p>
       )}
       {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
-      <div
-        ref={row.scroller}
-        className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cards.length > 3 ? '[--card-w:calc((100%_-_3rem)/3.2)]' : '[--card-w:calc((100%_-_2rem)/3)]'}`}
-      >
-        {cards.map((list) => (
-          <ListCard key={list.id} list={list} pinned={list.id === read?.pinnedId} />
-        ))}
-      </div>
+      {portrait ? (
+        <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
+          <div className={`grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-4 ${BODY_CLEARANCE}`}>{shown}</div>
+          <OverflowButton control={row} of="the lists" />
+        </div>
+      ) : (
+        <div ref={row.scroller} className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cardSize}`}>
+          {/* The same wrapper as portrait's, so turning the tablet keeps each card (and its read) instead of mounting it again. */}
+          <div className="contents">{shown}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -250,7 +270,7 @@ export function ListsScreen() {
 // min-w-0: the card is a grid item, whose width is otherwise at least that of its widest unwrapped words, so one long item or list
 // name would make the whole right rail, and the page, wider than the screen.
 // On a phone (below 768 px, spec 0004) the card is 22 round, like every card of its column.
-const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3 max-[768px]:rounded-[22px]';
+const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3 phone:rounded-[22px]';
 
 // The Pinned List's card, under Up next in Home's right column: it is as tall as that column leaves it. A heading row holds the list's
 // name and a link to the Lists screen that says how many items still to get the card has no room for ("3 more"), or "All lists" when it
@@ -297,7 +317,7 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
   const nothing = loaded && rows.length === 0;
   const measured = limit === undefined;
   // The rows that show, and the items still to get that the card has no room for.
-  const { shown, hidden } = homeWindow({ rows, limit, room });
+  const { shown, hidden } = homeWindow({ rows, limit, room, rem: rootFontSize() });
 
   // A tap crosses a row off, or puts back one crossed off here. The row stays where it is either way.
   function tap(item: ListItem) {
@@ -407,7 +427,7 @@ export function PinnedListCard({ onOpenLists, limit }: { onOpenLists: () => void
       {!failed && <EmptyWords>Loading</EmptyWords>}
       {failed && (
         <p role="alert" className="text-base">
-          Could not load lists. Check your connection.
+          {couldNotLoad('lists')}
         </p>
       )}
     </aside>
@@ -478,9 +498,20 @@ function ItemsEditor({ listId, listName }: { listId: string; listName: string })
 }
 
 export function SharedListsPage({ household }: { household: Household }) {
-  const [lists, setLists] = useState<SharedList[] | null>(null);
-  const [pinnedId, setPinnedId] = useState<string | null>(null);
-  const [problem, setProblem] = useState('');
+  // Read through the synced read; a change is written through it, then read back before the page moves on.
+  const read = useSyncedRead(
+    async () => {
+      const [lists, pinnedId] = await Promise.all([loadLists(supabase), loadPinnedListId(supabase)]);
+      return { lists, pinnedId };
+    },
+    LIST_TABLES,
+    'lists',
+  );
+  const lists = read.data?.lists ?? null;
+  const pinnedId = read.data?.pinnedId ?? null;
+  // What the last change said when it failed, else that the page could not be read.
+  const [changeProblem, setProblem] = useState('');
+  const problem = changeProblem || (read.failed ? couldNotLoad('lists') : '');
   const [newName, setNewName] = useState('');
   // How many times each form was asked to save with no name, which it says in its own line (a rename counts with the rename, so it
   // starts again with each).
@@ -490,38 +521,27 @@ export function SharedListsPage({ household }: { household: Household }) {
   const renameProblem = renaming ? unnamed('list', renaming.asked, renaming.name) : null;
   const [confirming, setConfirming] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  // One change at a time (the card write guard): the buttons are drawn `aria-disabled` from `busy`.
+  const card = useCardWrite();
+  const { busy } = card;
 
-  const refresh = useCallback(async () => {
-    try {
-      const [found, pinned] = await Promise.all([loadLists(supabase), loadPinnedListId(supabase)]);
-      setLists(found);
-      setPinnedId(pinned);
-    } catch {
-      setProblem('Could not load lists. Check your connection.');
-    }
-  }, []);
-  useRefetchOn(LIST_TABLES, () => void refresh());
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  // Runs one change, then reloads so the screen shows what the database holds. Says whether it was made.
+  // Runs one change, then reads again so the screen shows what the database holds, before the next may begin. A failure is said
+  // at once. Says whether it was made; false too when another change was on its way and this one did nothing.
   async function change(work: () => Promise<void>, failure: string): Promise<boolean> {
-    let made = true;
-    try {
-      await work();
-      setProblem('');
-    } catch {
-      setProblem(failure);
-      made = false;
-    }
-    await refresh();
-    return made;
+    const outcome = await card.run(
+      async () => {
+        await read.write(work);
+        setProblem('');
+        await read.readBack();
+      },
+      { failed: () => setProblem(failure) },
+    );
+    return outcome === 'done';
   }
 
   async function create(event: FormEvent) {
     event.preventDefault();
+    if (card.isBusy()) return;
     if (!newName.trim()) {
       setAskedNew((count) => count + 1);
       return;
@@ -535,7 +555,7 @@ export function SharedListsPage({ household }: { household: Household }) {
 
   async function rename(event: FormEvent) {
     event.preventDefault();
-    if (!renaming) return;
+    if (!renaming || card.isBusy()) return;
     if (!renaming.name.trim()) {
       setRenaming({ ...renaming, asked: renaming.asked + 1 });
       return;
@@ -549,6 +569,7 @@ export function SharedListsPage({ household }: { household: Household }) {
   }
 
   async function move(id: string, offset: number) {
+    if (card.isBusy()) return;
     const ids = movedIds((lists ?? []).map((list) => list.id), id, offset);
     await change(() => reorderLists(supabase, ids), 'Could not reorder lists. Try again.');
   }
@@ -556,6 +577,7 @@ export function SharedListsPage({ household }: { household: Household }) {
   // The Delete that was pressed goes with its list: focus goes at once to the title of the list beside it, or to "New list" when it was
   // the only one, so it never falls to the page; and back to this list's Delete if the delete did not go through.
   async function remove(id: string) {
+    if (card.isBusy()) return;
     const ids = (lists ?? []).map((list) => list.id);
     const beside = ids[ids.indexOf(id) + 1] ?? ids[ids.indexOf(id) - 1];
     setConfirming(null);
@@ -584,7 +606,7 @@ export function SharedListsPage({ household }: { household: Household }) {
               aria-describedby={newProblem ? NEW_LIST_PROBLEM : undefined}
             />
           </label>
-          <Button type="submit" variant="primary" size="phone" className="w-full text-[17px]">
+          <Button type="submit" variant="primary" size="phone" className="w-full text-[17px]" aria-disabled={busy || undefined}>
             Add list
           </Button>
           <Problem id={NEW_LIST_PROBLEM} problem={newProblem} />
@@ -616,7 +638,7 @@ export function SharedListsPage({ household }: { household: Household }) {
                     autoFocus
                   />
                   <div className="flex gap-2">
-                    <Button type="submit" variant="secondary" className={ACTION}>
+                    <Button type="submit" variant="secondary" className={ACTION} aria-disabled={busy || undefined}>
                       Save
                     </Button>
                     <Button
@@ -638,10 +660,10 @@ export function SharedListsPage({ household }: { household: Household }) {
                   <h2 id={titleId(list.id)} tabIndex={-1} className={`${CARD_TITLE} min-w-0 flex-1 break-words`}>
                     {list.name}
                   </h2>
-                  <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} up`} disabled={index === 0} onClick={() => void move(list.id, -1)}>
+                  <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} up`} disabled={index === 0} aria-disabled={busy || undefined} onClick={() => void move(list.id, -1)}>
                     <ArrowUp aria-hidden className="size-5" />
                   </Button>
-                  <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} down`} disabled={index === lists.length - 1} onClick={() => void move(list.id, 1)}>
+                  <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} down`} disabled={index === lists.length - 1} aria-disabled={busy || undefined} onClick={() => void move(list.id, 1)}>
                     <ArrowDown aria-hidden className="size-5" />
                   </Button>
                 </div>
@@ -659,14 +681,17 @@ export function SharedListsPage({ household }: { household: Household }) {
                   <Button
                     variant="secondary"
                     className={ACTION}
-                    onClick={() => void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.')}
+                    aria-disabled={busy || undefined}
+                    onClick={() => {
+                      if (!card.isBusy()) void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.');
+                    }}
                   >
                     Show on home screen
                   </Button>
                 )}
                 {confirming === list.id ? (
                   <>
-                    <Button variant="delete" className="h-auto min-h-12 px-4 py-2 whitespace-normal" onClick={() => void remove(list.id)}>
+                    <Button variant="delete" className="h-auto min-h-12 px-4 py-2 whitespace-normal" aria-disabled={busy || undefined} onClick={() => void remove(list.id)}>
                       Delete {list.name} and its items
                     </Button>
                     <Button

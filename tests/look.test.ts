@@ -260,6 +260,10 @@ describe('src/index.css', () => {
     expect(css).toMatch(/@custom-variant dark \(&:where\(\[data-mode='dark'\], \[data-mode='dark'\] \*\)\);/);
   });
 
+  it("binds the phone variant to the document's data-phone, which the layout sets, never to a media query", () => {
+    expect(css).toMatch(/@custom-variant phone \(&:where\(\[data-phone\], \[data-phone\] \*\)\);/);
+  });
+
   it('is light on :root and says so to the browser', () => {
     expect(declarations(':root').get('color-scheme')).toBe('light');
     expect(declarations(":root[data-mode='dark']").get('color-scheme')).toBe('dark');

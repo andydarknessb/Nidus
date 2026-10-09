@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { offsetMs } from '../../supabase/functions/_shared/zoned-time.ts';
-import { addDays, dayStartMs, formatClock, formatDate, occurrenceColumns, type Occurrence } from './calendar-occurrences';
-import { householdDay, WEEKDAYS } from './routines';
+import { formatClock, formatDate, occurrenceColumns, type Occurrence } from './calendar-occurrences';
+import { WEEKDAYS } from './routines';
+import { addDays, dayStartMs, householdDay, instantAt } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // Native Events (CONTEXT.md): created in Nidus, living only in Nidus. A Household Account (the
 // phone) or a Device (the wall) writes them. Every function takes the client so the same code
@@ -42,21 +42,6 @@ export function blankEventForm(date: string): EventForm {
   return { title: '', date, allDay: false, startTime: '09:00', endTime: '10:00', location: '', notes: '', profileIds: [] };
 }
 
-// The instant `time` on `date` is on the wall clock of `timezone`. The offsets a day either side
-// give the two candidates: a time that happens twice (clocks going back) takes the earlier, and a
-// time that does not exist (clocks going forward) moves on by the skipped hour, never back.
-export function wallMs(date: string, time: string, timezone: string): number {
-  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
-  const [hour, minute] = time.split(':').map(Number) as [number, number];
-  const wall = Date.UTC(year, month - 1, day, hour, minute);
-  const before = wall - offsetMs(wall - DAY_MS, timezone);
-  const after = wall - offsetMs(wall + DAY_MS, timezone);
-  const real = [before, after].filter((candidate) => candidate + offsetMs(candidate, timezone) === wall);
-  return real.length > 0 ? Math.min(...real) : before;
-}
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 export function eventFormToInput(form: EventForm, timezone: string): NativeEventInput | { problem: string } {
   const title = form.title.trim();
   if (title === '') return { problem: 'Give the event a title.' };
@@ -70,12 +55,12 @@ export function eventFormToInput(form: EventForm, timezone: string): NativeEvent
     if (!/^\d{2}:\d{2}$/.test(form.startTime) || !/^\d{2}:\d{2}$/.test(form.endTime)) {
       return { problem: 'Pick a start and end time, or choose all day.' };
     }
-    startsAt = wallMs(form.date, form.startTime, timezone);
-    endsAt = wallMs(form.date, form.endTime, timezone);
+    startsAt = instantAt(form.date, form.startTime, timezone);
+    endsAt = instantAt(form.date, form.endTime, timezone);
     if (endsAt <= startsAt) {
       // An end after its start on the clock can still be at or before it here: a time inside the hour the clocks skip does
       // not exist, and moves on by the hour (wallMs). Say which time that is, not that the end is before the start.
-      const skipped = form.endTime > form.startTime ? [form.startTime, form.endTime].find((time) => clock(wallMs(form.date, time, timezone), timezone) !== time) : undefined;
+      const skipped = form.endTime > form.startTime ? [form.startTime, form.endTime].find((time) => clock(instantAt(form.date, time, timezone), timezone) !== time) : undefined;
       return { problem: skipped ? `The clocks go forward on this day, so there is no ${clockWords(skipped)}. Pick another time.` : 'The event must end after it starts.' };
     }
   }

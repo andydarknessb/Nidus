@@ -179,7 +179,7 @@ describe('the Add event sheet, as it is first drawn', () => {
 // A sheet on a phone (docs/specs/0004, Sheets): below 768 px it rises from the foot, full width, 24 round at the top only, at most the
 // screen's height less 24 px, with a handle, its foot clear of the safe area. One frame (PHONE_FRAME, PHONE_SCRIM, SheetHandle) is drawn
 // for all three of the Wall's dialogs. Rendered to markup, so what is asserted is the classes the browser is given: the phone's are
-// all `max-[768px]:` variants, so at 768 px and wider the classes that apply are the ones each sheet always had.
+// all `phone:` variants, so at 768 px and wider the classes that apply are the ones each sheet always had.
 describe('a sheet on a phone', () => {
   const tag = (html: string, pattern: RegExp) => pattern.exec(html)?.[0] ?? '';
   const dialogOf = (html: string) => tag(html, /<(?:div|form)[^>]*role="dialog"[^>]*>/);
@@ -213,13 +213,13 @@ describe('a sheet on a phone', () => {
   });
 
   it('is full width, rounded at the top only, at most the screen less 24 px, with the foot clear of the safe area', () => {
-    expect(PHONE_FRAME).toContain('max-[768px]:max-w-none');
-    expect(PHONE_FRAME).toContain('max-[768px]:rounded-t-3xl');
-    expect(PHONE_FRAME).toContain('max-[768px]:rounded-b-none');
-    expect(PHONE_FRAME).toContain('max-[768px]:max-h-[calc(100%-24px)]');
+    expect(PHONE_FRAME).toContain('phone:max-w-none');
+    expect(PHONE_FRAME).toContain('phone:rounded-t-3xl');
+    expect(PHONE_FRAME).toContain('phone:rounded-b-none');
+    expect(PHONE_FRAME).toContain('phone:max-h-[calc(100%-24px)]');
     expect(PHONE_FRAME).toContain('env(safe-area-inset-bottom)');
-    expect(PHONE_SCRIM).toContain('max-[768px]:items-end');
-    expect(PHONE_SCRIM).toContain('max-[768px]:p-0');
+    expect(PHONE_SCRIM).toContain('phone:items-end');
+    expect(PHONE_SCRIM).toContain('phone:p-0');
   });
 
   it('has a 40 by 4 px handle in --input that assistive technology skips, and none of it shows at 768 px and wider', () => {
@@ -228,11 +228,11 @@ describe('a sheet on a phone', () => {
     expect(handle).toMatch(/class="[^"]*\bh-1\b/);
     expect(handle).toMatch(/class="[^"]*\bw-10\b/);
     expect(handle).toMatch(/class="[^"]*\bbg-input\b/);
-    expect(handle).toMatch(/class="[^"]*\bhidden\b[^"]*\bmax-\[768px\]:block\b/);
+    expect(handle).toMatch(/class="[^"]*\bhidden\b[^"]*\bphone:block\b/);
   });
 
-  it('adds nothing a tablet sees: every phone class is a max-[768px] variant, and the sheet keeps its own classes', () => {
-    for (const name of [...PHONE_FRAME.split(' '), ...PHONE_SCRIM.split(' ')]) expect(name).toMatch(/^max-\[768px\]:/);
+  it('adds nothing a tablet sees: every phone class is a phone: variant, and the sheet keeps its own classes', () => {
+    for (const name of [...PHONE_FRAME.split(' '), ...PHONE_SCRIM.split(' ')]) expect(name).toMatch(/^phone:/);
     const html = drawSheet();
     expect(dialogOf(html)).toContain('rounded-[28px]');
     expect(dialogOf(html)).toContain('max-w-[640px]');
@@ -241,7 +241,7 @@ describe('a sheet on a phone', () => {
     expect(scrimOf(html)).toContain('p-4');
   });
 
-  it('has no sm: or md: class on a scrim or a frame that would compete with a phone class (Tailwind emits those after max-[768px])', async () => {
+  it('has no sm: or md: class on a scrim or a frame that would compete with a phone class', async () => {
     vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
     vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
     const { NativeEventSheet } = await import('../src/components/NativeEventSheet');
@@ -249,12 +249,12 @@ describe('a sheet on a phone', () => {
     const sheets = [
       drawSheet(),
       renderToStaticMarkup(createElement(NativeEventSheet, { timezone: 'America/Chicago', profiles: [], date: '2026-10-02', onSaved: () => undefined, onClose: () => undefined })),
-      renderToStaticMarkup(createElement(MealSheet, { editing: { date: '2026-10-02', slot: 'dinner', heading: 'Friday dinner', meal: null }, onSaved: () => undefined, onClose: () => undefined })),
+      renderToStaticMarkup(createElement(MealSheet, { editing: { date: '2026-10-02', slot: 'dinner', heading: 'Friday dinner', meal: null }, save: async () => undefined, onSaved: () => undefined, onClose: () => undefined })),
     ];
     for (const html of sheets) {
       for (const element of [scrimOf(html), dialogOf(html)]) {
         const own = classesOf(element);
-        expect(own.some((name) => name.startsWith('max-[768px]:'))).toBe(true);
+        expect(own.some((name) => name.startsWith('phone:'))).toBe(true);
         expect(own.filter((name) => /^(sm|md):/.test(name))).toEqual([]);
       }
     }
@@ -267,7 +267,7 @@ describe('a sheet on a phone', () => {
     const { MealSheet } = await import('../src/MealsPage');
     const native = renderToStaticMarkup(createElement(NativeEventSheet, { timezone: 'America/Chicago', profiles: [], date: '2026-10-02', onSaved: () => undefined, onClose: () => undefined }));
     const meal = renderToStaticMarkup(
-      createElement(MealSheet, { editing: { date: '2026-10-02', slot: 'dinner', heading: 'Friday dinner', meal: null }, onSaved: () => undefined, onClose: () => undefined }),
+      createElement(MealSheet, { editing: { date: '2026-10-02', slot: 'dinner', heading: 'Friday dinner', meal: null }, save: async () => undefined, onSaved: () => undefined, onClose: () => undefined }),
     );
     for (const html of [native, meal]) {
       expect(hasFrame(scrimOf(html), PHONE_SCRIM)).toBe(true);
@@ -276,7 +276,7 @@ describe('a sheet on a phone', () => {
       expect(html.indexOf(handleOf(html))).toBeLessThan(html.indexOf('<h2'));
     }
     // The meal sheet's field and its message scroll between its title row and its buttons, on a phone.
-    expect(meal.indexOf('max-[768px]:overflow-y-auto')).toBeGreaterThan(meal.indexOf('<h2'));
-    expect(meal.indexOf('max-[768px]:overflow-y-auto')).toBeLessThan(meal.indexOf('Cancel'));
+    expect(meal.indexOf('phone:overflow-y-auto')).toBeGreaterThan(meal.indexOf('<h2'));
+    expect(meal.indexOf('phone:overflow-y-auto')).toBeLessThan(meal.indexOf('Cancel'));
   });
 });

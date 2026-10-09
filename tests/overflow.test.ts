@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from '../src/components/OverflowButton';
-import { createPressGate, overflowState, overflowWords, PAGE_STEP, PRESS_HOLD_MS, type Axis, type Scroll } from '../src/lib/overflow';
+import { buttonHeldBack, createPressGate, overflowState, overflowWords, PAGE_STEP, PRESS_HOLD_MS, type Axis, type Scroll } from '../src/lib/overflow';
 import type { OverflowControl } from '../src/lib/use-overflow';
 
 // Where the Wall scrolls it says so, with a button (docs/look.md, The parts). A tablet in a kiosk browser draws no scrollbars,
@@ -533,5 +533,31 @@ describe('the button', () => {
     expect(html).not.toContain('sticky');
     expect(html).not.toContain('from-');
     expect(html.startsWith('<button')).toBe(true);
+  });
+});
+
+// A button that is not drawn holds nothing back (issue #69). The phone hides the Day view's rows' buttons with display: none: such a button has
+// no size, and the row has no gap to it. Counting the row's 16 px gap at 200 percent text made a row 7 px over its room (149 px of 142) ask for a
+// button, find its room 16 px less, drop the button, find the room back, and ask again for ever: "Maximum update depth exceeded", a white screen.
+describe('buttonHeldBack', () => {
+  it('is the button and the gap to it while the button is drawn', () => {
+    expect(buttonHeldBack({ drawn: true, size: 92, gap: 16 })).toBe(108);
+    expect(buttonHeldBack({ drawn: true, size: 48, gap: 0 })).toBe(48);
+  });
+
+  it('is nothing for a button that is not drawn, whatever gap the row has', () => {
+    expect(buttonHeldBack({ drawn: false, size: 0, gap: 16 })).toBe(0);
+    expect(buttonHeldBack({ drawn: false, size: 92, gap: 16 })).toBe(0);
+  });
+
+  it('gives a row that is not drawn a button one answer, with the button asked for and without it', () => {
+    // The phone's Later row at 200 percent: 149 px of pills in a 142 px box, a 16 px gap, and a button that is display: none.
+    const row = { scrollSize: 149, clientSize: 142, scrollOffset: 0 };
+    const asked = overflowState({ ...row, buttonSize: buttonHeldBack({ drawn: false, size: 0, gap: 16 }) }).overflowing;
+    // Once the button is asked for, it is in the page and still not drawn: the same measure, the same answer.
+    const kept = overflowState({ ...row, buttonSize: buttonHeldBack({ drawn: false, size: 0, gap: 16 }) }).overflowing;
+    expect(kept).toBe(asked);
+    // The wrong measure (the gap counted) is what flipped the answer.
+    expect(overflowState({ ...row, buttonSize: 16 }).overflowing).not.toBe(asked);
   });
 });

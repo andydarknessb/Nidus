@@ -1,4 +1,5 @@
-import { clocksRepeat, dayOccurrences, formatClock, formatClockWithZone, nowHour, wallHour, type Occurrence, type WallDay } from './calendar-occurrences';
+import { clocksRepeat, dayOccurrences, formatClock, formatClockWithZone, nowHour, wallHour, type Occurrence } from './calendar-occurrences';
+import type { WallDay } from './paged-view';
 import { listNames, pillTime, saysAllDay, scheduleColumns, type Pill, type PillPeople } from './schedule';
 
 // The Day view (docs/look.md; spec 0003, Day view): the one view that keeps the hour grid. An hour is 3 rem, 48 px at the

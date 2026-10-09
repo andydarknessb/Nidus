@@ -50,7 +50,7 @@ export function EventDetails({
       }
       footer={
         <footer className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-3">
-          <p className="flex min-w-48 flex-1 items-center gap-2 text-[17px] leading-6 font-medium">
+          <p className="flex min-w-[min(12rem,100%)] flex-1 items-center gap-2 text-[17px] leading-6 font-medium">
             {native ? <Pin aria-hidden className="size-5 shrink-0" /> : <CalendarDays aria-hidden className="size-5 shrink-0" />}
             <span>{native ? ADDED_HERE : FROM_GOOGLE}</span>
           </p>

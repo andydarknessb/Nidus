@@ -60,3 +60,58 @@ describe('the Meals screen', () => {
     for (const heading of others) expect(number(heading).split(' ')).toContain('text-[22px]');
   });
 });
+
+// Larger text (a root font size above 16 px, which makes every rem box bigger and leaves the screen as it is, issue #69). What is asserted is
+// the markup that decides it: nothing here can measure a screen, so each part says what it is held to in its classes.
+describe('the Wall at larger text', () => {
+  it("gives the Month grid the height of the weekday row and each week's date, and only from larger text", () => {
+    // A week is 2.625 rem for its date (MonthCell.tsx's CELL_HEAD_REM) under a weekday row of 2.5 rem; the line under the date is not in it.
+    const html = renderToStaticMarkup(createElement(PagedCalendar, { timezone, view: 'month', date: null, onNavigate: () => undefined, profiles: null }));
+    // The floor is there from the first pixel of larger text and not at 16 px, so a short screen at 16 px text is as it was.
+    const rem = Number(/<section aria-label="Calendar" style="min-height:min\(([\d.]+)rem, calc\(\(1rem - 16px\) \* 1000\)\)"/.exec(html)?.[1]);
+    expect([4, 5, 6].map((weeks) => 2.5 + weeks * 2.625)).toContain(rem);
+  });
+
+  it("caps the Meals plan's slot column at larger text, so seven days keep their room, and keeps its 7 rem at 16 px", () => {
+    const html = renderToStaticMarkup(createElement(MealsScreen, { timezone, date: null, onNavigate: () => undefined }));
+    expect(html).toContain('grid-template-columns:min(7rem, max(112px, 11vw)) repeat(7, minmax(3rem, 1fr))');
+  });
+});
+
+// The Wall in portrait (docs/specs/0009): Meals turns, the slots across the top and the days down the side, and nothing else about it moves.
+describe('the Meals screen in portrait', () => {
+  const meals = (portrait: boolean) => renderToStaticMarkup(createElement(MealsScreen, { timezone, date: null, onNavigate: () => undefined, portrait }));
+  const names = (html: string) => [...html.matchAll(/<button [^>]*><span class="sr-only">([^<]*)<\/span>/g)].map(([, name]) => name);
+  const headings = (html: string) => [...html.matchAll(/<h3 [^>]*>/g)].map(([tag]) => /aria-label="([^"]*)"/.exec(tag)?.[1] ?? 'slot');
+
+  it('puts the four slots in the first row and the days in the first column', () => {
+    const html = meals(true);
+    expect(html).toContain('grid-template-columns:6rem repeat(4, minmax(3rem, 1fr))');
+    expect(html).toContain('grid-template-rows:auto repeat(7, minmax(min-content, 1fr))');
+    // The slots' names come before every day's heading, each with its picture, and then each day's heading is followed by its four cells.
+    const slots = [...html.matchAll(/<h3 [^>]*><span aria-hidden[^>]*><svg[^>]*>.*?<\/svg><\/span>(Breakfast|Lunch|Dinner|Snack)<\/h3>/g)].map(([, label]) => label);
+    expect(slots).toEqual(['Breakfast', 'Lunch', 'Dinner', 'Snack']);
+    expect(headings(html)).toEqual(['slot', 'slot', 'slot', 'slot', ...Array(7).fill(expect.stringMatching(/^[A-Z][a-z]+ \d+(, today)?$/))]);
+    const days = html.split(/<h3 [^>]*aria-label=/).slice(1);
+    expect(days).toHaveLength(7);
+    for (const day of days) expect(names(day)).toHaveLength(4);
+    expect(names(days[0]!)).toEqual(expect.arrayContaining([expect.stringMatching(/^Breakfast, /), expect.stringMatching(/^Snack, /)]));
+  });
+
+  it('keeps every cell the same button, at least 48 tall in a track of at least 3 rem, with the name it has in landscape', () => {
+    const portrait = meals(true);
+    const landscape = meals(false);
+    expect(names(portrait)).toHaveLength(28);
+    expect([...names(portrait)].sort()).toEqual([...names(landscape)].sort());
+    expect(portrait.match(/<button [^>]*class="[^"]*\bmin-h-12\b[^"]*\bmin-w-0\b/g)).toHaveLength(28);
+  });
+
+  it('leaves the landscape grid as it is: the days across the top and a row for each slot', () => {
+    const html = meals(false);
+    expect(html).toContain('grid-template-columns:min(7rem, max(112px, 11vw)) repeat(7, minmax(3rem, 1fr))');
+    expect(html).toContain('grid-template-rows:3.875rem repeat(4, minmax(min-content, 1fr))');
+    expect(headings(html).slice(0, 7)).toEqual(Array(7).fill(expect.stringMatching(/^[A-Z][a-z]+ \d+(, today)?$/)));
+    expect(html).toBe(meals(false));
+    expect(html).toBe(renderToStaticMarkup(createElement(MealsScreen, { timezone, date: null, onNavigate: () => undefined })));
+  });
+});

@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import { Pin } from 'lucide-react';
-import type { Occurrence, WallDay } from '../lib/calendar-occurrences';
+import type { Occurrence } from '../lib/calendar-occurrences';
+import type { WallDay } from '../lib/paged-view';
 import { personStyle } from '../lib/look';
 import { pillName, type Pill, type PillPeople } from '../lib/schedule';
 import { HouseDisc, PersonDisc } from './people';
@@ -100,7 +101,7 @@ export function EventPill({
         {occurrence.title}
       </span>
       <span className="relative flex flex-wrap items-center gap-x-1 gap-y-0.5">
-        <span className="text-sm leading-[18px]">{holdTime(pill.time)}</span>
+        <span className="text-sm leading-[1.2857]">{holdTime(pill.time)}</span>
         <span className="ml-auto flex">
           <EventDiscs people={people} />
         </span>

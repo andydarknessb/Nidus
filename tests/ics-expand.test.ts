@@ -174,6 +174,26 @@ describe('expandFeed: times', () => {
     expect(starts(text)).toEqual(['2026-09-23T21:00:00.000Z', '2026-09-30T20:00:00.000Z']);
   });
 
+  // RFC 5545 3.3.5, as a Native Event does: a time the clocks skip is read with the offset from
+  // before the gap, so it moves forward by the gap; a time that happens twice is the first one.
+  it('moves a floating time the clocks skip forward by the gap', () => {
+    const at = (text: string, timezone: string, from: string, to: string) => expandFeed(text, timezone, Date.parse(from), Date.parse(to)).rows[0]?.starts_at;
+    // Chicago 2026-03-08: 02:00 CST becomes 03:00 CDT, so 02:30 is 03:30 CDT.
+    expect(at(feed(event('DTSTART:20260308T023000')), 'America/Chicago', '2026-03-01T00:00:00Z', '2026-04-01T00:00:00Z')).toBe('2026-03-08T08:30:00.000Z');
+    // Auckland 2026-09-27: 02:00 NZST becomes 03:00 NZDT, so 02:30 is 03:30 NZDT.
+    expect(starts(feed(event('DTSTART:20260927T023000')))).toEqual(['2026-09-26T14:30:00.000Z']);
+  });
+
+  it('reads a floating time that happens twice as the first one', () => {
+    // London 2026-10-25: 01:30 BST, not 01:30 GMT.
+    expect(starts(feed(event('DTSTART:20261025T013000')), 'Europe/London')).toEqual(['2026-10-25T00:30:00.000Z']);
+    // Chicago 2026-11-01: 01:30 CDT, not 01:30 CST.
+    expect(starts(feed(event('DTSTART:20261101T013000')), 'America/Chicago')).toEqual(['2026-11-01T06:30:00.000Z']);
+    // Auckland 2026-04-05: 02:30 NZDT, not 02:30 NZST.
+    const auckland = expandFeed(feed(event('DTSTART:20260405T023000')), HOUSEHOLD, Date.parse('2026-04-01T00:00:00Z'), Date.parse('2026-05-01T00:00:00Z'));
+    expect(auckland.rows[0]?.starts_at).toBe('2026-04-04T13:30:00.000Z');
+  });
+
   it('reads a TZID event in its own zone across that zone and the Household changing their clocks', () => {
     // Mondays 09:00 in London from Oct 19: BST until Oct 25, GMT after; Chicago changes on Nov 1.
     const text = feed(event('DTSTART;TZID=Europe/London:20261019T090000\nDTEND;TZID=Europe/London:20261019T100000\nRRULE:FREQ=WEEKLY;COUNT=3'));

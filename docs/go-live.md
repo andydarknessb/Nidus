@@ -109,7 +109,7 @@ Lighthouse no longer has a Progressive Web App category, so check installability
 
 ## 11. Pair the tablet
 
-1. Set the tablet up as in `docs/fully-kiosk.md`, with the production start URL.
+1. Set the tablet up as in `docs/fully-kiosk.md` for a tablet or `docs/windows-kiosk.md` for the Elo screen, with the production start URL.
 2. The wall shows a six-character Pairing Code.
 3. On a phone, open `https://<site>/settings`, go to Wall tablets and Pair a tablet, enter the code and a name for the tablet, and pair it.
 4. The wall switches to the home screen within seconds.

@@ -14,26 +14,6 @@ const itemColumns = 'id, list_id, text, crossed_at, sort_order';
 
 // ---- Pure helpers -------------------------------------------------------------
 
-// Order the way the rail shows it: by position (the server breaks ties by age).
-export function byPosition<T extends { sort_order: number }>(rows: T[]): T[] {
-  return [...rows].sort((a, b) => a.sort_order - b.sort_order);
-}
-
-// New rows go to the bottom.
-export function nextSortOrder(rows: { sort_order: number }[]): number {
-  return rows.reduce((max, row) => Math.max(max, row.sort_order), -1) + 1;
-}
-
-// The ids in their new order after moving `id` by `offset` places (clamped to the ends).
-export function movedIds(ids: string[], id: string, offset: number): string[] {
-  const from = ids.indexOf(id);
-  if (from < 0) return ids;
-  const to = Math.min(Math.max(from + offset, 0), ids.length - 1);
-  const next = ids.filter((existing) => existing !== id);
-  next.splice(to, 0, id);
-  return next;
-}
-
 // Optimistic cross/uncross: what the screen shows before the server answers.
 export function withCrossed(items: ListItem[], id: string, crossed: boolean, now = new Date()): ListItem[] {
   return items.map((item) => (item.id === id ? { ...item, crossed_at: crossed ? now.toISOString() : null } : item));
@@ -56,17 +36,16 @@ export function rowsThatFit({ count, room, row, gap }: { count: number; room: nu
   return Math.min(count, Math.max(0, Math.floor((room + gap) / (row + gap))));
 }
 
-// From the drawing (v2/home.js): a row on Home is 48 px (h-12) and rows are 8 px apart (gap-2).
-// ponytail: these sit beside the classes they stand for and are not measured; if a larger text size (#69) ever grows a row,
-// measure the first row instead.
-const HOME_ROW_PX = 48;
-const HOME_GAP_PX = 8;
+// From the drawing (v2/home.js): a row on Home is 3 rem (48 px, h-12) and rows are 0.5 rem apart (gap-2). They are rem, like the
+// classes they stand for, so a larger text size makes the rows taller and the card counts them taller (`rem`, the root font size).
+const HOME_ROW_REM = 3;
+const HOME_GAP_REM = 0.5;
 
 // Which of the rows Home's card draws it shows, and how many items still to get it leaves out (what its link says: "3 more"). On a
-// tablet the card is measured: `room` px of height, none before it is laid out (then no row shows yet). On a phone the column has no
-// height to give, so `limit` rows show instead and `room` is not looked at.
-export function homeWindow({ rows, limit, room }: { rows: ListItem[]; limit?: number | undefined; room: number | null }): { shown: number; hidden: number } {
-  const shown = limit !== undefined ? Math.min(rows.length, limit) : room === null ? 0 : rowsThatFit({ count: rows.length, room, row: HOME_ROW_PX, gap: HOME_GAP_PX });
+// tablet the card is measured: `room` px of height, none before it is laid out (then no row shows yet), and the rows are as tall as
+// `rem` makes them. On a phone the column has no height to give, so `limit` rows show instead and `room` is not looked at.
+export function homeWindow({ rows, limit, room, rem = 16 }: { rows: ListItem[]; limit?: number | undefined; room: number | null; rem?: number }): { shown: number; hidden: number } {
+  const shown = limit !== undefined ? Math.min(rows.length, limit) : room === null ? 0 : rowsThatFit({ count: rows.length, room, row: HOME_ROW_REM * rem, gap: HOME_GAP_REM * rem });
   return { shown, hidden: withoutCrossed(rows.slice(shown)).length };
 }
 
@@ -182,51 +161,13 @@ export async function reorderItems(client: SupabaseClient, orderedIds: string[])
   if (error) throw error;
 }
 
-// ---- Optimistic updates ----------------------------------------------------------
-
-type Publish = (update: (current: ListItem[]) => ListItem[]) => void;
-
-// Shows the cross (or uncross) at once, then asks the server. If the server says
-// no, only that item goes back to what it was; other changes made meanwhile stay.
-// `before` is the rows as they were when the tap happened. Returns whether it stuck.
-export async function crossOptimistically(
-  publish: Publish,
-  id: string,
-  crossed: boolean,
-  before: ListItem[],
-  write: () => Promise<void>,
-): Promise<boolean> {
-  const previous = before.find((item) => item.id === id)?.crossed_at ?? null;
-  publish((current) => withCrossed(current, id, crossed));
-  try {
-    await write();
-    return true;
-  } catch {
-    publish((current) => current.map((item) => (item.id === id ? { ...item, crossed_at: previous } : item)));
-    return false;
-  }
-}
-
-// Same for "clear completed": the crossed items vanish at once and come back in
-// their places if the delete fails.
-export async function clearOptimistically(publish: Publish, before: ListItem[], write: () => Promise<void>): Promise<boolean> {
-  const removed = before.filter((item) => item.crossed_at !== null);
-  publish((current) => withoutCrossed(current));
-  try {
-    await write();
-    return true;
-  } catch {
-    publish((current) => byPosition([...current, ...removed]));
-    return false;
-  }
-}
-
 // The list a phone's Lists screen has open: the one chosen if it is still there, else the Pinned List, else the first. Null with no lists.
 export function pickedList(lists: SharedList[], pinnedId: string | null, choice: string | null): string | null {
   return lists.find((list) => list.id === choice)?.id ?? pinnedFirst(lists, pinnedId)[0]?.id ?? null;
 }
 
-// What a list's chip is called on the phone, as a screen reader hears it: "Groceries, 4 to get". Until the list's items are read it is the name alone.
+// What a list's chip on the phone and its card on the Wall are called, as a screen reader hears it: "Groceries, 4 to get". While the count is
+// not known (`leftToGet` is null) it is the name alone.
 export function listChipName(name: string, left: number | null): string {
   return left === null ? name : `${name}, ${left} to get`;
 }

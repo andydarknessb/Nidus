@@ -1,13 +1,16 @@
 import { Calendar1, CalendarDays, CalendarRange, CircleCheck, House, List, Moon, Plus, Settings, Sun, Utensils, type LucideIcon } from 'lucide-react';
 import type { ComponentProps } from 'react';
-import { navigationRailDate, type CalendarView, type WallRoute } from '../lib/calendar-occurrences';
-import { householdDay } from '../lib/routines';
+import { navigationRailDate, type WallRoute } from '../lib/calendar-occurrences';
+import type { CalendarView } from '../lib/paged-view';
 import { useMode } from '../lib/use-mode';
 import { Button } from './ui/button';
+import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // An entry's look, shared by the entries and the link to Settings: an icon over a word, at least 64 px tall and the
-// rail's width, in the quiet voice. A word too long for one line wraps; the entry then grows taller, never wider.
-const ENTRY = 'h-auto min-h-16 w-full flex-col gap-0.5 rounded-2xl px-0 text-sm font-medium whitespace-normal';
+// rail's width, in the quiet voice. A word too long for one line wraps; the entry then grows taller, never wider. The
+// least height and the gaps between the rail's controls are px, not rem: a finger needs 48 px whatever the text size is, and
+// at larger text the rail has to hold nine controls in the height of the screen, so room that text does not need is not given.
+const ENTRY = 'h-auto min-h-[64px] w-full flex-col gap-0.5 rounded-2xl px-0 text-sm font-medium whitespace-normal';
 
 // One entry of the navigation rail. The current one says so with `aria-current`, which is also what draws it
 // selected (a filled ground and a ring, and weight), so it never rests on colour alone.
@@ -31,7 +34,9 @@ function NavigationRailEntry({ icon: Icon, label, current = false, ...props }: {
 // primary action. Above them, for a Household Account only, sits the link to Settings: a Device is never
 // offered a way into administration.
 // The rail is 96 px wide, its padding included; with the Settings link its entries, switch and Add event
-// need 724 of the 768 px the 800 px screen leaves it.
+// need 724 of the 768 px the 800 px screen leaves it. At larger text (a root font size above 16 px) the words and icons grow with it, the
+// rail's width with them up to 12 percent of the screen (WallPage.tsx), and the heights between the controls stay px (ENTRY, below): at
+// 130 percent the nine controls need 744 of the 768 px, and at 200 percent 940 of the 1056 px the Wall is then 34 rem tall for.
 export function NavigationRail({
   route,
   timezone,
@@ -60,7 +65,7 @@ export function NavigationRail({
     if (timezone) onOpen(view, navigationRailDate(view, route, householdDay(timezone).date));
   };
   return (
-    <nav aria-label="Wall sections" className="row-span-2 flex flex-col gap-2 rounded-3xl bg-card p-2">
+    <nav aria-label="Wall sections" className="row-span-2 flex flex-col gap-[8px] rounded-3xl bg-card p-[8px]">
       <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
       <NavigationRailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
       <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
@@ -68,12 +73,12 @@ export function NavigationRail({
       <NavigationRailEntry icon={CircleCheck} label="Routines" current={route.view === 'routines'} onClick={onRoutines} />
       <NavigationRailEntry icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={onMeals} />
       <NavigationRailEntry icon={List} label="Lists" current={route.view === 'lists'} onClick={onLists} />
-      <div className="mt-auto flex flex-col gap-2.5">
+      <div className="mt-auto flex flex-col gap-[10px]">
         <Button
           aria-label={mode === 'dark' ? 'Switch to light' : 'Switch to dark'}
           disabled={!timezone}
           onClick={onToggleMode}
-          className="size-12 self-center rounded-full p-0"
+          className="size-[48px] self-center rounded-full p-0"
         >
           {mode === 'dark' ? <Sun aria-hidden className="size-6" /> : <Moon aria-hidden className="size-6" />}
         </Button>
@@ -85,7 +90,7 @@ export function NavigationRail({
             </a>
           </Button>
         )}
-        <Button variant="primary" aria-haspopup="dialog" disabled={!timezone} onClick={onAdd} className="h-[72px] w-full flex-col gap-0.5 rounded-[20px] px-0 text-sm whitespace-normal">
+        <Button variant="primary" aria-haspopup="dialog" disabled={!timezone} onClick={onAdd} className="h-auto min-h-[72px] w-full flex-col gap-0.5 rounded-[20px] px-0 py-2 text-sm whitespace-normal">
           <Plus aria-hidden className="size-[26px]" strokeWidth={2.6} />
           Add event
         </Button>

@@ -1,9 +1,11 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { monthWeeks, type Occurrence } from '../src/lib/calendar-occurrences';
+import { type Occurrence } from '../src/lib/calendar-occurrences';
+import { monthWeeks } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
 import type { MonthDay as MonthDayType } from '../src/phone/PhoneMonth';
+import { dayEventsOf } from '../src/lib/day-events';
 
 // A Month cell on the phone rendered to markup: its name (the full date and how many events), its marks and the sizes the look gives it.
 // Who the dots are for is tested without a screen in phone-calendar.test.ts; how the grid sits in a 390 px column is looked at in a browser.
@@ -43,10 +45,12 @@ const event = (profile_ids: string[]): Occurrence => ({
   profile_ids,
 });
 
-function cell(date: string, props: Partial<Parameters<typeof MonthDayType>[0]> = {}) {
-  return renderToStaticMarkup(
-    createElement(MonthDay, { day: dayOf(date), inMonth: true, beyond: false, picked: false, occurrences: [], profiles: [AVA, BEN], pressed: [], onPick: noop, ...props }),
-  );
+// A cell as the month draws it: its dots are the day events' (dayEventsOf), from the Profiles and the people pressed.
+function cell(date: string, { profiles = [AVA, BEN], pressed = [], ...props }: Partial<Parameters<typeof MonthDayType>[0]> & { profiles?: Profile[]; pressed?: string[] } = {}) {
+  const day = dayOf(date);
+  const occurrences = props.occurrences === undefined ? [] : props.occurrences;
+  const dots = dayEventsOf(occurrences, profiles, pressed).dots(day);
+  return renderToStaticMarkup(createElement(MonthDay, { day, inMonth: true, beyond: false, picked: false, occurrences, dots, onPick: noop, ...props }));
 }
 const tagOf = (html: string) => html.slice(0, html.indexOf('>') + 1);
 const classesOf = (html: string) => (/class="([^"]*)"/.exec(html)?.[1] ?? '').replaceAll('&amp;', '&').replaceAll('&gt;', '>').split(' ');

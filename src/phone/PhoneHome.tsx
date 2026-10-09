@@ -6,11 +6,12 @@ import { EventSheets, type OpenEvent } from '../components/EventSheets';
 import { UpNext } from '../components/UpNext';
 import { DayWeather } from '../components/Weather';
 import { describeCell, fiveDays } from '../lib/calendar-occurrences';
-import { focusElement, focusEvent } from '../lib/focus';
+import { focusElement } from '../lib/focus';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import { UP_NEXT_TILES } from '../lib/routines';
 import { pillPeople, scheduleColumns } from '../lib/schedule';
-import { useNow, useOccurrences } from '../lib/wall-hooks';
+import { useDayEvents, useNow } from '../lib/wall-hooks';
+import { couldNotLoad } from '../lib/synced-read';
 import { forecastDay } from '../lib/weather';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { PinnedListCard } from '../SharedListsPage';
@@ -25,7 +26,7 @@ import { PhoneCard } from './parts';
 const PHONE_LIST_ROWS = 6;
 
 // Today: today's disc, "Today", the day's high and low when the Household has weather, then every event of the day as the schedule's
-// stacked pills, ringed when on now, in the schedule's order and filtered by the strip (the Profile filter, in useOccurrences). The
+// stacked pills, ringed when on now, in the schedule's order and filtered by the strip (the Profile filter, in useDayEvents). The
 // day is the Household's today, so it moves on at Household midnight with no reload (useNow). Tapping a pill opens its details,
 // and from them a Native Event is changed or deleted (EventSheets).
 function TodayCard({ timezone, added, forecast, weatherOn, profiles }: Pick<PhoneScreenProps, 'added' | 'forecast' | 'weatherOn' | 'profiles'> & { timezone: string }) {
@@ -33,12 +34,11 @@ function TodayCard({ timezone, added, forecast, weatherOn, profiles }: Pick<Phon
   const { touch } = useContext(ProfileFilterContext);
   const day = fiveDays(timezone, now)[0]!;
   const [open, setOpen] = useState<OpenEvent>(null);
-  // An edit made here counts into `version`, so the day reads again like an event added around the calendar.
-  const [edits, setEdits] = useState(0);
-  const { occurrences, failed } = useOccurrences([day], added + edits);
+  const events = useDayEvents([day], added, profiles);
+  const occurrences = events.occurrences;
   const heading = useRef<HTMLHeadingElement>(null);
   // Until the Profiles are read the pills wait, as the schedule's do.
-  const [column] = scheduleColumns(profiles === null ? [] : (occurrences ?? []), [day], now);
+  const [column] = scheduleColumns(occurrences ?? [], [day], now);
   const pills = column!.pills;
   const people = profiles ?? [];
   const weather = weatherOn ? forecastDay(forecast, day.date) : undefined;
@@ -57,13 +57,13 @@ function TodayCard({ timezone, added, forecast, weatherOn, profiles }: Pick<Phon
             <DayWeather day={weather} />
           </span>
         </div>
-        {failed && occurrences === null && (
+        {events.problem && (
           <p role="alert" className="px-1 text-base">
-            Could not load the calendar. Check your connection.
+            {events.problem}
           </p>
         )}
-        {!failed && occurrences === null && <EmptyWords className="px-1">Loading</EmptyWords>}
-        {occurrences !== null && profiles !== null && pills.length === 0 && <EmptyWords className="px-1">Nothing scheduled today.</EmptyWords>}
+        {!events.problem && occurrences === null && <EmptyWords className="px-1">Loading</EmptyWords>}
+        {occurrences !== null && pills.length === 0 && <EmptyWords className="px-1">Nothing scheduled today.</EmptyWords>}
         {pills.length > 0 && (
           <div className="flex flex-col gap-2">
             {pills.map((pill) => (
@@ -77,12 +77,9 @@ function TodayCard({ timezone, added, forecast, weatherOn, profiles }: Pick<Phon
           timezone={timezone}
           date={day.date}
           profiles={people}
-          occurrences={occurrences}
-          onEdited={() => setEdits((count) => count + 1)}
-          // After an event is deleted from its sheet, or moved by an edit: to its pill if it is still on today, else the card's heading.
-          returnFocus={(occurrence) => {
-            if (!focusEvent(occurrence.id)) focusElement(heading.current);
-          }}
+          events={events}
+          // After an event is deleted from its sheet, or moved by an edit, and is not on today any more: the card's heading.
+          focusPlace={() => focusElement(heading.current)}
         />
       </PhoneCard>
     </div>
@@ -95,7 +92,7 @@ export function PhoneHome({ timezone, view, added, forecast, weatherOn, profiles
       {timezone ? (
         <TodayCard timezone={timezone} added={added} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
       ) : (
-        <BeforeHousehold label="Calendar" failed={view.failed} words="Could not load the calendar. Check your connection." />
+        <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
       )}
       {/* Three tiles, whatever the phone's height: the column scrolls, so there is no card under it for them to leave without a row. */}
       <UpNext routines={routines} failed={view.failed} onOpenRoutines={openRoutines} tiles={UP_NEXT_TILES} />

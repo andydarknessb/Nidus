@@ -1,14 +1,16 @@
 import { ArrowDown, ArrowUp, Pencil, Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { DeletePerson, PersonFields, type PersonDraft } from '@/components/PersonEditor';
 import { PersonDisc } from '@/components/people';
 import { Card, Problem, buttonHalf, buttonRow } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { useRefetchOn } from '@/lib/change-feed';
-import { createProfile, deleteProfile, firstFreeColor, loadProfiles, movedIds, nextSortOrder, reorderProfiles, updateProfile, type Profile } from '@/lib/profiles';
+import { createProfile, deleteProfile, firstFreeColor, loadProfiles, reorderProfiles, updateProfile } from '@/lib/profiles';
+import { movedIds, nextSortOrder } from '@/lib/ordering';
 import { supabase } from '@/lib/supabase';
+import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem } from '@/lib/use-write-problem';
 import { giveName } from '@/lib/write-failure';
+import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
 
 const PROFILE_TABLES = ['profiles'] as const;
 
@@ -42,61 +44,32 @@ function FormTitle({ draft, title }: { draft: PersonDraft; title: string }) {
 // name and colour, move them up or down, or delete them; a new person starts on the first colour nobody has. A Device reads
 // Profiles but never gets this screen.
 export function ProfilesSection({ householdId }: { householdId: string }) {
-  const [profiles, setProfiles] = useState<Profile[] | null>(null);
-  // A trouble reading, which a read that works takes away. What a write said of itself is kept apart: a good read says nothing of it.
-  const [loadProblem, setLoadProblem] = useState<string | null>(null);
+  // Read through the synced read. A trouble reading, which a read that works takes away, is kept apart from what a write said of
+  // itself: a good read says nothing of it.
+  const read = useSyncedRead(() => loadProfiles(supabase), PROFILE_TABLES, 'profiles');
+  const profiles = read.data;
+  const loadProblem = read.failed ? couldNotLoad('people') : null;
   const problems = useWriteProblem();
   const [adding, setAdding] = useState<PersonDraft | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
-  // One write at a time. The ref is the guard, which a second press in the same moment cannot get past; the state is what is drawn.
-  const working = useRef(false);
-  const [busy, setBusy] = useState(false);
-  const [focusNext, setFocusNext] = useState<string | null>(null);
-
-  // Moves focus once the control it names is on screen; the swap unmounts whatever had it.
-  useEffect(() => {
-    if (focusNext === null) return;
-    document.getElementById(focusNext)?.focus();
-    setFocusNext(null);
-  }, [focusNext]);
-
-  const refresh = useCallback(async () => {
-    try {
-      setProfiles(await loadProfiles(supabase));
-      setLoadProblem(null);
-    } catch {
-      setLoadProblem('Could not load people. Check your connection.');
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-  useRefetchOn(PROFILE_TABLES, () => void refresh());
+  // One write at a time (the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes afterwards.
+  const card = useCardWrite(problems);
+  const { busy } = card;
 
   // Runs a write. While it is on its way the buttons are `aria-disabled` and do nothing, never `disabled`: a button that is
   // disabled while it has focus drops it to the page. What an earlier try said stays where it is until this one answers, so that
   // nothing moves under the finger. A write that fails says so at once, in `place`, and the screen is read again in its own time
   // (offline that read tries for seconds, and the person is not waiting on it). A write that lands is read back before the form
-  // closes, so what it shows is what is stored.
-  async function change(place: string, write: () => Promise<void>, refusal?: string): Promise<boolean> {
-    if (working.current) return false;
-    working.current = true;
-    setBusy(true);
-    try {
-      await write();
-      problems.clear(place);
-    } catch (error) {
-      problems.fail(place, error, refusal === undefined ? {} : { refusal });
-      working.current = false;
-      setBusy(false);
-      void refresh();
-      return false;
-    }
-    await refresh();
-    working.current = false;
-    setBusy(false);
-    return true;
+  // closes, so what it shows is what is stored; `landed` is what the card then does, and returns where focus goes.
+  async function change(place: string, write: () => Promise<void>, landed: () => string | void, refusal?: string) {
+    await card.run(
+      async () => {
+        await read.write(write);
+        problems.clear(place);
+        await read.readBack();
+      },
+      { place, words: refusal === undefined ? {} : { refusal }, landed },
+    );
   }
 
   async function add(event: FormEvent) {
@@ -106,15 +79,15 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
       problems.say(ADD, giveName('person'), true);
       return;
     }
-    const ok = await change(
+    await change(
       ADD,
       () => createProfile(supabase, householdId, adding, nextSortOrder(profiles ?? [])).then(() => undefined),
+      () => {
+        setAdding(null);
+        return ADD_ID;
+      },
       'Could not add the person. Check the name and try again.',
     );
-    if (ok) {
-      setAdding(null);
-      setFocusNext(ADD_ID);
-    }
   }
 
   async function save(event: FormEvent) {
@@ -125,26 +98,32 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
       problems.say(editPlace(id), giveName('person'), true);
       return;
     }
-    const ok = await change(editPlace(id), () => updateProfile(supabase, id, draft), 'Could not save the person. Check the name and try again.');
-    if (ok) {
-      setEditing(null);
-      setFocusNext(controlId(id, 'edit'));
-    }
+    await change(
+      editPlace(id),
+      () => updateProfile(supabase, id, draft),
+      () => {
+        setEditing(null);
+        return controlId(id, 'edit');
+      },
+      'Could not save the person. Check the name and try again.',
+    );
   }
 
   async function remove(id: string) {
-    const ok = await change(deletePlace(id), () => deleteProfile(supabase, id));
-    if (ok) {
-      setEditing(null);
-      setFocusNext(ADD_ID);
-    }
+    await change(
+      deletePlace(id),
+      () => deleteProfile(supabase, id),
+      () => {
+        setEditing(null);
+        return ADD_ID;
+      },
+    );
   }
 
   async function move(id: string, offset: number) {
     const ids = movedIds((profiles ?? []).map((profile) => profile.id), id, offset);
     // Moving a row moves its elements in the page, and a focused one loses the focus in the move: it goes back to the button pressed.
-    const ok = await change(movePlace(id), () => reorderProfiles(supabase, ids));
-    if (ok) setFocusNext(controlId(id, offset < 0 ? 'up' : 'down'));
+    await change(movePlace(id), () => reorderProfiles(supabase, ids), () => controlId(id, offset < 0 ? 'up' : 'down'));
   }
 
   // Opening or closing a form, or a question, takes away what a write said in another one.
@@ -181,7 +160,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                       onCancel={() => {
                         closeForms();
                         setEditing({ ...editing, deleting: false });
-                        setFocusNext(controlId(profile.id, 'delete'));
+                        card.focus(controlId(profile.id, 'delete'));
                       }}
                       onDelete={() => void remove(profile.id)}
                     />
@@ -205,7 +184,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                               if (busy) return;
                               closeForms();
                               setEditing(null);
-                              setFocusNext(controlId(profile.id, 'edit'));
+                              card.focus(controlId(profile.id, 'edit'));
                             }}
                           >
                             Cancel
@@ -308,7 +287,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                 if (busy) return;
                 closeForms();
                 setAdding(null);
-                setFocusNext(ADD_ID);
+                card.focus(ADD_ID);
               }}
             >
               Cancel

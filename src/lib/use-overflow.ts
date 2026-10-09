@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { createPressGate, overflowState, type Axis, type Scroll } from './overflow';
+import { buttonHeldBack, createPressGate, overflowState, type Axis, type Scroll } from './overflow';
 
 // Does this scrolling box hold more than it shows, is it at its end, and move it on one step. The rule is overflowState's
 // (src/lib/overflow.ts); this measures a box and acts on it. A tablet in a kiosk browser draws no scrollbars, so the box is
@@ -44,12 +44,13 @@ export function useOverflow(axis: Axis, fit?: Fit): OverflowControl {
     const button = piece.current;
     let buttonSize = 0;
     if (fit && button) {
+      // Drawn, or display: none (no boxes at all), which holds back nothing (buttonHeldBack).
+      const drawn = button.getClientRects().length > 0;
       const exact = button.getBoundingClientRect();
-      buttonSize = fit === 'over' ? (sideways ? exact.width : exact.height) : sideways ? button.offsetWidth : button.offsetHeight;
-      if (fit === 'beside' && button.parentElement) {
-        const row = getComputedStyle(button.parentElement);
-        buttonSize += parseFloat(sideways ? row.columnGap : row.rowGap) || 0;
-      }
+      const size = fit === 'over' ? (sideways ? exact.width : exact.height) : sideways ? button.offsetWidth : button.offsetHeight;
+      const row = fit === 'beside' && button.parentElement ? getComputedStyle(button.parentElement) : null;
+      const gap = row ? parseFloat(sideways ? row.columnGap : row.rowGap) || 0 : 0;
+      buttonSize = buttonHeldBack({ drawn, size, gap });
     }
     return {
       scrollSize: sideways ? element.scrollWidth : element.scrollHeight,

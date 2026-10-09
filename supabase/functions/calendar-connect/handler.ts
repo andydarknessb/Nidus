@@ -25,7 +25,9 @@
 // callback also refuse a state whose account is no longer a Household Account of that Household
 // (a link outlives the person who made it by up to 7 days); a state with no account is refused too.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { cors, findHouseholdAccount, householdAccountOf, json as jsonWith } from '../_shared/edge.ts';
 import { feedCalendarName, fetchFeed, normaliseFeedUrl } from '../_shared/feed.ts';
+import { exchangeCode } from '../_shared/google-token.ts';
 
 export type ConnectEnv = {
   // Where this function is reachable from a browser, no trailing slash. Also the OAuth redirect base.
@@ -49,7 +51,6 @@ export type ConnectDeps = {
 
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export const GOOGLE_CALENDAR_LIST_URL = 'https://www.googleapis.com/calendar/v3/users/me/calendarList';
 
 // The parent's own flow finishes within minutes; a link waits for another adult to open it.
@@ -119,15 +120,8 @@ export async function verifyState(secret: string, token: string | null, nowMs: n
   }
 }
 
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-};
-
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
-}
+// Every JSON answer of this function carries the CORS headers: the Settings page calls it from the browser.
+const json = (status: number, body: unknown): Response => jsonWith(status, body, cors);
 
 function page(status: number, title: string, message: string): Response {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title></head><body style="background:#09090b;color:#fafafa;font:18px/1.5 system-ui,sans-serif;padding:2rem;max-width:32rem;margin:0 auto"><h1>${title}</h1><p>${message}</p></body></html>`;
@@ -168,19 +162,8 @@ async function listCalendars(deps: ConnectDeps, accessToken: string): Promise<Go
 }
 
 // Who is asking, for the routes only a Household Account may use: its Household, or the answer to send.
-async function householdOf(request: Request, deps: ConnectDeps): Promise<{ householdId: string; authUserId: string } | Response> {
-  const token = /^Bearer (.+)$/i.exec(request.headers.get('Authorization') ?? '')?.[1];
-  if (!token) return json(401, { error: 'sign in first' });
-  const { data: session } = await deps.admin.auth.getUser(token);
-  if (!session.user) return json(401, { error: 'sign in first' });
-  const { data: account } = await deps.admin
-    .from('household_accounts')
-    .select('household_id')
-    .eq('auth_user_id', session.user.id)
-    .maybeSingle<{ household_id: string }>();
-  if (!account) return json(403, { error: 'only a Household Account connects a Calendar Account' });
-  return { householdId: account.household_id, authUserId: session.user.id };
-}
+const householdOf = (request: Request, deps: ConnectDeps) =>
+  householdAccountOf(request, deps.admin, 'only a Household Account connects a Calendar Account', cors);
 
 // POST start: who is asking must be a Household Account, and the state carries its Household.
 async function start(request: Request, deps: ConnectDeps, now: number): Promise<Response> {
@@ -235,12 +218,7 @@ const expired = () => page(400, 'Link expired', 'This link is no longer valid. A
 async function liveState(token: string | null, deps: ConnectDeps, now: number): Promise<State | Response> {
   const state = await verifyState(deps.env.stateSecret, token, now);
   if (!state) return expired();
-  const { data, error } = await deps.admin
-    .from('household_accounts')
-    .select('auth_user_id')
-    .eq('household_id', state.household_id)
-    .eq('auth_user_id', state.auth_user_id)
-    .maybeSingle();
+  const { data, error } = await findHouseholdAccount(deps.admin, state.auth_user_id, state.household_id);
   if (error) {
     console.error('calendar-connect: household_accounts lookup failed', error);
     return page(500, 'Calendar not connected', 'Something went wrong on our side. Please try again.');
@@ -269,19 +247,8 @@ async function callback(url: URL, deps: ConnectDeps, now: number): Promise<Respo
   const code = url.searchParams.get('code');
   if (!code) return page(400, 'Calendar not connected', 'Google did not send back a code. Please try again.');
 
-  const tokenResponse = await deps.fetch(GOOGLE_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code,
-      client_id: deps.env.googleClientId,
-      client_secret: deps.env.googleClientSecret,
-      redirect_uri: `${deps.env.functionUrl}/callback`,
-      grant_type: 'authorization_code',
-    }).toString(),
-  });
-  if (!tokenResponse.ok) return page(502, 'Calendar not connected', 'Google would not accept that sign-in. Please try again.');
-  const tokens = (await tokenResponse.json()) as { access_token?: string; refresh_token?: string };
+  const tokens = await exchangeCode(deps.fetch, { clientId: deps.env.googleClientId, clientSecret: deps.env.googleClientSecret }, code, `${deps.env.functionUrl}/callback`);
+  if (!tokens) return page(502, 'Calendar not connected', 'Google would not accept that sign-in. Please try again.');
   if (!tokens.access_token || !tokens.refresh_token) {
     return page(502, 'Calendar not connected', 'Google did not allow ongoing access. Please try again and accept every prompt.');
   }

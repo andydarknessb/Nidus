@@ -6,10 +6,8 @@ import {
   MAX_BODY,
   MAX_TITLE,
   morningBody,
-  nextDate,
   reminderBody,
   routinesBody,
-  zoned,
 } from '../supabase/functions/push-notify/handler';
 
 // The pure parts of the sender (spec 0007): words, payload limits and the Household's clock.
@@ -53,35 +51,6 @@ describe('makePayload', () => {
 });
 
 describe('the Household clock', () => {
-  it('reads the Household date, minutes and weekday, not the machine zone', () => {
-    // 2026-10-06 is a Tuesday. 13:30Z is 8:30 in Chicago (CDT) and 03:30 the next morning at +14.
-    const at = Date.parse('2026-10-06T13:30:00Z');
-    expect(zoned(at, 'America/Chicago')).toEqual({ date: '2026-10-06', minutes: 8 * 60 + 30, weekday: 2 });
-    expect(zoned(at, 'Pacific/Kiritimati')).toEqual({ date: '2026-10-07', minutes: 3 * 60 + 30, weekday: 3 });
-    expect(zoned(at, 'America/Los_Angeles')).toEqual({ date: '2026-10-06', minutes: 6 * 60 + 30, weekday: 2 });
-  });
-
-  it('puts 7:00 where the zone puts it across a spring-forward in Chicago', () => {
-    // The clocks jump 2:00 to 3:00 on 2026-03-08: 7:00 is 13:00Z the day before, 12:00Z that day.
-    expect(zoned(Date.parse('2026-03-07T13:00:00Z'), 'America/Chicago').minutes).toBe(7 * 60);
-    expect(zoned(Date.parse('2026-03-08T11:59:00Z'), 'America/Chicago').minutes).toBe(6 * 60 + 59);
-    expect(zoned(Date.parse('2026-03-08T12:00:00Z'), 'America/Chicago')).toMatchObject({ date: '2026-03-08', minutes: 7 * 60 });
-  });
-
-  it('puts 7:00 where the zone puts it across a fall-back in Auckland, far from UTC', () => {
-    // Auckland ends daylight saving at 03:00 on 2026-04-05 (+13 to +12).
-    expect(zoned(Date.parse('2026-04-03T18:00:00Z'), 'Pacific/Auckland')).toMatchObject({ date: '2026-04-04', minutes: 7 * 60 });
-    expect(zoned(Date.parse('2026-04-04T19:00:00Z'), 'Pacific/Auckland')).toMatchObject({ date: '2026-04-05', minutes: 7 * 60 });
-    // The UTC hour of "7:00" moved by one, the Household's did not.
-    expect(zoned(Date.parse('2026-04-04T18:00:00Z'), 'Pacific/Auckland')).toMatchObject({ date: '2026-04-05', minutes: 6 * 60 });
-  });
-
-  it('gives the next date across month and year ends', () => {
-    expect(nextDate('2026-10-06')).toBe('2026-10-07');
-    expect(nextDate('2026-02-28')).toBe('2026-03-01');
-    expect(nextDate('2026-12-31')).toBe('2027-01-01');
-  });
-
   it('writes times of day as "8:30 AM" in the Household Timezone', () => {
     const at = Date.parse('2026-10-06T13:30:00Z');
     expect(clockWords(at, 'America/Chicago')).toBe('8:30 AM');
