@@ -214,8 +214,9 @@ export function useChange<T>(read: Pick<SyncedRead<T>, 'write' | 'readBack'>, pr
   return { busy: state.busy, isBusy, change, focus };
 }
 
-// "Could not load routines. Check your connection.": what a screen says when its read has failed with nothing loaded. Spelt on a
-// screen only by the ReadState part (components/ReadState.tsx), and by the words a lib keeps for a failed read.
+// "Could not load routines. Check your connection.": what a screen says when its read has failed with nothing loaded. A ladder is drawn
+// by the ReadState part (components/ReadState.tsx); the Settings cards' own lost-connection line (a read that failed over what was
+// read) and the words a lib keeps for a failed read use this too.
 export function couldNotLoad(what: string): string {
   return `Could not load ${what}. Check your connection.`;
 }

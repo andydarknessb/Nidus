@@ -89,14 +89,15 @@ export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEX
       </div>
       {/* Until the first read lands the card keeps the room of the tiles it will show (80 each and 8 between: 16 rem for three, 10.5 rem
           for two), so the list card under it does not jump when they arrive. Once read, it takes the height it needs. */}
-      {!ready && (
+      {/* What was read for yesterday keeps its tiles on screen, unchecked, until today's read lands, as the chart's columns do. */}
+      {!ready && groups.length === 0 && (
         <div style={{ minHeight: `${limit * 5 + (limit - 1) * 0.5}rem` }}>
           <ReadState of="routines" read={{ state }} className="px-1" alert="px-1 text-base" />
         </div>
       )}
       {ready && groups.length === 0 && <EmptyWords className="px-1">Nothing scheduled today.</EmptyWords>}
       {ready && groups.length > 0 && tiles.length === 0 && <EmptyWords className="px-1">Nobody has anything left right now.</EmptyWords>}
-      {ready && tiles.length > 0 && (
+      {tiles.length > 0 && (
         <ul className="flex flex-col gap-2">
           {tiles.map(({ profile, routine, done: held }) => (
             // Keyed by person, so the tile that was tapped stays under the finger and shows what is next once its hold ends.
