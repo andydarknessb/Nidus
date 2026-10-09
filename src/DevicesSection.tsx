@@ -4,6 +4,7 @@ import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, statu
 import { Button } from '@/components/ui/button';
 import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice } from '@/lib/device';
 import { seenWords } from '@/lib/device-format';
+import { supabase } from '@/lib/supabase';
 import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem } from '@/lib/use-write-problem';
 import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
@@ -38,7 +39,7 @@ export function DevicesSection() {
   // Read through the synced read: every 30 seconds keeps "last seen" honest while the page stays open, and a read follows each
   // write. A trouble reading, which a read that works takes away, is kept apart from what a write said of itself: a good read says
   // nothing of whether the unpairing did, so its words stay while its question is open.
-  const read = useSyncedRead(async () => ({ devices: await listDevices(), now: new Date() }), DEVICE_TABLES, 'devices');
+  const read = useSyncedRead(async () => ({ devices: await listDevices(supabase), now: new Date() }), DEVICE_TABLES, 'devices');
   const devices = read.data?.devices ?? null;
   const now = read.data?.now ?? new Date();
   const loadProblem = read.failed ? couldNotLoad('tablets') : null;
@@ -57,7 +58,7 @@ export function DevicesSection() {
     await card.run(
       async () => {
         setPairStatus('pairing');
-        await read.write(() => claimPairingCode(pairing.code, pairing.name));
+        await read.write(() => claimPairingCode(supabase, pairing.code, pairing.name));
         problems.clear(PAIR);
       },
       {
@@ -82,7 +83,7 @@ export function DevicesSection() {
   async function unpair(id: string) {
     await card.run(
       async () => {
-        await read.write(() => revokeDevice(id));
+        await read.write(() => revokeDevice(supabase, id));
         problems.clear(unpairPlace(id));
       },
       {

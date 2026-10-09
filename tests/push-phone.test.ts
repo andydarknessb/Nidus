@@ -1,17 +1,17 @@
 import { readFileSync } from 'node:fs';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { pushSupport as pushSupportType } from '../src/lib/push';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_PREFERENCES, PushGoneError, pushSupport, savePushPreferences } from '../src/lib/push';
+import { asHouseholdAccount, asServiceRole, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
 // The phone's side of notifications (spec 0007, The phone): which browsers can show them, and what the service worker does with
-// a push and with a tap. Neither reaches the database: the first is pure over a fake navigator, the second runs public/sw.js in a
-// fake service worker global.
+// a push and with a tap (neither reaches the database: the first is pure over a fake navigator, the second runs public/sw.js in a
+// fake service worker global), and what saving a phone's preferences does as the account that owns the row and as another.
 
-let pushSupport: typeof pushSupportType;
-beforeAll(async () => {
-  // push.ts reaches the Supabase client, which reads these at import; CI has no .env.local.
+// push.ts takes the project's address from the app's client module, which reads these when it is first imported; CI has no
+// .env.local, so they are in place before the imports above run.
+vi.hoisted(() => {
   vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
-  ({ pushSupport } = await import('../src/lib/push'));
 });
 afterAll(() => {
   vi.unstubAllEnvs();
@@ -248,5 +248,39 @@ describe('public/sw.js', () => {
       await w.click(url);
       expect(w.opened).toEqual([SCOPE]);
     }
+  });
+});
+
+// ---- savePushPreferences, as a real principal --------------------------------------------------------------------------------
+
+describe('savePushPreferences', () => {
+  const households: HouseholdAccount[] = [];
+
+  afterEach(async () => {
+    await Promise.all(households.splice(0).map(destroyHousehold));
+  });
+
+  async function household() {
+    const arranged = await createHousehold();
+    households.push(arranged);
+    return { arranged, phone: await asHouseholdAccount(arranged) };
+  }
+
+  it('saves what the owner chose, and refuses another Household Account the row, as gone, leaving it as it was', async () => {
+    const mine = await household();
+    const neighbours = await household();
+    const { data: id, error } = await mine.phone.rpc('save_push_subscription', {
+      p_endpoint: `https://fcm.googleapis.com/fcm/send/${Date.now().toString(36)}`,
+      p_p256dh: 'p256dh-key',
+      p_auth: 'auth-secret',
+    });
+    if (error || typeof id !== 'string') throw error ?? new Error('save_push_subscription returned no id');
+
+    await savePushPreferences(mine.phone, id, { ...DEFAULT_PREFERENCES, reminderMinutes: 30, morningSummary: false });
+    const stored = () => asServiceRole().from('push_subscriptions').select('reminder_minutes, morning_summary').eq('id', id).single();
+    expect((await stored()).data).toEqual({ reminder_minutes: 30, morning_summary: false });
+
+    await expect(savePushPreferences(neighbours.phone, id, DEFAULT_PREFERENCES)).rejects.toBeInstanceOf(PushGoneError);
+    expect((await stored()).data).toEqual({ reminder_minutes: 30, morning_summary: false });
   });
 });

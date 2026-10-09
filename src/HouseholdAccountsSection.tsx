@@ -13,6 +13,7 @@ import {
   type HouseholdAccountRow,
   type HouseholdInvite,
 } from '@/lib/household-invites';
+import { supabase } from '@/lib/supabase';
 import { CANCEL_SAID, MAKE_SAID, REMOVED_WORDS, inviteViewOf, isRemoved, loadFailedWords, sharePayload, type InviteView } from '@/lib/household-accounts';
 import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
@@ -198,7 +199,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   // which is on screen only until the page is left, since only its hash is stored.
   const read = useSyncedRead<Read>(
     async () => {
-      const [accounts, stored] = await Promise.all([listHouseholdAccounts(), readHouseholdInvite(householdId)]);
+      const [accounts, stored] = await Promise.all([listHouseholdAccounts(supabase), readHouseholdInvite(supabase, householdId)]);
       return { accounts, stored };
     },
     NO_TABLES,
@@ -248,7 +249,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
     void write(
       INVITE,
       async () => {
-        const { token, expiresAt } = await createHouseholdInvite();
+        const { token, expiresAt } = await createHouseholdInvite(supabase);
         setMade({ link: inviteLink(window.location.origin, token), expiresAt });
       },
       () => {
@@ -261,7 +262,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   const cancelInvite = () =>
     void write(
       INVITE,
-      cancelHouseholdInvite,
+      () => cancelHouseholdInvite(supabase),
       () => {
         setMade(null);
         setStatus('cancelled');
@@ -275,7 +276,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   const remove = (id: string) =>
     void write(
       removePlace(id),
-      () => removeHouseholdAccount(id),
+      () => removeHouseholdAccount(supabase, id),
       (removed) => {
         // false: the database refused (yourself, another Household's, already gone), so nothing was removed and the invite stands.
         if (removed !== true) return;

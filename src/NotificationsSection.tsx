@@ -148,7 +148,7 @@ const NO_TABLES = [] as const;
 
 export function NotificationsSection() {
   const [support] = useState<PushSupport>(() => (typeof window === 'undefined' ? 'unsupported' : pushSupport()));
-  const read = useSyncedRead<PushState>(readPushState, NO_TABLES, support === 'supported' ? 'push' : null);
+  const read = useSyncedRead<PushState>(() => readPushState(supabase), NO_TABLES, support === 'supported' ? 'push' : null);
   const state = read.data;
   const [listName, setListName] = useState<string | null>(null);
   const [status, setStatus] = useState<NotificationsStatus>('idle');
@@ -205,7 +205,7 @@ export function NotificationsSection() {
       // Asking for permission is the first thing the tap does: turnOnNotifications calls requestPermission before awaiting anything.
       onTurnOn={() =>
         void write(
-          turnOnNotifications,
+          () => turnOnNotifications(supabase),
           (next) => (next.kind === 'on' ? FIRST_SWITCH : next.kind === 'denied' ? DENIED : undefined),
           TURN_ON_SAID,
           (next) => next,
@@ -213,17 +213,17 @@ export function NotificationsSection() {
       }
       onTurnOff={() =>
         void write(
-          turnOffNotifications,
+          () => turnOffNotifications(supabase),
           () => TURN_ON,
           TURN_OFF_SAID,
           () => ({ kind: 'off' }),
         )
       }
-      onTest={() => void write(sendTestNotification, () => setStatus('test'), TEST_SAID)}
+      onTest={() => void write(() => sendTestNotification(supabase), () => setStatus('test'), TEST_SAID)}
       onChange={(preferences) => {
         if (state?.kind !== 'on') return;
         void write(
-          () => savePushPreferences(state.id, preferences),
+          () => savePushPreferences(supabase, state.id, preferences),
           () => setStatus('saved'),
           undefined,
           () => ({ kind: 'on', id: state.id, preferences }),
