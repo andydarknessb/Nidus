@@ -17,6 +17,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0008-deeper-modules.md` is the v8 spec: deeper modules (the Household clock, one synced read, day events, the paged view, the card write guard, calendar provider adapters), with no visible change beyond its rulings.
 - `docs/specs/0009-the-wall-in-portrait.md` is the v9 spec: the Wall on a tablet hung upright (768 px and wider, taller than wide), with the Lenovo Tab P12 as the tablet.
 - `docs/specs/0010-the-wall-on-a-24-inch-screen.md` is the v10 spec: the Wall on an Elo 2402L touch monitor (24 inches, 1920 by 1080) on a Windows PC, hung either way; `docs/windows-kiosk.md` is its set-up.
+- `docs/specs/0011-deeper-screens.md` is the v10 spec: deeper screens (the Shared List card, the Meal Plan, event words, the Wall's routes, the read state, the lib client), continuing v8 one layer up, with one visible fix.
 
 ## Conventions
 

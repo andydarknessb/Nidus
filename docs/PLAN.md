@@ -215,3 +215,18 @@ Settled on 2026-10-08 when the owner asked for the Wall to fit an Elo 2402L touc
 - **Portrait's Routines and Lists are a grid**: columns and cards at least 17 rem, as many to a row as fit, each its row-mates' width; the P12 gets it too.
 - **Home in portrait fills the height**: Up next shows the tiles a third of the height holds, never fewer than three; the lower row follows; the P12 gets it too.
 - **No new data**: no migration.
+
+## v10: deeper screens
+
+Settled on 2026-10-09 from an architecture review the owner approved in full, two rounds of rulings. The spec is [0011](specs/0011-deeper-screens.md); tracker #198, tickets #199 to #205. It continues v8 one layer up: the screens.
+
+### Decisions
+
+- **One visible change**: a list whose last read or write failed shows no count on the Wall, as on the phone. It ships to master first.
+- **One module each** for the Shared List card, the Meal Plan week, an event's time words (facts then words, shared with push-notify), the Wall's routes, the read state (with the card write behind `change`) and the lib client convention (the client as the first argument, everywhere).
+- **Meal Plan** enters the glossary.
+- **v8's rulings hold**: replace don't layer, plain cores with thin hooks, facts not sentences, no DOM test library.
+
+### Tables
+
+No migration.

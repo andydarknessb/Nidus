@@ -90,3 +90,7 @@ _Avoid_: Favourite list, default list
 **Meal**:
 What the Household plans to eat for one slot (breakfast, lunch, dinner or snack) on one Household date. Free text, at most one per slot per day; the Household Account or a Device writes, changes or clears it.
 _Avoid_: Recipe, menu, meal plan entry
+
+**Meal Plan**:
+The Household's Meals for one week, Sunday to Saturday, with today's week as the page it opens on. The Wall shows the whole week; a phone shows one picked day of it.
+_Avoid_: Menu, week view, meal planner
