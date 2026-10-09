@@ -62,8 +62,8 @@ Everything else is invisible: no new words, colours, layouts or timings.
 
 ### Event words
 
-- `supabase/functions/_shared/event-words.ts`, beside the Household clock, which the Wall imports already. Facts then words: `eventTime(occurrence, day)` gives `{ allDay, continues, endsHere, start, end, clocksRepeat }`; `timeWords(facts, form)` gives the sentence for `'pill' | 'block' | 'line' | 'sheet'`. The date words (`formatDate`, `formatDateWithYear`, `describeCell`) go with it as `dateWords`.
-- The schedule pill, the day block, the month line, the details sheet, and push-notify's reminder ("At 8:30 AM") and morning summary (each line is the pill form) all ask it. `pillTime`, `blockTime`, `describeWhen`, `formatCompactClock`, the month line's inline rule and push-notify's `clockWords` go. Where the morning summary's all-day rule differs from the pill's, the pill's wins.
+- `supabase/functions/_shared/event-words.ts`, beside the Household clock, which the Wall imports already. Facts then words: `eventTime(occurrence, day)` gives `{ allDay, continues, endsHere, start, end, clocksRepeat }`; `timeWords(facts, form)` gives the sentence for `'pill' | 'block' | 'line' | 'sheet'`. The date words (a day, a day with its year, and what a screen reader hears of a cell) go with it as `dateWords`.
+- The schedule pill, the day block, the month line, the details sheet, and push-notify's reminder ("At 8:30 AM") and morning summary (each line is the pill form) all ask it. The pill's, the block's, the sheet's and the compact clock's own functions, the month line's inline rule and push-notify's clock words go. Where the morning summary's all-day rule differs from the pill's, the pill's wins.
 - The Native Event form's `clock()` makes an `<input type="time">` value, not words; it stays with the form.
 
 ### The Wall's routes
@@ -94,7 +94,7 @@ No migration.
 - **Modules tested**:
   - List card: rendered in both sizes; the count's three states (unknown, failed, known); Clear's focus; "Nothing on this list." Cases from `lists-screen` and `phone-meals-lists` that reach the card move here.
   - Meal Plan: the week, the picked day across Household midnight, `cellFor`'s three states and words. Cases from `meals`, `phone-meals-lists` (`mealsPickedDay`, `slotRowName` and the sheet model) and `wall-screens` move onto the core.
-  - Event words: every case from `day-view` (`blockTime`), `event-pill` and `month-cell` (times), `calendar-occurrences` (`describeWhen`, `clocksRepeat`, the formatters) and `push-notify-words` (`clockWords`, `morningBody` lines), on the one interface; the clocks-back and clocks-forward nights for Chicago, London and Auckland.
+  - Event words: every case from `day-view` (the block's words), `event-pill` and `month-cell` (times), `calendar-occurrences` (the sheet's words, the repeat rule, the formatters) and `push-notify-words` (the clock words, `morningBody` lines), on the one interface; the clocks-back and clocks-forward nights for Chicago, London and Auckland.
   - Routes and month grid: `wall-routes` and the month-fit cases from `calendar-occurrences`, unchanged in substance.
   - Read state: the state across first load, failure, success then failure; `change` for done, failed and busy with a read-back; the Routines mapping of `settled`.
   - Libs: pairing, invites and push rows through a signed-in client, as Device and as a second Household Account where RLS says no.
