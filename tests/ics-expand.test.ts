@@ -330,6 +330,19 @@ describe('expandFeed: lengths', () => {
   });
 });
 
+describe('expandFeed: years below 100', () => {
+  // ical.js reads the four year digits as written, and Date.UTC reads 0 to 99 as 1900 to 1999: a
+  // year below 100 is refused, not shifted.
+  it('refuses an event that starts in a year below 100, rather than reading it as 1998', () => {
+    const { rows } = expandFeed(feed(event('DTSTART:00980101T100000')), HOUSEHOLD, Date.parse('1997-12-01T00:00:00Z'), Date.parse('1998-02-01T00:00:00Z'));
+    expect(rows).toEqual([]);
+  });
+
+  it('refuses an event whose end is in a year below 100, rather than reading it as 1999 before its start', () => {
+    expect(expand(feed(event('DTSTART:20261001T100000Z\nDTEND:00990601T110000Z')))).toEqual([]);
+  });
+});
+
 // A run's work with a clock that never moves, so that no test here depends on how fast the machine is:
 // only the step caps and the time limit the test itself sets can cut a read.
 function mulberry(seed: number) {
@@ -955,7 +968,7 @@ RRULE:${rule}`, 'missing')), windowStart, windowEnd);
     for (const lines of [
       `DTSTART:19000115T090000Z\nDURATION:P36525D\n${rule}`,
       `DTSTART:16000115T090000Z\nDURATION:P109575D\n${rule}`,
-      `DTSTART:00010115T090000Z\nDURATION:P800000D\n${rule}`,
+      `DTSTART:01000115T090000Z\nDURATION:P800000D\n${rule}`,
     ]) {
       const run = budget();
       const { rows, truncated } = expandFeed(feed(event(lines, 'huge')), HOUSEHOLD, WINDOW_START, WINDOW_END, run);

@@ -84,6 +84,9 @@ type Layout = { start: ICAL.Time; isAllDay: boolean; lengthDays: number; lengthM
 function layout(ev: ICAL.Event, timezone: string): Layout | null {
   const start = ev.startDate;
   if (!start) return null;
+  // ical.js keeps a year as written and Date.UTC reads 0 to 99 as 1900 to 1999, so a year below 100
+  // is refused, not shifted. The DTEND is checked as written: endTime falls back past a DTEND before DTSTART.
+  if (start.year < 100 || ev.endDate.year < 100) return null;
   const end = endTime(ev);
   return {
     start,
