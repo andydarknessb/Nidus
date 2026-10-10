@@ -6,7 +6,8 @@ import { EventSheets, type OpenEvent } from '../components/EventSheets';
 import { ReadState } from '../components/ReadState';
 import { UpNext } from '../components/UpNext';
 import { DayWeather } from '../components/Weather';
-import { describeCell, fiveDays } from '../lib/calendar-occurrences';
+import { fiveDays } from '../lib/calendar-occurrences';
+import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { focusElement } from '../lib/focus';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import { UP_NEXT_TILES } from '../lib/routines';
@@ -50,7 +51,7 @@ function TodayCard({ timezone, added, forecast, weatherOn, profiles }: Pick<Phon
           <span aria-hidden className="grid size-[38px] shrink-0 place-items-center rounded-full bg-primary font-display text-[21px] leading-none text-primary-foreground">
             {Number(day.date.slice(8))}
           </span>
-          <h2 ref={heading} tabIndex={-1} aria-label={`Today, ${describeCell(day.date, null)}`} className="font-display text-[22px] leading-7 outline-none">
+          <h2 ref={heading} tabIndex={-1} aria-label={`Today, ${dateWords.cell(day.date, null)}`} className="font-display text-[22px] leading-7 outline-none">
             Today
           </h2>
           <span className="ml-auto">

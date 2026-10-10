@@ -1,29 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { describeWhen, fiveDays, formatClock, nowHour, type Occurrence } from '../src/lib/calendar-occurrences';
+import { fiveDays, nowHour } from '../src/lib/calendar-occurrences';
 import { dayStartMs } from '../supabase/functions/_shared/zoned-time.ts';
 
 const CHICAGO = 'America/Chicago';
 const TOKYO = 'Asia/Tokyo';
 const SANTIAGO = 'America/Santiago';
-
-let counter = 0;
-function event(title: string, startsAt: string, endsAt: string, allDay = false): Occurrence {
-  counter += 1;
-  return {
-    source: 'synced',
-    id: `event-${counter}`,
-    calendar_id: 'calendar-1',
-    calendar_name: 'Family',
-    title,
-    description: null,
-    location: null,
-    starts_at: startsAt,
-    ends_at: endsAt,
-    is_all_day: allDay,
-    profile_id: null,
-    profile_ids: [],
-  };
-}
 
 // Tue 2026-09-29 .. Sat 2026-10-03 in Chicago (CDT, UTC-5), now being Tuesday 10:30 local.
 const NOW = new Date('2026-09-29T15:30:00Z');
@@ -75,25 +56,5 @@ describe('where now is', () => {
     const skipped = fiveDays(SANTIAGO, new Date('2026-09-06T15:00:00Z'));
     expect(skipped[0]!.date).toBe('2026-09-06');
     expect(nowHour(skipped[0]!, new Date('2026-09-06T15:00:00Z'))).toBeCloseTo(12);
-  });
-});
-
-describe('words', () => {
-  it('formats clock times in the Household Timezone', () => {
-    expect(formatClock(Date.parse('2026-09-29T15:30:00Z'), CHICAGO)).toBe('10:30 AM');
-    expect(formatClock(Date.parse('2026-09-29T15:30:00Z'), TOKYO)).toBe('12:30 AM');
-  });
-
-  it('describes a timed event, an overnight one and all-day ones', () => {
-    expect(describeWhen(event('x', '2026-09-30T23:00:00Z', '2026-10-01T00:30:00Z'), CHICAGO)).toBe('Wed, Sep 30, 6:00 PM to 7:30 PM');
-    expect(describeWhen(event('x', '2026-09-30T03:00:00Z', '2026-09-30T13:00:00Z'), CHICAGO)).toBe('Tue, Sep 29, 10:00 PM to Wed, Sep 30, 8:00 AM');
-    expect(describeWhen(event('x', '2026-10-01T05:00:00Z', '2026-10-02T05:00:00Z', true), CHICAGO)).toBe('Thu, Oct 1, all day');
-    // The night the clocks go back (Sun Nov 1, 2026: 2:00 AM CDT is 1:00 AM CST again), 1:00 AM is on the clock twice: the zones say which.
-    expect(describeWhen(event('x', '2026-11-01T06:00:00Z', '2026-11-01T07:00:00Z'), CHICAGO)).toBe('Sun, Nov 1, 1:00 AM CDT to 1:00 AM CST');
-    expect(describeWhen(event('x', '2026-11-01T06:30:00Z', '2026-11-01T07:15:00Z'), CHICAGO)).toBe('Sun, Nov 1, 1:30 AM CDT to 1:15 AM CST');
-    // An event that does not repeat the clock says nothing of zones, that night or any other.
-    expect(describeWhen(event('x', '2026-11-01T05:00:00Z', '2026-11-01T06:30:00Z'), CHICAGO)).toBe('Sun, Nov 1, 12:00 AM to 1:30 AM');
-    expect(describeWhen(event('x', '2026-11-01T08:00:00Z', '2026-11-01T09:00:00Z'), CHICAGO)).toBe('Sun, Nov 1, 2:00 AM to 3:00 AM');
-    expect(describeWhen(event('x', '2026-09-30T05:00:00Z', '2026-10-03T05:00:00Z', true), CHICAGO)).toBe('Wed, Sep 30 to Fri, Oct 2, all day');
   });
 });

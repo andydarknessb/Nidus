@@ -1,6 +1,7 @@
 import { cn } from 'cn';
 import { Pin } from 'lucide-react';
-import { cellLines, describeCell, formatCompactClock, type Occurrence } from '../lib/calendar-occurrences';
+import { dateWords, eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
+import { cellLines, type Occurrence } from '../lib/calendar-occurrences';
 import type { WallDay } from '../lib/paged-view';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, type PillPeople } from '../lib/schedule';
@@ -27,7 +28,7 @@ export const HATCH = 'bg-[repeating-linear-gradient(135deg,transparent_0_6px,var
 // count to give, and "no events" would call a day free that may not be.
 function cellName(day: WallDay, occurrences: Occurrence[] | null): string {
   const date = Number(day.date.slice(8));
-  return `${date}, ${day.isToday ? 'today, ' : ''}${describeCell(day.date, occurrences === null ? null : occurrences.length)}`;
+  return `${date}, ${day.isToday ? 'today, ' : ''}${dateWords.cell(day.date, occurrences === null ? null : occurrences.length)}`;
 }
 
 // `occurrences` are the day's own, in order, and null until its week has been read; `profiles` fill each line, and the lines wait
@@ -40,7 +41,6 @@ export function DayCell({
   occurrences,
   profiles,
   lines,
-  timezone,
   onOpen,
 }: {
   day: WallDay;
@@ -49,7 +49,6 @@ export function DayCell({
   occurrences: Occurrence[] | null;
   profiles: readonly Profile[];
   lines: number;
-  timezone: string;
   onOpen: (date: string) => void;
 }) {
   // Today's date is in a filled disc (the date in a --primary disc, on every view): 34 px with a 20 px number, where the other dates
@@ -104,7 +103,7 @@ export function DayCell({
         date
       )}
       {shown.map((occurrence) => (
-        <EventLine key={occurrence.id} occurrence={occurrence} day={day} timezone={timezone} people={pillPeople(occurrence, profiles)} />
+        <EventLine key={occurrence.id} occurrence={occurrence} day={day} people={pillPeople(occurrence, profiles)} />
       ))}
       {more && lines > 0 && <span className="h-6 shrink-0 px-1.5 text-sm leading-6 font-medium text-muted-foreground">{more}</span>}
     </Button>
@@ -120,9 +119,8 @@ export function DayCell({
 // never shrink. In a cell under 7 rem wide (the cell is the container) the pin is hidden and the gaps close up; the end of
 // the time is cut (an ellipsis) when it must be, never a disc. The title keeps 1.25 em, so a cut title always shows its ellipsis. A cell with room is as it was. The title starts where it starts, whichever way
 // it is written (dir="auto"), so a right-to-left one is cut at its end.
-function EventLine({ occurrence, day, timezone, people }: { occurrence: Occurrence; day: WallDay; timezone: string; people: PillPeople }) {
-  const start = Date.parse(occurrence.starts_at);
-  const time = !occurrence.is_all_day && start >= day.startMs ? formatCompactClock(start, timezone) : null;
+function EventLine({ occurrence, day, people }: { occurrence: Occurrence; day: WallDay; people: PillPeople }) {
+  const time = timeWords(eventTime(occurrence, day), 'line');
   return (
     <span data-testid="event-line" className="relative mb-0.5 flex h-5.5 min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-lg pr-1 pl-1.5 text-foreground @max-[7rem]:gap-0.5">
       <EventFill people={people} />

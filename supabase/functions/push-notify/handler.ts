@@ -19,6 +19,7 @@
 // machine's.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { cors, householdAccountOf, json, sameSecret } from '../_shared/edge.ts';
+import { eventTime, formatClock, timeWords } from '../_shared/event-words.ts';
 import { addDays, dayStartMs, householdTime, spanIsOn, type HouseholdTime } from '../_shared/zoned-time.ts';
 
 export type PushEnv = {
@@ -82,13 +83,6 @@ export function makePayload(title: string, body: string, url: string, tag: strin
   return { title: cut(title, MAX_TITLE), body: cut(body, MAX_BODY), url, tag };
 }
 
-// "8:30 AM" on the Household's clock.
-export function clockWords(ms: number, timezone: string): string {
-  const { minutes } = householdTime(ms, timezone);
-  const hour = Math.floor(minutes / 60);
-  return `${hour % 12 || 12}:${String(minutes % 60).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
-}
-
 // "At 8:30 AM, in 15 minutes": the real minutes left, rounded, "now" under one minute. The
 // location, when there is one, is a second line.
 export function reminderBody(startsAt: number, now: number, timezone: string, location: string | null): string {
@@ -96,7 +90,7 @@ export function reminderBody(startsAt: number, now: number, timezone: string, lo
   const minutes = Math.round(left / 60_000);
   const when = left < 60_000 ? 'now' : `in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
   const place = location?.trim();
-  return `At ${clockWords(startsAt, timezone)}, ${when}${place ? `\n${place}` : ''}`;
+  return `At ${formatClock(startsAt, timezone)}, ${when}${place ? `\n${place}` : ''}`;
 }
 
 export type DayEvent = { title: string; starts_at: string; ends_at: string; is_all_day: boolean };
@@ -107,17 +101,14 @@ const slotWords = (slot: string): string => slot.charAt(0).toUpperCase() + slot.
 
 // Today's events in order ("All day: Holiday", "8:30 AM Swim"), "and 3 more" past four, then
 // today's meals in slot order ("Dinner: Tacos"), one to a line. `dayStart` and `dayEnd` are the
-// Household's midnights. A timed event that began before today and ends today reads "Until 12:30 AM
-// Title"; one that covers the whole day is all day.
+// Household's midnights. Each event's time is what the Wall's pill says of it on today (event words):
+// "Until 12:30 AM Title" for one that began before today, all day for one that covers the whole day.
 export function morningBody(events: DayEvent[], meals: DayMeal[], dayStart: number, dayEnd: number, timezone: string): string {
   const lines: string[] = [];
   const ordered = [...events].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
   for (const event of ordered.slice(0, MORNING_EVENTS)) {
-    const startsAt = Date.parse(event.starts_at);
-    const endsAt = Date.parse(event.ends_at);
-    if (event.is_all_day || (startsAt < dayStart && endsAt >= dayEnd)) lines.push(`All day: ${event.title}`);
-    else if (startsAt < dayStart) lines.push(`Until ${clockWords(endsAt, timezone)} ${event.title}`);
-    else lines.push(`${clockWords(startsAt, timezone)} ${event.title}`);
+    const time = eventTime(event, { timezone, startMs: dayStart, endMs: dayEnd });
+    lines.push(time.allDay ? `All day: ${event.title}` : `${timeWords(time, 'pill')} ${event.title}`);
   }
   if (ordered.length > MORNING_EVENTS) lines.push(`and ${ordered.length - MORNING_EVENTS} more`);
   if (ordered.length === 0) lines.push('Nothing on the calendar today.');

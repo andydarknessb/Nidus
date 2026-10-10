@@ -3,7 +3,7 @@ import type { Occurrence } from '../src/lib/calendar-occurrences';
 import {
   addedSentence,
   blankEventForm,
-  clockWords,
+  timeInputWords,
   dayChoices,
   eventFormFromOccurrence,
   eventFormToInput,
@@ -143,11 +143,11 @@ describe('Starts and Ends', () => {
   });
 
   it('says its times as the family reads them', () => {
-    expect(clockWords('00:00')).toBe('12:00 AM');
-    expect(clockWords('09:05')).toBe('9:05 AM');
-    expect(clockWords('12:00')).toBe('12:00 PM');
-    expect(clockWords('14:00')).toBe('2:00 PM');
-    expect(clockWords('23:45')).toBe('11:45 PM');
+    expect(timeInputWords('00:00')).toBe('12:00 AM');
+    expect(timeInputWords('09:05')).toBe('9:05 AM');
+    expect(timeInputWords('12:00')).toBe('12:00 PM');
+    expect(timeInputWords('14:00')).toBe('2:00 PM');
+    expect(timeInputWords('23:45')).toBe('11:45 PM');
   });
 });
 
