@@ -341,6 +341,15 @@ describe('expandFeed: years below 100', () => {
   it('refuses an event whose end is in a year below 100, rather than reading it as 1999 before its start', () => {
     expect(expand(feed(event('DTSTART:20261001T100000Z\nDTEND:00990601T110000Z')))).toEqual([]);
   });
+
+  it('gives no row for an RDATE in a year below 100, whatever the event starts in', () => {
+    const { rows } = expandFeed(feed(event('DTSTART:20261001T100000Z\nRDATE:00980101T100000')), HOUSEHOLD, Date.parse('1997-12-01T00:00:00Z'), Date.parse('1998-02-01T00:00:00Z'));
+    expect(rows).toEqual([]);
+  });
+
+  it('refuses an override whose RECURRENCE-ID is in a year below 100', () => {
+    expect(expand(feed(event('RECURRENCE-ID:00981005T100000Z\nDTSTART:20261005T100000Z\nDTEND:20261005T110000Z')))).toEqual([]);
+  });
 });
 
 // A run's work with a clock that never moves, so that no test here depends on how fast the machine is:
