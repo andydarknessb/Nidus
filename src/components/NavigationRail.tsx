@@ -1,6 +1,6 @@
 import { Calendar1, CalendarDays, CalendarRange, CircleCheck, House, List, Moon, Plus, Settings, Sun, Utensils, type LucideIcon } from 'lucide-react';
 import type { ComponentProps } from 'react';
-import { navigationRailDate, type WallRoute } from '../lib/calendar-occurrences';
+import { navigationRailDate, type WallRoute } from '../lib/wall-routes';
 import type { CalendarView } from '../lib/paged-view';
 import { useMode } from '../lib/use-mode';
 import { Button } from './ui/button';

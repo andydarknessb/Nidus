@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PhoneHeader as PhoneHeaderType, PhoneShell as PhoneShellType, PhoneTabs as PhoneTabsType } from '../src/components/PhoneShell';
-import type { WallRoute } from '../src/lib/calendar-occurrences';
+import type { WallRoute } from '../src/lib/wall-routes';
 import { ChangeFeedContext } from '../src/lib/change-feed';
 import type { ChangeFeed, Connection } from '../src/lib/realtime';
 import type { Household } from '../src/lib/household';

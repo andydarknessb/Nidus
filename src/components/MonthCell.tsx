@@ -1,7 +1,8 @@
 import { cn } from 'cn';
 import { Pin } from 'lucide-react';
 import { dateWords, eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
-import { cellLines, type Occurrence } from '../lib/calendar-occurrences';
+import type { Occurrence } from '../lib/calendar-occurrences';
+import { cellLines } from '../lib/month-grid';
 import type { WallDay } from '../lib/paged-view';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, type PillPeople } from '../lib/schedule';

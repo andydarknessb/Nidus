@@ -4,7 +4,7 @@ import { BeforeHousehold } from '../components/BeforeHousehold';
 import { InBody } from '../components/InBody';
 import { ReadState } from '../components/ReadState';
 import { Button } from '../components/ui/button';
-import { type WallRoute } from '../lib/calendar-occurrences';
+import type { WallRoute } from '../lib/wall-routes';
 import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { MEAL_SLOTS, type Meal } from '../lib/meals';
 import { SLOT_PICTURES, useMealPlan } from '../lib/use-meal-plan';
