@@ -1,6 +1,6 @@
 import { CalendarDays, CircleCheck, House, List, Plus, Settings, Utensils, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
-import { navigationRailDate, type WallRoute } from '../lib/calendar-occurrences';
+import { navigationRailDate, type WallRoute } from '../lib/wall-routes';
 import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import type { CalendarView } from '../lib/paged-view';
 import type { Household } from '../lib/household';

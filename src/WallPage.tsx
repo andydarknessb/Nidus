@@ -13,8 +13,7 @@ import { PeopleStrip } from './components/PeopleStrip';
 import { PhoneShell } from './components/PhoneShell';
 import { StatusLineProvider } from './components/StatusLine';
 import { WallHeader, WallTime } from './components/WallHeader';
-import { mealsPath, onCalendarScreen, parseWallRoute, wallDate, wallPath, type WallRoute } from './lib/calendar-occurrences';
-import type { CalendarView } from './lib/paged-view';
+import { onCalendarScreen, useWallRoute, wallDate, type WallRoute } from './lib/wall-routes';
 import { loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { deviceStorage, gateWords, recallHousehold, rememberHousehold } from './lib/remembered-household';
 import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/profile-filter';
@@ -190,24 +189,6 @@ export function PairingScreen({ pairing }: { pairing: PairingCode }) {
       </a>
     </main>
   );
-}
-
-// Which screen the address names. The wall pages with pushState rather than reloading, so a tap
-// never drops the session or the Routines read, and Back returns to the previous page.
-function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void, (date: string | null) => void, () => void, () => void] {
-  const read = () => parseWallRoute(window.location.pathname, window.location.search);
-  const [route, setRoute] = useState<WallRoute>(read);
-  useEffect(() => {
-    const onPop = () => setRoute(read());
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, []);
-  const go = (path: string) => {
-    // Today while already on today's page changes nothing: no extra step for Back.
-    if (path !== window.location.pathname + window.location.search) window.history.pushState(null, '', path);
-    setRoute(read());
-  };
-  return [route, (view, date) => go(wallPath(view, date)), () => go('/'), (date) => go(mealsPath(date)), () => go('/routines'), () => go('/lists')];
 }
 
 // The frame that stands in for a screen until the Household has been read; it lives in its own file so the phone's screens can

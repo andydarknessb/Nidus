@@ -1,6 +1,6 @@
 import { Cookie, Moon, Sun, Sunrise, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
-import { mealsPageDate } from './calendar-occurrences';
+import { mealsPageDate } from './wall-routes';
 import { mealPlan } from './meal-plan';
 import { loadMeals, nextMeal, setMeal, withMeal, type Meal, type MealSlot } from './meals';
 import { MEAL_PLAN_LIMITS } from './paged-view';
