@@ -172,9 +172,10 @@ function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boo
 
   if (!Number.isInteger(rule.interval) || rule.interval < 1 || rule.interval > MAX_INTERVAL) return false;
   if (rule.interval !== 1 && (days.some((day) => parseInt(day, 10) === 5) || position.includes(5))) return false;
-  // Whether a day-search series is near enough to the window to walk from DTSTART, in its own periods.
-  const periods = (months: number) => Math.ceil(Math.max(0, monthsToWindow) / (rule.interval * months));
-  const near = (months: number) => periods(months) <= MAX_DAY_SEARCH_STEPS || moves();
+  // Whether a day-search series is near enough to the window to walk from DTSTART, in its own steps: a
+  // period of `months` months, each of the `perPeriod` months a yearly rule lists being a step.
+  const near = (months: number, perPeriod = 1) =>
+    Math.ceil(Math.max(0, monthsToWindow) / (rule.interval * months)) * perPeriod <= MAX_DAY_SEARCH_STEPS || moves();
   switch (rule.freq) {
     case 'DAILY':
       return names === '' || (names === 'BYDAY' && bare && rule.interval === 1);
@@ -192,8 +193,8 @@ function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boo
       if (!inRange('BYMONTH', (n) => n >= 1 && n <= 12)) return false;
       return (
         names === 'BYMONTH' ||
-        (names === 'BYDAY,BYMONTH' && oneOrdinalDay && near(12)) ||
-        (names === 'BYDAY,BYMONTH,BYSETPOS' && bare && onePosition && near(12))
+        (names === 'BYDAY,BYMONTH' && oneOrdinalDay && near(12, list('BYMONTH').length)) ||
+        (names === 'BYDAY,BYMONTH,BYSETPOS' && bare && onePosition && near(12, list('BYMONTH').length))
       );
     }
     default:

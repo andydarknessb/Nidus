@@ -624,6 +624,21 @@ describe('expandFeed: the time limit of a run', () => {
       expect(read(yearly('10000301', ''), budget()).truncated).toBe(false);
     });
 
+    it('counts every month a yearly rule lists as a step, so one that names them all is held to the age limit of a monthly', () => {
+      const every = (start: string) =>
+        feed(event(`DTSTART:${start}T090000\nRRULE:FREQ=YEARLY;BYMONTH=1,2,3,4,5,6,7,8,9,10,11,12;BYDAY=2TU;COUNT=400`, 'q'));
+      // 26 years of 12 steps are 312 steps before the window: cut at once, not after the walk's cap.
+      const old = budget();
+      const cut = read(every('20000111'), old);
+      expect(ids(cut.rows)).not.toContain('q');
+      expect(cut.truncated).toBe(true);
+      expect(old.remaining).toBe(MAX_STEPS_PER_RUN);
+      // 17 years of 12 are 204: walked, and the window's six months are rows.
+      const near = read(every('20100111'), budget());
+      expect(ids(near.rows).filter((id) => id === 'q')).toHaveLength(6);
+      expect(near.truncated).toBe(false);
+    });
+
     it('spends one step budget on a feed of monthly ordinal days, as on one of monthly BYSETPOS', () => {
       // Ten series that each need about 240 steps (walked from DTSTART, 19 years before the window).
       const run = slow();
