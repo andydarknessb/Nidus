@@ -203,13 +203,19 @@ function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boo
 }
 
 // Whether the event's one rule is a repeat the iPhone can make (see walkableRule); two rules on one
-// event are not something it writes.
-function walkable(ev: ICAL.Event, start: ICAL.Time, lengthBound: number, windowStartMs: number): boolean {
+// event are not something it writes. Answering that for an old day-search series pays ical.js steps
+// (`moves` runs fastForwarded), so it first reads the run's steps and clock: a run with none left
+// throws FeedTooLargeError, as the walk does, before any iterator is made.
+function walkable(ev: ICAL.Event, start: ICAL.Time, lengthBound: number, windowStartMs: number, run: StepBudget, outOfTime: () => boolean): boolean {
   const rules = ev.component.getAllProperties('rrule');
   const rule = rules.length === 1 ? rules[0]!.getFirstValue() : null;
   const window = new Date(windowStartMs);
   const monthsToWindow = window.getUTCFullYear() * 12 + window.getUTCMonth() - (start.year * 12 + start.month - 1);
-  return rule instanceof ICAL.Recur && walkableRule(rule, monthsToWindow, () => fastForwarded(ev, start, lengthBound, windowStartMs) !== null);
+  const moves = () => {
+    if (run.remaining <= 0 || outOfTime()) throw new FeedTooLargeError();
+    return fastForwarded(ev, start, lengthBound, windowStartMs) !== null;
+  };
+  return rule instanceof ICAL.Recur && walkableRule(rule, monthsToWindow, moves);
 }
 
 // Whether every rule of the event has ended before the window, in any zone: nothing to walk.
@@ -428,7 +434,7 @@ function expand(
           const s: Series = { uid, ev, layout: l, startMs: instantMs(l.start, timezone), excluded: excludedStarts(ev, timezone) };
           const lengthBound = l.isAllDay ? l.lengthDays * DAY_MS : l.lengthMs;
           const live = ev.component.hasProperty('rrule') && !endedBefore(ev, windowStartMs, lengthBound);
-          const canWalk = live && walkable(ev, l.start, lengthBound, windowStartMs);
+          const canWalk = live && walkable(ev, l.start, lengthBound, windowStartMs, run, outOfTime);
           const emit = emitterFor(s);
           // A series that is walked emits its own DTSTART there, where the row cap can stop it.
           if (!canWalk) emit(l.start);
@@ -439,7 +445,9 @@ function expand(
           // An RDATE in a year below 100 is refused like the event's other times (see layout).
           for (const at of rdates.starts) if (at.year >= 100) emit(at);
           if (canWalk) repeating.push(s);
-        } catch {
+        } catch (error) {
+          // The run is out of steps or time (walkable reads them): the feed is not read this time.
+          if (error instanceof FeedTooLargeError) throw error;
           // A rule that cannot be fulfilled, or a time ical.js cannot read: this event only.
         }
       }
