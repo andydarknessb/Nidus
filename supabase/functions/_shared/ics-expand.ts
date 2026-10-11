@@ -126,12 +126,14 @@ function excludedStarts(ev: ICAL.Event, timezone: string): Set<number> {
 // rule a day at a time, so INTERVAL=100000000 takes it seconds inside one step.
 const MAX_INTERVAL = 999;
 
-const MAX_SETPOS_STEPS = 240;
-const SETPOS_MARGIN = 24;
-// A monthly BYSETPOS step costs about 0.7 ms, so one feed may spend only this many of them across all its
-// series (about 420 ms): a feed of several series near MAX_SETPOS_STEPS is cut and synced, not left to
+// A step of a day-search shape (a monthly rule with BYSETPOS or an ordinal BYDAY, a yearly one with BYSETPOS
+// or an ordinal BYDAY) is an ical.js search inside a month or a year.
+const MAX_DAY_SEARCH_STEPS = 240;
+const DAY_SEARCH_MARGIN = 24;
+// A day-search step costs about 0.7 ms, so one feed may spend only this many of them across all its
+// series (about 420 ms): a feed of several series near MAX_DAY_SEARCH_STEPS is cut and synced, not left to
 // run out the clock, which stores nothing.
-const MAX_SETPOS_STEPS_PER_FEED = 600;
+const MAX_DAY_SEARCH_STEPS_PER_FEED = 600;
 
 const BARE_DAY = /^(SU|MO|TU|WE|TH|FR|SA)$/;
 const ORDINAL_DAY = /^([+-]?\d{1,2})(SU|MO|TU|WE|TH|FR|SA)$/;
@@ -152,10 +154,11 @@ const ordinal = (n: number) => (n >= 1 && n <= 5) || n === -1;
 // Two shapes are narrower still, because measured they take seconds (see the tests): a "fifth"
 // (ordinal 5, or BYSETPOS 5) is walked only with INTERVAL 1, since a month or year that never has one
 // (the fifth Monday of a 28-day February, every 4 years) sends ical.js searching inside one step; and a
-// monthly BYSETPOS costs about 0.7 ms a step, so one that is walked from DTSTART (it has COUNT, or
-// `fastForwarded` cannot move it: `moves` says) is walked only when DTSTART is at most
-// MAX_SETPOS_STEPS of its steps before the window (`monthsToWindow`, in months). Whatever its path, a
-// monthly BYSETPOS walk is also cut at that many steps plus the window's length in months (see `cap`).
+// day-search step (a monthly ordinal BYDAY or BYSETPOS, a yearly ordinal BYDAY or BYSETPOS) costs about
+// 0.7 ms, so one that is walked from DTSTART (it has COUNT, or `fastForwarded` cannot move it: `moves`
+// says) is walked only when DTSTART is at most MAX_DAY_SEARCH_STEPS of its steps before the window
+// (`monthsToWindow`, in months). Whatever its path, such a walk is also cut at that many steps plus the
+// window's length in months (see `cap`).
 function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boolean): boolean {
   const parts = rule.parts as Record<string, unknown[] | undefined>;
   const names = Object.keys(parts).sort().join(',');
@@ -169,6 +172,10 @@ function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boo
 
   if (!Number.isInteger(rule.interval) || rule.interval < 1 || rule.interval > MAX_INTERVAL) return false;
   if (rule.interval !== 1 && (days.some((day) => parseInt(day, 10) === 5) || position.includes(5))) return false;
+  // Whether a day-search series is near enough to the window to walk from DTSTART, in its own steps: a
+  // period of `months` months, each of the `perPeriod` months a yearly rule lists being a step.
+  const near = (months: number, perPeriod = 1) =>
+    Math.ceil(Math.max(0, monthsToWindow) / (rule.interval * months)) * perPeriod <= MAX_DAY_SEARCH_STEPS || moves();
   switch (rule.freq) {
     case 'DAILY':
       return names === '' || (names === 'BYDAY' && bare && rule.interval === 1);
@@ -178,13 +185,17 @@ function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boo
       return (
         names === '' ||
         (names === 'BYMONTHDAY' && inRange('BYMONTHDAY', (n) => (n >= 1 && n <= 31) || n === -1)) ||
-        (names === 'BYDAY' && oneOrdinalDay) ||
-        (names === 'BYDAY,BYSETPOS' && bare && onePosition && (Math.ceil(Math.max(0, monthsToWindow) / rule.interval) <= MAX_SETPOS_STEPS || moves()))
+        (names === 'BYDAY' && oneOrdinalDay && near(1)) ||
+        (names === 'BYDAY,BYSETPOS' && bare && onePosition && near(1))
       );
     case 'YEARLY': {
       if (names === '') return true;
       if (!inRange('BYMONTH', (n) => n >= 1 && n <= 12)) return false;
-      return names === 'BYMONTH' || (names === 'BYDAY,BYMONTH' && oneOrdinalDay) || (names === 'BYDAY,BYMONTH,BYSETPOS' && bare && onePosition);
+      return (
+        names === 'BYMONTH' ||
+        (names === 'BYDAY,BYMONTH' && oneOrdinalDay && near(12, list('BYMONTH').length)) ||
+        (names === 'BYDAY,BYMONTH,BYSETPOS' && bare && onePosition && near(12, list('BYMONTH').length))
+      );
     }
     default:
       return false;
@@ -439,7 +450,7 @@ function expand(
     const fixed = new Set(rows.keys());
 
     let budget = MAX_STEPS_PER_FEED;
-    let setposBudget = MAX_SETPOS_STEPS_PER_FEED;
+    let daySearchBudget = MAX_DAY_SEARCH_STEPS_PER_FEED;
     for (const s of repeating) {
       if (rows.size >= MAX_PER_FEED) {
         truncated = true;
@@ -450,14 +461,16 @@ function expand(
         // A rule's first occurrence is DTSTART.
         if (!emit(s.layout.start)) continue;
         const rule = s.ev.component.getFirstPropertyValue('rrule');
-        // A monthly BYSETPOS step costs 0.7 ms, so its walk is cut at what an admitted series needs (the
+        // A day-search step costs 0.7 ms, so its walk is cut at what an admitted series needs (the
         // steps of the age limit and the window, with a margin) however it is reached: a series with an
         // occurrence years long, moved to a month before the window, would otherwise step to the row cap.
+        // Every walked monthly or yearly rule with a BYDAY (BYSETPOS always comes with one) is one.
         // (A test that turns the skip off reads the plain walk whole.)
-        const setpos = rule instanceof ICAL.Recur && rule.freq === 'MONTHLY' && rule.parts['BYSETPOS'] !== undefined && !run.noFastForward;
-        // The feed's BYSETPOS steps are spent: this series is cut before its iterator is made, which
+        const daySearch =
+          rule instanceof ICAL.Recur && (rule.freq === 'MONTHLY' || rule.freq === 'YEARLY') && rule.parts['BYDAY'] !== undefined && !run.noFastForward;
+        // The feed's day-search steps are spent: this series is cut before its iterator is made, which
         // would itself cost a step's time for every one of however many such series the feed holds.
-        if (setpos && setposBudget <= 0) {
+        if (daySearch && daySearchBudget <= 0) {
           truncated = true;
           continue;
         }
@@ -467,10 +480,10 @@ function expand(
         const lengthBound = s.layout.isAllDay ? s.layout.lengthDays * DAY_MS : s.layout.lengthMs;
         const steps: { next(): ICAL.Time | null | undefined } =
           (run.noFastForward ? null : fastForwarded(s.ev, s.layout.start, lengthBound, windowStartMs)) ?? s.ev.iterator();
-        const cap = setpos ? Math.min(MAX_STEPS_PER_EVENT, MAX_SETPOS_STEPS + Math.ceil((windowEndMs - windowStartMs) / (28 * DAY_MS)) + SETPOS_MARGIN) : MAX_STEPS_PER_EVENT;
+        const cap = daySearch ? Math.min(MAX_STEPS_PER_EVENT, MAX_DAY_SEARCH_STEPS + Math.ceil((windowEndMs - windowStartMs) / (28 * DAY_MS)) + DAY_SEARCH_MARGIN) : MAX_STEPS_PER_EVENT;
         let n = 0;
         for (let next = steps.next(); next; next = steps.next()) {
-          if (n >= cap || budget <= 0 || (setpos && setposBudget <= 0)) {
+          if (n >= cap || budget <= 0 || (daySearch && daySearchBudget <= 0)) {
             truncated = true;
             break;
           }
@@ -478,7 +491,7 @@ function expand(
           if (run.remaining <= 0 || outOfTime()) throw new FeedTooLargeError();
           n += 1;
           budget -= 1;
-          if (setpos) setposBudget -= 1;
+          if (daySearch) daySearchBudget -= 1;
           run.remaining -= 1;
           if (!emit(next)) break;
         }
