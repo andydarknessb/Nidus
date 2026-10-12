@@ -143,14 +143,14 @@ describe('a month at larger text', () => {
 });
 
 describe("a cell's name", () => {
-  it("is the day in full and its count, with \", today\" last on today's", () => {
-    expect(cellName('2026-10-01', true, 5)).toBe('Thursday, October 1, 5 events, today');
-    expect(cellName('2026-10-03', false, 1)).toBe('Saturday, October 3, 1 event');
-    expect(cellName('2026-10-03', false, 0)).toBe('Saturday, October 3, no events');
+  it("is the date, the day in full and its count, with \", today\" last on today's", () => {
+    expect(cellName('2026-10-01', true, 5)).toBe('1, Thursday, October 1, 5 events, today');
+    expect(cellName('2026-10-03', false, 1)).toBe('3, Saturday, October 3, 1 event');
+    expect(cellName('2026-10-03', false, 0)).toBe('3, Saturday, October 3, no events');
   });
 
   it("gives the date alone, and no count, until the day's week has been read", () => {
-    expect(cellName('2026-10-02', false, null)).toBe('Friday, October 2');
-    expect(cellName('2026-10-01', true, null)).toBe('Thursday, October 1, today');
+    expect(cellName('2026-10-02', false, null)).toBe('2, Friday, October 2');
+    expect(cellName('2026-10-01', true, null)).toBe('1, Thursday, October 1, today');
   });
 });

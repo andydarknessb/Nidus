@@ -87,21 +87,21 @@ describe('a day cell', () => {
 });
 
 describe("a day cell's name", () => {
-  it('is the day in full and how many events it holds, as the phone names its cells', () => {
-    expect(nameOf(cell('2026-10-22'))).toBe('Thursday, October 22, no events');
-    expect(nameOf(cell('2026-10-03', { occurrences: [event('A', [])] }))).toBe('Saturday, October 3, 1 event');
-    expect(nameOf(cell('2026-10-02', { occurrences: [event('A', []), event('B', []), event('C', [])] }))).toBe('Friday, October 2, 3 events');
+  it('is the date, then the day in full and how many events it holds, as the phone names its cells', () => {
+    expect(nameOf(cell('2026-10-22'))).toBe('22, Thursday, October 22, no events');
+    expect(nameOf(cell('2026-10-03', { occurrences: [event('A', [])] }))).toBe('3, Saturday, October 3, 1 event');
+    expect(nameOf(cell('2026-10-02', { occurrences: [event('A', []), event('B', []), event('C', [])] }))).toBe('2, Friday, October 2, 3 events');
   });
 
   it('is the date alone until its week has been read, so a day not yet known is never called free', () => {
-    expect(nameOf(cell('2026-10-02', { occurrences: null }))).toBe('Friday, October 2');
+    expect(nameOf(cell('2026-10-02', { occurrences: null }))).toBe('2, Friday, October 2');
   });
 
   it("says \"today\" last on today's cell, which the disc says to the eye, and on no other: the strings the phone's cells have (tests/phone-month.test.ts)", () => {
     const five = ['A', 'B', 'C', 'D', 'E'].map((title) => event(title, []));
-    expect(nameOf(cell('2026-10-01', { occurrences: five }))).toBe('Thursday, October 1, 5 events, today');
-    expect(nameOf(cell('2026-10-01', { occurrences: null }))).toBe('Thursday, October 1, today');
-    expect(nameOf(cell('2026-10-03', { occurrences: [event('A', [])] }))).toBe('Saturday, October 3, 1 event');
+    expect(nameOf(cell('2026-10-01', { occurrences: five }))).toBe('1, Thursday, October 1, 5 events, today');
+    expect(nameOf(cell('2026-10-01', { occurrences: null }))).toBe('1, Thursday, October 1, today');
+    expect(nameOf(cell('2026-10-03', { occurrences: [event('A', [])] }))).toBe('3, Saturday, October 3, 1 event');
     expect(nameOf(cell('2026-10-02', { occurrences: five }))).not.toContain('today');
   });
 

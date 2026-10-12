@@ -129,7 +129,7 @@ describe('Week', () => {
 });
 
 describe('Month', () => {
-  const cellsOf = (html: string) => named(html, /^\w+day, \w+ \d+/);
+  const cellsOf = (html: string) => named(html, /^\d+, \w+day, \w+ \d+/);
 
   it('heads the grid with the weekdays in three letters at 14 px, secondary, hidden from a screen reader (each cell says its weekday)', () => {
     const row = /<div aria-hidden="true" class="grid grid-cols-7 pb-1">([\s\S]*?)<\/div>/.exec(screen('month', null))![1]!;
@@ -149,19 +149,19 @@ describe('Month', () => {
   it('draws a button for every day of the grid, today named and marked, and today picked', () => {
     const cells = cellsOf(screen('month', null));
     expect(cells).toHaveLength(35);
-    expect(cells.filter((cell) => cell.tag.includes('aria-current="date"')).map((cell) => nameOf(cell.tag))).toEqual(['Thursday, October 8, today']);
-    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['Thursday, October 8, today']);
+    expect(cells.filter((cell) => cell.tag.includes('aria-current="date"')).map((cell) => nameOf(cell.tag))).toEqual(['8, Thursday, October 8, today']);
+    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['8, Thursday, October 8, today']);
   });
 
   it('picks the 1st of a month that does not hold today', () => {
     const cells = cellsOf(screen('month', '2026-11-01'));
-    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['Sunday, November 1']);
+    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['1, Sunday, November 1']);
   });
 
   it('picks Sep 8 in the first month, whose days before it are no buttons', () => {
     const html = screen('month', '2026-09-01');
     const cells = cellsOf(html);
-    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['Tuesday, September 8']);
+    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['8, Tuesday, September 8']);
     expect(cells.some((cell) => nameOf(cell.tag)?.startsWith('Monday, September 7'))).toBe(false);
     expect(html).toContain(`Monday, September 7, ${BEYOND}`);
   });
@@ -192,7 +192,7 @@ describe('the Profile filter reaches the Month cells', () => {
       createElement(WeekCells, { days: WEEK!, anchor: '2026-10-01', window: WINDOW, events: dayEventsOf(occurrences, [AVA, BEN, CORY], pressed), picked: '2026-10-08', onPick: noop }),
     );
   const dots = (html: string) => html.match(/bg-person-strong/g)?.length ?? 0;
-  const thursday = (html: string) => nameOf(buttons(html).find((button) => nameOf(button.tag)?.startsWith('Thursday, October 8'))!.tag);
+  const thursday = (html: string) => nameOf(buttons(html).find((button) => nameOf(button.tag)?.startsWith('8, Thursday, October 8'))!.tag);
 
   it('draws a dot for each person who has something, and only the pressed people when the filter is on', () => {
     const own = [event(['a']), event(['b']), event(['c'])];
@@ -203,8 +203,8 @@ describe('the Profile filter reaches the Month cells', () => {
 
   it('names the cell by what it is given', () => {
     const own = [event(['a']), event(['b']), event(['c'])];
-    expect(thursday(cells(own, []))).toBe('Thursday, October 8, 3 events, today');
-    expect(thursday(cells([own[1]!], ['b']))).toBe('Thursday, October 8, 1 event, today');
+    expect(thursday(cells(own, []))).toBe('8, Thursday, October 8, 3 events, today');
+    expect(thursday(cells([own[1]!], ['b']))).toBe('8, Thursday, October 8, 1 event, today');
   });
 
   it('draws one event for two people as a dot for the pressed one alone', () => {
