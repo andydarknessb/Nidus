@@ -230,3 +230,19 @@ Settled on 2026-10-09 from an architecture review the owner approved in full, tw
 ### Tables
 
 No migration.
+
+## v11: deeper modules, round three
+
+Settled on 2026-10-12 from an architecture review of the finished v10 branch, three rounds of rulings, every recommendation taken. The spec is [0012](specs/0012-deeper-modules-round-three.md); tracker #219, tickets #220 to #226. It continues v8 and v10.
+
+### Decisions
+
+- **One visible change**: a phone's month cell is named for a screen reader in the phone's order (the words, then "today"), as the chips and the Wall's cells are. It ships on `owner/v10` ahead of the release.
+- **One module each** for the run budget of an iPhone feed (every cap and check), the Routine Chart (the Wall's chart and the phone's card from one core), the event sheet host (one open state, one after-save rule, one frame), the card change (the problem words inside `change`, one name for "landed"), the Month Cells (one week of cells behind both grids) and the client's reads (Profiles onto the synced read; the weather's fetch injected).
+- **Routine Chart** enters the glossary.
+- **Rejected, with an ADR**: a Household context ([ADR 0004](adr/0004-the-household-facts-are-props-not-a-context.md)). Declined without one: a room-measuring hook.
+- **v8's rulings hold**: replace don't layer, plain cores with thin hooks, facts not sentences, no DOM test library.
+
+### Tables
+
+No migration.

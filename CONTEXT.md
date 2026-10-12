@@ -77,6 +77,10 @@ _Avoid_: Habit, daily task, chore
 A record that a Profile completed a Routine on a given Household date. Kept after the midnight reset.
 _Avoid_: Check, tick, history entry
 
+**Routine Chart**:
+The Household's Routines for one Household Date: one column per Profile with a Routine that day, each Routine done or not, grouped by time of day. The Wall shows every column; a phone shows one picked column. It follows Household midnight.
+_Avoid_: Routines today, routines screen, habit tracker
+
 **Shared List**:
 A named household-wide list of text items (e.g. Groceries) anyone can add to or cross off. Crossed items remain visible until cleared.
 _Avoid_: Todo list, checklist
