@@ -11,7 +11,7 @@ import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // The day a Week or Month page starts on picked: today when the page holds it, else its first day (the Sunday of a week, the 1st of a
 // month). `anchor` is any date of the page. A month holds today only when today is in that month, not when it shows it as a dimmed
-// day of a neighbouring week (pageStart, as holdsToday in calendar-occurrences.ts reads it). The screen keeps the pick as its own
+// day of a neighbouring week (pageStart, as holdsToday in wall-routes.ts reads it). The screen keeps the pick as its own
 // state and gives it up when the page changes. The first week and the first month reach back before the calendar's range, and the
 // last ones past it, so the day is held inside the paging window: it is never a day that cannot be opened or has nothing to read.
 export function pickedDay(view: 'week' | 'month', anchor: string, timezone: string, now: Date): string {

@@ -1,4 +1,5 @@
-import { supabase, supabaseUrl } from './supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { supabaseUrl } from './supabase';
 
 // Notifications on this phone (spec 0007, The phone): the only place the UI reaches the browser's push. The service worker
 // (public/sw.js) is registered only by turnOnNotifications, so the Wall's tablets never have one.
@@ -52,8 +53,8 @@ async function currentSubscription(): Promise<PushSubscription | null> {
   return (await registration?.pushManager.getSubscription()) ?? null;
 }
 
-async function rowOf(endpoint: string): Promise<PushState> {
-  const { data, error } = await supabase.from('push_subscriptions').select(columns).eq('endpoint', endpoint).maybeSingle<Row>();
+async function rowOf(client: SupabaseClient, endpoint: string): Promise<PushState> {
+  const { data, error } = await client.from('push_subscriptions').select(columns).eq('endpoint', endpoint).maybeSingle<Row>();
   if (error) throw error;
   return data ? stateOf(data) : { kind: 'off' };
 }
@@ -71,37 +72,37 @@ async function rotationMarker(): Promise<{ old: string; new: string } | null> {
   }
 }
 
-async function saveSubscription(subscription: PushSubscription): Promise<void> {
+async function saveSubscription(client: SupabaseClient, subscription: PushSubscription): Promise<void> {
   const { endpoint, keys } = subscription.toJSON();
-  const { error } = await supabase.rpc('save_push_subscription', { p_endpoint: endpoint, p_p256dh: keys?.['p256dh'], p_auth: keys?.['auth'] });
+  const { error } = await client.rpc('save_push_subscription', { p_endpoint: endpoint, p_p256dh: keys?.['p256dh'], p_auth: keys?.['auth'] });
   if (error) throw error;
 }
 
 // The worker has already subscribed again; this saves the new endpoint as the signed-in account, with the old row's preferences when
 // that row is still there (the sender deletes it on the first 410, and then the defaults apply). Every step can be run again, and the
 // marker is cleared last, so a failure anywhere leaves the marker and the next open finishes the heal.
-async function healRotation(subscription: PushSubscription, from: string): Promise<PushState> {
-  const before = await rowOf(from);
-  await saveSubscription(subscription);
-  const saved = await rowOf(subscription.endpoint);
+async function healRotation(client: SupabaseClient, subscription: PushSubscription, from: string): Promise<PushState> {
+  const before = await rowOf(client, from);
+  await saveSubscription(client, subscription);
+  const saved = await rowOf(client, subscription.endpoint);
   const inherited = saved.kind === 'on' && before.kind === 'on' ? { ...saved, preferences: before.preferences } : saved;
-  if (inherited.kind === 'on' && inherited !== saved) await savePushPreferences(inherited.id, inherited.preferences);
-  const { error } = await supabase.from('push_subscriptions').delete().eq('endpoint', from);
+  if (inherited.kind === 'on' && inherited !== saved) await savePushPreferences(client, inherited.id, inherited.preferences);
+  const { error } = await client.from('push_subscriptions').delete().eq('endpoint', from);
   if (error) throw error;
   await (await caches.open(ROTATION_CACHE)).delete(ROTATION_KEY);
   return inherited;
 }
 
 // This browser's subscription and its row. A browser that cannot, or has not, subscribed is off.
-export async function readPushState(): Promise<PushState> {
+export async function readPushState(client: SupabaseClient): Promise<PushState> {
   if (pushSupport() !== 'supported') return { kind: 'off' };
   if (Notification.permission === 'denied') return { kind: 'denied' };
   const subscription = await currentSubscription();
   if (!subscription) return { kind: 'off' };
   // A subscription the worker made when the push service rotated the endpoint is healed, row or no row, until the marker is cleared.
   const marker = await rotationMarker();
-  if (marker?.new === subscription.endpoint) return healRotation(subscription, marker.old);
-  const state = await rowOf(subscription.endpoint);
+  if (marker?.new === subscription.endpoint) return healRotation(client, subscription, marker.old);
+  const state = await rowOf(client, subscription.endpoint);
   if (state.kind === 'off') {
     // The browser holds a subscription this account has no row for (a turn-off at sign-out that failed): it is dropped, best effort.
     await subscription.unsubscribe().catch(() => undefined);
@@ -117,7 +118,7 @@ function bytesOfBase64Url(text: string): Uint8Array<ArrayBuffer> {
 
 // Call from a tap: iOS asks for permission only from one, so the request is the first thing done, before anything is awaited.
 // Asking and answering "no" is { kind: 'denied' }; closing the question without an answer leaves it off.
-export async function turnOnNotifications(): Promise<PushState> {
+export async function turnOnNotifications(client: SupabaseClient): Promise<PushState> {
   const permission = await Notification.requestPermission();
   if (permission === 'denied') return { kind: 'denied' };
   if (permission !== 'granted') return { kind: 'off' };
@@ -129,21 +130,21 @@ export async function turnOnNotifications(): Promise<PushState> {
   // Any subscription the browser already holds goes first, so that a dead endpoint, or one made with another key, is never saved again.
   await (await registration.pushManager.getSubscription())?.unsubscribe();
   const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
-  await saveSubscription(subscription);
-  return rowOf(subscription.endpoint);
+  await saveSubscription(client, subscription);
+  return rowOf(client, subscription.endpoint);
 }
 
 // Ends this phone's notifications: the row first, so that a failure leaves the phone as it was.
-export async function turnOffNotifications(): Promise<void> {
+export async function turnOffNotifications(client: SupabaseClient): Promise<void> {
   const subscription = await currentSubscription();
   if (!subscription) return;
-  const { error } = await supabase.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint);
+  const { error } = await client.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint);
   if (error) throw error;
   await subscription.unsubscribe();
 }
 
-export async function savePushPreferences(id: string, preferences: PushPreferences): Promise<void> {
-  const { data, error } = await supabase
+export async function savePushPreferences(client: SupabaseClient, id: string, preferences: PushPreferences): Promise<void> {
+  const { data, error } = await client
     .from('push_subscriptions')
     .update({
       event_reminders: preferences.eventReminders,
@@ -161,10 +162,10 @@ export async function savePushPreferences(id: string, preferences: PushPreferenc
 
 // Sends this browser a test notification: only to its own subscription, as the signed-in account. A raw fetch, not the client's: the
 // Edge Function is called by address, with the session's token.
-export async function sendTestNotification(): Promise<void> {
+export async function sendTestNotification(client: SupabaseClient): Promise<void> {
   const subscription = await currentSubscription();
   if (!subscription) throw new Error('push test: not subscribed');
-  const { data } = await supabase.auth.getSession();
+  const { data } = await client.auth.getSession();
   const response = await fetch(`${supabaseUrl}/functions/v1/push-notify/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` },
@@ -176,8 +177,8 @@ export async function sendTestNotification(): Promise<void> {
 
 // Signing out first ends this phone's notifications, so that a phone that has left stops receiving. Best effort: it never throws and
 // never holds sign-out for more than a few seconds.
-export async function turnOffBeforeSignOut(): Promise<void> {
+export async function turnOffBeforeSignOut(client: SupabaseClient): Promise<void> {
   if (typeof window === 'undefined' || pushSupport() !== 'supported') return;
   const patience = new Promise<void>((resolve) => setTimeout(resolve, 3000));
-  await Promise.race([turnOffNotifications().catch(() => undefined), patience]);
+  await Promise.race([turnOffNotifications(client).catch(() => undefined), patience]);
 }

@@ -2,6 +2,7 @@ import { cn } from 'cn';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { Fragment, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { EmptyWords } from './components/EmptyWords';
+import { ReadState } from './components/ReadState';
 import { RoutineColumn, type ColumnLayout } from './components/RoutineColumn';
 import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { PersonDisc } from './components/people';
@@ -31,7 +32,6 @@ import {
   type TimeOfDay,
 } from './lib/routines';
 import { PictureField, RoutinePicture } from './lib/routine-pictures';
-import { useCardWrite } from './lib/use-card-write';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
 import { CHART_CHOICES, timeWord, useChartPart } from './lib/routine-chart';
@@ -116,7 +116,7 @@ function Column({
 // `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). The columns then
 // sit in a grid, each its natural height, and the chart scrolls as one column with the shared "More" foot; there is no sideways "More".
 export function RoutinesChart({ routines, portrait = false }: { routines: RoutinesToday; portrait?: boolean }) {
-  const { loaded, failed, problems, columns, done, toggle } = routines;
+  const { problems, columns, done, toggle } = routines;
   const celebration = useCelebration(routines);
   // The row of columns, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row;
   // in portrait the box is the chart's column and the button is its foot.
@@ -172,14 +172,10 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
           {!portrait && <OverflowButton control={row} of="people" className="h-12" />}
         </div>
       </div>
-      {!loaded && !failed && <EmptyWords>Loading</EmptyWords>}
       {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
-      {failed && !loaded && (
-        <p role="alert" className="text-base">
-          {couldNotLoad('routines')}
-        </p>
-      )}
-      {loaded && columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
+      <ReadState of="routines" read={routines}>
+        {columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
+      </ReadState>
       {portrait ? (
         // The columns are a grid of columns at least 17 rem, as many to a row as fit, each its row-mates' width (and with fewer columns than fit, the columns share the row), 12 apart across and 16 under one
         // another, each its natural height; the chart scrolls as one column, and its foot is the shared button. A tile or field that takes the focus is scrolled clear of the foot.
@@ -380,19 +376,18 @@ export function RoutinesPage({ household }: { household: Household }) {
   const [editing, setEditing] = useState<string | null>(null);
   // Which Routine's form is open right now. A save that finishes late looks here, not at the render it began in.
   const editingNow = useRef<string | null>(null);
-  // One change at a time (the card write guard): the buttons are drawn `aria-disabled` from `busy`, and focus goes where the page says.
-  const card = useCardWrite();
-  const { busy } = card;
+  // One change at a time (read.change, the card write guard): the buttons are drawn `aria-disabled` from `busy`, and focus goes where the
+  // page says.
+  const { busy } = read;
 
   // Runs one change, then reads again so the screen shows what the database holds, before the next may begin. A failure is said in
   // the status line at once; a form that says so itself, beside its Save, passes no failure. Says whether it was made, and nothing
   // (undefined) when another change was on its way and this one did nothing. `landed` is what the page then does.
   async function change(work: () => Promise<void>, failure = '', landed?: () => void): Promise<boolean | undefined> {
-    const outcome = await card.run(
+    const outcome = await read.change(
       async () => {
-        await read.write(work);
+        await work();
         setProblem('');
-        await read.readBack();
       },
       { failed: () => setProblem(failure), landed },
     );
@@ -411,7 +406,7 @@ export function RoutinesPage({ household }: { household: Household }) {
     if (editingNow.current !== id) return;
     editingNow.current = null;
     setEditing(null);
-    card.focus(`edit-${id}`);
+    read.focus(`edit-${id}`);
   }
 
   // A failed save keeps the form open, with what was typed; the form says so itself.
@@ -479,9 +474,9 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 className="h-12 flex-1 rounded-[14px]"
                                 aria-disabled={busy || undefined}
                                 onClick={() => {
-                                  if (card.isBusy()) return;
+                                  if (read.isBusy()) return;
                                   setConfirming(null);
-                                  card.focus(`profile-${profile.id}`);
+                                  read.focus(`profile-${profile.id}`);
                                   void change(() => archiveRoutine(supabase, routine.id), 'Could not archive that routine. Try again.');
                                 }}
                               >
@@ -492,7 +487,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 className="h-12 rounded-[14px]"
                                 onClick={() => {
                                   setConfirming(null);
-                                  card.focus(`archive-${routine.id}`);
+                                  read.focus(`archive-${routine.id}`);
                                 }}
                               >
                                 Keep it
@@ -525,7 +520,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 disabled={index === 0}
                                 aria-disabled={busy || undefined}
                                 onClick={() => {
-                                  if (!card.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder routines. Try again.');
+                                  if (!read.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder routines. Try again.');
                                 }}
                               >
                                 <ArrowUp aria-hidden className="size-5" />
@@ -537,7 +532,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 disabled={index === time.routines.length - 1}
                                 aria-disabled={busy || undefined}
                                 onClick={() => {
-                                  if (!card.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder routines. Try again.');
+                                  if (!read.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder routines. Try again.');
                                 }}
                               >
                                 <ArrowDown aria-hidden className="size-5" />

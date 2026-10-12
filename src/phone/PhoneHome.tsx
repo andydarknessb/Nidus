@@ -3,15 +3,16 @@ import { BeforeHousehold } from '../components/BeforeHousehold';
 import { EmptyWords } from '../components/EmptyWords';
 import { EventPill } from '../components/EventPill';
 import { EventSheets, type OpenEvent } from '../components/EventSheets';
+import { ReadState } from '../components/ReadState';
 import { UpNext } from '../components/UpNext';
 import { DayWeather } from '../components/Weather';
-import { describeCell, fiveDays } from '../lib/calendar-occurrences';
+import { fiveDays } from '../lib/calendar-occurrences';
+import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { focusElement } from '../lib/focus';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import { UP_NEXT_TILES } from '../lib/routines';
 import { pillPeople, scheduleColumns } from '../lib/schedule';
-import { useDayEvents, useNow } from '../lib/wall-hooks';
-import { couldNotLoad } from '../lib/synced-read';
+import { dayState, useDayEvents, useNow } from '../lib/wall-hooks';
 import { forecastDay } from '../lib/weather';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { PinnedListCard } from '../SharedListsPage';
@@ -50,19 +51,14 @@ function TodayCard({ timezone, added, forecast, weatherOn, profiles }: Pick<Phon
           <span aria-hidden className="grid size-[38px] shrink-0 place-items-center rounded-full bg-primary font-display text-[21px] leading-none text-primary-foreground">
             {Number(day.date.slice(8))}
           </span>
-          <h2 ref={heading} tabIndex={-1} aria-label={`Today, ${describeCell(day.date, null)}`} className="font-display text-[22px] leading-7 outline-none">
+          <h2 ref={heading} tabIndex={-1} aria-label={`Today, ${dateWords.cell(day.date, null)}`} className="font-display text-[22px] leading-7 outline-none">
             Today
           </h2>
           <span className="ml-auto">
             <DayWeather day={weather} />
           </span>
         </div>
-        {events.problem && (
-          <p role="alert" className="px-1 text-base">
-            {events.problem}
-          </p>
-        )}
-        {!events.problem && occurrences === null && <EmptyWords className="px-1">Loading</EmptyWords>}
+        <ReadState of="the calendar" read={{ state: dayState(events, occurrences) }} className="px-1" alert="px-1 text-base" />
         {occurrences !== null && pills.length === 0 && <EmptyWords className="px-1">Nothing scheduled today.</EmptyWords>}
         {pills.length > 0 && (
           <div className="flex flex-col gap-2">
@@ -92,7 +88,7 @@ export function PhoneHome({ timezone, view, added, forecast, weatherOn, profiles
       {timezone ? (
         <TodayCard timezone={timezone} added={added} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
       ) : (
-        <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
+        <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />
       )}
       {/* Three tiles, whatever the phone's height: the column scrolls, so there is no card under it for them to leave without a row. */}
       <UpNext routines={routines} failed={view.failed} onOpenRoutines={openRoutines} tiles={UP_NEXT_TILES} />

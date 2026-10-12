@@ -27,7 +27,7 @@ function routinesToday(profiles: Profile[], routines: Routine[], more: Partial<R
   const done = new Set<string>();
   return {
     date: '2026-10-01',
-    loaded: true,
+    state: 'ready',
     settled: true,
     failed: false,
     part: 'evening',
@@ -83,7 +83,7 @@ describe('what the chart says when it holds nothing', () => {
   });
 
   it('says "Loading" in the same style until the first read lands, and not "no routines yet"', () => {
-    const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], [], { loaded: false, settled: false }));
+    const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], [], { state: 'loading', settled: false }));
     expect(html).toContain(`<p class="${EMPTY}">Loading</p>`);
     expect(html).not.toContain('No routines yet');
   });

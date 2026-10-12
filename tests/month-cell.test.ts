@@ -2,7 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { CELL_HEAD_REM, CELL_LINE_REM, DayCell } from '../src/components/MonthCell';
-import { linesPerCell, type Occurrence } from '../src/lib/calendar-occurrences';
+import type { Occurrence } from '../src/lib/calendar-occurrences';
+import { linesPerCell } from '../src/lib/month-grid';
 import { monthWeeks } from '../src/lib/paged-view';
 import { personStyle, TOKENS, type Mode } from '../src/lib/look';
 import { contrastRatio, type Profile } from '../src/lib/profiles';
@@ -50,7 +51,7 @@ const native = (title: string, profileIds: string[] = []) => event(title, profil
 type Options = { occurrences?: Occurrence[] | null; profiles?: Profile[]; lines?: number; inMonth?: boolean; beyond?: boolean };
 
 function cell(date: string, { occurrences = [], profiles = FAMILY, lines = 3, inMonth = true, beyond = false }: Options = {}): string {
-  return renderToStaticMarkup(createElement(DayCell, { day: dayOf(date), inMonth, beyond, occurrences, profiles, lines, timezone: CHICAGO, onOpen: () => undefined }));
+  return renderToStaticMarkup(createElement(DayCell, { day: dayOf(date), inMonth, beyond, occurrences, profiles, lines, onOpen: () => undefined }));
 }
 
 const count = (html: string, text: string) => html.split(text).length - 1;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
-import { ArrowDown, ArrowUp, ChevronRight, List, Pin, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronRight, Pin, Plus } from 'lucide-react';
 import { movedIds, nextSortOrder } from './lib/ordering';
 import { supabase } from './lib/supabase';
 import {
@@ -9,8 +9,6 @@ import {
   HOME_HOLD_MS,
   homeRows,
   homeWindow,
-  leftToGet,
-  listChipName,
   loadLists,
   loadPinnedListId,
   pinnedFirst,
@@ -25,14 +23,15 @@ import { rootFontSize } from './lib/home-layout';
 import type { Household } from './lib/household';
 import { focusElement } from './lib/focus';
 import { useStatusLine } from './lib/status-line';
-import { useCardWrite } from './lib/use-card-write';
 import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
 import { useOverflow } from './lib/use-overflow';
 import { unnamed } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
-import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
+import { ListCard } from './components/ListCard';
+import { BODY_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { EmptyRing, Tick } from './components/people';
 import { Problem } from './components/phone';
+import { ReadState } from './components/ReadState';
 import { Button } from './components/ui/button';
 import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
@@ -125,88 +124,6 @@ export function PinnedMark() {
 
 // ---- The Lists screen: a card for every list ----------------------------------------------
 
-// One Shared List as a card: its picture, name and how many items are left to get, whether it is the Pinned List, the field
-// that adds an item, then its items, which scroll inside the card when the card is shorter than the list, with a "More" button
-// at their foot that says so (OverflowButton). A card is as tall as its items, up to the height of the screen. Items are crossed
-// off here and cleared; reordering is for the phone. In portrait (docs/specs/0009) it is its natural height, every item, with no foot of
-// its own: the screen scrolls, and its title wraps (up to three lines cost nothing) where a landscape card's is cut with an ellipsis.
-export function ListCard({ list, pinned, portrait }: { list: SharedList; pinned: boolean; portrait: boolean }) {
-  const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
-  // The phone's rule: no count until a read or write has landed, and none after one fails (never "0 to get" from items not read).
-  const left = leftToGet(loaded, problem, items);
-  const crossed = items.length - withoutCrossed(items).length;
-  const rows = useRef<HTMLUListElement>(null);
-  // Whether the items hold more than the card shows. The button is the items' last child, stuck to their foot.
-  const more = useOverflow('y', 'over');
-
-  return (
-    <section aria-label={listChipName(list.name, left)} className={`flex ${portrait ? '' : 'max-h-full '}${portrait ? 'w-auto' : 'w-(--card-w)'} shrink-0 snap-start flex-col gap-2 rounded-3xl bg-card p-3`}>
-      <div className="flex min-h-13 shrink-0 items-center gap-3">
-        {/* One picture for every list: there is no picture on a Shared List to choose. */}
-        <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
-          <List className="size-[22px]" />
-        </span>
-        <h3 id={titleId(list.id)} tabIndex={-1} className={`min-w-0 flex-1 ${portrait ? 'break-words' : 'truncate'} font-display text-2xl leading-[30px]`}>
-          {list.name}
-        </h3>
-        {left !== null && <span className="shrink-0 text-[15px] text-muted-foreground">{left} to get</span>}
-      </div>
-      {pinned && <PinnedMark />}
-      <AddRow
-        listName={list.name}
-        onAdd={async (text) => {
-          // The new row shows at once, as the last one, and brings the foot with it when the list now scrolls for the first time: the
-          // foot is a render of its own, after the one that adds the row (the hook reads the list in a layout effect). Both are drawn
-          // here, before the row is brought into view, so it stops clear of the foot and not under it; and it is brought into view now,
-          // not when the server has answered. (An effect would run before the foot exists, and scroll to the end of a list that has none.)
-          // ponytail: "last" holds while a new item always goes to the bottom (nextSortOrder); find it by id if one ever lands elsewhere.
-          let adding!: Promise<ListItem | null>;
-          flushSync(() => {
-            adding = add(text);
-          });
-          rows.current?.lastElementChild?.scrollIntoView({ block: 'nearest' });
-          return (await adding) !== null;
-        }}
-      />
-      {loaded && items.length === 0 && <EmptyWords className="shrink-0">Nothing on this list.</EmptyWords>}
-      {items.length > 0 && (
-        // At rest an item may sit partly under the "More" button at their foot; one that takes the focus, or is added, is scrolled clear of it.
-        <div ref={portrait ? undefined : more.scroller} className={portrait ? undefined : `min-h-0 overflow-y-auto ${FOOT_CLEARANCE}`}>
-          <ul ref={rows} className="flex flex-col gap-2">
-            {items.map((item) => (
-              <li key={item.id} className="shrink-0">
-                <ItemRow item={item} size="card" onToggle={() => void toggle(item)} />
-              </li>
-            ))}
-          </ul>
-          {!portrait && <OverflowButton control={more} of={list.name} />}
-        </div>
-      )}
-      {/* What did not save is said at the card's foot, where "Clear crossed off" sits, and never above the rows: a line over them would
-          push the row that was just tapped down from under the finger. */}
-      {problem && (
-        <p role="alert" className="shrink-0 text-[15px] leading-5">
-          {problem}
-        </p>
-      )}
-      {crossed > 0 && (
-        <Button
-          variant="quiet"
-          aria-label={`Clear ${crossed} crossed off from ${list.name}`}
-          className="h-12 w-full shrink-0 rounded-[14px]"
-          // The button goes when nothing is crossed off any more, and focus would fall to the page with it.
-          onClick={() => {
-            focusTitle(list.id);
-            void clear();
-          }}
-        >
-          Clear {crossed} crossed off
-        </Button>
-      )}
-    </section>
-  );
-}
-
 // The Wall's Lists screen: every Shared List as a card, the Pinned List first. Three cards fill the screen's width. With more,
 // the fourth shows in part and the row scrolls sideways, and the heading row holds a "More lists" button that says so, so a list
 // is never left off the screen with no sign of it; each card still scrolls its own items up and down.
@@ -215,7 +132,8 @@ export function ListCard({ list, pinned, portrait }: { list: SharedList; pinned:
 // as fit at 17 rem, each its row-mates' width (and with fewer cards than fit, the cards share the row), 16 apart and each its natural height, and the screen scrolls as one column with the shared "More"
 // foot; there is no sideways "More".
 export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
-  const { read, failed } = useLists();
+  const lists = useLists();
+  const { read } = lists;
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
   // The row of cards, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row;
   // in portrait the box is the screen's column and the button is its foot.
@@ -230,7 +148,7 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
     cards.length > 3
       ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%,calc((1rem_-_16px)*1000)))]'
       : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]';
-  const shown = cards.map((list) => <ListCard key={list.id} list={list} pinned={list.id === read?.pinnedId} portrait={portrait} />);
+  const shown = cards.map((list) => <ListCard key={list.id} list={list} size="card" pinned={list.id === read?.pinnedId} portrait={portrait} />);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -244,11 +162,7 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
           {!portrait && <OverflowButton control={row} of="lists" className="h-12" />}
         </div>
       </div>
-      {failed && read === null && (
-        <p role="alert" className="text-xl">
-          {couldNotLoad('lists')}
-        </p>
-      )}
+      <ReadState of="lists" read={lists} say="failed" alert="text-xl" />
       {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
       {portrait ? (
         <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
@@ -416,7 +330,8 @@ export function EmptyListCard({ lists, onOpenLists, phone = false }: { lists: nu
 
 // The pinned Shared List, under Up next in Home's right column.
 export function PinnedListCard({ onOpenLists, limit }: { onOpenLists: () => void; limit?: number | undefined }) {
-  const { read, failed } = useLists();
+  const lists = useLists();
+  const { read } = lists;
   // undefined until the first read; null when no list is pinned (or the pinned one is gone).
   const pinned = read ? (read.lists.find((list) => list.id === read.pinnedId) ?? null) : undefined;
   if (pinned) return <HomeList key={pinned.id} list={pinned} onOpenLists={onOpenLists} limit={limit} />;
@@ -424,12 +339,7 @@ export function PinnedListCard({ onOpenLists, limit }: { onOpenLists: () => void
 
   return (
     <aside aria-label="Pinned list" className={HOME_CARD}>
-      {!failed && <EmptyWords>Loading</EmptyWords>}
-      {failed && (
-        <p role="alert" className="text-base">
-          {couldNotLoad('lists')}
-        </p>
-      )}
+      <ReadState of="lists" read={lists} />
     </aside>
   );
 }
@@ -521,18 +431,16 @@ export function SharedListsPage({ household }: { household: Household }) {
   const renameProblem = renaming ? unnamed('list', renaming.asked, renaming.name) : null;
   const [confirming, setConfirming] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  // One change at a time (the card write guard): the buttons are drawn `aria-disabled` from `busy`.
-  const card = useCardWrite();
-  const { busy } = card;
+  // One change at a time (read.change, the card write guard): the buttons are drawn `aria-disabled` from `busy`.
+  const { busy } = read;
 
   // Runs one change, then reads again so the screen shows what the database holds, before the next may begin. A failure is said
   // at once. Says whether it was made; false too when another change was on its way and this one did nothing.
   async function change(work: () => Promise<void>, failure: string): Promise<boolean> {
-    const outcome = await card.run(
+    const outcome = await read.change(
       async () => {
-        await read.write(work);
+        await work();
         setProblem('');
-        await read.readBack();
       },
       { failed: () => setProblem(failure) },
     );
@@ -541,7 +449,7 @@ export function SharedListsPage({ household }: { household: Household }) {
 
   async function create(event: FormEvent) {
     event.preventDefault();
-    if (card.isBusy()) return;
+    if (read.isBusy()) return;
     if (!newName.trim()) {
       setAskedNew((count) => count + 1);
       return;
@@ -555,7 +463,7 @@ export function SharedListsPage({ household }: { household: Household }) {
 
   async function rename(event: FormEvent) {
     event.preventDefault();
-    if (!renaming || card.isBusy()) return;
+    if (!renaming || read.isBusy()) return;
     if (!renaming.name.trim()) {
       setRenaming({ ...renaming, asked: renaming.asked + 1 });
       return;
@@ -569,7 +477,7 @@ export function SharedListsPage({ household }: { household: Household }) {
   }
 
   async function move(id: string, offset: number) {
-    if (card.isBusy()) return;
+    if (read.isBusy()) return;
     const ids = movedIds((lists ?? []).map((list) => list.id), id, offset);
     await change(() => reorderLists(supabase, ids), 'Could not reorder lists. Try again.');
   }
@@ -577,7 +485,7 @@ export function SharedListsPage({ household }: { household: Household }) {
   // The Delete that was pressed goes with its list: focus goes at once to the title of the list beside it, or to "New list" when it was
   // the only one, so it never falls to the page; and back to this list's Delete if the delete did not go through.
   async function remove(id: string) {
-    if (card.isBusy()) return;
+    if (read.isBusy()) return;
     const ids = (lists ?? []).map((list) => list.id);
     const beside = ids[ids.indexOf(id) + 1] ?? ids[ids.indexOf(id) - 1];
     setConfirming(null);
@@ -683,7 +591,7 @@ export function SharedListsPage({ household }: { household: Household }) {
                     className={ACTION}
                     aria-disabled={busy || undefined}
                     onClick={() => {
-                      if (!card.isBusy()) void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.');
+                      if (!read.isBusy()) void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.');
                     }}
                   >
                     Show on home screen

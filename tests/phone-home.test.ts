@@ -24,7 +24,7 @@ afterAll(() => {
 const noop = () => undefined;
 const classesOf = (tag: string) => (/class="([^"]*)"/.exec(tag)?.[1] ?? '').replaceAll('&amp;', '&').replaceAll('&gt;', '>').split(' ');
 
-const routines: RoutinesToday = { date: '2026-10-01', loaded: true, settled: true, failed: false, part: 'evening', problems: {}, groups: [], columns: [], done: new Set(), finished: new Set(), toggle: async () => true };
+const routines: RoutinesToday = { date: '2026-10-01', state: 'ready', settled: true, failed: false, part: 'evening', problems: {}, groups: [], columns: [], done: new Set(), finished: new Set(), toggle: async () => true };
 
 const home = (timezone: string | null) =>
   renderToStaticMarkup(

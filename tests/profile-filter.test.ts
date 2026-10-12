@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { onCalendarScreen, type Occurrence, type WallRoute } from '../src/lib/calendar-occurrences';
+import type { Occurrence } from '../src/lib/calendar-occurrences';
+import { onCalendarScreen, type WallRoute } from '../src/lib/wall-routes';
 import { createProfileFilter, filterOccurrences, FILTER_CLEARED_WORDS, prunePressed, sayOnCalendar } from '../src/lib/profile-filter';
 
 // The Profile filter: which occurrences the pressed Profiles keep, which pressed ids survive a

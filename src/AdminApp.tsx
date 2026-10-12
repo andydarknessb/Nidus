@@ -154,7 +154,7 @@ export function AdminApp() {
             onSignOut={() => {
               setHousehold(null);
               // This phone's notifications end first, while the session can still delete their row; a failure never holds sign-out.
-              void turnOffBeforeSignOut().then(() => supabase.auth.signOut());
+              void turnOffBeforeSignOut(supabase).then(() => supabase.auth.signOut());
             }}
           />
         )}

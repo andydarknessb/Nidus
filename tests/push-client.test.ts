@@ -1,15 +1,23 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type * as PushModule from '../src/lib/push';
+import { createClient } from '@supabase/supabase-js';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import * as push from '../src/lib/push';
 
 // What the tap on "Turn on notifications" does, in order, against stubbed browser globals: nothing here reaches the database (the
 // fake key fetch stops each run before the save; readPushState gets its row answered by a stubbed fetch).
 
-let push: typeof PushModule;
-beforeAll(async () => {
+// push.ts takes the project's address from the app's client module, which reads these when it is first imported; CI has no
+// .env.local, so they are in place before the imports above run.
+vi.hoisted(() => {
   vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
-  push = await import('../src/lib/push');
 });
+
+// The client the phone is handed. Its fetch is looked up on each call, so the global each test stubs is the one it reaches.
+const client = createClient('http://127.0.0.1:54321', 'placeholder-anon-key', {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: { fetch: (...args) => fetch(...args) },
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -46,7 +54,7 @@ function browser(permission: NotificationPermission, subscribeError?: Error) {
 describe('turnOnNotifications', () => {
   it('asks for permission in the tap itself, before anything is awaited and before the worker is registered', async () => {
     const { calls } = browser('granted');
-    const turning = push.turnOnNotifications();
+    const turning = push.turnOnNotifications(client);
     expect(calls).toEqual(['permission']);
     await expect(turning).rejects.toThrow('stop');
     expect(calls).toEqual(['permission', 'register', 'key', 'getSubscription', 'unsubscribe', 'subscribe']);
@@ -54,14 +62,14 @@ describe('turnOnNotifications', () => {
 
   it.each<NotificationPermission>(['denied', 'default'])('registers nothing, fetches nothing and never subscribes when the answer is %s', async (answer) => {
     const { calls, registration } = browser(answer);
-    expect(await push.turnOnNotifications()).toEqual({ kind: answer === 'denied' ? 'denied' : 'off' });
+    expect(await push.turnOnNotifications(client)).toEqual({ kind: answer === 'denied' ? 'denied' : 'off' });
     expect(calls).toEqual(['permission']);
     expect(registration.pushManager.subscribe).not.toHaveBeenCalled();
   });
 
   it('drops whatever subscription the browser holds before subscribing, so a dead endpoint is never saved again', async () => {
     const { calls } = browser('granted');
-    await expect(push.turnOnNotifications()).rejects.toThrow('stop');
+    await expect(push.turnOnNotifications(client)).rejects.toThrow('stop');
     expect(calls.indexOf('unsubscribe')).toBeGreaterThan(calls.indexOf('getSubscription'));
     expect(calls.indexOf('unsubscribe')).toBeLessThan(calls.indexOf('subscribe'));
   });
@@ -69,7 +77,7 @@ describe('turnOnNotifications', () => {
   it('does not retry a refused subscribe', async () => {
     const invalid = Object.assign(new Error('different key'), { name: 'InvalidStateError' });
     const { calls } = browser('granted', invalid);
-    await expect(push.turnOnNotifications()).rejects.toThrow('different key');
+    await expect(push.turnOnNotifications(client)).rejects.toThrow('different key');
     expect(calls.filter((call) => call === 'subscribe')).toHaveLength(1);
   });
 });
@@ -92,20 +100,20 @@ describe('readPushState', () => {
 
   it('drops a subscription the browser holds when this account has no row for it, and says off', async () => {
     const subscription = phone([], () => Promise.resolve(true));
-    expect(await push.readPushState()).toEqual({ kind: 'off' });
+    expect(await push.readPushState(client)).toEqual({ kind: 'off' });
     expect(subscription.unsubscribe).toHaveBeenCalledOnce();
   });
 
   it('says off even when dropping it fails', async () => {
     const subscription = phone([], () => Promise.reject(new Error('refused')));
-    expect(await push.readPushState()).toEqual({ kind: 'off' });
+    expect(await push.readPushState(client)).toEqual({ kind: 'off' });
     expect(subscription.unsubscribe).toHaveBeenCalledOnce();
   });
 
   it('keeps a subscription that has its row', async () => {
     const row = { id: 'abc', endpoint: 'https://fcm.googleapis.com/fcm/send/x', event_reminders: true, reminder_minutes: 30, morning_summary: false, routines_nudge: true, list_additions: true };
     const subscription = phone([row], () => Promise.resolve(true));
-    expect(await push.readPushState()).toMatchObject({ kind: 'on', id: 'abc' });
+    expect(await push.readPushState(client)).toMatchObject({ kind: 'on', id: 'abc' });
     expect(subscription.unsubscribe).not.toHaveBeenCalled();
   });
 });
@@ -168,7 +176,7 @@ describe('readPushState after the push service rotated the endpoint', () => {
 
   it('saves the new endpoint with the old row\'s preferences, deletes the old row, clears the marker and keeps the subscription', async () => {
     const { subscription, cleared, rows } = rotated({ rows: [{ ...oldRow }] });
-    expect(await push.readPushState()).toEqual({
+    expect(await push.readPushState(client)).toEqual({
       kind: 'on',
       id: 'new-id',
       preferences: { eventReminders: false, reminderMinutes: 30, morningSummary: false, routinesNudge: true, listAdditions: false },
@@ -180,17 +188,17 @@ describe('readPushState after the push service rotated the endpoint', () => {
 
   it('gives the defaults when the sender has already deleted the old row', async () => {
     const { rows } = rotated({ rows: [] });
-    expect(await push.readPushState()).toEqual({ kind: 'on', id: 'new-id', preferences: push.DEFAULT_PREFERENCES });
+    expect(await push.readPushState(client)).toEqual({ kind: 'on', id: 'new-id', preferences: push.DEFAULT_PREFERENCES });
     expect(rows).toEqual([{ id: 'new-id', endpoint: NEW, ...defaults }]);
   });
 
   it('finishes the heal at the next open when it failed after the save: the preferences are copied, the old row deleted, the marker cleared', async () => {
     const { subscription, cleared, rows } = rotated({ rows: [{ ...oldRow }], failPreferencesOnce: true });
-    await expect(push.readPushState()).rejects.toBeDefined();
+    await expect(push.readPushState(client)).rejects.toBeDefined();
     expect(cleared).not.toHaveBeenCalled();
     expect(rows.map((row) => row['endpoint'])).toEqual([OLD, NEW]);
 
-    expect(await push.readPushState()).toMatchObject({ kind: 'on', id: 'new-id', preferences: { eventReminders: false, reminderMinutes: 30, listAdditions: false } });
+    expect(await push.readPushState(client)).toMatchObject({ kind: 'on', id: 'new-id', preferences: { eventReminders: false, reminderMinutes: 30, listAdditions: false } });
     expect(rows).toEqual([{ id: 'new-id', endpoint: NEW, event_reminders: false, reminder_minutes: 30, morning_summary: false, routines_nudge: true, list_additions: false }]);
     expect(cleared).toHaveBeenCalledOnce();
     expect(subscription.unsubscribe).not.toHaveBeenCalled();
@@ -198,24 +206,24 @@ describe('readPushState after the push service rotated the endpoint', () => {
 
   it('heals a marked subscription whose row is already there, and then a rowless one at that endpoint is dropped again', async () => {
     const { subscription, rows } = rotated({ rows: [{ ...oldRow }, { id: 'new-id', endpoint: NEW, ...defaults }] });
-    expect(await push.readPushState()).toMatchObject({ kind: 'on', id: 'new-id', preferences: { eventReminders: false, reminderMinutes: 30 } });
+    expect(await push.readPushState(client)).toMatchObject({ kind: 'on', id: 'new-id', preferences: { eventReminders: false, reminderMinutes: 30 } });
     expect(rows.map((row) => row['endpoint'])).toEqual([NEW]);
 
     rows.length = 0;
-    expect(await push.readPushState()).toEqual({ kind: 'off' });
+    expect(await push.readPushState(client)).toEqual({ kind: 'off' });
     expect(subscription.unsubscribe).toHaveBeenCalledOnce();
   });
 
   it('keeps the subscription and the marker, and throws, when the save is refused, to try again on the next open', async () => {
     const { subscription, cleared } = rotated({ rows: [], refuseSave: true });
-    await expect(push.readPushState()).rejects.toBeDefined();
+    await expect(push.readPushState(client)).rejects.toBeDefined();
     expect(subscription.unsubscribe).not.toHaveBeenCalled();
     expect(cleared).not.toHaveBeenCalled();
   });
 
   it('still drops a rowless subscription the marker does not name as new', async () => {
     const { subscription } = rotated({ rows: [], marker: { old: OLD, new: 'https://push.example/other' } });
-    expect(await push.readPushState()).toEqual({ kind: 'off' });
+    expect(await push.readPushState(client)).toEqual({ kind: 'off' });
     expect(subscription.unsubscribe).toHaveBeenCalledOnce();
   });
 });
@@ -225,6 +233,6 @@ describe('turnOffBeforeSignOut', () => {
     browser('granted');
     // The stubbed browser has no PushManager, so it is not "supported" and does nothing; and with one, a failure is swallowed.
     vi.stubGlobal('window', { PushManager: class {}, Notification: {}, matchMedia: () => ({ matches: false }) });
-    await expect(push.turnOffBeforeSignOut()).resolves.toBeUndefined();
+    await expect(push.turnOffBeforeSignOut(client)).resolves.toBeUndefined();
   });
 });

@@ -3,7 +3,7 @@ import { fiveDays, type Occurrence } from '../src/lib/calendar-occurrences';
 import { pageDays } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
 import type { ProfileRoutines, Routine } from '../src/lib/routines';
-import { dayHeadingName, headingLabel, isOnNow, pillName, pillPeople, pillsToShow, pillTime, scheduleColumns, stripPeople } from '../src/lib/schedule';
+import { dayHeadingName, headingLabel, isOnNow, pillName, pillPeople, pillsToShow, scheduleColumns, stripPeople } from '../src/lib/schedule';
 
 // The schedule: the columns of Home and Week built from occurrences, the words under a pill's title, which pill is
 // on now, how many pills a column holds, who a pill is for, and the words on the people strip. All of it is pure, and
@@ -203,20 +203,6 @@ describe('what is on now', () => {
     expect(today?.day.date).toBe('2026-10-01');
     expect(today?.pills.map((pill) => pill.onNow)).toEqual([true]);
     expect(isOnNow(event('Lunch', '2026-10-01T04:30:00Z', '2026-10-01T05:30:00Z'), tokyo[0]!, at)).toBe(true);
-  });
-});
-
-describe('the words under a title', () => {
-  const [today] = fiveDays(CHICAGO, NOW);
-
-  it('is the start time with minutes, AM or PM, in the Household Timezone', () => {
-    expect(pillTime(event('Standup', '2026-10-01T14:00:00Z', '2026-10-01T14:30:00Z'), today!)).toBe('9:00 AM');
-    expect(pillTime(event('Dinner', '2026-10-02T00:30:00Z', '2026-10-02T02:00:00Z'), today!)).toBe('7:30 PM');
-    expect(pillTime(event('Midnight snack', '2026-10-01T05:00:00Z', '2026-10-01T05:30:00Z'), today!)).toBe('12:00 AM');
-  });
-
-  it('is "All day" for an all-day event', () => {
-    expect(pillTime(allDay('Photo day', '2026-10-01', '2026-10-02'), today!)).toBe('All day');
   });
 });
 

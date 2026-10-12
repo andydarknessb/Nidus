@@ -1,12 +1,10 @@
 import { cn } from 'cn';
 import { useMemo, useState } from 'react';
 import { BEYOND_RANGE, HATCH } from '../components/MonthCell';
+import { ReadState } from '../components/ReadState';
 import { Button } from '../components/ui/button';
-import {
-  describeCell,
-  describeMonth,
-  type Occurrence,
-} from '../lib/calendar-occurrences';
+import { describeMonth, type Occurrence } from '../lib/calendar-occurrences';
+import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import {
   canOpenDay,
   monthWeeks,
@@ -68,7 +66,7 @@ export function MonthDay({
 }) {
   const number = Number(day.date.slice(8));
   // As the chips and the tablet's cells are named: the date and how many events, with ", today" on today's.
-  const words = `${describeCell(day.date, occurrences === null ? null : occurrences.length)}${day.isToday ? ', today' : ''}`;
+  const words = `${dateWords.cell(day.date, occurrences === null ? null : occurrences.length)}${day.isToday ? ', today' : ''}`;
   if (beyond) {
     return (
       <div className="h-[58px] min-w-12 p-0.5">
@@ -76,7 +74,7 @@ export function MonthDay({
           <span aria-hidden className="grid h-[30px] min-w-8 place-items-center rounded-full bg-card px-1 font-display text-lg leading-none text-muted-foreground">
             {number}
           </span>
-          <span className="sr-only">{`${describeCell(day.date, null)}, ${BEYOND_RANGE}`}</span>
+          <span className="sr-only">{`${dateWords.cell(day.date, null)}, ${BEYOND_RANGE}`}</span>
         </div>
       </div>
     );
@@ -201,11 +199,7 @@ export function PhoneMonth({
             ))}
           </div>
         </SideScroll>
-        {events.problem && (
-          <p role="alert" className="text-base">
-            {events.problem}
-          </p>
-        )}
+        <ReadState of="the calendar" read={events} say="failed" />
         <DayEvents day={day} events={events} beyond={beyond} profiles={profiles} now={now} timezone={timezone} announce={false} />
       </PhoneCard>
     </>

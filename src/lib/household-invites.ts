@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type HouseholdInvite = { createdAt: Date; expiresAt: Date };
 
@@ -21,8 +21,8 @@ export function joinTokenOf(pathname: string): string | null {
 }
 
 // The Household's invite, or null when there is none or it has expired. Never the token: only its hash is stored.
-export async function readHouseholdInvite(householdId: string): Promise<HouseholdInvite | null> {
-  const { data, error } = await supabase
+export async function readHouseholdInvite(client: SupabaseClient, householdId: string): Promise<HouseholdInvite | null> {
+  const { data, error } = await client
     .from('household_invites')
     .select('created_at, expires_at')
     .eq('household_id', householdId)
@@ -34,28 +34,28 @@ export async function readHouseholdInvite(householdId: string): Promise<Househol
 }
 
 // Makes the Household's invite, replacing any earlier one. The token comes back this once.
-export async function createHouseholdInvite(): Promise<{ token: string; expiresAt: Date }> {
-  const { data, error } = await supabase.rpc('create_household_invite').single<{ token: string; expires_at: string }>();
+export async function createHouseholdInvite(client: SupabaseClient): Promise<{ token: string; expiresAt: Date }> {
+  const { data, error } = await client.rpc('create_household_invite').single<{ token: string; expires_at: string }>();
   if (error) throw error;
   return { token: data.token, expiresAt: new Date(data.expires_at) };
 }
 
-export async function cancelHouseholdInvite(): Promise<void> {
-  const { error } = await supabase.rpc('cancel_household_invite');
+export async function cancelHouseholdInvite(client: SupabaseClient): Promise<void> {
+  const { error } = await client.rpc('cancel_household_invite');
   if (error) throw error;
 }
 
 // 'expired' covers every link that does not work, as the database refuses them all alike.
-export async function acceptHouseholdInvite(token: string): Promise<JoinOutcome> {
-  const { error } = await supabase.rpc('accept_household_invite', { p_token: token });
+export async function acceptHouseholdInvite(client: SupabaseClient, token: string): Promise<JoinOutcome> {
+  const { error } = await client.rpc('accept_household_invite', { p_token: token });
   if (!error) return 'joined';
   if (error.code === DEAD_LINK) return 'expired';
   if (error.code === OTHER_HOUSEHOLD) return 'other-household';
   throw error;
 }
 
-export async function listHouseholdAccounts(): Promise<HouseholdAccountRow[]> {
-  const { data, error } = await supabase.rpc('household_account_list');
+export async function listHouseholdAccounts(client: SupabaseClient): Promise<HouseholdAccountRow[]> {
+  const { data, error } = await client.rpc('household_account_list');
   if (error) throw error;
   const rows = data as { auth_user_id: string; email: string; created_at: string }[];
   return rows.map((row) => ({ authUserId: row.auth_user_id, email: row.email, createdAt: new Date(row.created_at) }));
@@ -63,15 +63,15 @@ export async function listHouseholdAccounts(): Promise<HouseholdAccountRow[]> {
 
 // Removes another Household Account of this Household; true when it was removed (and the Household's invite cancelled with
 // it). The database refuses your own and any other Household's by answering false, which is not an error: nothing changed.
-export async function removeHouseholdAccount(authUserId: string): Promise<boolean> {
-  const { data, error } = await supabase.rpc('remove_household_account', { p_auth_user_id: authUserId });
+export async function removeHouseholdAccount(client: SupabaseClient, authUserId: string): Promise<boolean> {
+  const { data, error } = await client.rpc('remove_household_account', { p_auth_user_id: authUserId });
   if (error) throw error;
   return data === true;
 }
 
 // Whether the signed-in account is a Household Account: one that may open Settings.
-export async function isHouseholdAccount(): Promise<boolean> {
-  const { data, error } = await supabase.rpc('is_household_account');
+export async function isHouseholdAccount(client: SupabaseClient): Promise<boolean> {
+  const { data, error } = await client.rpc('is_household_account');
   if (error) throw error;
   return data === true;
 }

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 // The Wall's routes and the dates they put a screen on: reading and writing the address, whether a page holds today, and the date the
 // navigation rail opens each view on. The page arithmetic they build on is tested in paged-view.test.ts.
 import {
-  describePage,
   holdsToday,
   mealsPageDate,
   mealsPath,
@@ -12,22 +11,11 @@ import {
   wallDate,
   wallPath,
   type WallRoute,
-} from '../src/lib/calendar-occurrences';
-import { canOpenDay, monthWeeks, pageDays, pagingWindowAround, type CalendarView } from '../src/lib/paged-view';
+} from '../src/lib/wall-routes';
+import { canOpenDay, monthWeeks, pagingWindowAround, type CalendarView } from '../src/lib/paged-view';
 import { addDays } from '../supabase/functions/_shared/zoned-time.ts';
 
 const CHICAGO = 'America/Chicago';
-
-
-describe('describePage', () => {
-  const now = new Date('2026-09-30T15:00:00Z');
-
-  it('names a day and a week, with the year where the range crosses one', () => {
-    expect(describePage(pageDays('day', '2026-09-30', CHICAGO, now))).toBe('Wed, Sep 30, 2026');
-    expect(describePage(pageDays('week', '2026-09-27', CHICAGO, now))).toBe('Sep 27 to Oct 3, 2026');
-    expect(describePage(pageDays('week', '2026-12-27', CHICAGO, now))).toBe('Dec 27, 2026 to Jan 2, 2027');
-  });
-});
 
 describe('wall routes', () => {
   it('reads the view and the date from the address', () => {

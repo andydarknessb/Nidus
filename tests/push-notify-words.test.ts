@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import type { Occurrence } from '../src/lib/calendar-occurrences';
+import { wallDays } from '../src/lib/paged-view';
+import { scheduleColumns } from '../src/lib/schedule';
+import { instantAt } from '../supabase/functions/_shared/zoned-time.ts';
 import {
-  clockWords,
   cut,
   makePayload,
   MAX_BODY,
@@ -10,7 +13,8 @@ import {
   routinesBody,
 } from '../supabase/functions/push-notify/handler';
 
-// The pure parts of the sender (spec 0007): words, payload limits and the Household's clock.
+// The pure parts of the sender (spec 0007): words and payload limits. The time words are event words, which the Wall's pill
+// says too (tests/event-words.test.ts has them in every form).
 // Nothing here touches the database.
 
 const EM_DASH = String.fromCharCode(0x2014);
@@ -47,20 +51,6 @@ describe('makePayload', () => {
 
   it('is exactly { title, body, url, tag }', () => {
     expect(makePayload('Today', 'Nothing', '/', 'morning:2026-10-06')).toEqual({ title: 'Today', body: 'Nothing', url: '/', tag: 'morning:2026-10-06' });
-  });
-});
-
-describe('the Household clock', () => {
-  it('writes times of day as "8:30 AM" in the Household Timezone', () => {
-    const at = Date.parse('2026-10-06T13:30:00Z');
-    expect(clockWords(at, 'America/Chicago')).toBe('8:30 AM');
-    expect(clockWords(at, 'Pacific/Kiritimati')).toBe('3:30 AM');
-    expect(clockWords(Date.parse('2026-10-06T17:00:00Z'), 'America/Chicago')).toBe('12:00 PM');
-    expect(clockWords(Date.parse('2026-10-06T05:05:00Z'), 'America/Chicago')).toBe('12:05 AM');
-    expect(clockWords(Date.parse('2026-10-07T00:00:00Z'), 'America/Chicago')).toBe('7:00 PM');
-    // Across the Auckland change the same UTC hour reads an hour apart.
-    expect(clockWords(Date.parse('2026-04-04T18:30:00Z'), 'Pacific/Auckland')).toBe('6:30 AM');
-    expect(clockWords(Date.parse('2026-04-03T18:30:00Z'), 'Pacific/Auckland')).toBe('7:30 AM');
   });
 });
 
@@ -135,5 +125,68 @@ describe('morningBody', () => {
 describe('routinesBody', () => {
   it('reads "Sam: 2 left. Mia: 1 left."', () => {
     expect(routinesBody([{ name: 'Sam', count: 2 }, { name: 'Mia', count: 1 }])).toBe('Sam: 2 left. Mia: 1 left.');
+  });
+});
+
+describe('the time a reminder and a morning line say', () => {
+  const event = (title: string, startsAt: string, endsAt: string, allDay = false): Occurrence => ({
+    source: 'synced',
+    id: title,
+    calendar_id: 'calendar-1',
+    calendar_name: 'Family',
+    title,
+    description: null,
+    location: null,
+    starts_at: startsAt,
+    ends_at: endsAt,
+    is_all_day: allDay,
+    profile_id: null,
+    profile_ids: [],
+  });
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  // Each zone's night the clocks change and an ordinary day beside it.
+  const days = [
+    ['America/Chicago', '2026-11-01'],
+    ['America/Chicago', '2026-03-08'],
+    ['Europe/London', '2026-10-25'],
+    ['Europe/London', '2026-03-29'],
+    ['Pacific/Auckland', '2026-04-05'],
+    ['Pacific/Auckland', '2026-09-27'],
+    ['America/Chicago', '2026-10-06'],
+  ] as const;
+
+  for (const [zone, date] of days) {
+    it(`says each event of ${date} in ${zone} as the pill does`, () => {
+      const [day] = wallDays([date], date, zone);
+      const dayStart = day!.startMs;
+      const dayEnd = day!.endMs;
+      const before = dayStart - 3_600_000;
+      const events = [
+        event('Early', iso(instantAt(date, '00:30', zone)), iso(instantAt(date, '01:30', zone))),
+        event('Night', iso(instantAt(date, '01:30', zone)), iso(instantAt(date, '03:30', zone))),
+        event('Lunch', iso(instantAt(date, '12:00', zone)), iso(instantAt(date, '13:00', zone))),
+        event('Sleepover', iso(before), iso(instantAt(date, '08:15', zone))),
+        event('Camp', iso(before), iso(dayEnd + 3_600_000)),
+        // Exactly the day, which the pill calls all day: so does the morning line.
+        event('Whole day', iso(dayStart), iso(dayEnd)),
+        event('Holiday', iso(dayStart), iso(dayEnd), true),
+      ];
+      for (const occurrence of events) {
+        const pills = scheduleColumns([occurrence], [day!], new Date(dayStart))[0]!.pills;
+        const pill = pills[0]!.time;
+        const line = morningBody([occurrence], [], dayStart, dayEnd, zone);
+        expect(line, occurrence.title).toBe(pill === 'All day' ? `All day: ${occurrence.title}` : `${pill} ${occurrence.title}`);
+      }
+    });
+  }
+
+  it('says the clock of the start in a reminder, as the pill does', () => {
+    for (const [zone, date] of days) {
+      const [day] = wallDays([date], date, zone);
+      const startsAt = instantAt(date, '12:00', zone);
+      const pills = scheduleColumns([event('Lunch', iso(startsAt), iso(startsAt + 3_600_000))], [day!], new Date(startsAt))[0]!.pills;
+      expect(reminderBody(startsAt, startsAt - 15 * 60_000, zone, null)).toBe(`At ${pills[0]!.time}, in 15 minutes`);
+    }
   });
 });

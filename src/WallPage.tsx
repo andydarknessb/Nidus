@@ -5,7 +5,7 @@ import { formatCountdown } from './lib/device-format';
 import { FiveDayCalendar, PagedCalendar } from './components/FiveDayCalendar';
 import { BeforeHousehold } from './components/BeforeHousehold';
 import { ChangeFeedProvider } from './components/ChangeFeedProvider';
-import { EmptyWords } from './components/EmptyWords';
+import { ReadState } from './components/ReadState';
 import { HomeRail } from './components/HomeRail';
 import { NativeEventSheet } from './components/NativeEventSheet';
 import { NavigationRail } from './components/NavigationRail';
@@ -13,8 +13,7 @@ import { PeopleStrip } from './components/PeopleStrip';
 import { PhoneShell } from './components/PhoneShell';
 import { StatusLineProvider } from './components/StatusLine';
 import { WallHeader, WallTime } from './components/WallHeader';
-import { mealsPath, onCalendarScreen, parseWallRoute, wallDate, wallPath, type WallRoute } from './lib/calendar-occurrences';
-import type { CalendarView } from './lib/paged-view';
+import { onCalendarScreen, useWallRoute, wallDate, type WallRoute } from './lib/wall-routes';
 import { loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { deviceStorage, gateWords, recallHousehold, rememberHousehold } from './lib/remembered-household';
 import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/profile-filter';
@@ -32,7 +31,7 @@ import { PhoneWall } from './PhoneWall';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
 import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
-import { couldNotLoad, useSyncedRead } from './lib/synced-read';
+import { useSyncedRead } from './lib/synced-read';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
 const HEARTBEAT_MS = 30_000;
@@ -84,7 +83,7 @@ export function WallPage() {
         if (live) setState((prev) => (prev.kind === 'paired' && prev.owner ? prev : { kind: 'paired', owner: true }));
         return HEARTBEAT_MS;
       }
-      if (await touchDevice()) {
+      if (await touchDevice(supabase)) {
         pairing = undefined;
         if (live) setState((prev) => (prev.kind === 'paired' && !prev.owner ? prev : { kind: 'paired', owner: false }));
         return HEARTBEAT_MS;
@@ -93,7 +92,7 @@ export function WallPage() {
       // tablet learns this: one revoked at night, whose code cannot be fetched yet, does not paint dark first when it is
       // loaded again. Then show a code that still has time on it.
       writeLastMode(localStore(), 'light');
-      if (!pairing || pairing.expiresAt.getTime() <= Date.now()) pairing = await requestPairingCode();
+      if (!pairing || pairing.expiresAt.getTime() <= Date.now()) pairing = await requestPairingCode(supabase);
       const shown = pairing;
       if (live) setState((prev) => (prev.kind === 'unpaired' && prev.pairing === shown ? prev : { kind: 'unpaired', pairing: shown }));
       return CLAIM_POLL_MS;
@@ -190,24 +189,6 @@ export function PairingScreen({ pairing }: { pairing: PairingCode }) {
       </a>
     </main>
   );
-}
-
-// Which screen the address names. The wall pages with pushState rather than reloading, so a tap
-// never drops the session or the Routines read, and Back returns to the previous page.
-function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void, (date: string | null) => void, () => void, () => void] {
-  const read = () => parseWallRoute(window.location.pathname, window.location.search);
-  const [route, setRoute] = useState<WallRoute>(read);
-  useEffect(() => {
-    const onPop = () => setRoute(read());
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, []);
-  const go = (path: string) => {
-    // Today while already on today's page changes nothing: no extra step for Back.
-    if (path !== window.location.pathname + window.location.search) window.history.pushState(null, '', path);
-    setRoute(read());
-  };
-  return [route, (view, date) => go(wallPath(view, date)), () => go('/'), (date) => go(mealsPath(date)), () => go('/routines'), () => go('/lists')];
 }
 
 // The frame that stands in for a screen until the Household has been read; it lives in its own file so the phone's screens can
@@ -365,13 +346,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           ) : (
             // The chart before the Household is read: a frame that says "Loading", or that the read failed, as Up next does.
             <section aria-label="Routines" className="rounded-3xl bg-card p-4">
-              {view.failed ? (
-                <p role="alert" className="text-base">
-                  {couldNotLoad('routines')}
-                </p>
-              ) : (
-                <EmptyWords>Loading</EmptyWords>
-              )}
+              <ReadState of="routines" read={{ state: view.failed ? 'failed' : 'loading' }} />
             </section>
           )
         ) : route.view === 'meals' ? (
@@ -379,7 +354,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           timezone ? (
             <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} portrait={home.portrait} />
           ) : (
-            <BeforeHousehold label="Meals" failed={view.failed} words={couldNotLoad('meals')} />
+            <BeforeHousehold label="Meals" failed={view.failed} of="meals" />
           )
         ) : route.view === 'lists' ? (
           // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
@@ -389,13 +364,13 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day, Week or Month.
-          <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
+          <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />
         ) : (
         <div className={homeGrid(home.portrait)}>
           {timezone ? (
             <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
           ) : (
-            <BeforeHousehold label="Calendar" failed={view.failed} words={couldNotLoad('the calendar')} />
+            <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />
           )}
           <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} row={home.portrait} onOpenRoutines={openRoutines} onOpenLists={openLists} />
         </div>

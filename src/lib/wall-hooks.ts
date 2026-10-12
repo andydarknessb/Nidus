@@ -7,7 +7,7 @@ import { ProfileFilterContext } from './profile-filter';
 import type { Profile } from './profiles';
 import { OCCURRENCE_TABLES } from './realtime';
 import { supabase } from './supabase';
-import { couldNotLoad, useSyncedRead } from './synced-read';
+import { useSyncedRead, type ReadStateName } from './synced-read';
 import { type HouseholdDay, householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // What the wall's screens share: the clock, the current Household day, and the one read every
@@ -48,9 +48,15 @@ export function useHouseholdDay(timezone: string): HouseholdDay {
 // anywhere in the Household, every 30 seconds and 5 after a failure. The span read is from the first day's start to the last day's
 // end; while a new span's first read is on its way (a turned page, Household midnight) what was read stays, and each day still shows
 // only its own events. `version` changes when the screen around the calendar has added an event, so it reads again at once; the event
-// sheets read again after an edit (`refresh`). The filter works on what was read, so pressing a chip never reads again. `problem` is
-// what a view says while nothing has ever loaded.
-export type DayEventsRead = DayEvents & { problem: string | null; refresh: () => void };
+// sheets read again after an edit (`refresh`). The filter works on what was read, so pressing a chip never reads again. `state` is
+// the read's (ReadState draws "failed" for a view while nothing has ever loaded).
+export type DayEventsRead = DayEvents & { state: ReadStateName; refresh: () => void };
+
+// What one day (or the span) of `events` says of the read: its own `occurrences` are null until they have been read, even while an
+// earlier span's read is kept on screen.
+export function dayState(events: Pick<DayEventsRead, 'state'>, occurrences: unknown): ReadStateName {
+  return events.state === 'failed' ? 'failed' : occurrences === null ? 'loading' : 'ready';
+}
 
 export function useDayEvents(days: WallDay[], version: number, profiles: Profile[] | null): DayEventsRead {
   const { pressed } = useContext(ProfileFilterContext);
@@ -66,5 +72,5 @@ export function useDayEvents(days: WallDay[], version: number, profiles: Profile
     refresh();
   }, [version, refresh]);
   const events = useMemo(() => dayEventsOf(read.data, profiles, pressed), [read.data, profiles, pressed]);
-  return { ...events, problem: read.unread ? couldNotLoad('the calendar') : null, refresh };
+  return { ...events, state: read.state, refresh };
 }

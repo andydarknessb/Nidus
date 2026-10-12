@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Profile } from '../src/lib/profiles';
-import { columnsOf, finishedProfiles, firstPick, groupByProfile, pickedPerson, todaysRoutines, type ProfileRoutines, type Routine, type TimeOfDay } from '../src/lib/routines';
+import { columnsOf, finishedProfiles, firstPick, groupByProfile, pickedPerson, routinesState, todaysRoutines, type ProfileRoutines, type Routine, type TimeOfDay } from '../src/lib/routines';
 import type { RoutinesToday } from '../src/lib/use-routines-today';
 import type { PhoneRoutines as PhoneRoutinesType } from '../src/phone/PhoneRoutines';
 
@@ -82,7 +82,7 @@ function routinesToday(profiles: Profile[], routines: Routine[], done: string[] 
   const ticked = new Set(done);
   return {
     date: '2026-10-01',
-    loaded: true,
+    state: 'ready',
     settled: true,
     failed: false,
     part: 'evening',
@@ -207,10 +207,38 @@ describe('pickedPerson', () => {
   });
 });
 
-describe('the phone Routines tab after Household midnight with a failed read', () => {
-  it('says it could not load routines, and shows the first person rather than "Loading" for ever', () => {
-    const people = [profile('ava', 0), profile('ben', 1)];
-    const html = screen(routinesToday(people, [routine('a1', 'ava', 'evening')], [], { settled: false, failed: true }));
+// The Routines map their own `settled` onto the synced read's state (spec 0011): the Wall's `loaded` and the phone's `settled` are one.
+describe('routinesState', () => {
+  it('is the read\'s own state once what was read is for today', () => {
+    expect(routinesState(true, { state: 'ready', failed: false })).toBe('ready');
+    // Ready but the last read failed: what was read stays on screen, and the header says the connection is lost.
+    expect(routinesState(true, { state: 'ready', failed: true })).toBe('ready');
+  });
+
+  it('is loading just after Household midnight, while what was read is for yesterday', () => {
+    expect(routinesState(false, { state: 'ready', failed: false })).toBe('loading');
+    expect(routinesState(false, { state: 'loading', failed: false })).toBe('loading');
+  });
+
+  it('stays failed when nothing for today is read and the read is failing', () => {
+    expect(routinesState(false, { state: 'failed', failed: true })).toBe('failed');
+    expect(routinesState(false, { state: 'ready', failed: true })).toBe('failed');
+  });
+});
+
+describe('the phone Routines tab after Household midnight', () => {
+  const people = [profile('ava', 0), profile('ben', 1)];
+  const today = [routine('a1', 'ava', 'evening')];
+  const unsettled = (read: { state: 'ready' | 'loading' | 'failed'; failed: boolean }) => routinesToday(people, today, [], { settled: false, failed: read.failed, state: routinesState(false, read) });
+
+  it('says "Loading" while the new day is read', () => {
+    const html = screen(unsettled({ state: 'ready', failed: false }));
+    expect(html).toContain('Loading');
+    expect(html).not.toContain('Could not load');
+  });
+
+  it('with a failed read says it could not load routines, and shows the first person rather than "Loading" for ever', () => {
+    const html = screen(unsettled({ state: 'ready', failed: true }));
     expect(html).toContain('Could not load routines. Check your connection.');
     expect(html).not.toContain('Loading');
   });

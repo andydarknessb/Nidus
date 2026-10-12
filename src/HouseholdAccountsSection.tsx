@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Plus, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { formatDate, formatDateWithYear } from '@/lib/calendar-occurrences';
+import { dateWords } from '../supabase/functions/_shared/event-words.ts';
 import {
   cancelHouseholdInvite,
   createHouseholdInvite,
@@ -13,8 +13,8 @@ import {
   type HouseholdAccountRow,
   type HouseholdInvite,
 } from '@/lib/household-invites';
+import { supabase } from '@/lib/supabase';
 import { CANCEL_SAID, MAKE_SAID, REMOVED_WORDS, inviteViewOf, isRemoved, loadFailedWords, sharePayload, type InviteView } from '@/lib/household-accounts';
-import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
 import { useSyncedRead } from '@/lib/synced-read';
 
@@ -78,7 +78,7 @@ type ViewProps = {
 // What the section draws, from what it is told: each of its states is rendered in tests/household-accounts-section.test.ts.
 export function HouseholdAccountsView(props: ViewProps) {
   const { accounts, invite, userId, timezone, canShare, open, busy, status, loadProblem, problemAt } = props;
-  const date = (when: Date) => formatDate(when.getTime(), timezone);
+  const date = (when: Date) => dateWords.day(when.getTime(), timezone);
   // A tap while a write is on its way does nothing; the button says so with `aria-disabled`, never `disabled`.
   const guarded = (action: () => void) => () => {
     if (!busy) action();
@@ -94,7 +94,7 @@ export function HouseholdAccountsView(props: ViewProps) {
       <ul className="flex flex-col gap-2">
         {accounts?.map((account) => {
           const id = account.authUserId;
-          const since = formatDateWithYear(account.createdAt.getTime(), timezone);
+          const since = dateWords.dayWithYear(account.createdAt.getTime(), timezone);
           if (id === userId) {
             return (
               <li key={id} className={`${rowClass} flex items-center bg-muted`}>
@@ -196,13 +196,15 @@ const NO_TABLES = [] as const;
 export function HouseholdAccountsSection({ householdId, timezone, userId }: { householdId: string; timezone: string; userId: string }) {
   // The accounts and the invite the database holds (undefined until it is read), through the synced read; and the link just made,
   // which is on screen only until the page is left, since only its hash is stored.
+  const problems = useWriteProblem();
   const read = useSyncedRead<Read>(
     async () => {
-      const [accounts, stored] = await Promise.all([listHouseholdAccounts(), readHouseholdInvite(householdId)]);
+      const [accounts, stored] = await Promise.all([listHouseholdAccounts(supabase), readHouseholdInvite(supabase, householdId)]);
       return { accounts, stored };
     },
     NO_TABLES,
     householdId,
+    { problems },
   );
   const accounts = read.data?.accounts ?? null;
   const stored = read.data ? read.data.stored : undefined;
@@ -210,11 +212,10 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   const [status, setStatus] = useState<InviteStatus>('idle');
   // A trouble reading, kept apart from what a write said of itself, as in the tablets section.
   const loadProblem = read.failed ? loadFailedWords(read.error) : null;
-  const problems = useWriteProblem();
   const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
-  // One write at a time (the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes afterwards.
-  const card = useCardWrite(problems);
-  const { busy } = card;
+  // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
+  // afterwards.
+  const { busy } = read;
 
   // One write, alone: `place` is where it says so when it fails (in `said`'s words, or the default ones), `done` what changes once it
   // landed (it returns where focus goes), and `landed` what the accounts and invite show from then until the read that follows it.
@@ -225,9 +226,9 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
     said?: { failed: string; offline: string },
     landed?: (result: unknown) => ((shown: Read) => Read) | undefined,
   ) {
-    await card.run(
+    await read.change(
       async () => {
-        const result = await read.write(run, undefined, landed);
+        const result = await run();
         problems.clear(place);
         return result;
       },
@@ -240,6 +241,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
           return true;
         },
         landed: done,
+        showing: landed,
       },
     );
   }
@@ -248,7 +250,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
     void write(
       INVITE,
       async () => {
-        const { token, expiresAt } = await createHouseholdInvite();
+        const { token, expiresAt } = await createHouseholdInvite(supabase);
         setMade({ link: inviteLink(window.location.origin, token), expiresAt });
       },
       () => {
@@ -261,7 +263,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   const cancelInvite = () =>
     void write(
       INVITE,
-      cancelHouseholdInvite,
+      () => cancelHouseholdInvite(supabase),
       () => {
         setMade(null);
         setStatus('cancelled');
@@ -275,7 +277,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   const remove = (id: string) =>
     void write(
       removePlace(id),
-      () => removeHouseholdAccount(id),
+      () => removeHouseholdAccount(supabase, id),
       (removed) => {
         // false: the database refused (yourself, another Household's, already gone), so nothing was removed and the invite stands.
         if (removed !== true) return;
@@ -335,7 +337,7 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       onCancelRemove={(id) => {
         problems.clear();
         setOpen({ id, confirming: false });
-        card.focus(removeId(id));
+        read.focus(removeId(id));
       }}
       onRemove={remove}
       onMakeInvite={makeInvite}

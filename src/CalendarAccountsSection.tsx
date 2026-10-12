@@ -19,11 +19,10 @@ import {
 } from '@/lib/calendar-accounts';
 import { loadProfiles, type Profile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
-import { useCardWrite } from '@/lib/use-card-write';
 import { useWriteProblem } from '@/lib/use-write-problem';
 import { useStatusLine } from '@/lib/status-line';
 import { type Said } from '@/lib/write-failure';
-import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
+import { couldNotLoad, useChange, useSyncedRead } from '@/lib/synced-read';
 
 const CALENDAR_TABLES = ['calendar_accounts', 'mirrored_calendars', 'profiles'] as const;
 
@@ -257,6 +256,7 @@ export function CalendarAccountsSection() {
   // Read through the synced read. A choice of calendar or person is a pending change on it: it shows at once, goes back if its write
   // fails, and choices stay in the order they were made. A trouble reading, which a read that works takes away, is kept apart from
   // what a write said of itself (useWriteProblem): a good read says nothing of whether a write did.
+  const problems = useWriteProblem();
   const read = useSyncedRead(
     async () => {
       const [accounts, calendars, profiles] = await Promise.all([loadCalendarAccounts(supabase), loadMirroredCalendars(supabase), loadProfiles(supabase)]);
@@ -264,20 +264,21 @@ export function CalendarAccountsSection() {
     },
     CALENDAR_TABLES,
     'calendars',
+    { problems },
   );
   const accounts = read.data?.accounts ?? null;
   const calendars = read.data?.calendars ?? NONE;
   const profiles = read.data?.profiles ?? NO_PROFILES;
   const loadProblem = read.failed ? couldNotLoad('your calendars') : null;
-  const problems = useWriteProblem();
   const [notice, setNotice] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [iphoneLink, setIphoneLink] = useState('');
-  // Removing an account and adding an iPhone calendar are each one at a time (the card write guard), and independent of each other.
-  // The field's value now is kept apart (a press's answer comes after more may have been typed).
-  const removal = useCardWrite(problems);
-  const addition = useCardWrite(problems);
+  // Removing an account and adding an iPhone calendar are each one at a time (the card write guard), and independent of each other:
+  // the read's own guard is the removal's, and the addition has one of its own. The field's value now is kept apart (a press's answer
+  // comes after more may have been typed).
+  const removal = read;
+  const addition = useChange(read, problems);
   const removing = removal.busy;
   const adding = addition.busy;
   const iphoneLinkNow = useRef('');
@@ -341,9 +342,9 @@ export function CalendarAccountsSection() {
 
 
   async function remove(account: CalendarAccount) {
-    await removal.run(
+    await removal.change(
       async () => {
-        await read.write(() => removeCalendarAccount(supabase, account.id));
+        await removeCalendarAccount(supabase, account.id);
         problems.clear(removePlace(account.id));
         if (account.provider === 'icloud') say('iPhone calendar removed.');
         else setNotice('Account removed.');
@@ -362,7 +363,7 @@ export function CalendarAccountsSection() {
   // Adds the pasted link as an iPhone calendar (sendLink says what the answer comes to). The route's own words are said under the field
   // when it refuses; any other failure is worded as every write on this page is.
   async function addIphone() {
-    await addition.run(() => sendLink({ link: iphoneLink, current: () => iphoneLinkNow.current, add: (url) => read.write(() => addIphoneCalendar(supabase, url)) }), {
+    await addition.change(() => sendLink({ link: iphoneLink, current: () => iphoneLinkNow.current, add: (url) => addIphoneCalendar(supabase, url) }), {
       landed: (answer) => {
         if (answer.kind === 'added') {
           problems.clear(ADD_IPHONE);

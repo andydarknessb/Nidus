@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it } from 'vitest';
+import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, requestPairingCode, revokeDevice, touchDevice } from '../src/lib/device';
 import {
   asAnonymous,
   asHouseholdAccount,
@@ -399,5 +400,73 @@ describe('device pairing', () => {
       expect((await asAnonymous().from('pairing_claim_failures').select('failed_at')).error).not.toBeNull();
       expect((await failuresFor(arranged.authUserId)).data).toHaveLength(1);
     });
+  });
+});
+
+// The client lib (src/lib/device.ts) acts as the client it is handed: here, each principal of the seam in turn.
+describe('the device client lib', () => {
+  const households: HouseholdAccount[] = [];
+  const tablets: Tablet[] = [];
+
+  afterEach(async () => {
+    await Promise.all(tablets.splice(0).map(destroyTablet));
+    await Promise.all(households.splice(0).map(destroyHousehold));
+  });
+
+  async function household(name: string) {
+    const arranged = await createHousehold(name);
+    households.push(arranged);
+    return { arranged, phone: await asHouseholdAccount(arranged) };
+  }
+
+  async function tablet() {
+    const arranged = await asTablet();
+    tablets.push(arranged);
+    return arranged;
+  }
+
+  it('pairs a tablet: the code, the claim, the heartbeat and the list', async () => {
+    const { phone } = await household('The Andersons');
+    const wall = await tablet();
+    expect(await touchDevice(wall.client)).toBe(false);
+
+    const { code, expiresAt } = await requestPairingCode(wall.client);
+    expect(code).toMatch(/^[A-HJ-KM-NP-Z2-9]{6}$/);
+    expect(expiresAt.getTime()).toBeGreaterThan(Date.now());
+
+    await claimPairingCode(phone, code, '  Kitchen ');
+
+    expect(await touchDevice(wall.client)).toBe(true);
+    expect(await listDevices(phone)).toMatchObject([{ name: 'Kitchen' }]);
+  });
+
+  it('says a code the database did not take is invalid, and the sixth failure is too many attempts', async () => {
+    const { phone } = await household('The Andersons');
+
+    const invalid = await claimPairingCode(phone, 'ABC234', 'Kitchen').catch((error: unknown) => error);
+    expect(isInvalidCode(invalid)).toBe(true);
+    expect(isTooManyAttempts(invalid)).toBe(false);
+
+    for (let attempt = 0; attempt < 4; attempt += 1) await claimPairingCode(phone, 'ABC234', 'Kitchen').catch(() => undefined);
+    const refused = await claimPairingCode(phone, 'ABC234', 'Kitchen').catch((error: unknown) => error);
+    expect(isTooManyAttempts(refused)).toBe(true);
+  });
+
+  it("lists and revokes only its own Household's Devices: another Household Account sees none and revokes none", async () => {
+    const mine = await household('The Andersons');
+    const neighbours = await household('The Nguyens');
+    const wall = await tablet();
+    await claimPairingCode(mine.phone, (await requestPairingCode(wall.client)).code, 'Kitchen');
+    const [device] = await listDevices(mine.phone);
+    if (!device) throw new Error('the claim left no Device');
+
+    expect(await listDevices(neighbours.phone)).toEqual([]);
+    await revokeDevice(neighbours.phone, device.id);
+    expect(await listDevices(mine.phone)).toHaveLength(1);
+    expect(await touchDevice(wall.client)).toBe(true);
+
+    await revokeDevice(mine.phone, device.id);
+    expect(await listDevices(mine.phone)).toEqual([]);
+    expect(await touchDevice(wall.client)).toBe(false);
   });
 });

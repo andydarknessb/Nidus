@@ -1,6 +1,7 @@
 import { CalendarDays, Pin, X } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { describeWhen, type Occurrence } from '../lib/calendar-occurrences';
+import { eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
+import type { Occurrence } from '../lib/calendar-occurrences';
 import { whoWords } from '../lib/day-view';
 import type { PillPeople } from '../lib/schedule';
 import { EventDiscs, EventFill } from './EventPill';
@@ -73,7 +74,7 @@ export function EventDetails({
             <span className="relative min-w-0 font-semibold">{whoWords(people)}</span>
           </span>
         </Detail>
-        <Detail label="When">{describeWhen(occurrence, timezone)}</Detail>
+        <Detail label="When">{timeWords(eventTime(occurrence, { timezone }), 'sheet')}</Detail>
         {occurrence.location && <Detail label="Where">{occurrence.location}</Detail>}
         {occurrence.description && <Detail label="Notes">{occurrence.description}</Detail>}
         {!native && <Detail label="Calendar">{occurrence.calendar_name}</Detail>}

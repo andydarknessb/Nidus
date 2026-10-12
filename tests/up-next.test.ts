@@ -33,7 +33,7 @@ function routinesToday(more: Partial<RoutinesToday> = {}, profiles: Profile[] = 
   const done = new Set<string>();
   return {
     date: '2026-10-01',
-    loaded: true,
+    state: 'ready',
     settled: true,
     failed: false,
     part: 'evening',
@@ -122,7 +122,7 @@ describe('when Up next has nothing to show', () => {
   });
 
   it('says "Loading" in the same style until the first read lands', () => {
-    const html = card(routinesToday({ loaded: false }));
+    const html = card(routinesToday({ state: 'loading', groups: [] }));
     expect(said(html, 'Loading')).toEqual(expect.arrayContaining(['px-1', 'text-base', 'text-muted-foreground']));
   });
 });
@@ -150,18 +150,18 @@ describe('Up next while it loads', () => {
   const reserved = (html: string) => /min-height:([0-9.]+)rem/.exec(html)?.[1];
 
   it('holds the height of three tiles until the first read has landed', () => {
-    expect(reserved(card(routinesToday({ loaded: false })))).toBe('16');
+    expect(reserved(card(routinesToday({ state: 'loading', groups: [] })))).toBe('16');
     // Also when the read failed and nothing has been read: the card does not give the room up and take it back.
-    expect(reserved(card(routinesToday({ loaded: false, failed: true }), true))).toBe('16');
+    expect(reserved(card(routinesToday({ state: 'failed', failed: true, groups: [] }), true))).toBe('16');
   });
 
   it('holds the height of two tiles when the screen shows two', () => {
-    expect(reserved(card(routinesToday({ loaded: false }), false, 2))).toBe('10.5');
-    expect(reserved(card(routinesToday({ loaded: false, failed: true }), true, 2))).toBe('10.5');
+    expect(reserved(card(routinesToday({ state: 'loading', groups: [] }), false, 2))).toBe('10.5');
+    expect(reserved(card(routinesToday({ state: 'failed', failed: true, groups: [] }), true, 2))).toBe('10.5');
   });
 
   it('holds the height of six tiles, 32.5 rem, when the screen shows six', () => {
-    expect(reserved(card(routinesToday({ loaded: false }), false, 6))).toBe('32.5');
+    expect(reserved(card(routinesToday({ state: 'loading', groups: [] }), false, 6))).toBe('32.5');
   });
 
   it('takes the height it needs once it has: the tiles, or a line of words', () => {
@@ -169,8 +169,19 @@ describe('Up next while it loads', () => {
     expect(reserved(card(routinesToday({}, FAMILY, [])))).toBeUndefined();
   });
 
+  it('keeps the tiles it has over Household midnight, while the new day is read, and says nothing of loading over them', () => {
+    const html = card(routinesToday({ state: 'loading', settled: false }));
+    expect(html).toContain('Take out the bins');
+    expect(html).not.toContain('Loading');
+    expect(reserved(html)).toBeUndefined();
+    // And over a failing read: the tiles stay, and the header (not this card) says the connection is lost.
+    const failing = card(routinesToday({ state: 'failed', settled: false, failed: true }));
+    expect(failing).toContain('Take out the bins');
+    expect(failing).not.toContain('Could not load');
+  });
+
   it('keeps its heading row where it was, above the reserved room', () => {
-    const html = card(routinesToday({ loaded: false }));
+    const html = card(routinesToday({ state: 'loading', groups: [] }));
     expect(html.indexOf('Up next</h2>')).toBeLessThan(html.indexOf('min-height'));
   });
 });

@@ -1,7 +1,7 @@
 import { RefreshCwOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { loadSyncFreshness, staleSyncBadge, staleSyncShort, type SyncFreshness } from '../lib/calendar-accounts';
-import { formatClock, formatDate } from '../lib/calendar-occurrences';
+import { formatClock, dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { useChangeTick } from '../lib/change-feed';
 import type { Household } from '../lib/household';
 import { supabase } from '../lib/supabase';
@@ -36,7 +36,7 @@ export function WallTime({ name, timezone }: { name: string; timezone: string })
       </p>
       <div className="flex flex-col gap-0.5">
         <h1 className="line-clamp-1 text-sm leading-[1.2857] font-medium wrap-anywhere text-muted-foreground">{name}</h1>
-        <p className="font-display text-[40px] leading-[44px] whitespace-nowrap">{formatDate(now, timezone)}</p>
+        <p className="font-display text-[40px] leading-[44px] whitespace-nowrap">{dateWords.day(now, timezone)}</p>
       </div>
     </>
   );

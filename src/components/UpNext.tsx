@@ -7,8 +7,8 @@ import { useStatusLine } from '../lib/status-line';
 import { useCelebration, type RoutinesToday } from '../lib/use-routines-today';
 import { Confetti, RoutineTile } from './RoutineColumn';
 import { EmptyWords } from './EmptyWords';
+import { ReadState } from './ReadState';
 import { Button } from './ui/button';
-import { couldNotLoad } from '../lib/synced-read';
 
 // Up next, at the top of Home's right rail (docs/look.md, spec 0003): a tile for each of the first three people (two on a
 // screen under 760 px tall, so the Pinned List keeps a row; home-layout.ts) with
@@ -27,7 +27,10 @@ import { couldNotLoad } from '../lib/synced-read';
 // `failed` says the Household read has failed, which is why nothing has been read: the Routines are read once the
 // Household Timezone is known.
 export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEXT_TILES }: { routines: RoutinesToday; failed: boolean; onOpenRoutines: () => void; tiles?: number }) {
-  const { loaded, part, problems, groups, done, toggle } = routines;
+  const { part, problems, groups, done, toggle } = routines;
+  // The Household read that failed is why nothing has been read: the Routines are read once the Household Timezone is known.
+  const state = routines.state === 'loading' && failed ? 'failed' : routines.state;
+  const ready = state === 'ready';
   const celebration = useCelebration(routines);
   const say = useStatusLine();
   const card = useRef<HTMLElement>(null);
@@ -86,18 +89,14 @@ export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEX
       </div>
       {/* Until the first read lands the card keeps the room of the tiles it will show (80 each and 8 between: 16 rem for three, 10.5 rem
           for two), so the list card under it does not jump when they arrive. Once read, it takes the height it needs. */}
-      {!loaded && (
+      {/* What was read for yesterday keeps its tiles on screen, unchecked, until today's read lands, as the chart's columns do. */}
+      {!ready && groups.length === 0 && (
         <div style={{ minHeight: `${limit * 5 + (limit - 1) * 0.5}rem` }}>
-          {!failed && !routines.failed && <EmptyWords className="px-1">Loading</EmptyWords>}
-          {(failed || routines.failed) && (
-            <p role="alert" className="px-1 text-base">
-              {couldNotLoad('routines')}
-            </p>
-          )}
+          <ReadState of="routines" read={{ state }} className="px-1" alert="px-1 text-base" />
         </div>
       )}
-      {loaded && groups.length === 0 && <EmptyWords className="px-1">Nothing scheduled today.</EmptyWords>}
-      {loaded && groups.length > 0 && tiles.length === 0 && <EmptyWords className="px-1">Nobody has anything left right now.</EmptyWords>}
+      {ready && groups.length === 0 && <EmptyWords className="px-1">Nothing scheduled today.</EmptyWords>}
+      {ready && groups.length > 0 && tiles.length === 0 && <EmptyWords className="px-1">Nobody has anything left right now.</EmptyWords>}
       {tiles.length > 0 && (
         <ul className="flex flex-col gap-2">
           {tiles.map(({ profile, routine, done: held }) => (

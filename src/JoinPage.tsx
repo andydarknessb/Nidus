@@ -144,7 +144,7 @@ export function JoinPage() {
     working.current = true;
     setBusy(true);
     try {
-      const next = joinViewOf(await acceptHouseholdInvite(token));
+      const next = joinViewOf(await acceptHouseholdInvite(supabase, token));
       if (next === null) {
         // Navigating away: the page stays as it is, busy, until it goes.
         window.location.replace('/settings');
@@ -153,7 +153,7 @@ export function JoinPage() {
       if (next === 'other-household') setRefused({ userId, view: next, member: false });
       else if (next === 'expired') {
         // A spent link opened again by someone who joined by it: say so, and offer Settings if the account is in a Household.
-        const member = await isHouseholdAccount().catch(() => false);
+        const member = await isHouseholdAccount(supabase).catch(() => false);
         setRefused({ userId, view: next, member });
       }
     } catch (error) {

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import ICAL from 'ical.js';
+import { describe, expect, it, vi } from 'vitest';
 import { expandFeed, FeedParseError, FeedTooLargeError, MAX_EXPANSION_MS, MAX_PER_FEED, MAX_STEPS_PER_RUN, type StepBudget } from '../supabase/functions/_shared/ics-expand';
 
 // Pure: feed text in, rows out. The fixtures are iCloud-style feeds (CRLF line endings,
@@ -330,6 +331,28 @@ describe('expandFeed: lengths', () => {
   });
 });
 
+describe('expandFeed: years below 100', () => {
+  // ical.js reads the four year digits as written, and Date.UTC reads 0 to 99 as 1900 to 1999: a
+  // year below 100 is refused, not shifted.
+  it('refuses an event that starts in a year below 100, rather than reading it as 1998', () => {
+    const { rows } = expandFeed(feed(event('DTSTART:00980101T100000')), HOUSEHOLD, Date.parse('1997-12-01T00:00:00Z'), Date.parse('1998-02-01T00:00:00Z'));
+    expect(rows).toEqual([]);
+  });
+
+  it('refuses an event whose end is in a year below 100, rather than reading it as 1999 before its start', () => {
+    expect(expand(feed(event('DTSTART:20261001T100000Z\nDTEND:00990601T110000Z')))).toEqual([]);
+  });
+
+  it('gives no row for an RDATE in a year below 100, whatever the event starts in', () => {
+    const { rows } = expandFeed(feed(event('DTSTART:20261001T100000Z\nRDATE:00980101T100000')), HOUSEHOLD, Date.parse('1997-12-01T00:00:00Z'), Date.parse('1998-02-01T00:00:00Z'));
+    expect(rows).toEqual([]);
+  });
+
+  it('refuses an override whose RECURRENCE-ID is in a year below 100', () => {
+    expect(expand(feed(event('RECURRENCE-ID:00981005T100000Z\nDTSTART:20261005T100000Z\nDTEND:20261005T110000Z')))).toEqual([]);
+  });
+});
+
 // A run's work with a clock that never moves, so that no test here depends on how fast the machine is:
 // only the step caps and the time limit the test itself sets can cut a read.
 function mulberry(seed: number) {
@@ -542,6 +565,114 @@ describe('expandFeed: the time limit of a run', () => {
     expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
   });
 
+  // The other shapes whose every step is a day search inside a month or a year (a monthly ordinal day, a
+  // yearly BYSETPOS) cost what a monthly BYSETPOS does, and are held to the same age limit and step budget.
+  describe('the day-search shapes', () => {
+    const slow = (): StepBudget => {
+      let t = 0;
+      return { remaining: MAX_STEPS_PER_RUN, spentMs: 0, now: () => (t += 0.7) };
+    };
+
+    it('cuts a monthly ordinal day that began long before the window, so the feed syncs rather than running out the clock', () => {
+      const run = slow();
+      const old = event('DTSTART:10000112T090000\nRRULE:FREQ=MONTHLY;BYDAY=2TU;COUNT=29000', 'old');
+      const { rows, truncated } = read(feed(dentist, old), run);
+      expect(ids(rows)).toEqual(['dentist']);
+      expect(truncated).toBe(true);
+      expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+    });
+
+    it('cuts ten yearly BYSETPOS series from the 1010s, so the feed syncs rather than running out the clock', () => {
+      const run = slow();
+      const years = Array.from({ length: 10 }, (_, i) =>
+        event(`DTSTART:${1010 + i}0301T090000\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=2000`, `y${i}`),
+      );
+      const { rows, truncated } = read(feed(dentist, ...years), run);
+      expect(ids(rows)).toEqual(['dentist']);
+      expect(truncated).toBe(true);
+      expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+    });
+
+    it('cuts a yearly ordinal day with COUNT from long before the window', () => {
+      const run = slow();
+      const old = event('DTSTART:10100301T090000\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2TU;COUNT=2000', 'old');
+      const { rows, truncated } = read(feed(dentist, old), run);
+      expect(ids(rows)).toEqual(['dentist']);
+      expect(truncated).toBe(true);
+      expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+    });
+
+    it('still gives the occurrences of a series inside the age limit, and does not say it was cut', () => {
+      const run = slow();
+      const monthly = event('DTSTART:20100112T090000\nRRULE:FREQ=MONTHLY;BYDAY=2TU;COUNT=300', 'monthly');
+      const yearly = event('DTSTART:19901001T090000\nRRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=50', 'yearly');
+      const { rows, truncated } = read(feed(monthly, yearly), run);
+      expect(ids(rows)).toContain('monthly');
+      expect(ids(rows)).toContain('yearly');
+      expect(truncated).toBe(false);
+    });
+
+    it('walks them from DTSTART only within 240 periods of the window, and one without COUNT from any year', () => {
+      // 2007-01 to 2026-09 is 236 months, and 1800-03 is 227 years; 2006-01 is 248 months, and 1700-03 is 327 years.
+      const monthly = (start: string, end = ';COUNT=400') => feed(event(`DTSTART:${start}T090000\nRRULE:FREQ=MONTHLY;BYDAY=2TU${end}`, 'm'));
+      expect(read(monthly('20070115'), budget()).truncated).toBe(false);
+      expect(read(monthly('20060115'), budget()).truncated).toBe(true);
+      expect(read(monthly('10000115', ''), budget()).truncated).toBe(false);
+      const yearly = (start: string, end = ';COUNT=400') =>
+        feed(event(`DTSTART:${start}T090000\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1${end}`, 'y'));
+      expect(read(yearly('18000301'), budget()).truncated).toBe(false);
+      expect(read(yearly('17000301'), budget()).truncated).toBe(true);
+      expect(read(yearly('10000301', ''), budget()).truncated).toBe(false);
+    });
+
+    it('counts every month a yearly rule lists as a step, so one that names them all is held to the age limit of a monthly', () => {
+      const every = (start: string) =>
+        feed(event(`DTSTART:${start}T090000\nRRULE:FREQ=YEARLY;BYMONTH=1,2,3,4,5,6,7,8,9,10,11,12;BYDAY=2TU;COUNT=400`, 'q'));
+      // 27 periods of 12 steps are 324 steps before the window: cut at once, not after the walk's cap.
+      const old = budget();
+      const cut = read(every('20000111'), old);
+      expect(ids(cut.rows)).not.toContain('q');
+      expect(cut.truncated).toBe(true);
+      expect(old.remaining).toBe(MAX_STEPS_PER_RUN);
+      // 17 years of 12 are 204: walked, and the window's six months are rows.
+      const near = read(every('20100111'), budget());
+      expect(ids(near.rows).filter((id) => id === 'q')).toHaveLength(6);
+      expect(near.truncated).toBe(false);
+    });
+
+    it('spends one step budget on a feed of yearly ordinal days that name every month', () => {
+      // Ten series that each need about 228 steps (19 years of 12, walked from DTSTART).
+      const run = slow();
+      const series = (day: number) =>
+        event(`DTSTART:200709${day}T140000Z\nRRULE:FREQ=YEARLY;BYMONTH=1,2,3,4,5,6,7,8,9,10,11,12;BYDAY=2TU;COUNT=600`, `s${day}`);
+      const { rows, truncated } = read(feed(dentist, ...[11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(series)), run);
+      expect(ids(rows)).toContain('dentist');
+      expect(ids(rows)).toContain('s20');
+      expect(ids(rows)).not.toContain('s11');
+      expect(truncated).toBe(true);
+      expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+    });
+
+    it('counts a step of a monthly ordinal day with INTERVAL 2 as two months, so one 248 months old is still walked', () => {
+      // 2006-01 to 2026-09 is 248 months, 124 steps of 2: inside the age limit, where INTERVAL 1 is cut.
+      const every = (rule: string) => feed(event(`DTSTART:20060115T090000\nRRULE:${rule};BYDAY=2TU;COUNT=400`, 'm'));
+      expect(read(every('FREQ=MONTHLY;INTERVAL=2'), budget()).truncated).toBe(false);
+      expect(read(every('FREQ=MONTHLY'), budget()).truncated).toBe(true);
+    });
+
+    it('spends one step budget on a feed of monthly ordinal days, as on one of monthly BYSETPOS', () => {
+      // Ten series that each need about 240 steps (walked from DTSTART, 19 years before the window).
+      const run = slow();
+      const series = (day: number) => event(`DTSTART:200709${day}T140000Z\nRRULE:FREQ=MONTHLY;BYDAY=2TU;COUNT=600`, `s${day}`);
+      const { rows, truncated } = read(feed(dentist, ...[11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(series)), run);
+      expect(ids(rows)).toContain('dentist');
+      expect(ids(rows)).toContain('s20');
+      expect(ids(rows)).not.toContain('s11');
+      expect(truncated).toBe(true);
+      expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+    });
+  });
+
   it('does not stop a walk while the time is within the limit', () => {
     const run = budget();
     // Daily since mid-2025, to the end of the window: the 181 days of it are rows.
@@ -671,6 +802,17 @@ RRULE:FREQ=MONTHLY;INTERVAL=${interval};BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1${end}`,
     const weekly = feed(event('DTSTART:20261014T140000Z\nRRULE:FREQ=WEEKLY', 'w'));
     expect(() => read(weekly, budget(0))).toThrow(FeedTooLargeError);
     expect(() => read(weekly, { ...budget(), spentMs: MAX_EXPANSION_MS })).toThrow(FeedTooLargeError);
+  });
+
+  it('reads the clock of the run before it makes an iterator for an old day-search series, while gathering', () => {
+    const spy = vi.spyOn(ICAL.Recur.prototype, 'iterator');
+    try {
+      const old = feed(event('DTSTART:19000109T090000Z\nRRULE:FREQ=MONTHLY;BYDAY=2TU', 'old'));
+      expect(() => read(old, { ...budget(), spentMs: MAX_EXPANSION_MS })).toThrow(FeedTooLargeError);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it.each(hostile)('does not expand %s: only its DTSTART, said so, and at once', (rule) => {
@@ -985,7 +1127,7 @@ RRULE:${rule}`, 'missing')), windowStart, windowEnd);
     for (const lines of [
       `DTSTART:19000115T090000Z\nDURATION:P36525D\n${rule}`,
       `DTSTART:16000115T090000Z\nDURATION:P109575D\n${rule}`,
-      `DTSTART:00010115T090000Z\nDURATION:P800000D\n${rule}`,
+      `DTSTART:01000115T090000Z\nDURATION:P800000D\n${rule}`,
     ]) {
       const run = budget();
       const { rows, truncated } = expandFeed(feed(event(lines, 'huge')), HOUSEHOLD, WINDOW_START, WINDOW_END, run);

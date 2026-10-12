@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useContext, useLayoutEffect, useRef, useState } from 'react';
-import { describeCell, describeMonth, describePage, fiveDays } from '../lib/calendar-occurrences';
+import { describeMonth, describePage, fiveDays } from '../lib/calendar-occurrences';
+import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { aboveLabel, emptyRowWords, HOUR_REM, hoursThatFit, planDay } from '../lib/day-view';
 import { CALENDAR_LIMITS, pageStart, type CalendarView, type WallDay } from '../lib/paged-view';
 import { ProfileFilterContext } from '../lib/profile-filter';
@@ -12,6 +13,7 @@ import { forecastDay, type Forecast } from '../lib/weather';
 import { HourGrid, PillRow } from './DayGrid';
 import { EventSheets, type OpenEvent } from './EventSheets';
 import { MonthGrid } from './MonthGrid';
+import { ReadState } from './ReadState';
 import { Schedule } from './Schedule';
 import { Button } from './ui/button';
 import { DayWeather } from './Weather';
@@ -123,7 +125,7 @@ export function PagedCalendar({
           ref={heading}
           tabIndex={-1}
           aria-current={day?.isToday ? 'date' : undefined}
-          aria-label={day?.isToday ? `Today, ${describeCell(day.date, null)}` : undefined}
+          aria-label={day?.isToday ? `Today, ${dateWords.cell(day.date, null)}` : undefined}
           className="ml-3 flex items-center gap-3 font-display text-[28px] leading-[34px] outline-none"
         >
           {day ? <DayTitle day={day} /> : days ? describePage(days) : describeMonth(anchor)}
@@ -168,7 +170,7 @@ export function PagedCalendar({
 // the date in a 38 px --primary disc and the word "Today", then the date in words, so today is found the same way on every
 // view. The disc is for the eye: the page title is named by "Today, Thursday, October 1".
 function DayTitle({ day }: { day: WallDay }) {
-  const words = describeCell(day.date, null);
+  const words = dateWords.cell(day.date, null);
   if (!day.isToday) return words;
   return (
     <>
@@ -241,14 +243,10 @@ export function DayView({
 
   return (
     <section
-      aria-label={`${describeCell(day.date, null)}${day.isToday ? ', today' : ''}`}
+      aria-label={`${dateWords.cell(day.date, null)}${day.isToday ? ', today' : ''}`}
       className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-3xl bg-card p-3 phone:rounded-[22px]"
     >
-      {events.problem && (
-        <p role="alert" className="px-4 py-2 text-xl">
-          {events.problem}
-        </p>
-      )}
+      <ReadState of="the calendar" read={events} say="failed" alert="px-4 py-2 text-xl" />
       <PillRow
         label={aboveLabel(plan.above, day)}
         name="All day and earlier"

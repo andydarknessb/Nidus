@@ -1,5 +1,6 @@
 import { createContext } from 'react';
-import { onCalendarScreen, type Occurrence, type WallRoute } from './calendar-occurrences';
+import type { Occurrence } from './calendar-occurrences';
+import { onCalendarScreen, type WallRoute } from './wall-routes';
 import type { Profile } from './profiles';
 
 // The Profile filter on the Wall (CONTEXT.md: Profile): tap a name on the people strip and the calendar shows that

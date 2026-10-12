@@ -16,6 +16,7 @@ import {
   noTickProblems,
   partOfDay,
   problemsOn,
+  routinesState,
   seePart,
   todaysRoutines,
   uncompleteRoutine,
@@ -27,7 +28,7 @@ import {
   type TimeOfDay,
 } from './routines';
 import { supabase } from './supabase';
-import { useSyncedRead } from './synced-read';
+import { useSyncedRead, type ReadStateName } from './synced-read';
 import { useHouseholdDay } from './wall-hooks';
 
 type Today = { date: string; routines: Routine[]; done: Set<string> };
@@ -36,7 +37,8 @@ type Today = { date: string; routines: Routine[]; done: Set<string> };
 export type RoutinesToday = {
   // The Household day they are for; null until the Household Timezone is known.
   date: string | null;
-  loaded: boolean;
+  // The read's state, for today: 'ready' once what was read is for the current Household day (routinesState).
+  state: ReadStateName;
   // Whether what was read is for the current Household day, so `done` is what has been ticked today. It is not for a moment
   // at the start (the day is UTC's until the Household Timezone is known) and just after Household midnight, when everything
   // reads unchecked until the new day arrives; the chart keeps nothing in place while it is false.
@@ -135,7 +137,7 @@ export function useRoutinesToday(timezone: string | null, profiles: Profile[] | 
 
   return {
     date: timezone === null ? null : day.date,
-    loaded: loaded !== null,
+    state: routinesState(settled, read),
     settled,
     failed: read.failed,
     part,
