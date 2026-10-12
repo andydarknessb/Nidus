@@ -27,7 +27,8 @@ function usePartOfDay(timezone: string): TimeOfDay {
 // gives the result to whichever screen shows the Routines, so going from Home to the chart and back reads nothing again, and a tap
 // still in flight keeps the read that follows it. `screen` names the screen on show: what the chart keeps for a screen (the part it
 // shows, the person the phone shows, the bursts, Up next's holds) starts again when the screen changes, as it did when each screen
-// kept its own; a tick's problem words stay with the day.
+// kept its own: a Whole-day pick does not outlive the screen, and a burst left unfinished does not replay when it is opened again. A
+// tick's problem words stay with the day.
 export function useRoutineChart({ timezone, profiles, screen }: { timezone: string | null; profiles: Profile[] | null; screen: string }): RoutineChart {
   // Nothing is read until the Household Timezone is: it names the day. ('UTC' only keeps the hooks in order until then; nothing is read
   // from it.)
