@@ -2,7 +2,8 @@ import { dateWords, eventTime, timeWords } from '../../supabase/functions/_share
 import { dayOccurrences, type Occurrence } from './calendar-occurrences';
 import type { WallDay } from './paged-view';
 import type { Profile } from './profiles';
-import { routineProgress, WEEKDAYS, type ProfileRoutines } from './routines';
+import type { RoutineChart } from './routine-chart';
+import { WEEKDAYS } from './routines';
 
 // The schedule (docs/look.md, The parts): Home and Week draw each day as a column of event pills, and the people strip
 // above them shows each person's Routines. Everything they decide is here and pure, so it is tested without a screen
@@ -171,12 +172,11 @@ export function pillName(pill: Pill, day: WallDay, people: PillPeople): string {
 // alone past eight, in the atom).
 export type StripPerson = { profile: Profile; done: number; total: number; words: string; label: string };
 
-// A person for every Profile, in the order given, with what they have done of the Routines `groups` hold for today
-// (groupByProfile leaves out a Profile with none) out of `doneIds`.
-export function stripPeople(profiles: readonly Profile[], groups: readonly ProfileRoutines[], doneIds: ReadonlySet<string>): StripPerson[] {
+// A person for every Profile, in the order given, with what they have done of the Routines the chart holds for them today (a Profile
+// the chart has no column for has none).
+export function stripPeople(profiles: readonly Profile[], chart: Pick<RoutineChart, 'columnFor'>): StripPerson[] {
   return profiles.map((profile) => {
-    const group = groups.find((each) => each.profile.id === profile.id);
-    const { done, total } = group ? routineProgress(group.routines, doneIds) : { done: 0, total: 0 };
+    const { done, total } = chart.columnFor(profile.id)?.progress ?? { done: 0, total: 0 };
     const words = total === 0 ? '' : done === total ? 'All done' : `${done} of ${total}`;
     // Plain words for the family: "routines" in lower case ("Ava, 3 of 5 routines done"); the glossary's capitals are for code.
     return { profile, done, total, words, label: total === 0 ? profile.name : `${profile.name}, ${done} of ${total} ${total === 1 ? 'routine' : 'routines'} done` };

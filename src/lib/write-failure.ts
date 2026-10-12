@@ -1,12 +1,10 @@
-import { TICK_FAILED, TICK_OFFLINE } from './routines';
-
 // What a write that did not go through says, on the phone as on the Wall (spec 0003, A tick that did not save): with no
 // connection, "No internet, so that did not save. Try again soon."; otherwise "That did not save. Try again." They are the
 // Wall's own two sentences, so the family reads one thing for one trouble. A value the database refused is the one case with
 // words of its own (a form says which field to look at), and an action that is not a save (connecting to Google, pairing) names
 // itself in both.
-export const NOT_SAVED = TICK_FAILED;
-export const NOT_SAVED_OFFLINE = TICK_OFFLINE;
+export const NOT_SAVED = 'That did not save. Try again.';
+export const NOT_SAVED_OFFLINE = 'No internet, so that did not save. Try again soon.';
 
 // The error codes of a value the database refused (Postgres: a check, a not null, a value too long). Any other code is the
 // server answering that it could not, or would not, which is not for the person to fix by looking at a field.

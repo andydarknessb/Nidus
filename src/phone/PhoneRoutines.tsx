@@ -1,5 +1,4 @@
 import { cn } from 'cn';
-import { useState } from 'react';
 import { BeforeHousehold } from '../components/BeforeHousehold';
 import { EmptyWords } from '../components/EmptyWords';
 import { PersonDisc } from '../components/people';
@@ -7,18 +6,16 @@ import { ReadState } from '../components/ReadState';
 import { RoutineColumn, type ColumnLayout } from '../components/RoutineColumn';
 import { Button } from '../components/ui/button';
 import { personStyle } from '../lib/look';
-import { CHART_CHOICES, useChartPart } from '../lib/routine-chart';
-import { pickedPerson } from '../lib/routines';
+import { CHART_CHOICES } from '../lib/routine-chart';
 import { stripPeople, type StripPerson } from '../lib/schedule';
-import { useCelebration } from '../lib/use-routines-today';
 import type { PhoneScreenProps } from '../PhoneWall';
 import { Segmented, SideScroll } from './parts';
 
 // The phone's Routines tab (docs/specs/0004-the-wall-on-a-phone.md, Screens; docs/look.md, "The phone"): one person at a time. A
 // row of the people the chart has a column for, each with their progress in words; the chart's own control for the part of the day;
 // and the picked person's card, which draws what the chart's column draws (its tiles, headings, "Left from earlier" and the foot
-// line are the chart's own pieces) in one column that the document scrolls. Ticking goes through the Wall's one reader of today's
-// Routines, as the chart's does.
+// line are the chart's own pieces) in one column that the document scrolls. Ticking goes through the Wall's one Routine Chart, as the
+// chart screen's does.
 
 const PARTS_OF_THE_DAY = CHART_CHOICES.map(({ part, label }) => ({ value: part, label }));
 
@@ -48,22 +45,14 @@ function PersonChip({ person, picked, onPick }: { person: StripPerson; picked: b
 const CARD: ColumnLayout = { className: 'person relative flex flex-col gap-2.5 rounded-[22px] bg-person-soft p-3', header: 'min-h-13', disc: 52 };
 
 export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProps, 'timezone' | 'view' | 'routines'>) {
-  const { settled, failed, problems, columns, done, toggle } = routines;
-  const { shown, held, pick } = useChartPart(routines);
-  // The person picked: the first pick, then whoever is tapped. State, so a tick that finishes someone never moves the card.
-  const [picked, setPicked] = useState<string | null>(null);
-  const showing = pickedPerson({ picked, columns, done, part: shown, settled, failed });
-  if (showing !== picked && showing !== null) setPicked(showing);
-  // A burst belongs to the card on the screen: the one for a person left behind is gone, so it never plays again on the way back.
-  const celebration = useCelebration({ date: routines.date, finished: new Set(showing !== null && routines.finished.has(showing) ? [showing] : []) });
+  const { columns, picked, part, pickPart, pick, tap } = routines;
 
   if (!timezone) return <BeforeHousehold label="Routines" failed={view.failed} of="routines" />;
 
-  const column = columns.find(({ profile }) => profile.id === showing);
+  const column = picked === null ? undefined : routines.columnFor(picked);
   const people = stripPeople(
     columns.map(({ profile }) => profile),
-    columns,
-    done,
+    routines,
   );
 
   return (
@@ -80,25 +69,12 @@ export function PhoneRoutines({ timezone, view, routines }: Pick<PhoneScreenProp
         <>
           <SideScroll label="People">
             {people.map((person) => (
-              <PersonChip key={person.profile.id} person={person} picked={person.profile.id === column?.profile.id} onPick={() => setPicked(person.profile.id)} />
+              <PersonChip key={person.profile.id} person={person} picked={person.profile.id === column?.profile.id} onPick={() => pick(person.profile.id)} />
             ))}
           </SideScroll>
-          <Segmented label="Part of the day" options={PARTS_OF_THE_DAY} value={shown} onChange={pick} />
+          <Segmented label="Part of the day" options={PARTS_OF_THE_DAY} value={part} onChange={pickPart} />
           {column && (
-            <RoutineColumn
-              key={column.profile.id}
-              profile={column.profile}
-              routines={column.routines}
-              layout={CARD}
-              part={shown}
-              held={held}
-              done={done}
-              problem={problems[column.profile.id]}
-              onToggle={toggle}
-              burst={celebration.bursts[column.profile.id]}
-              onFinish={(at) => celebration.start(column.profile.id, at)}
-              onLand={(id) => celebration.land(column.profile.id, id)}
-            />
+            <RoutineColumn key={column.profile.id} column={column} tap={tap} layout={CARD} />
           )}
         </>
       )}

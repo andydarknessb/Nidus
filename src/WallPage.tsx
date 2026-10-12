@@ -25,7 +25,7 @@ import { useForecast } from './lib/use-forecast';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useLightMode, useWallMode } from './lib/use-mode';
 import { useProfiles } from './lib/use-profiles';
-import { useRoutinesToday } from './lib/use-routines-today';
+import { useRoutineChart } from './lib/use-routine-chart';
 import { MealsScreen } from './MealsPage';
 import { PhoneWall } from './PhoneWall';
 import { RoutinesChart } from './RoutinesPage';
@@ -254,9 +254,10 @@ function HomeShell({ owner }: { owner: boolean }) {
   // Auto waiting for the forecast's first read. The switch works as soon as the Household is read.
   // On the phone layout it is the phone's own setting instead, which reads and writes nothing the Wall stored, and has no switch.
   const toggleMode = useWallMode({ timezone, appearance: view.household?.appearance, sun, system: home.phone });
-  // Today's Routines, read once for as long as the shell lives and handed to Up next on Home and to
-  // the Routines chart, so going from one to the other reads nothing again and a tick in flight is not dropped.
-  const routines = useRoutinesToday(timezone, profiles);
+  // The Routine Chart, read once for as long as the shell lives and handed to Up next on Home, the people strip and the Routines
+  // chart, so going from one to the other reads nothing again and a tick in flight is not dropped. It keeps what each screen shows
+  // for that screen alone, so the screen on show names it.
+  const routines = useRoutineChart({ timezone, profiles, screen: `${home.phone ? 'phone' : 'wall'} ${route.view}` });
 
   const today = timezone ? householdDay(timezone).date : null;
   // The people strip is for the calendar screens (Home, Day, Week and Month), and for no other.
