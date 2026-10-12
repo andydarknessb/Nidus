@@ -1,6 +1,7 @@
 import ICAL from 'ical.js';
 import { describe, expect, it, vi } from 'vitest';
-import { expandFeed, FeedParseError, FeedTooLargeError, MAX_EXPANSION_MS, MAX_PER_FEED, MAX_STEPS_PER_RUN, type StepBudget } from '../supabase/functions/_shared/ics-expand';
+import { expandFeed, FeedParseError } from '../supabase/functions/_shared/ics-expand';
+import { FeedTooLargeError, RunBudget } from '../supabase/functions/_shared/run-budget';
 
 // Pure: feed text in, rows out. The fixtures are iCloud-style feeds (CRLF line endings,
 // VTIMEZONE blocks, X-WR-CALNAME, folded lines), not objects built to suit the code. Run once
@@ -353,8 +354,6 @@ describe('expandFeed: years below 100', () => {
   });
 });
 
-// A run's work with a clock that never moves, so that no test here depends on how fast the machine is:
-// only the step caps and the time limit the test itself sets can cut a read.
 function mulberry(seed: number) {
   return () => {
     seed = (seed + 0x6d2b79f5) | 0;
@@ -363,8 +362,24 @@ function mulberry(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-const budget = (remaining = MAX_STEPS_PER_RUN): StepBudget => ({ remaining, spentMs: 0, now: () => 0 });
-const read = (text: string, run: StepBudget = budget()) => expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
+// The caps themselves are the run budget's (tests/run-budget.test.ts drives them directly); these are what the walk's cases
+// below measure against: a whole run's steps, a feed's rows, the run's time.
+const FULL_RUN = new RunBudget().remaining;
+const FEED_ROWS = 20_000;
+const RUN_MS = 800;
+// A run's work with a clock that never moves, so that no test here depends on how fast the machine is:
+// only the step caps and the time limit the test itself sets can cut a read.
+const budget = (steps = FULL_RUN) => new RunBudget({ steps, now: () => 0 });
+// A run whose time is already spent, with a clock that never moves.
+const spentRun = (ms: number) => {
+  let t = 0;
+  const run = new RunBudget({ now: () => t });
+  const spending = run.feed(0);
+  t = ms;
+  spending.end();
+  return run;
+};
+const read = (text: string, run: RunBudget = budget()) => expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
 const ids = (rows: { google_event_id: string }[]) => rows.map((row) => row.google_event_id.split('|')[0]!);
 // A daily rule from the year 1700 reaches the window only after 119,000 steps: more than any cap.
 // A rule with a COUNT is not skipped forward (see fastForwarded), so it is walked from DTSTART.
@@ -397,7 +412,7 @@ describe('expandFeed: work', () => {
     const { rows, truncated } = read(feed(event('DTSTART;VALUE=DATE:17000101\nRRULE:FREQ=DAILY')), run);
     expect(rows.length).toBeGreaterThan(150);
     expect(truncated).toBe(false);
-    expect(MAX_STEPS_PER_RUN - run.remaining).toBeLessThan(300);
+    expect(FULL_RUN - run.remaining).toBeLessThan(300);
   });
 
   it('always keeps a single event, before or after a runaway rule, and says the rule was cut', () => {
@@ -441,29 +456,11 @@ describe('expandFeed: work', () => {
     expect(ids(rows)).toEqual(['weekly', 'weekly', 'weekly']);
     expect(truncated).toBe(true);
     // The three weeks, a runaway to its 30,000, and the second to what the feed has left of 60,000.
-    expect(MAX_STEPS_PER_RUN - run.remaining).toBe(60_000);
+    expect(FULL_RUN - run.remaining).toBe(60_000);
   });
 });
 
 describe('expandFeed: the step budget of a run', () => {
-  // Four rules are more than a feed's steps (60,000 at 30,000 each).
-  const heavy = (prefix: string) => Array.from({ length: 4 }, (_, index) => runaway(`${prefix}${index}`, 1700 + index));
-
-  it('lets one feed take at most 60,000 steps of the run, keeping what it reached', () => {
-    const run = budget();
-    const { rows, truncated } = read(feed(event('DTSTART:20261014T140000Z', 'first'), ...heavy('a')), run);
-    expect(ids(rows)).toEqual(['first']);
-    expect(truncated).toBe(true);
-    expect(run.remaining).toBe(MAX_STEPS_PER_RUN - 60_000);
-  });
-
-  it('shares what is left between feeds: a second bad feed that needs more than the run has is not stored', () => {
-    const run = budget();
-    expect(read(feed(...heavy('a')), run).truncated).toBe(true);
-    expect(() => read(feed(...heavy('b')), run)).toThrow(FeedTooLargeError);
-    expect(run.remaining).toBe(0);
-  });
-
   it('throws, rather than return half a feed, when the run ran out in the middle of a series', () => {
     const run = budget(20_000);
     expect(() => read(feed(event('DTSTART:20261014T140000Z', 'first'), runaway('a')), run)).toThrow(FeedTooLargeError);
@@ -485,9 +482,9 @@ describe('expandFeed: the step budget of a run', () => {
   });
 
   it('is not cut by the run when the feed hit its row cap before the repeating events', () => {
-    const events = Array.from({ length: MAX_PER_FEED }, (_, index) => event('DTSTART:20261014T140000Z', `bulk-${index}`));
+    const events = Array.from({ length: FEED_ROWS }, (_, index) => event('DTSTART:20261014T140000Z', `bulk-${index}`));
     const { rows } = read(feed(...events, event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY;COUNT=5', 'few')), budget(0));
-    expect(rows).toHaveLength(MAX_PER_FEED);
+    expect(rows).toHaveLength(FEED_ROWS);
   });
 
   it('reads a feed that fits whole, and spends only what it walked', () => {
@@ -501,45 +498,18 @@ describe('expandFeed: the step budget of a run', () => {
 });
 
 describe('expandFeed: the time limit of a run', () => {
-  // A clock that moves a millisecond each time it is read, which the step loop does once a step.
-  const ticking = (): StepBudget => {
-    let t = 0;
-    return { remaining: MAX_STEPS_PER_RUN, spentMs: 0, now: () => (t += 1) };
-  };
-
-  it('stops a walk once 800 ms of the run have passed, as if the run had no steps left', () => {
-    const run = ticking();
-    expect(() => read(feed(runaway('a')), run)).toThrow(FeedTooLargeError);
-    const walked = MAX_STEPS_PER_RUN - run.remaining;
-    expect(walked).toBeGreaterThan(700);
-    expect(walked).toBeLessThanOrEqual(MAX_EXPANSION_MS);
-    expect(run.spentMs).toBeGreaterThanOrEqual(MAX_EXPANSION_MS - 1);
-  });
-
   it('keeps single events, RDATEs and moved occurrences when the time is spent, and is not cut when nothing needs walking', () => {
-    const run = { ...budget(), spentMs: MAX_EXPANSION_MS };
+    const run = spentRun(RUN_MS);
     const { rows, truncated } = read(feed(dentist, event('DTSTART:20270601T140000Z\nRRULE:FREQ=DAILY', 'later')), run);
     expect(ids(rows)).toEqual(['dentist']);
     expect(truncated).toBe(false);
-  });
-
-  it('counts the time of every feed of the run: what the first spent, the second does not have', () => {
-    const run = ticking();
-    // Daily since mid-2025, with a COUNT so that it is walked from DTSTART: about 640 steps to the end of the window.
-    const twoRules = (uid: string) => event('DTSTART:20250601T140000Z\nRRULE:FREQ=DAILY;COUNT=700', uid);
-    read(feed(twoRules('first')), run);
-    expect(run.spentMs).toBeGreaterThan(600);
-    expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
-    // The second feed's walk needs about as much again, and the run has a fifth of that left.
-    expect(() => read(feed(twoRules('second')), run)).toThrow(FeedTooLargeError);
-    expect(run.spentMs).toBeGreaterThanOrEqual(MAX_EXPANSION_MS - 1);
   });
 
   it('cuts the monthly BYSETPOS series of a feed at a step budget, so the feed syncs rather than running out the clock', () => {
     // A clock that moves 0.7 ms a read: a monthly BYSETPOS step costs about that. Ten series that each
     // need about 235 steps (walked from DTSTART, 19 years before the window) would spend 1.6 s together.
     let t = 0;
-    const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0, now: () => (t += 0.7) };
+    const run = new RunBudget({ now: () => (t += 0.7) });
     const series = (day: number) =>
       event(`DTSTART:200709${day}T140000Z\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=600`, `s${day}`);
     const { rows, truncated } = read(feed(dentist, ...[11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(series)), run);
@@ -549,28 +519,28 @@ describe('expandFeed: the time limit of a run', () => {
     expect(ids(rows).filter((id) => id === 's19')).toHaveLength(6);
     expect(rows).toHaveLength(13);
     expect(truncated).toBe(true);
-    expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+    expect(run.spentMs).toBeLessThan(RUN_MS);
   });
 
   it('does not start a monthly BYSETPOS series once the feed has spent its steps, however many there are', () => {
     // Starting a series reads the clock before its iterator is made and again at its first step.
     let t = 0;
-    const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0, now: () => (t += 0.7) };
+    const run = new RunBudget({ now: () => (t += 0.7) });
     const many = Array.from({ length: 600 }, (_, i) =>
       event('DTSTART:20070901T140000Z\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=600', `m${String(i).padStart(3, '0')}`),
     );
     const { rows, truncated } = read(feed(dentist, ...many), run);
     expect(ids(rows)).toContain('dentist');
     expect(truncated).toBe(true);
-    expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+    expect(run.spentMs).toBeLessThan(RUN_MS);
   });
 
   // The other shapes whose every step is a day search inside a month or a year (a monthly ordinal day, a
   // yearly BYSETPOS) cost what a monthly BYSETPOS does, and are held to the same age limit and step budget.
   describe('the day-search shapes', () => {
-    const slow = (): StepBudget => {
+    const slow = () => {
       let t = 0;
-      return { remaining: MAX_STEPS_PER_RUN, spentMs: 0, now: () => (t += 0.7) };
+      return new RunBudget({ now: () => (t += 0.7) });
     };
 
     it('cuts a monthly ordinal day that began long before the window, so the feed syncs rather than running out the clock', () => {
@@ -579,7 +549,7 @@ describe('expandFeed: the time limit of a run', () => {
       const { rows, truncated } = read(feed(dentist, old), run);
       expect(ids(rows)).toEqual(['dentist']);
       expect(truncated).toBe(true);
-      expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+      expect(run.spentMs).toBeLessThan(RUN_MS);
     });
 
     it('cuts ten yearly BYSETPOS series from the 1010s, so the feed syncs rather than running out the clock', () => {
@@ -590,7 +560,7 @@ describe('expandFeed: the time limit of a run', () => {
       const { rows, truncated } = read(feed(dentist, ...years), run);
       expect(ids(rows)).toEqual(['dentist']);
       expect(truncated).toBe(true);
-      expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+      expect(run.spentMs).toBeLessThan(RUN_MS);
     });
 
     it('cuts a yearly ordinal day with COUNT from long before the window', () => {
@@ -599,7 +569,7 @@ describe('expandFeed: the time limit of a run', () => {
       const { rows, truncated } = read(feed(dentist, old), run);
       expect(ids(rows)).toEqual(['dentist']);
       expect(truncated).toBe(true);
-      expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+      expect(run.spentMs).toBeLessThan(RUN_MS);
     });
 
     it('still gives the occurrences of a series inside the age limit, and does not say it was cut', () => {
@@ -633,7 +603,7 @@ describe('expandFeed: the time limit of a run', () => {
       const cut = read(every('20000111'), old);
       expect(ids(cut.rows)).not.toContain('q');
       expect(cut.truncated).toBe(true);
-      expect(old.remaining).toBe(MAX_STEPS_PER_RUN);
+      expect(old.remaining).toBe(FULL_RUN);
       // 17 years of 12 are 204: walked, and the window's six months are rows.
       const near = read(every('20100111'), budget());
       expect(ids(near.rows).filter((id) => id === 'q')).toHaveLength(6);
@@ -650,7 +620,7 @@ describe('expandFeed: the time limit of a run', () => {
       expect(ids(rows)).toContain('s20');
       expect(ids(rows)).not.toContain('s11');
       expect(truncated).toBe(true);
-      expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+      expect(run.spentMs).toBeLessThan(RUN_MS);
     });
 
     it('counts a step of a monthly ordinal day with INTERVAL 2 as two months, so one 248 months old is still walked', () => {
@@ -669,7 +639,7 @@ describe('expandFeed: the time limit of a run', () => {
       expect(ids(rows)).toContain('s20');
       expect(ids(rows)).not.toContain('s11');
       expect(truncated).toBe(true);
-      expect(run.spentMs).toBeLessThan(MAX_EXPANSION_MS);
+      expect(run.spentMs).toBeLessThan(RUN_MS);
     });
   });
 
@@ -753,7 +723,7 @@ describe('expandFeed: rules the iPhone cannot make', () => {
     const { rows, truncated } = read(feed(event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY\nRRULE:FREQ=WEEKLY', 'two')), run);
     expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-14T14:00:00.000Z']);
     expect(truncated).toBe(true);
-    expect(run.remaining).toBe(MAX_STEPS_PER_RUN);
+    expect(run.remaining).toBe(FULL_RUN);
   });
 
   it.each([
@@ -778,7 +748,7 @@ describe('expandFeed: rules the iPhone cannot make', () => {
 RRULE:${rule}`, 'ok')), run);
     expect(rows, rule).toBeInstanceOf(Array);
     expect(truncated, rule).toBe(false);
-    expect(run.remaining, rule).toBeLessThan(MAX_STEPS_PER_RUN);
+    expect(run.remaining, rule).toBeLessThan(FULL_RUN);
   }, 5000);
 
   it('walks a monthly BYSETPOS rule with COUNT only when DTSTART is at most 240 of its steps before the window, and one without COUNT from any year', () => {
@@ -790,25 +760,25 @@ RRULE:FREQ=MONTHLY;INTERVAL=${interval};BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1${end}`,
     expect(read(rule('20060115', 2, ';COUNT=400'), budget()).truncated).toBe(false);
     const run = budget();
     expect(read(rule('19700115', 1, ';COUNT=900'), run).truncated).toBe(true);
-    expect(run.remaining).toBe(MAX_STEPS_PER_RUN);
+    expect(run.remaining).toBe(FULL_RUN);
     // Without COUNT it is moved forward to the window, so its age costs nothing.
     expect(read(rule('20060115', 1), budget()).truncated).toBe(false);
     const old = budget();
     expect(read(rule('19700115', 1), old).truncated).toBe(false);
-    expect(MAX_STEPS_PER_RUN - old.remaining).toBeLessThan(100);
+    expect(FULL_RUN - old.remaining).toBeLessThan(100);
   });
 
   it('does not start a series the run has no steps or time left for, even before its first step', () => {
     const weekly = feed(event('DTSTART:20261014T140000Z\nRRULE:FREQ=WEEKLY', 'w'));
     expect(() => read(weekly, budget(0))).toThrow(FeedTooLargeError);
-    expect(() => read(weekly, { ...budget(), spentMs: MAX_EXPANSION_MS })).toThrow(FeedTooLargeError);
+    expect(() => read(weekly, spentRun(RUN_MS))).toThrow(FeedTooLargeError);
   });
 
   it('reads the clock of the run before it makes an iterator for an old day-search series, while gathering', () => {
     const spy = vi.spyOn(ICAL.Recur.prototype, 'iterator');
     try {
       const old = feed(event('DTSTART:19000109T090000Z\nRRULE:FREQ=MONTHLY;BYDAY=2TU', 'old'));
-      expect(() => read(old, { ...budget(), spentMs: MAX_EXPANSION_MS })).toThrow(FeedTooLargeError);
+      expect(() => read(old, spentRun(RUN_MS))).toThrow(FeedTooLargeError);
       expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
@@ -822,7 +792,7 @@ RRULE:FREQ=MONTHLY;INTERVAL=${interval};BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1${end}`,
     expect(Date.now() - began).toBeLessThan(2000);
     expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-14T14:00:00.000Z']);
     expect(truncated).toBe(true);
-    expect(run.remaining).toBe(MAX_STEPS_PER_RUN);
+    expect(run.remaining).toBe(FULL_RUN);
   }, 5000);
 
   it('finishes the whole hostile list, started long ago, in well under a second', () => {
@@ -840,7 +810,7 @@ RRULE:FREQ=MONTHLY;INTERVAL=${interval};BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1${end}`,
 RRULE:${rule}`, 'weekdays')), run);
       expect(rows.length, rule).toBeGreaterThan(100);
       expect(truncated, rule).toBe(false);
-      expect(MAX_STEPS_PER_RUN - run.remaining, rule).toBeLessThan(500);
+      expect(FULL_RUN - run.remaining, rule).toBeLessThan(500);
     }
   }, 5000);
 
@@ -877,7 +847,7 @@ RRULE:${rule}`, 'weekdays')), run);
     const { rows, truncated } = read(feed(...ended, event('DTSTART:20261014T140000Z\nRRULE:FREQ=WEEKLY;COUNT=2', 'live')), run);
     expect(ids(rows)).toEqual(['live', 'live']);
     expect(truncated).toBe(false);
-    expect(MAX_STEPS_PER_RUN - run.remaining).toBeLessThan(10);
+    expect(FULL_RUN - run.remaining).toBeLessThan(10);
   });
 
   it('still reads the last occurrence of a series that ends just inside the window, and the RDATEs of one that ended', () => {
@@ -905,7 +875,7 @@ RDATE:${dates(1000)}`, 'exact')));
 
 describe('expandFeed: what the caps cut', () => {
   const FIVE_YEARS = Date.parse('2031-09-01T00:00:00Z');
-  const wide = (text: string, run: StepBudget = budget()) => expandFeed(text, HOUSEHOLD, WINDOW_START, FIVE_YEARS, run);
+  const wide = (text: string, run: RunBudget = budget()) => expandFeed(text, HOUSEHOLD, WINDOW_START, FIVE_YEARS, run);
   // 1,826 occurrences in five years, so 1,000 each.
   const daily = (uid: string, start = '20260902T000000Z') => event(`DTSTART:${start}\nRRULE:FREQ=DAILY`, uid);
   const count = (rows: { google_event_id: string }[]) => {
@@ -930,14 +900,14 @@ describe('expandFeed: what the caps cut', () => {
     // 21 series of 1000 are 21,000 rows: the feed has room for 20,000.
     const series = Array.from({ length: 21 }, (_, index) => daily(`d${index}`));
     const { rows, truncated } = wide(feed(...series, late, rdate, moved));
-    expect(rows).toHaveLength(MAX_PER_FEED);
+    expect(rows).toHaveLength(FEED_ROWS);
     expect(truncated).toBe(true);
     const counts = count(rows);
     expect(counts.get('lateSingle')).toBe(1);
     // The RDATE and the moved occurrence of one UID; the series' own DTSTART was replaced by the move.
     expect(counts.get('withRdate')).toBe(2);
     // The slice took only repeating rows: every row of the series that is left is theirs.
-    expect([...counts].filter(([id]) => id.startsWith('d')).reduce((sum, [, n]) => sum + n, 0)).toBe(MAX_PER_FEED - 3);
+    expect([...counts].filter(([id]) => id.startsWith('d')).reduce((sum, [, n]) => sum + n, 0)).toBe(FEED_ROWS - 3);
   });
 
   it('cuts the same series whatever order the feed is in: newest start first, then by UID', () => {
@@ -976,11 +946,11 @@ describe('expandFeed: what the caps cut', () => {
 // Each series is read twice, from DTSTART a step at a time and with the skip over the years before
 // the window, and must give the same rows; the skip must cost almost no steps.
 const compare = (text: string, windowStartMs = WINDOW_START, windowEndMs = WINDOW_END) => {
-  const slow = { ...budget(), noFastForward: true };
+  const slow = budget();
   const fast = budget();
-  const walked = expandFeed(text, HOUSEHOLD, windowStartMs, windowEndMs, slow);
+  const walked = expandFeed(text, HOUSEHOLD, windowStartMs, windowEndMs, slow, { noFastForward: true });
   const skipped = expandFeed(text, HOUSEHOLD, windowStartMs, windowEndMs, fast);
-  return { walked, skipped, slow: MAX_STEPS_PER_RUN - slow.remaining, fast: MAX_STEPS_PER_RUN - fast.remaining };
+  return { walked, skipped, slow: FULL_RUN - slow.remaining, fast: FULL_RUN - fast.remaining };
 };
 const both = (...components: string[]) => {
   const { walked, skipped, slow, fast } = compare(feed(...components));
@@ -1105,7 +1075,7 @@ RRULE:${rule}`, 'missing')), windowStart, windowEnd);
   it('refuses a monthly BYSETPOS series it cannot move, as one with COUNT: its first occurrence, said to be cut, and no clock spent', () => {
     // A length that runs past the window leaves no month to move to, so the series is walked from 1900, at 0.7 ms a step.
     const text = feed(event('DTSTART:19000115T090000Z\nDURATION:P73000D\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1', 'long'));
-    const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0 };
+    const run = new RunBudget();
     const began = Date.now();
     const { rows, truncated } = expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
     expect(Date.now() - began).toBeLessThan(400);
@@ -1115,7 +1085,7 @@ RRULE:${rule}`, 'missing')), windowStart, windowEnd);
 
   it('syncs a feed with two series it cannot move, each shown as its first occurrence', () => {
     const long = (uid: string) => event('DTSTART:19000115T090000Z\nDURATION:P73000D\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1', uid);
-    const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0 };
+    const run = new RunBudget();
     const { rows, truncated } = expandFeed(feed(long('a'), long('b')), HOUSEHOLD, WINDOW_START, WINDOW_END, run);
     expect(rows).toHaveLength(2);
     expect(truncated).toBe(true);
@@ -1133,7 +1103,7 @@ RRULE:${rule}`, 'missing')), windowStart, windowEnd);
       const { rows, truncated } = expandFeed(feed(event(lines, 'huge')), HOUSEHOLD, WINDOW_START, WINDOW_END, run);
       expect(truncated, lines).toBe(true);
       expect(rows.length, lines).toBeGreaterThan(0);
-      expect(MAX_STEPS_PER_RUN - run.remaining, lines).toBeLessThan(400);
+      expect(FULL_RUN - run.remaining, lines).toBeLessThan(400);
     }
   });
 
@@ -1141,7 +1111,7 @@ RRULE:${rule}`, 'missing')), windowStart, windowEnd);
     // 2006-09 to the window's 2026-09 is 240 months, the most that is walked from DTSTART.
     const last = (start: string, end: string) => feed(event(`DTSTART:${start}T090000Z\nRRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1${end}`, 'last'));
     for (const text of [last('20060915', ';COUNT=400'), last('20060915', ''), last('19700115', '')]) {
-      const walked = expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, { ...budget(), noFastForward: true });
+      const walked = expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, budget(), { noFastForward: true });
       const run = budget();
       const { rows, truncated } = expandFeed(text, HOUSEHOLD, WINDOW_START, WINDOW_END, run);
       expect(truncated).toBe(false);

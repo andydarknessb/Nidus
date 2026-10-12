@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { expandFeed, MAX_STEPS_PER_RUN } from '../supabase/functions/_shared/ics-expand';
+import { expandFeed } from '../supabase/functions/_shared/ics-expand';
+import { RunBudget } from '../supabase/functions/_shared/run-budget';
 
 // A fixed sample of the repeat shapes the iPhone writes (the whitelist of ics-expand.ts), each read
 // from a start long ago, in each kind of start. Every one is walked (nothing said to be cut) and takes
@@ -139,7 +140,7 @@ describe('expandFeed: the shapes the iPhone writes', () => {
       ]
         .join('\n')
         .replace(/\n/g, '\r\n');
-      const run = { remaining: MAX_STEPS_PER_RUN, spentMs: 0 };
+      const run = new RunBudget();
       const began = performance.now();
       const { truncated } = expandFeed(text, 'America/Chicago', WINDOW_START, WINDOW_END, run);
       const took = performance.now() - began;
