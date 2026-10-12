@@ -64,6 +64,14 @@ describe('a phone Month cell', () => {
     expect(tagOf(cell('2026-10-01'))).toContain('aria-label="Thursday, October 1, no events"');
   });
 
+  it("names today's cell and another day's as the tablet's cells are named (tests/month-cell.test.ts), the same strings", () => {
+    const today = { ...dayOf('2026-10-01'), isToday: true };
+    const five = [1, 2, 3, 4, 5].map(() => event([]));
+    expect(tagOf(cell('2026-10-01', { day: today, occurrences: five }))).toContain('aria-label="Thursday, October 1, 5 events, today"');
+    expect(tagOf(cell('2026-10-01', { day: today, occurrences: null }))).toContain('aria-label="Thursday, October 1, today"');
+    expect(tagOf(cell('2026-10-03', { occurrences: [event([])] }))).toContain('aria-label="Saturday, October 3, 1 event"');
+  });
+
   it('gives the date alone until its week has been read, so a free day is never claimed before it is known to be', () => {
     expect(tagOf(cell('2026-10-02', { occurrences: null }))).toContain('aria-label="Friday, October 2, today"');
     expect(/aria-label="([^"]*)"/.exec(tagOf(cell('2026-10-02', { occurrences: null })))![1]).not.toMatch(/event/);

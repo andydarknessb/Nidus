@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
-import { cellLines, isTightCell, linesPerCell, monthMinRem } from '../src/lib/month-grid';
+import { cellLines, cellName, isTightCell, linesPerCell, monthMinRem } from '../src/lib/month-grid';
 
 let counter = 0;
 function event(title: string, startsAt: string, endsAt: string, allDay = false): Occurrence {
@@ -139,5 +139,18 @@ describe('a month at larger text', () => {
   it('is tight at 200 percent text when the row has no room for a line under the date', () => {
     expect(isTightCell(110, HEAD * 32, LINE * 32, 32)).toBe(true);
     expect(isTightCell(140, HEAD * 32, LINE * 32, 32)).toBe(false);
+  });
+});
+
+describe("a cell's name", () => {
+  it("is the day in full and its count, with \", today\" last on today's", () => {
+    expect(cellName('2026-10-01', true, 5)).toBe('Thursday, October 1, 5 events, today');
+    expect(cellName('2026-10-03', false, 1)).toBe('Saturday, October 3, 1 event');
+    expect(cellName('2026-10-03', false, 0)).toBe('Saturday, October 3, no events');
+  });
+
+  it("gives the date alone, and no count, until the day's week has been read", () => {
+    expect(cellName('2026-10-02', false, null)).toBe('Friday, October 2');
+    expect(cellName('2026-10-01', true, null)).toBe('Thursday, October 1, today');
   });
 });
