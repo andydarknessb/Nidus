@@ -111,7 +111,7 @@ describe('event details with a long note', () => {
     is_all_day: false,
     profile_id: null,
     profile_ids: [],
-    event_id: null, repeat_every: null, repeat_interval: null, repeat_days: null, repeat_until: null,
+    household_id: 'household-1', event_id: null, repeat_every: null, repeat_interval: null, repeat_days: null, repeat_until: null,
     ...more,
   });
   // An invite: forty lines.

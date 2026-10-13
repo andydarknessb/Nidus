@@ -66,6 +66,10 @@ describe('the day events of a month', () => {
       ends_at: new Date(instantAt('2026-11-01', '02:00', CHICAGO)).toISOString(),
       is_all_day: false,
       profile_ids: [ava.id, ben.id],
+      repeat_every: null,
+      repeat_interval: 1,
+      repeat_days: null,
+      repeat_until: null,
     });
 
     const read = await loadOccurrences(phone, new Date(DAYS[0]!.startMs), new Date(DAYS[DAYS.length - 1]!.endMs));

@@ -186,7 +186,7 @@ describe('the Profile filter reaches the Month cells', () => {
     is_all_day: false,
     profile_id: profile_ids[0] ?? null,
     profile_ids,
-    event_id: `e${count}`, repeat_every: null, repeat_interval: 1, repeat_days: null, repeat_until: null,
+    household_id: 'household-1', event_id: `e${count}`, repeat_every: null, repeat_interval: 1, repeat_days: null, repeat_until: null,
   });
   // What a read gives the grid: the day events (dayEventsOf) cut it by the Profile filter, and the dots by the pressed people.
   const cells = (occurrences: Occurrence[], pressed: readonly string[]) =>
