@@ -240,7 +240,14 @@ function HomeShell({ owner }: { owner: boolean }) {
   // The sheet that adds a Native Event, from the Add event button. It sits outside the calendar, which holds the read of the day: once
   // an event is saved the change feed is told of it, so every calendar reads again at once rather than when the server's notice arrives.
   const feed = useContext(ChangeFeedContext);
-  const eventSheets = useEventSheets({ timezone, profiles: profiles ?? [], refresh: () => feed?.notify(OCCURRENCE_TABLES) });
+  // A new event starts on the day the wall is on, today when the page shown holds it, else that page's first day. Pressed before the
+  // Household is read, Add waits for it.
+  const eventSheets = useEventSheets({
+    timezone,
+    profiles: profiles ?? [],
+    refresh: () => feed?.notify(OCCURRENCE_TABLES),
+    startsOn: timezone ? wallDate(route, householdDay(timezone).date) : null,
+  });
   // How many days and Up next tiles Home holds at this screen's size, and whether the screen is a phone (below 768 px wide), which
   // swaps the chrome below and follows the phone's own light or dark setting.
   const home = useHomeLayout();
@@ -267,11 +274,7 @@ function HomeShell({ owner }: { owner: boolean }) {
   // The people strip is for the calendar screens (Home, Day, Week and Month), and for no other.
   const onCalendar = onCalendarScreen(route.view);
   const strip = onCalendar && <PeopleStrip profiles={profiles} routines={routines} filter={filter} pressed={pressed} />;
-  // The Add event button, the same on both layouts: a new event starts on the day the wall is on, today when the page shown holds it,
-  // else that page's first day.
-  const addEvent = () => {
-    if (today) add(wallDate(route, today));
-  };
+  const addEvent = () => add();
 
   // The phone: a header, one column and five tabs. Everything above is shared with the tablet, so a resize across 768 px keeps the
   // route, the Profile filter and what has been read; only the chrome is drawn differently.

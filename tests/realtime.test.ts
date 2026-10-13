@@ -88,12 +88,9 @@ describe('Realtime change feed', () => {
     feed.watch(['native_events', 'profiles'], () => heard.push('events'));
     feed.watch(['meals'], () => heard.push('meals'));
     feed.notify(['native_events', 'synced_events']);
-    await expect.poll(() => heard, { timeout: 2_000 }).toEqual(['events']);
-    // A burst is one call, as the server's are.
+    // At once, not after the feed's debounce: a local write is not a burst.
+    expect(heard).toEqual(['events']);
     feed.notify(['native_events']);
-    feed.notify(['native_events']);
-    await expect.poll(() => heard, { timeout: 2_000 }).toEqual(['events', 'events']);
-    await new Promise((resolve) => setTimeout(resolve, 400));
     expect(heard).toEqual(['events', 'events']);
   });
 

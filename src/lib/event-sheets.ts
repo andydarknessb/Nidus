@@ -8,7 +8,7 @@ import type { Pill } from './schedule';
 export type OpenSheet =
   | { sheet: 'details'; occurrence: Occurrence }
   | { sheet: 'edit'; occurrence: Occurrence }
-  | { sheet: 'add'; date: string }
+  | { sheet: 'add'; date: string | null }
   | { sheet: 'cluster'; day: WallDay; pills: Pill[] }
   | null;
 
@@ -54,10 +54,15 @@ export function createEventSheets(options: { refresh?: () => void; now?: () => n
       last = { id: open.occurrence.id, closedAt: null };
       set({ sheet: 'edit', occurrence: open.occurrence });
     },
-    // The sheet that adds an event, starting on the Household Date `date`.
-    add(date: string) {
+    // The sheet that adds an event, starting on the Household Date `date`. A press before the screen knows its day (`date` null) waits:
+    // it is the sheet that opens once the day is known (`dayKnown`).
+    add(date: string | null) {
       last = { id: null, closedAt: null };
       set({ sheet: 'add', date });
+    },
+    // The screen's day is known: an add that was waiting for it opens on it.
+    dayKnown(date: string) {
+      if (open?.sheet === 'add' && open.date === null) set({ sheet: 'add', date });
     },
     // The list of a cluster the Day view folded into a "+N".
     cluster(day: WallDay, pills: Pill[]) {

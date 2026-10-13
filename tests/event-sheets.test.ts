@@ -74,6 +74,21 @@ describe('what is open', () => {
     expect(sheets.state()).toEqual({ sheet: 'add', date: '2026-10-02' });
   });
 
+  it('waits when it is pressed before the screen knows its day, and opens on the day once it is known', () => {
+    const { sheets, told } = harness();
+    sheets.add(null);
+    expect(sheets.state()).toEqual({ sheet: 'add', date: null });
+    sheets.dayKnown('2026-10-03');
+    expect(sheets.state()).toEqual({ sheet: 'add', date: '2026-10-03' });
+    // A day learnt later never moves a sheet that has one, or opens one nobody asked for.
+    sheets.dayKnown('2026-10-09');
+    expect(sheets.state()).toEqual({ sheet: 'add', date: '2026-10-03' });
+    sheets.close();
+    sheets.dayKnown('2026-10-09');
+    expect(sheets.state()).toBeNull();
+    expect(told).toHaveLength(3);
+  });
+
   it("opens the list of a cluster, and from it an event's details", () => {
     const { sheets } = harness();
     sheets.cluster(DAY, PILLS);

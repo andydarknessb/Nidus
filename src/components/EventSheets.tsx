@@ -40,6 +40,8 @@ export function EventSheets({
     case 'edit':
       return <NativeEventSheet timezone={timezone} profiles={profiles} occurrence={open.occurrence} onClose={onClose} onSaved={onSaved} />;
     case 'add':
+      // Waiting for the day it starts on (an add pressed before the screen knew it).
+      if (open.date === null) return null;
       return <NativeEventSheet timezone={timezone} profiles={profiles} date={open.date} onClose={onClose} onSaved={onSaved} />;
   }
 }

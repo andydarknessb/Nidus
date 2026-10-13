@@ -22,6 +22,7 @@ export function useEventSheets({
   refresh,
   focusPlace,
   drawn,
+  startsOn,
 }: {
   // None until the Household has been read: no sheet is drawn.
   timezone: string | null;
@@ -30,6 +31,9 @@ export function useEventSheets({
   refresh: () => void;
   focusPlace?: () => void;
   drawn?: unknown;
+  // The day the screen is on, which an add with no day of its own starts on; null while the screen does not know it yet, when an add
+  // waits and opens once it does.
+  startsOn?: string | null;
 }) {
   // The screen's way to read again and to its event's place, as they are on the render they are used in.
   const latest = useRef({ refresh, focusPlace });
@@ -43,6 +47,10 @@ export function useEventSheets({
     return core.subscribe(() => setOpen(core.state()));
   }, [core]);
 
+  useEffect(() => {
+    if (startsOn) core.dayKnown(startsOn);
+  }, [core, startsOn]);
+
   // Looked at a frame later, when what the read has drawn has settled (the schedule holds out of reach the pills that do not fit).
   useEffect(() => {
     if (drawn === null || drawn === undefined) return;
@@ -55,6 +63,7 @@ export function useEventSheets({
   }, [core, open, drawn]);
 
   const sheets = <EventSheets open={open} timezone={timezone} profiles={profiles} onOpen={core.open} onEdit={core.edit} onClose={core.close} onSaved={core.saved} />;
-  return { open: core.open, cluster: core.cluster, add: core.add, close: core.close, sheets };
+  const add = (date: string | null = startsOn ?? null) => core.add(date);
+  return { open: core.open, cluster: core.cluster, add, close: core.close, sheets };
 }
 
