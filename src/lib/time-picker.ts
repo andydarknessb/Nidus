@@ -18,11 +18,11 @@ export function minutesOf(time: string): number | null {
 
 export const timeOf = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 
-// A time as someone types it: "4", "4:30", "430", "1630", "16:30", "4pm", "4:30 pm", "4.30", "4 30". With AM or PM the hour is 1 to
-// 12 ("12am" is midnight, "12pm" noon). Without, 1 to 11 take `current`, the field's meridiem as it stands, 13 to 23 are themselves,
-// and "12" is noon whatever the meridiem is. Anything else is null.
+// A time as someone types it: "4", "4:30", "430", "1630", "16:30", "4pm", "4:30 pm", "4:30 p.m.", "4.30", "4 30", with spaces as they
+// come. With AM or PM the hour is 1 to 12 ("12am" is midnight, "12pm" noon). Without, 1 to 11 take `current`, the field's meridiem as
+// it stands, 13 to 23 and 0 are themselves, and "12" is noon whatever the meridiem is. Anything else is null.
 export function parseTypedTime(text: string, current: Meridiem): string | null {
-  const found = /^(?:(\d{1,2})[:.\s](\d{2})|(\d{1,4}))\s*(am|pm|a|p)?$/.exec(text.trim().toLowerCase());
+  const found = /^(?:(\d{1,2})\s*[:.\s]\s*(\d{2})|(\d{1,4}))\s*(?:([ap])\.?\s*(?:m\.?)?)?$/.exec(text.trim().toLowerCase());
   if (!found) return null;
   let hour: number;
   let minute: number;
@@ -36,7 +36,7 @@ export function parseTypedTime(text: string, current: Meridiem): string | null {
     minute = Number(found[2]);
   }
   if (hour > 23 || minute > 59) return null;
-  const said = found[4]?.startsWith('a') ? 'AM' : found[4] ? 'PM' : undefined;
+  const said = found[4] === 'a' ? 'AM' : found[4] ? 'PM' : undefined;
   if (said) {
     if (hour < 1 || hour > 12) return null;
     return timeOfDrum({ hour, minute, meridiem: said });

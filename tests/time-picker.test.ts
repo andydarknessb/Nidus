@@ -18,7 +18,7 @@ const ended = (value: ReturnType<typeof setEnd>): EventForm => {
 
 describe('a time typed', () => {
   it('reads every plain way of typing one', () => {
-    for (const text of ['4:30 pm', '4:30pm', '4:30 PM', '4.30 pm', '4 30 pm', '430 pm', '430pm', '16:30', '1630', ' 16:30 ', '4:30p']) {
+    for (const text of ['4:30 pm', '4:30pm', '4:30 PM', '4.30 pm', '4 30 pm', '430 pm', '430pm', '16:30', '1630', ' 16:30 ', '4:30p', '4:30 p.m.', '4:30 P.M.', '4.30 p.m', '4 : 30 pm', '4  30  pm']) {
       expect(parseTypedTime(text, 'AM'), text).toBe('16:30');
       expect(parseTypedTime(text, 'PM'), text).toBe('16:30');
     }
