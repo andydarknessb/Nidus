@@ -238,11 +238,17 @@ as $$
   order by i.d
 $$;
 
+-- The view's invoker calls it; anon reads no view and calls nothing.
+revoke all on function public.native_event_occurrences(public.native_events) from public;
+revoke execute on function public.native_event_occurrences(public.native_events) from anon;
+grant execute on function public.native_event_occurrences(public.native_events) to authenticated;
+
 -- ---- calendar_occurrences: one row per Occurrence -----------------------------------------
 -- Recreated, not replaced: it gains columns. `event_id` is a Native Event's own id (null for a
 -- Synced Event); an event with no Repeat keeps id = event_id, an Occurrence of a Repeat has an
--- id of its own, the same on every read (the start is taken in UTC so no session setting moves
--- it). Code that edits or deletes a Native Event uses event_id, never id.
+-- id of its own, the same on every read (the start is written out in UTC by to_char, so neither
+-- the session's time zone nor its DateStyle moves it). Code that edits or deletes a Native Event
+-- uses event_id, never id.
 drop view public.calendar_occurrences;
 
 create view public.calendar_occurrences
@@ -275,7 +281,7 @@ left join public.profiles as p on p.id = c.profile_id
 union all
 select
   'native'::text as source,
-  case when n.repeat_every is null then n.id else md5(n.id::text || (o.starts_at at time zone 'UTC')::text)::uuid end as id,
+  case when n.repeat_every is null then n.id else md5(n.id::text || to_char(o.starts_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS'))::uuid end as id,
   n.household_id,
   null::uuid as calendar_id,
   'Nidus'::text as calendar_name,
@@ -298,7 +304,8 @@ from public.native_events as n
 cross join lateral (
   select n.starts_at, n.ends_at where n.repeat_every is null
   union all
-  select r.starts_at, r.ends_at from public.native_event_occurrences(n) as r
+  -- The guard keeps the function from being called at all for an event with no Repeat.
+  select r.starts_at, r.ends_at from public.native_event_occurrences(n) as r where n.repeat_every is not null
 ) as o
 left join lateral (
   select

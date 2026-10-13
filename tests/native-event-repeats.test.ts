@@ -5,6 +5,7 @@ import { addDays, dayStartMs, householdDay } from '../supabase/functions/_shared
 import { loadOccurrences, type Occurrence } from '../src/lib/calendar-occurrences';
 import { arrangeCalendar, arrangeEvents } from './support/calendar';
 import {
+  asAnonymous,
   asDevice,
   asHouseholdAccount,
   asServiceRole,
@@ -139,6 +140,13 @@ describe.each(PRINCIPALS)('Repeats, as $name', ({ client: principal }) => {
       '2026-11-01T21:00:00.000Z',
       '2026-11-03T21:00:00.000Z',
     ]);
+
+    const third = await arrange();
+    const thirdClient = await principal(third);
+    // Saturday, Oct 10 at 3 PM, every 2 weeks on Monday: Saturday ends its week, so the Monday two days on is the
+    // week between and the first Occurrence is Monday, Oct 19.
+    await save(thirdClient, { starts_at: '2026-10-10T20:00:00Z', ends_at: '2026-10-10T21:00:00Z' }, { every: 'week', interval: 2, days: 2 });
+    expect(starts(await read(thirdClient, '2026-10-01T00:00:00Z', '2026-11-08T00:00:00Z'))).toEqual(['2026-10-19T20:00:00.000Z', '2026-11-02T21:00:00.000Z']);
   });
 
   it('keeps every N days and every N months and leaves out the month without the date', async () => {
@@ -363,8 +371,17 @@ describe.each(PRINCIPALS)('Repeats, as $name', ({ client: principal }) => {
     expect((await stranger.from('native_event_skips').insert({ native_event_id: eventId, household_id: other.household.id, skipped_on: '2026-10-20' })).error).not.toBeNull();
     expect((await stranger.from('native_event_skips').insert({ native_event_id: eventId, household_id: account.household.id, skipped_on: '2026-10-20' })).error).not.toBeNull();
     await expect(save(stranger, { title: 'Mine', starts_at: '2026-10-20T22:00:00Z', ends_at: '2026-10-20T23:00:00Z' }, { skipEvent: eventId, skipOn: '2026-10-20' })).rejects.toMatchObject({ code: 'P0002' });
+    expect((await stranger.from('native_event_skips').delete().eq('native_event_id', eventId).select()).data).toEqual([]);
 
     expect(await read(stranger, '2026-10-01T00:00:00Z', '2026-11-01T00:00:00Z')).toEqual([]);
     expect(starts(await read(client, '2026-10-01T00:00:00Z', '2026-11-01T00:00:00Z'))).toHaveLength(3);
+  });
+});
+
+describe('Repeats, as no one', () => {
+  it('cannot read a skip or call the expansion', async () => {
+    const anon = asAnonymous();
+    expect((await anon.from('native_event_skips').select('skipped_on')).error).toMatchObject({ code: '42501' });
+    expect((await anon.rpc('native_event_occurrences', { e: {} })).error).toMatchObject({ code: '42501', message: expect.stringContaining('function') });
   });
 });
