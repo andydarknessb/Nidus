@@ -57,3 +57,8 @@ export function writeFailureWords(error: unknown, options: { offline: boolean; r
   const said = options.said ?? { failed: NOT_SAVED, offline: NOT_SAVED_OFFLINE };
   return offline ? said.offline : said.failed;
 }
+
+// The id of the line that says what a write of `place` came to (the Problem part draws it), which the field or button it is about
+// points at (aria-describedby); and the place of the question about removing something, as two Settings cards name it.
+export const problemId = (place: string): string => `problem-${place}`;
+export const removePlace = (id: string): string => `remove-${id}`;

@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button';
 import { REMINDER_MINUTES, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
 import { loadPinnedListName } from '@/lib/shared-lists';
 import { supabase } from '@/lib/supabase';
-import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
-import { useSyncedRead } from '@/lib/synced-read';
+import { useSyncedRead, type WriteProblem } from '@/lib/synced-read';
 
 // What the status line says: nothing, or what the last tap did.
 export type NotificationsStatus = 'idle' | 'saved' | 'test';
@@ -147,15 +146,14 @@ const NO_TABLES = [] as const;
 
 export function NotificationsSection() {
   const [support] = useState<PushSupport>(() => (typeof window === 'undefined' ? 'unsupported' : pushSupport()));
-  const problems = useWriteProblem();
-  const read = useSyncedRead<PushState>(() => readPushState(supabase), NO_TABLES, support === 'supported' ? 'push' : null, { problems });
+  const read = useSyncedRead<PushState>(() => readPushState(supabase), NO_TABLES, support === 'supported' ? 'push' : null);
   const state = read.data;
   const [listName, setListName] = useState<string | null>(null);
   const [status, setStatus] = useState<NotificationsStatus>('idle');
   const loadProblem = read.failed ? LOAD_FAILED : null;
   // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
   // afterwards.
-  const { busy } = read;
+  const { busy, change } = read;
 
   useEffect(() => {
     if (support !== 'supported') return;
@@ -176,22 +174,9 @@ export function NotificationsSection() {
     };
   }, [support, read.refresh]);
 
-  // One write, alone: what it did is the status; what it could not do, in `said`'s words, is under the buttons. `landed` is what the
-  // card shows from its result until the read that follows it, which also says what is so after one that failed (a subscription gone
-  // from the server is off).
-  async function write<T>(run: () => Promise<T>, done: (result: T) => string | undefined | void, said?: { failed: string; offline: string }, landed?: (result: T) => PushState) {
-    await read.change(
-      async () => {
-        // What was said of the last write is old, so that a repeat is said again.
-        setStatus('idle');
-        const result = await run();
-        problems.clear(PLACE);
-        return result;
-      },
-      { place: PLACE, words: said ? { said } : {}, landed: done, showing: landed && ((result) => () => landed(result)) },
-    );
-  }
-
+  // Each write is alone: what it did is the status (what was said of the last write is old when the next begins, so that a repeat is
+  // said again); what it could not do, in its own words, is under the buttons. `meanwhile` is what the card shows from the result
+  // until the read that follows it, which also says what is so after one that failed (a subscription gone from the server is off).
   return (
     <NotificationsView
       support={support}
@@ -200,32 +185,51 @@ export function NotificationsSection() {
       busy={busy}
       status={status}
       loadProblem={loadProblem}
-      problem={problems.at(PLACE)}
+      problem={read.problem(PLACE)}
       // Asking for permission is the first thing the tap does: turnOnNotifications calls requestPermission before awaiting anything.
       onTurnOn={() =>
-        void write(
-          () => turnOnNotifications(supabase),
-          (next) => (next.kind === 'on' ? FIRST_SWITCH : next.kind === 'denied' ? DENIED : undefined),
-          TURN_ON_SAID,
-          (next) => next,
+        void change(
+          PLACE,
+          () => {
+            setStatus('idle');
+            return turnOnNotifications(supabase);
+          },
+          {
+            words: { said: TURN_ON_SAID },
+            landed: (next) => (next.kind === 'on' ? FIRST_SWITCH : next.kind === 'denied' ? DENIED : undefined),
+            meanwhile: (next) => () => next,
+          },
         )
       }
       onTurnOff={() =>
-        void write(
-          () => turnOffNotifications(supabase),
-          () => TURN_ON,
-          TURN_OFF_SAID,
-          () => ({ kind: 'off' }),
+        void change(
+          PLACE,
+          () => {
+            setStatus('idle');
+            return turnOffNotifications(supabase);
+          },
+          { words: { said: TURN_OFF_SAID }, landed: () => TURN_ON, meanwhile: () => () => ({ kind: 'off' }) },
         )
       }
-      onTest={() => void write(() => sendTestNotification(supabase), () => setStatus('test'), TEST_SAID)}
+      onTest={() =>
+        void change(
+          PLACE,
+          () => {
+            setStatus('idle');
+            return sendTestNotification(supabase);
+          },
+          { words: { said: TEST_SAID }, landed: () => void setStatus('test') },
+        )
+      }
       onChange={(preferences) => {
         if (state?.kind !== 'on') return;
-        void write(
-          () => savePushPreferences(supabase, state.id, preferences),
-          () => setStatus('saved'),
-          undefined,
-          () => ({ kind: 'on', id: state.id, preferences }),
+        void change(
+          PLACE,
+          () => {
+            setStatus('idle');
+            return savePushPreferences(supabase, state.id, preferences);
+          },
+          { landed: () => void setStatus('saved'), meanwhile: () => () => ({ kind: 'on', id: state.id, preferences }) },
         );
       }}
     />
