@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startForecast, type ForecastState } from '../src/lib/use-forecast';
-import { CURRENT_MAX_AGE_MS } from '../src/lib/weather';
+import { CURRENT_MAX_AGE_MS, parseForecast } from '../src/lib/weather';
 import { fakeOpenMeteo, recorded, type OpenMeteoFixtures } from './support/open-meteo';
 
 // The forecast loop (issue #58, spec 0012) through its plain core, with a fake Open-Meteo and fake timers: its cadence, its
@@ -40,6 +40,24 @@ describe('startForecast', () => {
     });
     expect(last()?.forecast?.current).toEqual({ temperature: 76, code: 80, isDay: true });
     expect(last()?.days).toHaveLength(7);
+    stop();
+  });
+
+  it('a failed first read keeps the days it was given', async () => {
+    const given = parseForecast(forecast).days;
+    const states: ForecastState[] = [];
+    const stop = startForecast({
+      fetch: fakeOpenMeteo({ forecast: 503 }).fetch,
+      latitude: 30.27,
+      longitude: -97.74,
+      unit: 'celsius',
+      timezone: 'America/Chicago',
+      days: given,
+      onChange: (state) => states.push(state),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(states.at(-1)).toEqual({ forecast: null, days: given });
     stop();
   });
 

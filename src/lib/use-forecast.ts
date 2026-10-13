@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Household } from './household';
 import { fetchForecast, forecastToShow, readDelayMs, staleDelayMs, type Forecast, type SunDay, type TemperatureUnit } from './weather';
 
@@ -6,8 +6,8 @@ import { fetchForecast, forecastToShow, readDelayMs, staleDelayMs, type Forecast
 const NO_DAYS: SunDay[] = [];
 
 // What the forecast loop says: the forecast the Wall may show (null before a read lands, and with the current conditions
-// dropped once the reading is too old) and the days of the last forecast read. `days` is null until a first read has landed or failed.
-export type ForecastState = { forecast: Forecast | null; days: SunDay[] | null };
+// dropped once the reading is too old) and the days of the last forecast read (those it was given, or none, when no read has landed). It is told only after an attempt.
+export type ForecastState = { forecast: Forecast | null; days: SunDay[] };
 
 // The forecast loop for one place (issue #58), plain TypeScript so a test drives it with a fake `fetch` and fake timers. It reads at
 // once, every half hour (readDelayMs), and a failed read keeps the last forecast and is tried again sooner, with a longer wait for
@@ -21,6 +21,8 @@ export function startForecast(options: {
   longitude: number;
   unit: TemperatureUnit;
   timezone: string;
+  // The days a loop before this one read, kept when this one's first read fails: the mode does not flip because the place or unit changed.
+  days?: SunDay[] | null;
   onChange: (state: ForecastState) => void;
 }): () => void {
   const { latitude, longitude, unit, timezone, onChange } = options;
@@ -28,11 +30,11 @@ export function startForecast(options: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let staleTimer: ReturnType<typeof setTimeout> | undefined;
   let reading: { forecast: Forecast; fetchedAt: number } | null = null;
-  let days: SunDay[] | null = null;
+  let days: SunDay[] | null = options.days ?? null;
   // The failed reads in a row; a good read starts the count again.
   let failures = 0;
 
-  const say = () => onChange({ forecast: reading && forecastToShow(reading.forecast, reading.fetchedAt, Date.now()), days });
+  const say = () => onChange({ forecast: reading && forecastToShow(reading.forecast, reading.fetchedAt, Date.now()), days: days ?? NO_DAYS });
   // The moment the reading in hand turns too old, the current conditions go by themselves, even when no attempt finishes to notice.
   const arm = () => {
     clearTimeout(staleTimer);
@@ -86,7 +88,9 @@ export function startForecast(options: {
 // The first read always finishes or fails: every request carries a thirty second limit (requestInit), so Auto never
 // waits on the mode the screen had for longer than that.
 export function useForecast(household: Household | null): { forecast: Forecast | null; sun: SunDay[] | null } {
-  const [state, setState] = useState<ForecastState>({ forecast: null, days: null });
+  const [state, setState] = useState<{ forecast: Forecast | null; days: SunDay[] | null }>({ forecast: null, days: null });
+  // The days of the last forecast read, handed to the next loop so a read that fails first does not lose them.
+  const kept = useRef<SunDay[] | null>(null);
   // Plain values, not the Household: the Wall reads the Household again every 30 seconds, and a new
   // object with the same place must not mean a new request.
   const latitude = household?.latitude ?? null;
@@ -96,7 +100,7 @@ export function useForecast(household: Household | null): { forecast: Forecast |
   const weatherOn = latitude !== null && longitude !== null && unit !== null && timezone !== null;
 
   useEffect(() => {
-    setState((was) => ({ ...was, forecast: null }));
+    setState((was) => (was.forecast === null ? was : { ...was, forecast: null }));
     if (!weatherOn) return;
     return startForecast({
       fetch: globalThis.fetch.bind(globalThis),
@@ -104,7 +108,11 @@ export function useForecast(household: Household | null): { forecast: Forecast |
       longitude,
       unit,
       timezone,
-      onChange: (next) => setState((was) => ({ forecast: next.forecast, days: next.days ?? was.days })),
+      days: kept.current,
+      onChange: (next) => {
+        kept.current = next.days;
+        setState(next);
+      },
     });
   }, [weatherOn, latitude, longitude, unit, timezone]);
 

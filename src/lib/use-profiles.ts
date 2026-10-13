@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 import type { ProfileFilter } from './profile-filter';
 import { loadProfiles, type Profile } from './profiles';
 import { supabase } from './supabase';
@@ -13,7 +13,8 @@ const PROFILE_TABLES = ['profiles'] as const;
 // read's retry). A Profile that was deleted leaves the filter as soon as it is gone: each read that lands prunes it.
 export function useProfiles(filter: ProfileFilter): Profile[] | null {
   const { data } = useSyncedRead(() => loadProfiles(supabase), PROFILE_TABLES, 'profiles');
-  useEffect(() => {
+  // Before paint, so no frame draws the strip without a deleted person while the filter still names them.
+  useLayoutEffect(() => {
     if (data) filter.prune(data);
   }, [data, filter]);
   return data;
