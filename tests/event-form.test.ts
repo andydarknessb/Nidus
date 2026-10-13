@@ -513,6 +513,17 @@ describe('the Repeats row', () => {
     expect(button(del, 'Every one')!.attrs).not.toBe(button(save, 'Every one')!.attrs);
   });
 
+  // On a tablet upright (800 wide) the three answers left the question 192 px, and it was cut to "Change this one, or ev…". It is never
+  // cut: it is as wide as its words (flex-auto), and wraps to its own row when the answers leave it less.
+  it('reads the question about a Repeat whole, and lets only a title give way', () => {
+    const question = (html: string) => /<p id="ask-question" class="([^"]*)"/.exec(html)?.[1]?.split(' ') ?? [];
+    for (const asking of ['save', 'delete'] as const) {
+      expect(question(ask(asking, true))).not.toContain('truncate');
+      expect(question(ask(asking, true))).toContain('flex-auto');
+    }
+    expect(question(ask('delete', false))).toContain('truncate');
+  });
+
   it('asks "Delete <title>?" and nothing about "this one" for an event that does not repeat', () => {
     const html = ask('delete', false);
     expect(text(html)).toContain('Delete Soccer?');

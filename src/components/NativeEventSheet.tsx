@@ -107,7 +107,9 @@ export function EventQuestion({
 }) {
   return (
     <>
-      <p id="ask-question" className="min-w-[min(12rem,100%)] flex-1 truncate text-[17px] font-medium">
+      {/* A title may be long and gives way. The question about a Repeat is read whole: as wide as its words, on a row of its own when
+          the answers leave it less (a tablet upright). */}
+      <p id="ask-question" className={`${repeating ? 'min-w-0 flex-auto' : 'min-w-[min(12rem,100%)] flex-1 truncate'} text-[17px] font-medium`}>
         {!repeating ? `Delete ${title}?` : asking === 'save' ? 'Change this one, or every one?' : 'Delete this one, or every one?'}
       </p>
       <div className={answers}>
