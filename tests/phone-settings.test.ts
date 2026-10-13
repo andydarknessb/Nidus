@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccountBlock as AccountBlockType, AccountSummary as AccountSummaryType, CalendarRow as CalendarRowType, IphoneCalendarForm as IphoneCalendarFormType } from '../src/CalendarAccountsSection';
 import type { CalendarsPage as CalendarsPageType } from '../src/CalendarsPage';
-import type { EventRow as EventRowType } from '../src/EventsSection';
+import type { EVENT_TABLES as EventTablesType, EventRow as EventRowType } from '../src/EventsSection';
 import type { RoutineForm as RoutineFormType, RoutinesPage as RoutinesPageType } from '../src/RoutinesPage';
 import type { SettingsPage as SettingsPageType } from '../src/SettingsPage';
 import type { SharedListsPage as SharedListsPageType } from '../src/SharedListsPage';
@@ -16,6 +16,7 @@ import { ICLOUD_LINK_GONE_WORDS, ICLOUD_TRUNCATED_WORDS, UPDATE_FAILED_WORDS, ac
 import { seenWords } from '../src/lib/device-format';
 import type { Household } from '../src/lib/household';
 import { TOKENS } from '../src/lib/look';
+import { OCCURRENCE_TABLES } from '../src/lib/realtime';
 import { PROFILE_PALETTE, colorOwners, firstFreeColor } from '../src/lib/profiles';
 import { SETTINGS_TABS, settingsLabelOf, settingsPathNow, settingsTabOf } from '../src/lib/settings-tabs';
 import { timezoneName, timezoneOptions } from '../src/lib/timezones';
@@ -924,10 +925,11 @@ describe('what a person is asked for, after a write did not go through', () => {
 // Who an event is for, on the phone's list of the events added in Nidus: the schedule's rule (pillPeople), read as words.
 describe("the phone's list of events", () => {
   let EventRow: typeof EventRowType;
+  let EVENT_TABLES: typeof EventTablesType;
   beforeAll(async () => {
     vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
     vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
-    ({ EventRow } = await import('../src/EventsSection'));
+    ({ EventRow, EVENT_TABLES } = await import('../src/EventsSection'));
   });
 
   const family = [
@@ -953,6 +955,11 @@ describe("the phone's list of events", () => {
   });
   const row = (profileIds: string[], profiles = family) => renderToStaticMarkup(createElement(EventRow, { event: event(profileIds), profiles, timezone: 'America/Chicago', onOpen: () => undefined }));
   const forWords = (markup: string) => /<span class="sr-only">([^<]*)<\/span>/.exec(markup)?.[1]?.replace(/<!-- -->/g, '');
+
+  // A day of a Repeat deleted on the Wall is a write to native_event_skips alone: the list reads again when it lands, not 30 seconds on.
+  it('reads again when any Native Event table behind the view changes, a skipped day included', () => {
+    expect([...EVENT_TABLES]).toEqual(expect.arrayContaining(OCCURRENCE_TABLES.filter((table) => table.startsWith('native_'))));
+  });
 
   it('says who an event is for, as the schedule does', () => {
     expect(forWords(row([]))).toBe('For everyone');
