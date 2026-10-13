@@ -49,6 +49,7 @@ function event(title: string, date: string, from: string, to: string, ids: strin
     is_all_day: false,
     profile_id: ids[0] ?? null,
     profile_ids: ids,
+    event_id: null, repeat_every: null, repeat_interval: null, repeat_days: null, repeat_until: null,
     ...more,
   };
 }

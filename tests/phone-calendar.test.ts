@@ -155,6 +155,7 @@ describe('monthDots', () => {
     is_all_day: false,
     profile_id: profile_ids[0] ?? null,
     profile_ids,
+    event_id: null, repeat_every: null, repeat_interval: null, repeat_days: null, repeat_until: null,
   });
   const who = (dots: MonthDot[]) => dots.map((dot) => (dot.kind === 'household' ? 'house' : dot.profile.name));
 

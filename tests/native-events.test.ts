@@ -349,6 +349,7 @@ describe('the Native Event form', () => {
       is_all_day: false,
       profile_id: 'a',
       profile_ids: ['a', 'b'],
+      event_id: 'n1', repeat_every: null, repeat_interval: 1, repeat_days: null, repeat_until: null,
     } satisfies Occurrence;
     const filled = eventFormFromOccurrence(occurrence, CHICAGO);
     expect(filled).toEqual({
