@@ -1,6 +1,6 @@
 import { mealGrid, type Meal, type MealSlot } from './meals';
 import { limitWords, MEAL_PLAN_LIMITS, type PagedView, type WallDay } from './paged-view';
-import { pageWords } from './phone-calendar';
+import { pageWords } from './calendar-occurrences';
 import { WEEKDAYS } from './routines';
 
 // The Meal Plan (CONTEXT.md): the Household's Meals for one week, as the Wall's Meals screen and the phone's both draw it. This is the
@@ -78,7 +78,7 @@ export function mealPlan({ page, choice, meals }: { page: PagedView<'week'>; cho
     previous: page.previous,
     next: page.next,
     limit: limitWords(page, MEAL_PLAN_LIMITS),
-    words: pageWords(days, today),
+    words: pageWords(days, today, 'phone'),
     picked,
     cellFor(day, slot) {
       const row = grid.find((entry) => entry.slot === slot)!;

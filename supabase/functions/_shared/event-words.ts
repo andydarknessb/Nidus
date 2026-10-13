@@ -124,6 +124,6 @@ export const dateWords = {
     const day = calendarDate(date, { weekday: 'long', month: 'long', day: 'numeric' });
     return count === null ? day : `${day}, ${eventCount(count)}`;
   },
-  // A calendar date with the given parts, for a page's title (describePage, describeMonth).
+  // A calendar date with the given parts, for a page's title (pageWords, describeMonth).
   calendar: calendarDate,
 };

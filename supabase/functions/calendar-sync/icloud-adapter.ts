@@ -2,11 +2,12 @@
 // whole feed is fetched (_shared/feed.ts), skipped when the server says it has not changed (its
 // validators), its repeats expanded into the same window (_shared/ics-expand.ts) and stored with the
 // same replace_synced_events. It never touches Google's token endpoint. The adapter also holds the run's
-// work budget: one step budget and one time limit for every feed of the run, since the hosted function
-// has a 2 s CPU limit in all.
+// work budget (_shared/run-budget.ts): one for every feed of the run, since the hosted function has a 2 s
+// CPU limit in all.
 import type { EventRow } from '../_shared/event-row.ts';
 import { fetchFeed } from '../_shared/feed.ts';
-import { expandFeed, FeedTooLargeError, MAX_EXPANSION_MS, MAX_STEPS_PER_RUN, type StepBudget } from '../_shared/ics-expand.ts';
+import { expandFeed } from '../_shared/ics-expand.ts';
+import { FeedTooLargeError, RunBudget } from '../_shared/run-budget.ts';
 import { type Calendar, canReadIncrementally, type Outcome, type ProviderAdapter, replace, type SyncDeps, syncWindow } from './adapter.ts';
 
 // What the sync writes in `last_error` for the logs: Settings words these from the account's status, provider and
@@ -40,7 +41,7 @@ function decodeFeedValidators(token: string | null): { etag: string | null; last
 // expand it into the window and replace the Mirrored Calendar's events. Never throws, and never puts the link
 // (or anything the feed said) in a note. One adapter serves a whole run, and so does its step budget.
 export function icloudAdapter(deps: SyncDeps): ProviderAdapter {
-  const run: StepBudget = { remaining: MAX_STEPS_PER_RUN, spentMs: 0, ...(deps.clock ? { now: deps.clock } : {}) };
+  const run = new RunBudget({ now: deps.clock });
 
   return {
     position: 1,
@@ -50,7 +51,7 @@ export function icloudAdapter(deps: SyncDeps): ProviderAdapter {
       // all, not even to parse it. A calendar the run did not reach is untouched (no stamp, no note), so it
       // keeps its row and its place in line. A feed that does start and does not fit has been tried, and
       // goes to the back (below).
-      if (run.remaining <= 0 || (run.spentMs ?? 0) >= MAX_EXPANSION_MS) return { kind: 'skipped' };
+      if (run.skip()) return { kind: 'skipped' };
 
       // Before anything that can take long or kill the run: a feed that does so goes to the back of the
       // line next time. Whether this write lands is not the sync's business.
@@ -87,7 +88,7 @@ export function icloudAdapter(deps: SyncDeps): ProviderAdapter {
       let truncated: boolean;
       let rows: EventRow[];
       // Whether this feed had the whole run to itself: only then does failing to fit say it is too big.
-      const fresh = run.remaining === MAX_STEPS_PER_RUN && !run.spentMs;
+      const fresh = run.fresh;
       try {
         ({ rows, truncated } = expandFeed(feed.text, timezone, Date.parse(window.timeMin), Date.parse(window.timeMax), run));
       } catch (error) {

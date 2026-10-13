@@ -19,9 +19,8 @@ import {
 } from '@/lib/calendar-accounts';
 import { loadProfiles, type Profile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
-import { useWriteProblem } from '@/lib/use-write-problem';
 import { useStatusLine } from '@/lib/status-line';
-import { type Said } from '@/lib/write-failure';
+import { problemId, removePlace, type Said } from '@/lib/write-failure';
 import { couldNotLoad, useChange, useSyncedRead } from '@/lib/synced-read';
 
 const CALENDAR_TABLES = ['calendar_accounts', 'mirrored_calendars', 'profiles'] as const;
@@ -35,9 +34,7 @@ const LINK_SAID = { failed: 'Could not make a link. Try again.', offline: 'No in
 const CONNECT = 'connect';
 const ADD_IPHONE = 'add-iphone';
 const reconnectPlace = (id: string) => `reconnect-${id}`;
-const removePlace = (id: string) => `remove-${id}`;
 const calendarPlace = (id: string) => `calendar-${id}`;
-const problemId = (place: string) => `problem-${place}`;
 const removeButtonId = (id: string) => `remove-${id}`;
 const IPHONE_LINK = 'iphone-link';
 
@@ -255,8 +252,7 @@ const NO_PROFILES: Profile[] = [];
 export function CalendarAccountsSection() {
   // Read through the synced read. A choice of calendar or person is a pending change on it: it shows at once, goes back if its write
   // fails, and choices stay in the order they were made. A trouble reading, which a read that works takes away, is kept apart from
-  // what a write said of itself (useWriteProblem): a good read says nothing of whether a write did.
-  const problems = useWriteProblem();
+  // what a write said of itself (`problem`): a good read says nothing of whether a write did.
   const read = useSyncedRead(
     async () => {
       const [accounts, calendars, profiles] = await Promise.all([loadCalendarAccounts(supabase), loadMirroredCalendars(supabase), loadProfiles(supabase)]);
@@ -264,7 +260,6 @@ export function CalendarAccountsSection() {
     },
     CALENDAR_TABLES,
     'calendars',
-    { problems },
   );
   const accounts = read.data?.accounts ?? null;
   const calendars = read.data?.calendars ?? NONE;
@@ -278,7 +273,7 @@ export function CalendarAccountsSection() {
   // the read's own guard is the removal's, and the addition has one of its own. The field's value now is kept apart (a press's answer
   // comes after more may have been typed).
   const removal = read;
-  const addition = useChange(read, problems);
+  const addition = useChange(read);
   const removing = removal.busy;
   const adding = addition.busy;
   const iphoneLinkNow = useRef('');
@@ -298,7 +293,7 @@ export function CalendarAccountsSection() {
     try {
       window.location.assign(await startCalendarConnect(supabase, 'settings'));
     } catch (error) {
-      problems.fail(CONNECT, error, { said: CONNECT_SAID });
+      read.fail(CONNECT, error, { said: CONNECT_SAID });
     }
   }
 
@@ -309,7 +304,7 @@ export function CalendarAccountsSection() {
     try {
       window.location.assign(await startCalendarConnect(supabase, 'settings', account.google_email ?? undefined));
     } catch (error) {
-      problems.fail(reconnectPlace(account.id), error, { said: CONNECT_SAID });
+      read.fail(reconnectPlace(account.id), error, { said: CONNECT_SAID });
     }
   }
 
@@ -317,7 +312,7 @@ export function CalendarAccountsSection() {
     setNotice(null);
     try {
       const url = await startCalendarConnect(supabase, 'link');
-      problems.clear(CONNECT);
+      read.clear(CONNECT);
       setLink(url);
       try {
         await navigator.clipboard.writeText(url);
@@ -326,7 +321,7 @@ export function CalendarAccountsSection() {
         setNotice('Copy the link below and send it to another adult. It works for 7 days.');
       }
     } catch (error) {
-      problems.fail(CONNECT, error, { said: LINK_SAID });
+      read.fail(CONNECT, error, { said: LINK_SAID });
     }
   }
 
@@ -335,22 +330,21 @@ export function CalendarAccountsSection() {
   // calendar go in the order they were asked.
   function choose(calendar: MirroredCalendar, change: { selected: boolean } | { profile_id: string | null }) {
     chooseCalendar(read, writes.current, supabase, calendar.id, change).then(
-      () => problems.clear(calendarPlace(calendar.id)),
-      (error: unknown) => problems.fail(calendarPlace(calendar.id), error),
+      () => read.clear(calendarPlace(calendar.id)),
+      (error: unknown) => read.fail(calendarPlace(calendar.id), error),
     );
   }
 
 
   async function remove(account: CalendarAccount) {
     await removal.change(
+      removePlace(account.id),
       async () => {
         await removeCalendarAccount(supabase, account.id);
-        problems.clear(removePlace(account.id));
         if (account.provider === 'icloud') say('iPhone calendar removed.');
         else setNotice('Account removed.');
       },
       {
-        place: removePlace(account.id),
         // The account is gone and with it the button that asked: focus goes to the first control of its card.
         landed: () => {
           setConfirming(null);
@@ -363,14 +357,15 @@ export function CalendarAccountsSection() {
   // Adds the pasted link as an iPhone calendar (sendLink says what the answer comes to). The route's own words are said under the field
   // when it refuses; any other failure is worded as every write on this page is.
   async function addIphone() {
-    await addition.change(() => sendLink({ link: iphoneLink, current: () => iphoneLinkNow.current, add: (url) => addIphoneCalendar(supabase, url) }), {
+    // No place: the answer says its own words, in `landed`, once the read has followed (so the old words stay until then).
+    await addition.change(null, () => sendLink({ link: iphoneLink, current: () => iphoneLinkNow.current, add: (url) => addIphoneCalendar(supabase, url) }), {
       landed: (answer) => {
         if (answer.kind === 'added') {
-          problems.clear(ADD_IPHONE);
+          addition.clear(ADD_IPHONE);
           if (answer.clear) changeIphoneLink('');
           say(answer.say);
-        } else if (answer.kind === 'refused') problems.say(ADD_IPHONE, answer.words);
-        else problems.fail(ADD_IPHONE, answer.error);
+        } else if (answer.kind === 'refused') addition.say(ADD_IPHONE, answer.words);
+        else addition.fail(ADD_IPHONE, answer.error);
       },
     });
   }
@@ -388,15 +383,15 @@ export function CalendarAccountsSection() {
       now={now}
       confirming={confirming === account.id}
       removing={removing}
-      problems={problems}
+      problems={{ at: read.problem }}
       onReconnect={() => void reconnect(account)}
       onChoose={choose}
       onAskRemove={() => {
-        problems.clear(removePlace(account.id));
+        read.clear(removePlace(account.id));
         setConfirming(account.id);
       }}
       onCancelRemove={() => {
-        problems.clear(removePlace(account.id));
+        read.clear(removePlace(account.id));
         setConfirming(null);
         removal.focus(removeButtonId(account.id));
       }}
@@ -422,7 +417,7 @@ export function CalendarAccountsSection() {
           <p role="status" className={statusLineClass}>
             {notice}
           </p>
-          <Problem id={problemId(CONNECT)} problem={problems.at(CONNECT)} />
+          <Problem id={problemId(CONNECT)} problem={read.problem(CONNECT)} />
         </div>
         {loadProblem && (
           <p role="alert" className="text-base">
@@ -433,7 +428,7 @@ export function CalendarAccountsSection() {
         {google?.map(block)}
       </Card>
       <Card title="iPhone calendars">
-        <IphoneCalendarForm value={iphoneLink} adding={adding} problem={problems.at(ADD_IPHONE)} onChange={changeIphoneLink} onAdd={() => void addIphone()} />
+        <IphoneCalendarForm value={iphoneLink} adding={adding} problem={addition.problem(ADD_IPHONE)} onChange={changeIphoneLink} onAdd={() => void addIphone()} />
         {iphones?.map(block)}
       </Card>
     </>

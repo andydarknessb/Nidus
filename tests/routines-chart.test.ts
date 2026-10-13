@@ -1,10 +1,12 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { RoutineColumn, type ColumnLayout } from '../src/components/RoutineColumn';
 import type { Profile } from '../src/lib/profiles';
-import { columnsOf, finishedProfiles, groupByProfile, todaysRoutines, type Routine } from '../src/lib/routines';
-import type { RoutinesToday } from '../src/lib/use-routines-today';
+import type { RoutineChart } from '../src/lib/routine-chart';
+import type { Routine } from '../src/lib/routines';
 import type { RoutinesChart as RoutinesChartType } from '../src/RoutinesPage';
+import { chartOf, type SceneOptions } from './support/routine-chart';
 
 // The Routines chart as the Wall first draws it, rendered to markup so that what is asserted is what the browser is given: a column
 // for each person, its heading, and what the chart says when it holds nothing. It imports the Supabase client, which is built on
@@ -20,28 +22,10 @@ beforeAll(async () => {
 const profile = (id: string, name: string, sort: number): Profile => ({ id, name, color: '#93c5fd', avatar_url: null, sort_order: sort });
 const routine = (id: string, profileId: string, title: string): Routine => ({ id, profile_id: profileId, title, days_of_week: 127, time_of_day: 'evening', picture: null, sort_order: 0, archived_at: null });
 
-// What the Wall's one reader hands the chart on Thursday, in the evening (weekday 4): every part of it from the pure builders.
-function routinesToday(profiles: Profile[], routines: Routine[], more: Partial<RoutinesToday> = {}): RoutinesToday {
-  const weekday = 4;
-  const groups = groupByProfile(profiles, todaysRoutines(routines, weekday));
-  const done = new Set<string>();
-  return {
-    date: '2026-10-01',
-    state: 'ready',
-    settled: true,
-    failed: false,
-    part: 'evening',
-    problems: {},
-    groups,
-    columns: columnsOf(profiles, routines, weekday),
-    done,
-    finished: finishedProfiles(groups, done),
-    toggle: () => Promise.resolve(true),
-    ...more,
-  };
-}
+// What the Wall's one Routine Chart hands the screen on Thursday, in the evening (weekday 4), from the real core.
+const routinesToday = (profiles: Profile[], routines: Routine[], more: Partial<SceneOptions> = {}): RoutineChart => chartOf({ profiles, routines, ...more });
 const words = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-const chart = (today: RoutinesToday) => renderToStaticMarkup(createElement(RoutinesChart, { routines: today }));
+const chart = (today: RoutineChart) => renderToStaticMarkup(createElement(RoutinesChart, { routines: today }));
 
 describe("a person's column", () => {
   const column = () => {
@@ -78,12 +62,12 @@ describe('what the chart says when it holds nothing', () => {
 
   it('says what a part holds when it holds nothing, in the same style', () => {
     // Ava's one Routine is in the evening: the morning has none of its own, none left from earlier and none for any time.
-    const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], [routine('r-1', 'p-ava', 'Brush teeth')], { part: 'morning' }));
+    const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], [routine('r-1', 'p-ava', 'Brush teeth')], { clock: 'morning' }));
     expect(html).toMatch(new RegExp(`<p class="${EMPTY} px-1">Nothing this morning\\.</p>`));
   });
 
   it('says "Loading" in the same style until the first read lands, and not "no routines yet"', () => {
-    const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], [], { state: 'loading', settled: false }));
+    const html = chart(routinesToday([profile('p-ava', 'Ava', 0)], [], { unread: true }));
     expect(html).toContain(`<p class="${EMPTY}">Loading</p>`);
     expect(html).not.toContain('No routines yet');
   });
@@ -154,5 +138,25 @@ describe('the chart in portrait', () => {
     const master = 'person relative flex max-h-full min-h-0 max-w-md min-w-[17rem] flex-1 flex-col gap-2.5 rounded-3xl bg-person-soft p-3';
     for (const classes of columnClasses(landscape)) expect(classes.join(' ')).toBe(master);
     expect(landscape).not.toContain('flex-wrap items-start');
+  });
+});
+
+// One column, drawn the same on the Wall and on the phone: only the frame around it differs (src/components/RoutineColumn.tsx).
+describe('the shared column', () => {
+  const brush = { ...routine('r-1', 'ava', 'Brush teeth'), time_of_day: 'morning' as const };
+  const dressed = { ...routine('r-2', 'ava', 'Get dressed'), time_of_day: 'morning' as const };
+
+  it('draws the progress header and a tile for each Routine, ticked or not, whatever the layout around it', () => {
+    const today = routinesToday([profile('ava', 'Ava', 0)], [brush, dressed], { done: ['r-2'], clock: 'morning' });
+    const layouts: ColumnLayout[] = [
+      { className: 'person relative wall-column', header: 'min-h-14', disc: 56 },
+      { className: 'person relative phone-card', header: 'min-h-13', disc: 52 },
+    ];
+    for (const layout of layouts) {
+      const html = renderToStaticMarkup(createElement(RoutineColumn, { column: today.columnFor('ava')!, tap: today.tap, layout }));
+      expect(html).toContain(`class="${layout.className}`);
+      expect(html).toContain('1 of 2 done');
+      expect([...html.matchAll(/aria-pressed="(true|false)"/g)].map((match) => match[1])).toEqual(['false', 'true']);
+    }
   });
 });

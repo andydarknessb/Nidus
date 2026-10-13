@@ -438,6 +438,7 @@ export function SharedListsPage({ household }: { household: Household }) {
   // at once. Says whether it was made; false too when another change was on its way and this one did nothing.
   async function change(work: () => Promise<void>, failure: string): Promise<boolean> {
     const outcome = await read.change(
+      null,
       async () => {
         await work();
         setProblem('');

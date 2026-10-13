@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { PeopleStrip } from '../src/components/PeopleStrip';
 import { createProfileFilter } from '../src/lib/profile-filter';
 import type { Profile } from '../src/lib/profiles';
-import type { ProfileRoutines, Routine } from '../src/lib/routines';
-import type { RoutinesToday } from '../src/lib/use-routines-today';
+import type { Routine } from '../src/lib/routines';
+import { chartOf } from './support/routine-chart';
 
 // The people strip rendered to markup: who is on it and in what order, what is pressed, what the one-Profile Household
 // gets, and the words and pips of each person's Routines. The pill's room (the shrinking, the scrolling) is the browser's
@@ -20,14 +20,16 @@ const FAMILY = [CORY, SAM, AVA, BEN];
 
 const routines = (who: Profile, count: number): Routine[] =>
   Array.from({ length: count }, (_, index) => ({ id: `${who.id}-${index}`, profile_id: who.id, title: `Routine ${index}`, days_of_week: 127, time_of_day: null, sort_order: index, archived_at: null, picture: null }));
-const group = (who: Profile, count: number): ProfileRoutines => ({ profile: who, routines: routines(who, count) });
+const group = (who: Profile, count: number) => ({ profile: who, routines: routines(who, count) });
+type Group = ReturnType<typeof group>;
 const ticked = (who: Profile, count: number) => routines(who, count).map((routine) => routine.id);
 
-function today(groups: ProfileRoutines[], done: string[] = []): RoutinesToday {
-  return { date: '2026-10-01', state: 'ready', settled: true, failed: false, part: 'evening', problems: {}, groups, columns: groups, done: new Set(done), finished: new Set(), toggle: async () => true };
+// The Routine Chart for these people's Routines, from the real core.
+function today(groups: Group[], done: string[] = []) {
+  return chartOf({ profiles: groups.map((each) => each.profile), routines: groups.flatMap((each) => each.routines), done });
 }
 
-function strip(profiles: Profile[] | null, groups: ProfileRoutines[] = [], done: string[] = [], pressed: string[] = []): string {
+function strip(profiles: Profile[] | null, groups: Group[] = [], done: string[] = [], pressed: string[] = []): string {
   return renderToStaticMarkup(createElement(PeopleStrip, { profiles, routines: today(groups, done), filter: createProfileFilter(), pressed }));
 }
 

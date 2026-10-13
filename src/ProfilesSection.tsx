@@ -7,8 +7,7 @@ import { Button } from '@/components/ui/button';
 import { createProfile, deleteProfile, firstFreeColor, loadProfiles, reorderProfiles, updateProfile } from '@/lib/profiles';
 import { movedIds, nextSortOrder } from '@/lib/ordering';
 import { supabase } from '@/lib/supabase';
-import { useWriteProblem } from '@/lib/use-write-problem';
-import { giveName } from '@/lib/write-failure';
+import { giveName, problemId } from '@/lib/write-failure';
 import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
 
 const PROFILE_TABLES = ['profiles'] as const;
@@ -25,7 +24,6 @@ const ADD = 'add';
 const editPlace = (id: string) => `edit-${id}`;
 const movePlace = (id: string) => `move-${id}`;
 const deletePlace = (id: string) => `delete-${id}`;
-const problemId = (place: string) => `problem-${place}`;
 
 type Editing = { id: string; draft: PersonDraft; deleting: boolean };
 
@@ -45,47 +43,31 @@ function FormTitle({ draft, title }: { draft: PersonDraft; title: string }) {
 export function ProfilesSection({ householdId }: { householdId: string }) {
   // Read through the synced read. A trouble reading, which a read that works takes away, is kept apart from what a write said of
   // itself: a good read says nothing of it.
-  const problems = useWriteProblem();
-  // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
-  // afterwards.
-  const read = useSyncedRead(() => loadProfiles(supabase), PROFILE_TABLES, 'profiles', { problems });
-  const { busy } = read;
+  // One change at a time (read.change, the card write guard): while one is on its way the buttons are `aria-disabled` and do nothing,
+  // never `disabled`, since a button that is disabled while it has focus drops it to the page; the card draws that from `busy`. A
+  // change that fails says so at once, in its place; one that lands is read back before the form closes, and `landed` returns where
+  // focus goes.
+  const read = useSyncedRead(() => loadProfiles(supabase), PROFILE_TABLES, 'profiles');
+  const { busy, change } = read;
   const profiles = read.data;
   const loadProblem = read.failed ? couldNotLoad('people') : null;
   const [adding, setAdding] = useState<PersonDraft | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
 
-  // Runs a write. While it is on its way the buttons are `aria-disabled` and do nothing, never `disabled`: a button that is
-  // disabled while it has focus drops it to the page. What an earlier try said stays where it is until this one answers, so that
-  // nothing moves under the finger. A write that fails says so at once, in `place`, and the screen is read again in its own time
-  // (offline that read tries for seconds, and the person is not waiting on it). A write that lands is read back before the form
-  // closes, so what it shows is what is stored; `landed` is what the card then does, and returns where focus goes.
-  async function change(place: string, write: () => Promise<void>, landed: () => string | void, refusal?: string) {
-    await read.change(
-      async () => {
-        await write();
-        problems.clear(place);
-      },
-      { place, words: refusal === undefined ? {} : { refusal }, landed },
-    );
-  }
-
   async function add(event: FormEvent) {
     event.preventDefault();
     if (!adding) return;
     if (!adding.name.trim()) {
-      problems.say(ADD, giveName('person'), true);
+      read.say(ADD, giveName('person'), true);
       return;
     }
-    await change(
-      ADD,
-      () => createProfile(supabase, householdId, adding, nextSortOrder(profiles ?? [])).then(() => undefined),
-      () => {
+    await change(ADD, () => createProfile(supabase, householdId, adding, nextSortOrder(profiles ?? [])), {
+      words: { refusal: 'Could not add the person. Check the name and try again.' },
+      landed: () => {
         setAdding(null);
         return ADD_ID;
       },
-      'Could not add the person. Check the name and try again.',
-    );
+    });
   }
 
   async function save(event: FormEvent) {
@@ -93,44 +75,40 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
     if (!editing) return;
     const { id, draft } = editing;
     if (!draft.name.trim()) {
-      problems.say(editPlace(id), giveName('person'), true);
+      read.say(editPlace(id), giveName('person'), true);
       return;
     }
-    await change(
-      editPlace(id),
-      () => updateProfile(supabase, id, draft),
-      () => {
+    await change(editPlace(id), () => updateProfile(supabase, id, draft), {
+      words: { refusal: 'Could not save the person. Check the name and try again.' },
+      landed: () => {
         setEditing(null);
         return controlId(id, 'edit');
       },
-      'Could not save the person. Check the name and try again.',
-    );
+    });
   }
 
   async function remove(id: string) {
-    await change(
-      deletePlace(id),
-      () => deleteProfile(supabase, id),
-      () => {
+    await change(deletePlace(id), () => deleteProfile(supabase, id), {
+      landed: () => {
         setEditing(null);
         return ADD_ID;
       },
-    );
+    });
   }
 
   async function move(id: string, offset: number) {
     const ids = movedIds((profiles ?? []).map((profile) => profile.id), id, offset);
     // Moving a row moves its elements in the page, and a focused one loses the focus in the move: it goes back to the button pressed.
-    await change(movePlace(id), () => reorderProfiles(supabase, ids), () => controlId(id, offset < 0 ? 'up' : 'down'));
+    await change(movePlace(id), () => reorderProfiles(supabase, ids), { landed: () => controlId(id, offset < 0 ? 'up' : 'down') });
   }
 
   // Opening or closing a form, or a question, takes away what a write said in another one.
-  const closeForms = () => problems.clear();
+  const closeForms = () => read.clear();
   // While a write is on its way nothing that changes what is open does anything either: its answer would land on the wrong form.
   const off = busy || undefined;
   // What a form's place says, except "Give the person a name." once the name is given: a refusal for want of a name is not said over one.
   const saidAt = (place: string, name: string) => {
-    const problem = problems.at(place);
+    const problem = read.problem(place);
     return problem?.words === giveName('person') && name.trim() !== '' ? null : problem;
   };
   const addProblem = saidAt(ADD, adding?.name ?? '');
@@ -154,7 +132,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                     <DeletePerson
                       name={profile.name}
                       busy={busy}
-                      problem={problems.at(deletePlace(profile.id))}
+                      problem={read.problem(deletePlace(profile.id))}
                       onCancel={() => {
                         closeForms();
                         setEditing({ ...editing, deleting: false });
@@ -222,7 +200,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                             Move down
                           </Button>
                         </div>
-                        <Problem id={problemId(movePlace(profile.id))} problem={problems.at(movePlace(profile.id))} />
+                        <Problem id={problemId(movePlace(profile.id))} problem={read.problem(movePlace(profile.id))} />
                       </div>
                       <Button
                         id={controlId(profile.id, 'delete')}

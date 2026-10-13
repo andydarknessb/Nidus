@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayOccurrences, describeMonth, describePage, type Occurrence } from '../src/lib/calendar-occurrences';
+import { dayOccurrences, describeMonth, pageWords, type Occurrence } from '../src/lib/calendar-occurrences';
 import { monthWeeks, pageDays } from '../src/lib/paged-view';
 
 const CHICAGO = 'America/Chicago';
@@ -25,13 +25,42 @@ function event(title: string, startsAt: string, endsAt: string, allDay = false):
   };
 }
 
-describe('describePage', () => {
-  const now = new Date('2026-09-30T15:00:00Z');
+// The pager's words, in the Wall's form and the phone's (the cases of describePage and of the phone's pageWords, on the one function).
+describe('pageWords', () => {
+  const NOW = new Date('2026-10-06T16:00:00Z');
+  const TODAY_AT_NOW = '2026-10-06';
+  const wall = (view: 'day' | 'week', anchor: string) => pageWords(pageDays(view, anchor, CHICAGO, NOW), TODAY_AT_NOW, 'wall');
+  const phone = (view: 'day' | 'week', anchor: string, today = TODAY_AT_NOW) => pageWords(pageDays(view, anchor, CHICAGO, NOW), today, 'phone');
 
-  it('names a day and a week, with the year where the range crosses one', () => {
-    expect(describePage(pageDays('day', '2026-09-30', CHICAGO, now))).toBe('Wed, Sep 30, 2026');
-    expect(describePage(pageDays('week', '2026-09-27', CHICAGO, now))).toBe('Sep 27 to Oct 3, 2026');
-    expect(describePage(pageDays('week', '2026-12-27', CHICAGO, now))).toBe('Dec 27, 2026 to Jan 2, 2027');
+  it('names a day and a week on the Wall, with the year, and with both years where the range crosses one', () => {
+    expect(wall('day', '2026-09-30')).toBe('Wed, Sep 30, 2026');
+    expect(wall('week', '2026-09-27')).toBe('Sep 27 to Oct 3, 2026');
+    expect(wall('week', '2026-12-27')).toBe('Dec 27, 2026 to Jan 2, 2027');
+  });
+
+  it('keeps the Wall\'s year in every year, the current one or not', () => {
+    expect(wall('week', '2026-10-04')).toBe('Oct 4 to Oct 10, 2026');
+    expect(wall('day', '2027-01-04')).toBe('Mon, Jan 4, 2027');
+  });
+
+  it('is a week on the phone as its first and last day, without the year while the week is in this one', () => {
+    expect(phone('week', '2026-10-04')).toBe('Oct 4 to Oct 10');
+    expect(phone('week', '2026-09-27')).toBe('Sep 27 to Oct 3');
+  });
+
+  it('is a day on the phone as its weekday and date', () => {
+    expect(phone('day', '2026-09-30')).toBe('Wed, Sep 30');
+  });
+
+  it('keeps the year on the phone for a page that is not in the current one, or that crosses into the next', () => {
+    expect(phone('week', '2027-01-10')).toContain('2027');
+    expect(phone('day', '2027-01-04')).toContain('2027');
+    expect(phone('week', '2026-12-27')).toContain('2027');
+  });
+
+  it('follows the Household\'s current year on the phone, which is today\'s', () => {
+    expect(phone('day', '2027-01-04', '2027-01-03')).toBe('Mon, Jan 4');
+    expect(phone('week', '2026-12-27', '2027-01-03')).toContain('2026');
   });
 });
 

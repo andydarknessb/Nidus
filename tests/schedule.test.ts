@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { fiveDays, type Occurrence } from '../src/lib/calendar-occurrences';
 import { pageDays } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
-import type { ProfileRoutines, Routine } from '../src/lib/routines';
+import type { Routine } from '../src/lib/routines';
 import { dayHeadingName, headingLabel, isOnNow, pillName, pillPeople, pillsToShow, scheduleColumns, stripPeople } from '../src/lib/schedule';
+import { chartOf } from './support/routine-chart';
 
 // The schedule: the columns of Home and Week built from occurrences, the words under a pill's title, which pill is
 // on now, how many pills a column holds, who a pill is for, and the words on the people strip. All of it is pure, and
@@ -576,34 +577,37 @@ describe('the words on the people strip', () => {
 
   const routines = (profileId: string, count: number): Routine[] =>
     Array.from({ length: count }, (_, index) => ({ id: `${profileId}-${index}`, profile_id: profileId, title: `Routine ${index}`, days_of_week: 127, time_of_day: null, sort_order: index, archived_at: null, picture: null }));
-  const group = (profile: Profile, count: number): ProfileRoutines => ({ profile, routines: routines(profile.id, count) });
+  const group = (profile: Profile, count: number) => ({ profile, routines: routines(profile.id, count) });
+  // The strip's words for these Profiles, from the Routine Chart of the Routines `groups` hold, `ticked` done.
+  const strip = (profiles: Profile[], groups: ReturnType<typeof group>[], ticked: Iterable<string>) =>
+    stripPeople(profiles, chartOf({ profiles: groups.map((each) => each.profile), routines: groups.flatMap((each) => each.routines), done: ticked }));
   const ticked = (profileId: string, count: number) => Array.from({ length: count }, (_, index) => `${profileId}-${index}`);
 
   it('is "3 of 5" for a person part way through today\'s Routines', () => {
-    const [person] = stripPeople([AVA], [group(AVA, 5)], new Set(ticked('p-ava', 3)));
+    const [person] = strip([AVA], [group(AVA, 5)], ticked('p-ava', 3));
     expect(person).toMatchObject({ profile: AVA, done: 3, total: 5, words: '3 of 5' });
   });
 
   it('is "All done" once every one is ticked', () => {
-    const [person] = stripPeople([CORY], [group(CORY, 1)], new Set(ticked('p-cory', 1)));
+    const [person] = strip([CORY], [group(CORY, 1)], ticked('p-cory', 1));
     expect(person).toMatchObject({ done: 1, total: 1, words: 'All done' });
   });
 
   it('is "0 of 3" before the first tick', () => {
-    expect(stripPeople([SAM], [group(SAM, 3)], new Set())[0]?.words).toBe('0 of 3');
+    expect(strip([SAM], [group(SAM, 3)], [])[0]?.words).toBe('0 of 3');
   });
 
   it('is nothing for a person with no Routines today', () => {
-    const [person] = stripPeople([BEN], [], new Set());
+    const [person] = strip([BEN], [], []);
     expect(person).toMatchObject({ profile: BEN, done: 0, total: 0, words: '' });
   });
 
   it('is the count past eight Routines too: it is the pips that give way, not the words', () => {
-    expect(stripPeople([AVA], [group(AVA, 9)], new Set(ticked('p-ava', 3)))[0]?.words).toBe('3 of 9');
+    expect(strip([AVA], [group(AVA, 9)], ticked('p-ava', 3))[0]?.words).toBe('3 of 9');
   });
 
   it('is a person for every Profile, in the Profiles\' own order, whoever has Routines', () => {
-    const people = stripPeople([CORY, SAM, AVA, BEN], [group(AVA, 5), group(CORY, 1)], new Set([...ticked('p-ava', 3), ...ticked('p-cory', 1)]));
+    const people = strip([CORY, SAM, AVA, BEN], [group(AVA, 5), group(CORY, 1)], [...ticked('p-ava', 3), ...ticked('p-cory', 1)]);
     expect(people.map((person) => [person.profile.name, person.words])).toEqual([
       ['Cory', 'All done'],
       ['Sam', ''],
@@ -613,12 +617,12 @@ describe('the words on the people strip', () => {
   });
 
   it('counts only the ticks of the Routines it was given: a tick of another day\'s Routine is not one', () => {
-    const [person] = stripPeople([AVA], [group(AVA, 2)], new Set(['p-ava-0', 'someone-elses-routine']));
+    const [person] = strip([AVA], [group(AVA, 2)], ['p-ava-0', 'someone-elses-routine']);
     expect(person).toMatchObject({ done: 1, total: 2, words: '1 of 2' });
   });
 
   it('is named for a screen reader with its progress in plain lower case words, in the singular for one routine', () => {
-    const people = stripPeople([AVA, CORY, BEN], [group(AVA, 5), group(CORY, 1)], new Set(ticked('p-ava', 3)));
+    const people = strip([AVA, CORY, BEN], [group(AVA, 5), group(CORY, 1)], ticked('p-ava', 3));
     expect(people.map((person) => person.label)).toEqual(['Ava, 3 of 5 routines done', 'Cory, 0 of 1 routine done', 'Ben']);
   });
 });

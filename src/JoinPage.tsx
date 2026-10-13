@@ -1,5 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Problem, cardClass } from './components/phone';
 import { Button } from './components/ui/button';
 import { signInToJoin } from './lib/household';
@@ -8,7 +8,8 @@ import { joinViewFor, joinViewOf, offersSettings, type JoinView, type Refusal } 
 import { supabase } from './lib/supabase';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useSystemMode } from './lib/use-mode';
-import { writeFailureWords, type Said } from './lib/write-failure';
+import { useChange } from './lib/synced-read';
+import { type Said } from './lib/write-failure';
 
 const JOIN_SAID = { failed: 'Could not join. Try again.', offline: 'No internet, so that did not join. Try again soon.' };
 // Signing in makes no request from this page (the implicit flow leaves for Google), so there is no offline case to word.
@@ -123,10 +124,8 @@ export function JoinPage() {
   const session = useSession();
   const token = joinTokenOf(window.location.pathname);
   const [refused, setRefused] = useState<Refusal | null>(null);
-  const [problem, setProblem] = useState<Said | null>(null);
-  // One write at a time: the ref is the guard, the state is what is drawn.
-  const working = useRef(false);
-  const [busy, setBusy] = useState(false);
+  // One write at a time: what a join or a sign-in that did not go through says is `problem('join')`.
+  const { busy, change, problem, say, clear } = useChange();
 
   // A refusal replaces the question the person was on, and with it the button they pressed: its words are read out and have focus.
   useEffect(() => {
@@ -140,27 +139,28 @@ export function JoinPage() {
   const email = session?.user.email ?? null;
 
   async function join() {
-    if (!token || !userId || working.current) return;
-    working.current = true;
-    setBusy(true);
-    try {
-      const next = joinViewOf(await acceptHouseholdInvite(supabase, token));
-      if (next === null) {
-        // Navigating away: the page stays as it is, busy, until it goes.
-        window.location.replace('/settings');
-        return;
-      }
-      if (next === 'other-household') setRefused({ userId, view: next, member: false });
-      else if (next === 'expired') {
+    if (!token || !userId) return;
+    await change(
+      'join',
+      async (): Promise<Refusal | null> => {
+        const next = joinViewOf(await acceptHouseholdInvite(supabase, token));
+        if (next === null) {
+          // Navigating away: the page stays as it is, busy, until it goes.
+          window.location.replace('/settings');
+          return new Promise<never>(() => undefined);
+        }
+        if (next === 'other-household') return { userId, view: next, member: false };
+        if (next !== 'expired') return null;
         // A spent link opened again by someone who joined by it: say so, and offer Settings if the account is in a Household.
-        const member = await isHouseholdAccount(supabase).catch(() => false);
-        setRefused({ userId, view: next, member });
-      }
-    } catch (error) {
-      setProblem({ words: writeFailureWords(error, { offline: false, said: JOIN_SAID }), n: (problem?.n ?? 0) + 1 });
-    }
-    working.current = false;
-    setBusy(false);
+        return { userId, view: next, member: await isHouseholdAccount(supabase).catch(() => false) };
+      },
+      {
+        words: { said: JOIN_SAID },
+        landed: (refusal) => {
+          if (refusal) setRefused(refusal);
+        },
+      },
+    );
   }
 
   async function signIn() {
@@ -168,7 +168,7 @@ export function JoinPage() {
     try {
       await signInToJoin(token);
     } catch {
-      setProblem({ words: SIGN_IN_FAILED, n: (problem?.n ?? 0) + 1 });
+      say('join', SIGN_IN_FAILED);
     }
   }
 
@@ -178,13 +178,13 @@ export function JoinPage() {
       email={email}
       member={refused !== null && refused.userId === session?.user.id && refused.member}
       busy={busy}
-      problem={problem}
+      problem={problem('join')}
       onSignIn={() => void signIn()}
       onJoin={() => void join()}
       onOpenSettings={() => window.location.replace('/settings')}
       onUseAnother={() => {
         setRefused(null);
-        setProblem(null);
+        clear('join');
         void supabase.auth.signOut({ scope: 'local' });
       }}
     />

@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { loadOccurrences } from './calendar-occurrences';
 import type { WallDay } from './paged-view';
 import { watchHouseholdDay, watchMinute } from './household-day';
@@ -47,8 +47,8 @@ export function useHouseholdDay(timezone: string): HouseholdDay {
 // The day events of `days` (day-events.ts), read through the synced read: at once, when an event, a calendar or a Profile changes
 // anywhere in the Household, every 30 seconds and 5 after a failure. The span read is from the first day's start to the last day's
 // end; while a new span's first read is on its way (a turned page, Household midnight) what was read stays, and each day still shows
-// only its own events. `version` changes when the screen around the calendar has added an event, so it reads again at once; the event
-// sheets read again after an edit (`refresh`). The filter works on what was read, so pressing a chip never reads again. `state` is
+// only its own events. An event written from a sheet is read at once: the event sheet host (lib/use-event-sheets.tsx) calls
+// `refresh`, or tells the change feed (the Add event sheet, which sits outside the calendar). The filter works on what was read, so pressing a chip never reads again. `state` is
 // the read's (ReadState draws "failed" for a view while nothing has ever loaded).
 export type DayEventsRead = DayEvents & { state: ReadStateName; refresh: () => void };
 
@@ -58,19 +58,11 @@ export function dayState(events: Pick<DayEventsRead, 'state'>, occurrences: unkn
   return events.state === 'failed' ? 'failed' : occurrences === null ? 'loading' : 'ready';
 }
 
-export function useDayEvents(days: WallDay[], version: number, profiles: Profile[] | null): DayEventsRead {
+export function useDayEvents(days: WallDay[], profiles: Profile[] | null): DayEventsRead {
   const { pressed } = useContext(ProfileFilterContext);
   const fromMs = days[0]!.startMs;
   const toMs = days[days.length - 1]!.endMs;
   const read = useSyncedRead(() => loadOccurrences(supabase, new Date(fromMs), new Date(toMs)), OCCURRENCE_TABLES, `${fromMs} ${toMs}`, { keepAcrossKeys: true });
-  // A change of `version` after the first render is an event added around the calendar.
-  const seen = useRef(version);
-  const { refresh } = read;
-  useEffect(() => {
-    if (seen.current === version) return;
-    seen.current = version;
-    refresh();
-  }, [version, refresh]);
   const events = useMemo(() => dayEventsOf(read.data, profiles, pressed), [read.data, profiles, pressed]);
-  return { ...events, state: read.state, refresh };
+  return { ...events, state: read.state, refresh: read.refresh };
 }

@@ -1,9 +1,11 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
-import { CELL_HEAD_REM, CELL_LINE_REM, DayCell } from '../src/components/MonthCell';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { CELL_HEAD_REM, CELL_LINE_REM } from '../src/components/MonthCell';
+import type { WeekCells as WeekCellsType } from '../src/components/MonthGrid';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
-import { linesPerCell } from '../src/lib/month-grid';
+import { dayEventsOf } from '../src/lib/day-events';
+import { linesPerCell, monthCells } from '../src/lib/month-grid';
 import { monthWeeks } from '../src/lib/paged-view';
 import { personStyle, TOKENS, type Mode } from '../src/lib/look';
 import { contrastRatio, type Profile } from '../src/lib/profiles';
@@ -12,12 +14,26 @@ import { contrastRatio, type Profile } from '../src/lib/profiles';
 // given: the date, with today's in a filled disc and no underline; the event lines, each filled from the Profiles it is for and
 // never from a Mirrored Calendar, with the words in --foreground, the pin before a Native Event's title, one line each, and who it
 // is for in discs at its end; the hatch of a day beyond the calendar's range, drawn in --input; and a name that starts with what
-// is drawn.
+// is drawn. The cell is fed from the core (monthCells; tests/month-grid.test.ts holds what it decides) and drawn by the week's part
+// (WeekCells), as the Wall's grid does it. MonthGrid's module imports the Supabase client, which is built on import and not used to draw: a
+// placeholder URL and key are enough to load it (as tests/phone-month.test.ts does), so CI, which has no .env.local, loads it the same way.
+
+let WeekCells: typeof WeekCellsType;
+beforeAll(async () => {
+  vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+  vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+  ({ WeekCells } = await import('../src/components/MonthGrid'));
+});
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 const CHICAGO = 'America/Chicago';
 const TODAY = '2026-10-01';
-const GRID = monthWeeks('2026-10-01', CHICAGO, TODAY).flat();
-const dayOf = (date: string) => GRID.find((each) => each.date === date)!;
+const WEEKS = monthWeeks('2026-10-01', CHICAGO, TODAY);
+const WINDOW = { first: '2026-09-01', last: '2027-04-01' };
+// The window of a calendar that begins after Oct 4, so Oct 2 is a day beyond its range.
+const LATER_WINDOW = { first: '2026-10-05', last: '2027-04-01' };
 
 const profile = (id: string, name: string, sort: number, color: string): Profile => ({ id, name, color, avatar_url: null, sort_order: sort });
 const CORY = profile('p-cory', 'Cory', 0, '#93c5fd');
@@ -48,10 +64,18 @@ function event(title: string, profileIds: string[], more: Partial<Occurrence> = 
 }
 const native = (title: string, profileIds: string[] = []) => event(title, profileIds, { source: 'native', calendar_id: null, calendar_name: 'Nidus' });
 
-type Options = { occurrences?: Occurrence[] | null; profiles?: Profile[]; lines?: number; inMonth?: boolean; beyond?: boolean };
+// The same occurrences, on `date` (9:00 to 10:00 AM, Chicago).
+const on = (date: string, occurrences: Occurrence[]): Occurrence[] => occurrences.map((each) => ({ ...each, starts_at: `${date}T14:00:00Z`, ends_at: `${date}T15:00:00Z` }));
 
-function cell(date: string, { occurrences = [], profiles = FAMILY, lines = 3, inMonth = true, beyond = false }: Options = {}): string {
-  return renderToStaticMarkup(createElement(DayCell, { day: dayOf(date), inMonth, beyond, occurrences, profiles, lines, onOpen: () => undefined }));
+type Options = { occurrences?: Occurrence[] | null; profiles?: Profile[]; lines?: number; beyond?: boolean };
+
+// One cell of the month as the Wall draws it: the core's cell for `date` (what a read of `occurrences` would bring: null is a week not yet
+// read), drawn by the week's part with the week's wrapper cut off.
+function cell(date: string, { occurrences = [], profiles = FAMILY, lines = 3, beyond = false }: Options = {}): string {
+  const events = dayEventsOf(occurrences, profiles, []);
+  const one = monthCells(WEEKS, '2026-10-01', beyond ? LATER_WINDOW : WINDOW, events, 'lines').flat().find((each) => each.day.date === date)!;
+  const html = renderToStaticMarkup(createElement(WeekCells, { form: 'lines', cells: [one], profiles, lines, onOpen: () => undefined }));
+  return html.slice(html.indexOf('>') + 1, html.length - '</div>'.length);
 }
 
 const count = (html: string, text: string) => html.split(text).length - 1;
@@ -86,26 +110,16 @@ describe('a day cell', () => {
   });
 });
 
+// What a cell is called is the core's rule (cellName, held in tests/month-grid.test.ts); here the button wears it.
 describe("a day cell's name", () => {
-  it('starts with what is drawn on it, the date, then the day in full and how many events it holds', () => {
+  it("is the core's name for the day, on the button: the date, the day in full, how many events, and \", today\" last on today's", () => {
     expect(nameOf(cell('2026-10-22'))).toBe('22, Thursday, October 22, no events');
-    expect(nameOf(cell('2026-10-03', { occurrences: [event('A', [])] }))).toBe('3, Saturday, October 3, 1 event');
-    expect(nameOf(cell('2026-10-02', { occurrences: [event('A', []), event('B', []), event('C', [])] }))).toBe('2, Friday, October 2, 3 events');
-  });
-
-  it('is the date alone until its week has been read, so a day not yet known is never called free', () => {
+    expect(nameOf(cell('2026-10-01', { occurrences: [event('A', [])] }))).toBe('1, Thursday, October 1, 1 event, today');
     expect(nameOf(cell('2026-10-02', { occurrences: null }))).toBe('2, Friday, October 2');
   });
 
-  it("says \"today\" after the date on today's cell, which the disc says to the eye, and on no other", () => {
-    const five = ['A', 'B', 'C', 'D', 'E'].map((title) => event(title, []));
-    expect(nameOf(cell('2026-10-01', { occurrences: five }))).toBe('1, today, Thursday, October 1, 5 events');
-    expect(nameOf(cell('2026-10-01', { occurrences: null }))).toBe('1, today, Thursday, October 1');
-    expect(nameOf(cell('2026-10-02', { occurrences: five }))).not.toContain('today');
-  });
-
   it('draws the date it starts with before anything else in the cell', () => {
-    const html = cell('2026-10-22', { occurrences: [event('Standup', ['p-cory'])] });
+    const html = cell('2026-10-22', { occurrences: on('2026-10-22', [event('Standup', ['p-cory'])]) });
     expect(html).toContain('>22<');
     expect(html.indexOf('>22<')).toBeLessThan(html.indexOf('Standup'));
   });
@@ -144,7 +158,7 @@ describe("today's date", () => {
   });
 
   it('dims the date of a day of the neighbouring month, and not the date of a day of this one', () => {
-    expect(cellClasses(cell('2026-09-28', { inMonth: false }))).toContain('text-muted-foreground');
+    expect(cellClasses(cell('2026-09-28'))).toContain('text-muted-foreground');
     expect(cellClasses(cell('2026-10-02'))).toContain('text-foreground');
     expect(cellClasses(cell('2026-10-02'))).not.toContain('text-muted-foreground');
   });
@@ -375,7 +389,7 @@ describe("a day beyond the calendar's range", () => {
   });
 
   it('draws no event line, whatever it is given', () => {
-    expect(count(cell('2026-10-02', { occurrences: [event('A', [])], beyond: true }), 'data-testid="event-line"')).toBe(0);
+    expect(count(cell('2026-10-02', { occurrences: on('2026-10-02', [event('A', [])]), beyond: true }), 'data-testid="event-line"')).toBe(0);
   });
 });
 

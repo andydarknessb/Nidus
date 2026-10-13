@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
-import { ClusterList } from '../src/components/ClusterList';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { ClusterSheet as ClusterSheetType } from '../src/components/EventSheets';
 import { HourGrid, PillRow } from '../src/components/DayGrid';
 import { type Occurrence } from '../src/lib/calendar-occurrences';
 import { pageDays } from '../src/lib/paged-view';
@@ -381,9 +381,20 @@ describe('the rows above and below the grid', () => {
 });
 
 describe('the list of a cluster', () => {
+  // The cluster's list is the event sheet host's third sheet, which imports the Supabase client (built on import, not used to draw).
+  let ClusterSheet: typeof ClusterSheetType;
+  beforeAll(async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+    ({ ClusterSheet } = await import('../src/components/EventSheets'));
+  });
+  afterAll(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('has every event of the cluster, in order, each a pill that opens its details', () => {
     const p = plan([event('A', OCT1, '16:00', '17:00', ['p-ava']), event('B', OCT1, '16:00', '17:00', ['p-sam']), event('C', OCT1, '16:00', '17:00')]);
-    const html = renderToStaticMarkup(createElement(ClusterList, { day: dayOf(OCT1), pills: p.folds[0]!.pills, profiles: FAMILY, onOpen: () => undefined, onClose: () => undefined }));
+    const html = renderToStaticMarkup(createElement(ClusterSheet, { day: dayOf(OCT1), pills: p.folds[0]!.pills, profiles: FAMILY, onOpen: () => undefined, onClose: () => undefined }));
     expect(html).toContain('3 events around this time');
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
@@ -395,7 +406,7 @@ describe('the list of a cluster', () => {
 
   it('holds all twelve events of a crowded cluster in the one box that scrolls, under a title row that stays in view', () => {
     const p = plan('ABCDEFGHIJKL'.split('').map((title) => event(title, OCT1, '16:00', '17:00')));
-    const html = renderToStaticMarkup(createElement(ClusterList, { day: dayOf(OCT1), pills: p.folds[0]!.pills, profiles: FAMILY, onOpen: () => undefined, onClose: () => undefined }));
+    const html = renderToStaticMarkup(createElement(ClusterSheet, { day: dayOf(OCT1), pills: p.folds[0]!.pills, profiles: FAMILY, onOpen: () => undefined, onClose: () => undefined }));
     const [box] = scrollers(html);
     expect(scrollers(html)).toHaveLength(1);
     expect(count(box!, 'data-pill')).toBe(12);

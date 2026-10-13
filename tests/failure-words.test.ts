@@ -16,6 +16,11 @@ describe("the Wall's writers", () => {
     for (const file of WRITERS) {
       // The Shared Lists' writer is in lib/use-shared-lists.ts (shared with the phone); the screens that write draw its hook or use their own.
       if (file === 'SharedListsPage.tsx') continue;
+      // The event sheet's form says it through the change (useChange, which words a failure with writeFailureWords: tests/event-sheets.test.ts).
+      if (file === 'components/NativeEventSheet.tsx') {
+        expect(source(file), file).toContain('useChange()');
+        continue;
+      }
       expect(source(file), file).toMatch(/from '(\.\/|\.\.\/lib\/)(lib\/)?use-failure-words'/);
       expect(source(file), file).toContain('useFailureWords()');
     }

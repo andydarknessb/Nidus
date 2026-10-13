@@ -1,12 +1,10 @@
-import { TICK_FAILED, TICK_OFFLINE } from './routines';
-
 // What a write that did not go through says, on the phone as on the Wall (spec 0003, A tick that did not save): with no
 // connection, "No internet, so that did not save. Try again soon."; otherwise "That did not save. Try again." They are the
 // Wall's own two sentences, so the family reads one thing for one trouble. A value the database refused is the one case with
 // words of its own (a form says which field to look at), and an action that is not a save (connecting to Google, pairing) names
 // itself in both.
-export const NOT_SAVED = TICK_FAILED;
-export const NOT_SAVED_OFFLINE = TICK_OFFLINE;
+export const NOT_SAVED = 'That did not save. Try again.';
+export const NOT_SAVED_OFFLINE = 'No internet, so that did not save. Try again soon.';
 
 // The error codes of a value the database refused (Postgres: a check, a not null, a value too long). Any other code is the
 // server answering that it could not, or would not, which is not for the person to fix by looking at a field.
@@ -59,3 +57,8 @@ export function writeFailureWords(error: unknown, options: { offline: boolean; r
   const said = options.said ?? { failed: NOT_SAVED, offline: NOT_SAVED_OFFLINE };
   return offline ? said.offline : said.failed;
 }
+
+// The id of the line that says what a write of `place` came to (the Problem part draws it), which the field or button it is about
+// points at (aria-describedby); and the place of the question about removing something, as two Settings cards name it.
+export const problemId = (place: string): string => `problem-${place}`;
+export const removePlace = (id: string): string => `remove-${id}`;

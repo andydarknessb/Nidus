@@ -15,8 +15,8 @@ import {
 } from '@/lib/household-invites';
 import { supabase } from '@/lib/supabase';
 import { CANCEL_SAID, MAKE_SAID, REMOVED_WORDS, inviteViewOf, isRemoved, loadFailedWords, sharePayload, type InviteView } from '@/lib/household-accounts';
-import { useWriteProblem, type WriteProblem } from '@/lib/use-write-problem';
-import { useSyncedRead } from '@/lib/synced-read';
+import { useSyncedRead, type WriteProblem } from '@/lib/synced-read';
+import { problemId, removePlace } from '@/lib/write-failure';
 
 // What the status line says: nothing, or what the last tap did.
 export type InviteStatus = 'idle' | 'copied' | 'cancelled';
@@ -28,8 +28,6 @@ const SHARE_FAILED = 'Could not share. Use Copy instead.';
 
 // Where a write that failed says so: under the invite's buttons, or in the question about removing someone.
 const INVITE = 'invite';
-const removePlace = (id: string) => `remove-${id}`;
-const problemId = (place: string) => `problem-${place}`;
 
 // The one control focus goes to once the one it was on is gone: Invite someone, Copy or Make a new link, whichever the invite shows.
 const INVITE_MAIN = 'invite-main';
@@ -196,7 +194,6 @@ const NO_TABLES = [] as const;
 export function HouseholdAccountsSection({ householdId, timezone, userId }: { householdId: string; timezone: string; userId: string }) {
   // The accounts and the invite the database holds (undefined until it is read), through the synced read; and the link just made,
   // which is on screen only until the page is left, since only its hash is stored.
-  const problems = useWriteProblem();
   const read = useSyncedRead<Read>(
     async () => {
       const [accounts, stored] = await Promise.all([listHouseholdAccounts(supabase), readHouseholdInvite(supabase, householdId)]);
@@ -204,7 +201,6 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
     },
     NO_TABLES,
     householdId,
-    { problems },
   );
   const accounts = read.data?.accounts ?? null;
   const stored = read.data ? read.data.stored : undefined;
@@ -215,70 +211,49 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
   // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
   // afterwards.
-  const { busy } = read;
+  const { busy, change } = read;
 
-  // One write, alone: `place` is where it says so when it fails (in `said`'s words, or the default ones), `done` what changes once it
-  // landed (it returns where focus goes), and `landed` what the accounts and invite show from then until the read that follows it.
-  async function write(
-    place: string,
-    run: () => Promise<unknown>,
-    done: (result: unknown) => string | undefined | void,
-    said?: { failed: string; offline: string },
-    landed?: (result: unknown) => ((shown: Read) => Read) | undefined,
-  ) {
-    await read.change(
-      async () => {
-        const result = await run();
-        problems.clear(place);
-        return result;
-      },
-      {
-        place,
-        words: said ? { said } : {},
-        failed: (error) => {
-          if (!isRemoved(error)) return false;
-          problems.say(place, REMOVED_WORDS);
-          return true;
-        },
-        landed: done,
-        showing: landed,
-      },
-    );
-  }
+  // A write the database refuses for lack of right (this account was removed while the screen was open) says so in its own words.
+  const removedAt = (place: string) => (error: unknown) => {
+    if (!isRemoved(error)) return false;
+    read.say(place, REMOVED_WORDS);
+    return true;
+  };
 
   const makeInvite = () =>
-    void write(
+    void change(
       INVITE,
       async () => {
         const { token, expiresAt } = await createHouseholdInvite(supabase);
         setMade({ link: inviteLink(window.location.origin, token), expiresAt });
       },
-      () => {
-        setStatus('idle');
-        return INVITE_MAIN;
+      {
+        words: { said: MAKE_SAID },
+        failed: removedAt(INVITE),
+        landed: () => {
+          setStatus('idle');
+          return INVITE_MAIN;
+        },
       },
-      MAKE_SAID,
     );
 
   const cancelInvite = () =>
-    void write(
-      INVITE,
-      () => cancelHouseholdInvite(supabase),
-      () => {
+    void change(INVITE, () => cancelHouseholdInvite(supabase), {
+      words: { said: CANCEL_SAID },
+      failed: removedAt(INVITE),
+      landed: () => {
         setMade(null);
         setStatus('cancelled');
         return INVITE_MAIN;
       },
-      CANCEL_SAID,
       // At once, so that the cancelled invite is not drawn while the read is on its way, and focus lands on Invite someone.
-      () => (shown) => ({ ...shown, stored: null }),
-    );
+      meanwhile: () => (shown) => ({ ...shown, stored: null }),
+    });
 
   const remove = (id: string) =>
-    void write(
-      removePlace(id),
-      () => removeHouseholdAccount(supabase, id),
-      (removed) => {
+    void change(removePlace(id), () => removeHouseholdAccount(supabase, id), {
+      failed: removedAt(removePlace(id)),
+      landed: (removed) => {
         // false: the database refused (yourself, another Household's, already gone), so nothing was removed and the invite stands.
         if (removed !== true) return;
         // Removing someone also cancels the waiting invite, server side: a link just made would be a dead one.
@@ -286,19 +261,18 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
         setOpen(null);
         return INVITE_MAIN;
       },
-      undefined,
-      (removed) => (removed === true ? (shown) => ({ accounts: shown.accounts.filter((account) => account.authUserId !== id), stored: null }) : undefined),
-    );
+      meanwhile: (removed) => (removed === true ? (shown) => ({ accounts: shown.accounts.filter((account) => account.authUserId !== id), stored: null }) : undefined),
+    });
 
   async function copy() {
     if (!made) return;
     try {
       await navigator.clipboard.writeText(made.link);
-      problems.clear(INVITE);
+      read.clear(INVITE);
       setStatus('copied');
     } catch {
       setStatus('idle');
-      problems.say(INVITE, COPY_FAILED);
+      read.say(INVITE, COPY_FAILED);
     }
   }
 
@@ -306,11 +280,11 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
     if (!made) return;
     try {
       await navigator.share(sharePayload(made.link));
-      problems.clear(INVITE);
+      read.clear(INVITE);
     } catch (error) {
       // Closing the share sheet is not a failure.
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      problems.say(INVITE, SHARE_FAILED);
+      read.say(INVITE, SHARE_FAILED);
     }
   }
 
@@ -325,17 +299,17 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       busy={busy}
       status={status}
       loadProblem={loadProblem}
-      problemAt={problems.at}
+      problemAt={read.problem}
       onOpen={(id) => {
-        problems.clear();
+        read.clear();
         setOpen(id === null ? null : { id, confirming: false });
       }}
       onAskRemove={(id) => {
-        problems.clear();
+        read.clear();
         setOpen({ id, confirming: true });
       }}
       onCancelRemove={(id) => {
-        problems.clear();
+        read.clear();
         setOpen({ id, confirming: false });
         read.focus(removeId(id));
       }}

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { HomeRail as HomeRailType } from '../src/components/HomeRail';
 import { homeGrid } from '../src/lib/home-layout';
-import type { RoutinesToday } from '../src/lib/use-routines-today';
+import { chartOf } from './support/routine-chart';
 
 // Home in portrait (docs/specs/0009): the grid's classes and the rail as a row or a column, rendered to markup. The components import
 // the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to load them (as
@@ -21,7 +21,7 @@ afterAll(() => {
 
 const noop = () => undefined;
 const classesOf = (tag: string) => (/class="([^"]*)"/.exec(tag)?.[1] ?? '').replaceAll('&amp;', '&').replaceAll('&gt;', '>').split(' ');
-const routines: RoutinesToday = { date: '2026-10-01', state: 'ready', settled: true, failed: false, part: 'evening', problems: {}, groups: [], columns: [], done: new Set(), finished: new Set(), toggle: async () => true };
+const routines = chartOf({ profiles: [], routines: [] });
 const rail = (row: boolean) => renderToStaticMarkup(createElement(HomeRail, { routines, failed: false, tiles: 3, row, onOpenRoutines: noop, onOpenLists: noop }));
 // The rail's own box, and the box that holds the Pinned List.
 const box = (html: string) => classesOf(html.slice(0, html.indexOf('>') + 1));

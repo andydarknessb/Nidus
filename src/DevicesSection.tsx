@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button';
 import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice } from '@/lib/device';
 import { seenWords } from '@/lib/device-format';
 import { supabase } from '@/lib/supabase';
-import { useWriteProblem } from '@/lib/use-write-problem';
 import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
+import { problemId } from '@/lib/write-failure';
 
 const DEVICE_TABLES = ['devices'] as const;
 
@@ -30,7 +30,6 @@ const PAIR_SAID = { failed: 'Could not pair. Try again.', offline: 'No internet,
 // Where a write that failed says so: in the form to pair, or in the question about unpairing a tablet.
 const PAIR = 'pair';
 const unpairPlace = (id: string) => `unpair-${id}`;
-const problemId = (place: string) => `problem-${place}`;
 
 // Settings, phone only: the Wall tablets (Devices). Pair one with the code it shows, see when each was last seen, and unpair one
 // (revoke its Device), which sends it back to asking for a code. A Device never gets this screen.
@@ -38,11 +37,9 @@ export function DevicesSection() {
   // Read through the synced read: every 30 seconds keeps "last seen" honest while the page stays open, and a read follows each
   // write. A trouble reading, which a read that works takes away, is kept apart from what a write said of itself: a good read says
   // nothing of whether the unpairing did, so its words stay while its question is open.
-  const problems = useWriteProblem();
-  // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
-  // afterwards.
-  const read = useSyncedRead(async () => ({ devices: await listDevices(supabase), now: new Date() }), DEVICE_TABLES, 'devices', { problems });
-  const { busy } = read;
+  // One change at a time (the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes afterwards.
+  const read = useSyncedRead(async () => ({ devices: await listDevices(supabase), now: new Date() }), DEVICE_TABLES, 'devices');
+  const { busy, change } = read;
   const devices = read.data?.devices ?? null;
   const now = read.data?.now ?? new Date();
   const loadProblem = read.failed ? couldNotLoad('tablets') : null;
@@ -54,19 +51,18 @@ export function DevicesSection() {
   async function pair(event: FormEvent) {
     event.preventDefault();
     if (!pairing) return;
-    await read.change(
+    await change(
+      PAIR,
       async () => {
         setPairStatus('pairing');
         await claimPairingCode(supabase, pairing.code, pairing.name);
-        problems.clear(PAIR);
       },
       {
-        place: PAIR,
         words: { said: PAIR_SAID },
         failed: (error) => {
           setPairStatus('idle');
-          if (isInvalidCode(error)) problems.say(PAIR, INVALID_CODE_WORDS, true);
-          else if (isTooManyAttempts(error)) problems.say(PAIR, TOO_MANY_WORDS);
+          if (isInvalidCode(error)) read.say(PAIR, INVALID_CODE_WORDS, true);
+          else if (isTooManyAttempts(error)) read.say(PAIR, TOO_MANY_WORDS);
           else return false;
           return true;
         },
@@ -80,22 +76,15 @@ export function DevicesSection() {
   }
 
   async function unpair(id: string) {
-    await read.change(
-      async () => {
-        await revokeDevice(supabase, id);
-        problems.clear(unpairPlace(id));
+    await change(unpairPlace(id), () => revokeDevice(supabase, id), {
+      landed: () => {
+        setOpen(null);
+        return PAIR_ID;
       },
-      {
-        place: unpairPlace(id),
-        landed: () => {
-          setOpen(null);
-          return PAIR_ID;
-        },
-      },
-    );
+    });
   }
 
-  const pairProblem = problems.at(PAIR);
+  const pairProblem = read.problem(PAIR);
 
   return (
     <Card title="Wall tablets">
@@ -116,7 +105,7 @@ export function DevicesSection() {
                 aria-expanded={expanded}
                 className="h-14 w-full justify-start gap-3 rounded-[14px] px-3.5 text-left font-medium"
                 onClick={() => {
-                  problems.clear();
+                  read.clear();
                   setOpen(expanded ? null : { id: device.id, confirming: false });
                 }}
               >
@@ -135,9 +124,9 @@ export function DevicesSection() {
                     cancel="Cancel"
                     confirm={`Unpair ${device.name}`}
                     busy={busy}
-                    problem={problems.at(unpairPlace(device.id))}
+                    problem={read.problem(unpairPlace(device.id))}
                     onCancel={() => {
-                      problems.clear();
+                      read.clear();
                       setOpen({ id: device.id, confirming: false });
                       read.focus(`unpair-${device.id}`);
                     }}
@@ -150,7 +139,7 @@ export function DevicesSection() {
                     size="phone"
                     className="h-auto min-h-14 py-2 whitespace-normal [overflow-wrap:anywhere]"
                     onClick={() => {
-                      problems.clear();
+                      read.clear();
                       setOpen({ id: device.id, confirming: true });
                     }}
                   >
@@ -191,7 +180,7 @@ export function DevicesSection() {
                 aria-disabled={busy || undefined}
                 onClick={() => {
                   if (busy) return;
-                  problems.clear();
+                  read.clear();
                   setPairing(null);
                   setPairStatus('idle');
                   read.focus(PAIR_ID);
@@ -212,7 +201,7 @@ export function DevicesSection() {
             size="phone"
             className="w-full"
             onClick={() => {
-              problems.clear();
+              read.clear();
               setPairing({ code: '', name: '' });
               setPairStatus('idle');
             }}

@@ -1,5 +1,5 @@
 import { LogOut } from 'lucide-react';
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { AppearanceSection } from '@/AppearanceSection';
 import { DevicesSection } from '@/DevicesSection';
 import { HouseholdAccountsSection } from '@/HouseholdAccountsSection';
@@ -10,7 +10,7 @@ import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass, stat
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import { timezoneOptions } from '@/lib/timezones';
-import { useWriteProblem } from '@/lib/use-write-problem';
+import { useChange } from '@/lib/synced-read';
 
 type Props = { household: Household; userId: string; onSaved: (household: Household) => void; onSignOut: () => void };
 
@@ -23,35 +23,28 @@ export function SettingsPage({ household, userId, onSaved, onSignOut }: Props) {
   // What a save that did not go through says (the Wall's two sentences; "Check the name" only when the database refused the name), at
   // once, under the button. One save at a time: while it is on its way Save is `aria-disabled` and does nothing, never `disabled`,
   // which would drop the focus to the page.
-  const problems = useWriteProblem();
-  const working = useRef(false);
-  const [busy, setBusy] = useState(false);
+  const { busy, isBusy, change, problem: problemAt, clear } = useChange();
   // About four hundred zones, each named: drawn once for a zone and not again at every key typed in the name.
   const zones = useMemo(() => timezoneOptions(household.timezone), [household.timezone]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (working.current) return;
-    working.current = true;
-    setBusy(true);
+    if (isBusy()) return;
     setSaved(false);
-    try {
-      onSaved(await updateHousehold(household.id, { name: name.trim(), timezone }));
-      problems.clear('household');
-      setSaved(true);
-    } catch (error) {
-      problems.fail('household', error, { refusal: 'Could not save. Check the name and try again.' });
-    } finally {
-      working.current = false;
-      setBusy(false);
-    }
+    await change('household', () => updateHousehold(household.id, { name: name.trim(), timezone }), {
+      words: { refusal: 'Could not save. Check the name and try again.' },
+      landed: (next) => {
+        onSaved(next);
+        setSaved(true);
+      },
+    });
   }
 
-  const problem = problems.at('household');
+  const problem = problemAt('household');
   // What was said is old once either field changes.
   const edited = () => {
     setSaved(false);
-    problems.clear();
+    clear();
   };
 
   return (

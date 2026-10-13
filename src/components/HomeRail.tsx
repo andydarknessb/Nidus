@@ -1,4 +1,4 @@
-import type { RoutinesToday } from '../lib/use-routines-today';
+import type { RoutineChart } from '../lib/routine-chart';
 import { PinnedListCard } from '../SharedListsPage';
 import { UpNext } from './UpNext';
 
@@ -19,7 +19,7 @@ export function HomeRail({
   onOpenRoutines,
   onOpenLists,
 }: {
-  routines: RoutinesToday;
+  routines: RoutineChart;
   failed: boolean;
   tiles: number;
   row: boolean;

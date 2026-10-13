@@ -10,8 +10,9 @@ import { useDayEvents } from '../lib/wall-hooks';
 import { useOverflow } from '../lib/use-overflow';
 import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
 import { EventPill } from './EventPill';
-import { EventSheets, type OpenEvent } from './EventSheets';
+import { useEventSheets } from '../lib/use-event-sheets';
 import { BODY_CLEARANCE, OverflowButton } from './OverflowButton';
+import { TodayDisc } from './people';
 import { ReadState } from './ReadState';
 import { Button } from './ui/button';
 import { DayWeather } from './Weather';
@@ -34,7 +35,7 @@ function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | n
     <>
       <span className={cn('text-sm leading-[1.2857]', day.isToday ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground')}>{headingLabel(day)}</span>
       {day.isToday ? (
-        <span className="grid size-[38px] place-items-center rounded-full bg-primary font-display text-[21px] leading-none text-primary-foreground">{date}</span>
+        <TodayDisc size={38}>{date}</TodayDisc>
       ) : (
         <span className="flex h-[38px] items-center font-display text-[28px] leading-none text-foreground">{date}</span>
       )}
@@ -207,8 +208,7 @@ export function DayRows({
   );
 }
 
-// The calendar of Home and Week: a column for each of `days`, reading what the Profile filter lets through. `version`
-// changes when the screen around the calendar has written an event, so it reads again at once; `forecast` is the
+// The calendar of Home and Week: a column for each of `days`, reading what the Profile filter lets through. `forecast` is the
 // Household's weather and `weatherOn` says it has a place. `onOpenDay` opens a day from its heading; a day beyond the
 // paging window is only a heading. `profiles` colour the pills: null until they are read, and the pills wait for them. `rows` draws
 // the days as rows (DayRows), not columns.
@@ -216,7 +216,6 @@ export function Schedule({
   timezone,
   now,
   days,
-  version,
   onOpenDay,
   forecast,
   weatherOn,
@@ -226,22 +225,28 @@ export function Schedule({
   timezone: string;
   now: Date;
   days: WallDay[];
-  version: number;
   onOpenDay: (date: string) => void;
   forecast: Forecast | null;
   weatherOn: boolean;
   profiles: Profile[] | null;
   rows?: boolean;
 }) {
-  const [open, setOpen] = useState<OpenEvent>(null);
-  const events = useDayEvents(days, version, profiles);
+  const events = useDayEvents(days, profiles);
   const pageWindow = pagingWindow(timezone, now);
   const columns = scheduleColumns(events.occurrences ?? [], days, now);
   // The day of the column the event that a sheet is open for was tapped in: where focus goes if that event is not on the screen any more.
   const openedOn = useRef(days[0]!.date);
+  const { sheets, open } = useEventSheets({
+    timezone,
+    profiles: profiles ?? [],
+    refresh: events.refresh,
+    drawn: events.occurrences,
+    // After an event is deleted from its sheet, or moved by an edit, and is in no column: the heading of its day.
+    focusPlace: () => focusElement(document.querySelector<HTMLElement>(`[data-day="${openedOn.current}"]`)),
+  });
   const openEvent = (occurrence: Occurrence, date: string) => {
     openedOn.current = date;
-    setOpen({ sheet: 'details', occurrence });
+    open(occurrence);
   };
 
   return (
@@ -264,16 +269,7 @@ export function Schedule({
           ))}
         </div>
       )}
-      <EventSheets
-        open={open}
-        onChange={setOpen}
-        timezone={timezone}
-        date={days[0]!.date}
-        profiles={profiles ?? []}
-        events={events}
-        // After an event is deleted from its sheet, or moved by an edit, and is in no column: the heading of its day.
-        focusPlace={() => focusElement(document.querySelector<HTMLElement>(`[data-day="${openedOn.current}"]`))}
-      />
+      {sheets}
     </section>
   );
 }

@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -5,7 +6,9 @@ import { EventDetails } from '../src/components/EventDetails';
 import type { NativeEventSheet as NativeEventSheetType } from '../src/components/NativeEventSheet';
 import { BODY_CLEARANCE } from '../src/components/OverflowButton';
 import { PHONE_FRAME, PHONE_SCRIM, Sheet, SheetBody } from '../src/components/Sheet';
+import { dismissOnScrim } from '../src/lib/dialog';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
+import { blankEventForm, isUntouched } from '../src/lib/native-events';
 import type { Profile } from '../src/lib/profiles';
 import { pillPeople } from '../src/lib/schedule';
 import type { OverflowControl } from '../src/lib/use-overflow';
@@ -271,6 +274,8 @@ describe('a sheet on a phone', () => {
     );
     for (const html of [native, meal]) {
       expect(hasFrame(scrimOf(html), PHONE_SCRIM)).toBe(true);
+      // The scrim passes through cn: a caller's z-* would replace the Sheet's, which sits at or above the bar and Add event (phone-shell).
+      expect(classesOf(scrimOf(html)).filter((name) => /^z-/.test(name))).toEqual(['z-20']);
       expect(hasFrame(dialogOf(html), PHONE_FRAME)).toBe(true);
       expect(handleOf(html)).toContain('aria-hidden="true"');
       expect(html.indexOf(handleOf(html))).toBeLessThan(html.indexOf('<h2'));
@@ -278,5 +283,62 @@ describe('a sheet on a phone', () => {
     // The meal sheet's field and its message scroll between its title row and its buttons, on a phone.
     expect(meal.indexOf('phone:overflow-y-auto')).toBeGreaterThan(meal.indexOf('<h2'));
     expect(meal.indexOf('phone:overflow-y-auto')).toBeLessThan(meal.indexOf('Cancel'));
+  });
+});
+
+// A tap on the scrim (Sheet's `canDismiss`): it closes a sheet that holds nothing a stray tap would throw away, and not one that does. The
+// rule is the sheet's own question, asked when the tap lands, so a form that has been edited stays open and one that has not closes.
+describe('a tap on the scrim', () => {
+  const scrim = { id: 'scrim' };
+  const dialog = { id: 'dialog' };
+  const tap = (target: unknown, canDismiss?: () => boolean) => {
+    const closed = vi.fn();
+    dismissOnScrim({ target, currentTarget: scrim }, closed, canDismiss);
+    return closed.mock.calls.length;
+  };
+
+  it('closes a details sheet, whose rule is the default: always', () => {
+    expect(tap(scrim)).toBe(1);
+  });
+
+  it('does nothing when the tap landed on the dialog and not on the scrim', () => {
+    expect(tap(dialog)).toBe(0);
+    expect(tap(dialog, () => true)).toBe(0);
+  });
+
+  it('closes a form nothing has been typed in, and not one that has been edited', () => {
+    const opened = blankEventForm('2026-10-02');
+    expect(tap(scrim, () => isUntouched(opened, opened))).toBe(1);
+    expect(tap(scrim, () => isUntouched({ ...opened, title: 'Plumber' }, opened))).toBe(0);
+    // Put back as it was, it is as untouched as before.
+    expect(tap(scrim, () => isUntouched({ ...opened, title: '' }, opened))).toBe(1);
+  });
+
+  it('is asked of the form at the tap: the Add event sheet and the meal sheet pass their untouched rules to the one frame', () => {
+    const source = (file: string) => readFileSync(new URL('../src/' + file, import.meta.url), 'utf8');
+    expect(source('components/NativeEventSheet.tsx')).toContain('canDismiss={() => isUntouched(form, opened)}');
+    expect(source('MealsPage.tsx')).toContain('canDismiss={() => untouched}');
+  });
+});
+
+// One frame (spec 0012): the page behind is held inert, and focus given back to the opener, by the Sheet alone. The Add event form, the
+// meal sheet, the event's details and a cluster's list are all drawn through it, with no copy of its hold, its keys or its dialog.
+describe('one frame', () => {
+  // Every source under src/, as [path, code without its comments].
+  const sources = (dir: URL, at = ''): [string, string][] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry): [string, string][] =>
+      entry.isDirectory()
+        ? sources(new URL(entry.name + '/', dir), at + entry.name + '/')
+        : /\.tsx?$/.test(entry.name)
+          ? [[at + entry.name, readFileSync(new URL(entry.name, dir), 'utf8').replace(/\/\/.*$/gm, '')]]
+          : [],
+    );
+  const using = (needle: string) => sources(new URL('../src/', import.meta.url)).filter(([, code]) => code.includes(needle)).map(([path]) => path);
+
+  it('holds the background, hears the dialog keys and draws the dialog in the Sheet alone', () => {
+    // (lib/inert-behind.ts and lib/dialog.ts are where the two are defined.)
+    expect(using('holdBackground(')).toEqual(['components/Sheet.tsx', 'lib/inert-behind.ts']);
+    expect(using('dialogKeys(')).toEqual(['components/Sheet.tsx', 'lib/dialog.ts']);
+    expect([...using('role="dialog"'), ...using("role: 'dialog'")]).toEqual(['components/Sheet.tsx']);
   });
 });

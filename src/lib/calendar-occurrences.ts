@@ -84,13 +84,19 @@ export function fiveDays(timezone: string, now: Date = new Date()): WallDay[] {
 
 // ---- Week, day and month views ---------------------------------------------------------
 
-// A page's title: "Wed, Sep 30, 2026" for a day, "Sep 27 to Oct 3, 2026" for a week.
-export function describePage(days: WallDay[]): string {
+// The pager's words for a Day or Week page, in two forms. The Wall's title (`wall`) always has the year: "Wed, Sep 30, 2026" for a day,
+// "Sep 27 to Oct 3, 2026" for a week. The phone's (`phone`) is short enough for its 22 px line between the two buttons, so it has the year
+// ("Wed, Sep 30, 2027") only when the page is not in the Household's current year, `today`'s.
+export type PageForm = 'wall' | 'phone';
+export function pageWords(days: readonly WallDay[], today: string, form: PageForm): string {
   const first = days[0]!.date;
   const last = days[days.length - 1]!.date;
-  if (first === last) return dateWords.calendar(first, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-  const sameYear = first.slice(0, 4) === last.slice(0, 4);
-  return `${dateWords.calendar(first, sameYear ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })} to ${dateWords.calendar(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  const words =
+    first === last
+      ? dateWords.calendar(first, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+      : `${dateWords.calendar(first, first.slice(0, 4) === last.slice(0, 4) ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })} to ${dateWords.calendar(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  // "Wed, Sep 30, 2026" and "Oct 4 to Oct 10, 2026" without the year they end in.
+  return form === 'phone' && first.slice(0, 4) === today.slice(0, 4) && last.slice(0, 4) === today.slice(0, 4) ? words.replace(/, \d{4}$/, '') : words;
 }
 
 // A month page's title: "October 2026".

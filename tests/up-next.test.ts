@@ -3,8 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { UpNext as UpNextType } from '../src/components/UpNext';
 import type { Profile } from '../src/lib/profiles';
-import { columnsOf, finishedProfiles, groupByProfile, todaysRoutines, type Routine } from '../src/lib/routines';
-import type { RoutinesToday } from '../src/lib/use-routines-today';
+import type { RoutineChart } from '../src/lib/routine-chart';
+import type { Routine } from '../src/lib/routines';
+import { chartOf, type SceneOptions } from './support/routine-chart';
 
 // Up next as the Wall draws it on Home (docs/look.md, A Routine tile; spec 0003, Up next), rendered to markup so that what is asserted
 // is what the browser is given. It imports the Supabase client, which is built on import and not used to draw: a placeholder URL and
@@ -26,27 +27,9 @@ const AVA = profile('p-ava', 'Ava', 2, '#fcd34d');
 const FAMILY = [CORY, SAM, AVA];
 const ROUTINES = [routine('r-bins', 'p-cory', 'Take out the bins'), routine('r-stretch', 'p-sam', 'Stretch'), routine('r-dog', 'p-ava', 'Feed the dog')];
 
-// What the Wall's one reader hands Up next on Thursday, in the evening (weekday 4): every part of it from the pure builders.
-function routinesToday(more: Partial<RoutinesToday> = {}, profiles: Profile[] = FAMILY, routines: Routine[] = ROUTINES): RoutinesToday {
-  const weekday = 4;
-  const groups = groupByProfile(profiles, todaysRoutines(routines, weekday));
-  const done = new Set<string>();
-  return {
-    date: '2026-10-01',
-    state: 'ready',
-    settled: true,
-    failed: false,
-    part: 'evening',
-    problems: {},
-    groups,
-    columns: columnsOf(profiles, routines, weekday),
-    done,
-    finished: finishedProfiles(groups, done),
-    toggle: () => Promise.resolve(true),
-    ...more,
-  };
-}
-const card = (today: RoutinesToday, failed = false, tiles?: number) =>
+// What the Wall's one Routine Chart hands Up next on Thursday, in the evening (weekday 4), from the real core.
+const routinesToday = (more: Partial<SceneOptions> = {}, profiles: Profile[] = FAMILY, routines: Routine[] = ROUTINES): RoutineChart => chartOf({ profiles, routines, ...more });
+const card = (today: RoutineChart, failed = false, tiles?: number) =>
   renderToStaticMarkup(createElement(UpNext, { routines: today, failed, onOpenRoutines: () => undefined, ...(tiles === undefined ? {} : { tiles }) }));
 // One tile: the button named for it, whole.
 const tile = (html: string, name: string) => new RegExp(`<button[^>]*aria-label="${name}"[^>]*>[\\s\\S]*?</button>`).exec(html)?.[0] ?? '';
@@ -122,7 +105,7 @@ describe('when Up next has nothing to show', () => {
   });
 
   it('says "Loading" in the same style until the first read lands', () => {
-    const html = card(routinesToday({ state: 'loading', groups: [] }));
+    const html = card(routinesToday({ unread: true }));
     expect(said(html, 'Loading')).toEqual(expect.arrayContaining(['px-1', 'text-base', 'text-muted-foreground']));
   });
 });
@@ -150,18 +133,18 @@ describe('Up next while it loads', () => {
   const reserved = (html: string) => /min-height:([0-9.]+)rem/.exec(html)?.[1];
 
   it('holds the height of three tiles until the first read has landed', () => {
-    expect(reserved(card(routinesToday({ state: 'loading', groups: [] })))).toBe('16');
+    expect(reserved(card(routinesToday({ unread: true })))).toBe('16');
     // Also when the read failed and nothing has been read: the card does not give the room up and take it back.
-    expect(reserved(card(routinesToday({ state: 'failed', failed: true, groups: [] }), true))).toBe('16');
+    expect(reserved(card(routinesToday({ unread: true, readState: 'failed', failed: true }), true))).toBe('16');
   });
 
   it('holds the height of two tiles when the screen shows two', () => {
-    expect(reserved(card(routinesToday({ state: 'loading', groups: [] }), false, 2))).toBe('10.5');
-    expect(reserved(card(routinesToday({ state: 'failed', failed: true, groups: [] }), true, 2))).toBe('10.5');
+    expect(reserved(card(routinesToday({ unread: true }), false, 2))).toBe('10.5');
+    expect(reserved(card(routinesToday({ unread: true, readState: 'failed', failed: true }), true, 2))).toBe('10.5');
   });
 
   it('holds the height of six tiles, 32.5 rem, when the screen shows six', () => {
-    expect(reserved(card(routinesToday({ state: 'loading', groups: [] }), false, 6))).toBe('32.5');
+    expect(reserved(card(routinesToday({ unread: true }), false, 6))).toBe('32.5');
   });
 
   it('takes the height it needs once it has: the tiles, or a line of words', () => {
@@ -170,18 +153,18 @@ describe('Up next while it loads', () => {
   });
 
   it('keeps the tiles it has over Household midnight, while the new day is read, and says nothing of loading over them', () => {
-    const html = card(routinesToday({ state: 'loading', settled: false }));
+    const html = card(routinesToday({ unsettled: true, readState: 'loading' }));
     expect(html).toContain('Take out the bins');
     expect(html).not.toContain('Loading');
     expect(reserved(html)).toBeUndefined();
     // And over a failing read: the tiles stay, and the header (not this card) says the connection is lost.
-    const failing = card(routinesToday({ state: 'failed', settled: false, failed: true }));
+    const failing = card(routinesToday({ unsettled: true, readState: 'failed', failed: true }));
     expect(failing).toContain('Take out the bins');
     expect(failing).not.toContain('Could not load');
   });
 
   it('keeps its heading row where it was, above the reserved room', () => {
-    const html = card(routinesToday({ state: 'loading', groups: [] }));
+    const html = card(routinesToday({ unread: true }));
     expect(html.indexOf('Up next</h2>')).toBeLessThan(html.indexOf('min-height'));
   });
 });

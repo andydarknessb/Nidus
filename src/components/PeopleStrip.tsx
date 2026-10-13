@@ -5,7 +5,7 @@ import type { ProfileFilter } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { stripPeople, type StripPerson } from '../lib/schedule';
 import { useOverflow } from '../lib/use-overflow';
-import type { RoutinesToday } from '../lib/use-routines-today';
+import type { RoutineChart } from '../lib/routine-chart';
 import { OverflowButton } from './OverflowButton';
 import { HouseDisc, MAX_PIPS, PersonDisc, Pips, Tick } from './people';
 import { Button } from './ui/button';
@@ -124,8 +124,8 @@ function Strip({ people, filter, pressed }: { people: StripPerson[]; filter: Pro
 // is the Wall's one reader of today's Routines, so the strip reads nothing of its own. While the Profiles are being
 // read the row keeps its height, so the calendar under it does not move when they arrive; a Household with no
 // Profiles has nothing to show.
-export function PeopleStrip({ profiles, routines, filter, pressed }: { profiles: Profile[] | null; routines: RoutinesToday; filter: ProfileFilter; pressed: readonly string[] }) {
+export function PeopleStrip({ profiles, routines, filter, pressed }: { profiles: Profile[] | null; routines: RoutineChart; filter: ProfileFilter; pressed: readonly string[] }) {
   if (profiles === null) return <div className="h-[56px] phone:h-13" />;
   if (profiles.length === 0) return null;
-  return <Strip people={stripPeople(profiles, routines.groups, routines.done)} filter={filter} pressed={pressed} />;
+  return <Strip people={stripPeople(profiles, routines)} filter={filter} pressed={pressed} />;
 }

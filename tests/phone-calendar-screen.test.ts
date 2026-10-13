@@ -6,10 +6,11 @@ import type { WallRoute } from '../src/lib/wall-routes';
 import { monthWeeks, type CalendarView } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
 import type { PhoneCalendar as PhoneCalendarType } from '../src/phone/PhoneCalendar';
-import type { WeekCells as WeekCellsType } from '../src/phone/PhoneMonth';
+import type { WeekCells as WeekCellsType } from '../src/components/MonthGrid';
 import { FACE, TOUCHING } from '../src/phone/parts';
 import type { PhoneScreenProps } from '../src/PhoneWall';
 import { dayEventsOf } from '../src/lib/day-events';
+import { monthCells } from '../src/lib/month-grid';
 
 // The phone's Calendar screen rendered to markup (docs/specs/0004, Screens, Calendar): the control with the view pressed, the pager named
 // for what it moves by, and the chips or cells of Week and Month. A static render reads nothing, so what the Profile filter does to the
@@ -25,7 +26,7 @@ beforeAll(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-08T17:00:00Z'));
   ({ PhoneCalendar } = await import('../src/phone/PhoneCalendar'));
-  ({ WeekCells } = await import('../src/phone/PhoneMonth'));
+  ({ WeekCells } = await import('../src/components/MonthGrid'));
 });
 afterAll(() => {
   vi.useRealTimers();
@@ -42,7 +43,7 @@ const CORY = profile('c', 'Cory', 2);
 type CalendarRoute = Extract<WallRoute, { view: CalendarView }>;
 function screen(view: CalendarView, date: string | null) {
   const route: CalendarRoute = { view, date };
-  const props = { route, timezone: CHICAGO, added: 0, profiles: [AVA, BEN, CORY], openView: noop } as unknown as PhoneScreenProps;
+  const props = { route, timezone: CHICAGO, profiles: [AVA, BEN, CORY], openView: noop } as unknown as PhoneScreenProps;
   return renderToStaticMarkup(createElement(PhoneCalendar, { ...props, route }));
 }
 
@@ -129,7 +130,7 @@ describe('Week', () => {
 });
 
 describe('Month', () => {
-  const cellsOf = (html: string) => named(html, /^\w+day, \w+ \d+/);
+  const cellsOf = (html: string) => named(html, /^\d+, \w+day, \w+ \d+/);
 
   it('heads the grid with the weekdays in three letters at 14 px, secondary, hidden from a screen reader (each cell says its weekday)', () => {
     const row = /<div aria-hidden="true" class="grid grid-cols-7 pb-1">([\s\S]*?)<\/div>/.exec(screen('month', null))![1]!;
@@ -149,19 +150,19 @@ describe('Month', () => {
   it('draws a button for every day of the grid, today named and marked, and today picked', () => {
     const cells = cellsOf(screen('month', null));
     expect(cells).toHaveLength(35);
-    expect(cells.filter((cell) => cell.tag.includes('aria-current="date"')).map((cell) => nameOf(cell.tag))).toEqual(['Thursday, October 8, today']);
-    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['Thursday, October 8, today']);
+    expect(cells.filter((cell) => cell.tag.includes('aria-current="date"')).map((cell) => nameOf(cell.tag))).toEqual(['8, Thursday, October 8, today']);
+    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['8, Thursday, October 8, today']);
   });
 
   it('picks the 1st of a month that does not hold today', () => {
     const cells = cellsOf(screen('month', '2026-11-01'));
-    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['Sunday, November 1']);
+    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['1, Sunday, November 1']);
   });
 
   it('picks Sep 8 in the first month, whose days before it are no buttons', () => {
     const html = screen('month', '2026-09-01');
     const cells = cellsOf(html);
-    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['Tuesday, September 8']);
+    expect(cells.filter((cell) => pressedOf(cell.tag) === 'true').map((cell) => nameOf(cell.tag))).toEqual(['8, Tuesday, September 8']);
     expect(cells.some((cell) => nameOf(cell.tag)?.startsWith('Monday, September 7'))).toBe(false);
     expect(html).toContain(`Monday, September 7, ${BEYOND}`);
   });
@@ -189,10 +190,15 @@ describe('the Profile filter reaches the Month cells', () => {
   // What a read gives the grid: the day events (dayEventsOf) cut it by the Profile filter, and the dots by the pressed people.
   const cells = (occurrences: Occurrence[], pressed: readonly string[]) =>
     renderToStaticMarkup(
-      createElement(WeekCells, { days: WEEK!, anchor: '2026-10-01', window: WINDOW, events: dayEventsOf(occurrences, [AVA, BEN, CORY], pressed), picked: '2026-10-08', onPick: noop }),
+      createElement(WeekCells, {
+        form: 'dots',
+        cells: monthCells([WEEK!], '2026-10-01', WINDOW, dayEventsOf(occurrences, [AVA, BEN, CORY], pressed), 'dots')[0]!,
+        picked: '2026-10-08',
+        onOpen: noop,
+      }),
     );
   const dots = (html: string) => html.match(/bg-person-strong/g)?.length ?? 0;
-  const thursday = (html: string) => nameOf(buttons(html).find((button) => nameOf(button.tag)?.startsWith('Thursday, October 8'))!.tag);
+  const thursday = (html: string) => nameOf(buttons(html).find((button) => nameOf(button.tag)?.startsWith('8, Thursday, October 8'))!.tag);
 
   it('draws a dot for each person who has something, and only the pressed people when the filter is on', () => {
     const own = [event(['a']), event(['b']), event(['c'])];
@@ -203,8 +209,8 @@ describe('the Profile filter reaches the Month cells', () => {
 
   it('names the cell by what it is given', () => {
     const own = [event(['a']), event(['b']), event(['c'])];
-    expect(thursday(cells(own, []))).toBe('Thursday, October 8, 3 events, today');
-    expect(thursday(cells([own[1]!], ['b']))).toBe('Thursday, October 8, 1 event, today');
+    expect(thursday(cells(own, []))).toBe('8, Thursday, October 8, 3 events, today');
+    expect(thursday(cells([own[1]!], ['b']))).toBe('8, Thursday, October 8, 1 event, today');
   });
 
   it('draws one event for two people as a dot for the pressed one alone', () => {

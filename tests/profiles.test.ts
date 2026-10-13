@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createProfileFilter } from '../src/lib/profile-filter';
 import {
   PROFILE_PALETTE,
   contrastRatio,
@@ -9,6 +10,7 @@ import {
   reorderProfiles,
   updateProfile,
 } from '../src/lib/profiles';
+import { startSyncedRead, type SyncedState } from '../src/lib/synced-read';
 import {
   asAnonymous,
   asDevice,
@@ -166,6 +168,43 @@ describe('profiles', () => {
     await expect(reorderProfiles(wall, [mom.id])).rejects.toBeTruthy();
 
     expect(await loadProfiles(phone)).toEqual([mom]);
+  });
+
+  // useProfiles is the synced read of loadProfiles with the filter's prune after each read that lands (src/lib/use-profiles.ts);
+  // this drives the same two parts through startSyncedRead, as the Household Account's phone and as the Device.
+  it.each([
+    ['a Household Account', (account: Awaited<ReturnType<typeof household>>) => account.phone],
+    ['a Device', (account: Awaited<ReturnType<typeof household>>) => device(account.arranged)],
+  ])('read as %s, the Profiles arrive in their order and a deleted Profile leaves the filter', async (_who, reader) => {
+    const account = await household('The Andersons');
+    const id = account.arranged.household.id;
+    const mom = await createProfile(account.phone, id, { name: 'Mom', color: red, avatar_url: null }, 0);
+    const kid = await createProfile(account.phone, id, { name: 'Sam', color: blue, avatar_url: null }, 1);
+    const client = await reader(account);
+
+    const filter = createProfileFilter();
+    filter.toggle(mom.id);
+    filter.toggle(kid.id);
+    const states: SyncedState<Awaited<ReturnType<typeof loadProfiles>>>[] = [];
+    const read = startSyncedRead({
+      load: () => loadProfiles(client),
+      onChange: (state) => {
+        states.push(state);
+        if (state.data) filter.prune(state.data);
+      },
+    });
+    try {
+      await vi.waitFor(() => expect(states.at(-1)?.data?.map((p) => p.name)).toEqual(['Mom', 'Sam']));
+      expect(filter.pressed()).toEqual([mom.id, kid.id]);
+
+      await deleteProfile(account.phone, mom.id);
+      read.poke();
+      await vi.waitFor(() => expect(states.at(-1)?.data?.map((p) => p.name)).toEqual(['Sam']));
+      expect(filter.pressed()).toEqual([kid.id]);
+    } finally {
+      read.stop();
+      filter.dispose();
+    }
   });
 
   it('a visitor with no session reads nothing and writes nothing', async () => {

@@ -1,10 +1,9 @@
 import { ChevronRight } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Profile } from '../lib/profiles';
-import { tapOutcome } from '../lib/routine-tap';
-import { holdEndsAt, UP_NEXT_TILES, upNext, upNextLink, type Routine, type TickedHere } from '../lib/routines';
+import { UP_NEXT_TILES, type RoutineChart } from '../lib/routine-chart';
+import type { Routine } from '../lib/routines';
 import { useStatusLine } from '../lib/status-line';
-import { useCelebration, type RoutinesToday } from '../lib/use-routines-today';
 import { Confetti, RoutineTile } from './RoutineColumn';
 import { EmptyWords } from './EmptyWords';
 import { ReadState } from './ReadState';
@@ -26,28 +25,15 @@ import { Button } from './ui/button';
 //
 // `failed` says the Household read has failed, which is why nothing has been read: the Routines are read once the
 // Household Timezone is known.
-export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEXT_TILES }: { routines: RoutinesToday; failed: boolean; onOpenRoutines: () => void; tiles?: number }) {
-  const { part, problems, groups, done, toggle } = routines;
+export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEXT_TILES }: { routines: RoutineChart; failed: boolean; onOpenRoutines: () => void; tiles?: number }) {
   // The Household read that failed is why nothing has been read: the Routines are read once the Household Timezone is known.
   const state = routines.state === 'loading' && failed ? 'failed' : routines.state;
   const ready = state === 'ready';
-  const celebration = useCelebration(routines);
   const say = useStatusLine();
   const card = useRef<HTMLElement>(null);
   const link = useRef<HTMLButtonElement>(null);
-  // What was ticked here and when, which upNext keeps in place, and the time it last looked: the one timer below moves the time
-  // on when a hold ends, and nothing else does, so the card is drawn again then and not before.
-  const [ticked, setTicked] = useState<TickedHere>({});
-  const [now, setNow] = useState(() => Date.now());
-  const { tiles, more } = upNext(groups, done, part, ticked, now, limit);
-  const words = upNextLink(more);
-
-  useEffect(() => {
-    const ends = holdEndsAt(ticked, now);
-    if (ends === null) return;
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(ends - Date.now(), 0));
-    return () => clearTimeout(timer);
-  }, [ticked, now]);
+  // What was ticked here and when is the chart's to keep in place (its holds), and it draws the card again when a hold ends.
+  const { tiles, link: words, scheduled } = routines.upNext(limit);
 
   // A tile that goes while it has focus would leave the keyboard nowhere. A tile's ref is called with null as it goes, while
   // its button is still on the page and still has the focus, so what is noted there is read once the page has changed: if
@@ -63,17 +49,10 @@ export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEX
   });
 
   function tap(profile: Profile, routine: Routine, button: HTMLElement) {
-    const mine = groups.find((group) => group.profile.id === profile.id)?.routines ?? [];
-    // The same decision as a Profile's column makes, and the burst starts where it says (src/lib/routine-tap.ts).
-    const { checking, finishes, burstAt } = tapOutcome(mine, done, routine.id, button, card.current);
-    if (burstAt !== null) celebration.start(profile.id, burstAt);
-    // A tick is held in its place from now; a tap on a Routine that is held takes the tick back, and the hold with it.
-    const at = Date.now();
-    setTicked((was) => (checking ? { ...was, [routine.id]: at } : Object.fromEntries(Object.entries(was).filter(([id]) => id !== routine.id))));
-    setNow(at);
+    // The same decision as a Profile's column makes, and the burst starts where it says (src/lib/routine-chart.ts).
     // Said once the tick has saved, so a day that is put back is never announced.
-    void toggle(routine).then((saved) => {
-      if (saved && finishes) say(`${profile.name}: All done`);
+    void routines.tap(routine, { button, frame: card.current }).then(({ saved, finished }) => {
+      if (saved && finished) say(`${profile.name}: All done`);
     });
   }
 
@@ -90,33 +69,31 @@ export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEX
       {/* Until the first read lands the card keeps the room of the tiles it will show (80 each and 8 between: 16 rem for three, 10.5 rem
           for two), so the list card under it does not jump when they arrive. Once read, it takes the height it needs. */}
       {/* What was read for yesterday keeps its tiles on screen, unchecked, until today's read lands, as the chart's columns do. */}
-      {!ready && groups.length === 0 && (
+      {!ready && !scheduled && (
         <div style={{ minHeight: `${limit * 5 + (limit - 1) * 0.5}rem` }}>
           <ReadState of="routines" read={{ state }} className="px-1" alert="px-1 text-base" />
         </div>
       )}
-      {ready && groups.length === 0 && <EmptyWords className="px-1">Nothing scheduled today.</EmptyWords>}
-      {ready && groups.length > 0 && tiles.length === 0 && <EmptyWords className="px-1">Nobody has anything left right now.</EmptyWords>}
+      {ready && !scheduled && <EmptyWords className="px-1">Nothing scheduled today.</EmptyWords>}
+      {ready && scheduled && tiles.length === 0 && <EmptyWords className="px-1">Nobody has anything left right now.</EmptyWords>}
       {tiles.length > 0 && (
         <ul className="flex flex-col gap-2">
-          {tiles.map(({ profile, routine, done: held }) => (
+          {tiles.map(({ profile, routine, done: held, problem }) => (
             // Keyed by person, so the tile that was tapped stays under the finger and shows what is next once its hold ends.
             <li key={profile.id}>
-              <RoutineTile ref={watchTile} routine={routine} color={profile.color} who={profile.name} done={held} problem={problems[profile.id]} onTap={(button) => tap(profile, routine, button)} />
+              <RoutineTile ref={watchTile} routine={routine} color={profile.color} who={profile.name} done={held} problem={problem} onTap={(button) => tap(profile, routine, button)} />
               {/* The sentence is drawn inside the tile, where nothing moves for it; a button's insides are not announced, so a live
                   region off screen says it to a screen reader, beside the tile of the person it is about. */}
-              {problems[profile.id] && (
+              {problem && (
                 <p role="alert" className="sr-only">
-                  {problems[profile.id]}
+                  {problem}
                 </p>
               )}
             </li>
           ))}
         </ul>
       )}
-      {Object.entries(celebration.bursts).map(([profileId, burst]) => (
-        <Confetti key={`${profileId}-${burst.id}`} at={burst.at} onDone={() => celebration.land(profileId, burst.id)} />
-      ))}
+      {routines.columns.map(({ profile, burst }) => burst && <Confetti key={`${profile.id}-${burst.id}`} at={burst.at} onDone={burst.land} />)}
     </section>
   );
 }

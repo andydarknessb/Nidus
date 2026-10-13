@@ -6,33 +6,18 @@
 // wall-clock time is turned into an instant by the feed's zone or the Household Timezone.
 import ICAL from 'ical.js';
 import { type EventRow, MAX_DESCRIPTION, MAX_LOCATION, MAX_TITLE } from './event-row.ts';
+import { type FeedBudget, FeedTooLargeError, RunBudget, type SeriesBudget } from './run-budget.ts';
 import { dayStartMs, wallClockMs } from './zoned-time.ts';
 
-export const MAX_PER_EVENT = 1000;
-export const MAX_PER_FEED = 20000;
-// How far one repeating series is walked looking for the window, how many steps one feed may take,
-// how many all the feeds of one run may take between them, and how much time the run's expansion
-// may take in all: a rule that started long ago and fires every few seconds would otherwise take
-// forever, and the hosted function has a 2 s CPU limit for the run (the run's caps leave a margin
-// under it). The caps only ever limit repeating series: a single event, an RDATE or a moved
-// occurrence is always read, costs no steps, and is kept whatever any budget says.
+// Every cap on the work (steps, rows, RDATEs, time) is the run's budget (run-budget.ts), which this asks.
+// A series cut by a cap keeps what it reached and the feed says so (`truncated`); past the run's steps or
+// time, the feed is not read at all this run (FeedTooLargeError): storing it would delete the rows it did
+// not reach.
 // ponytail: ical.js's iterator cannot jump to the window, so a series without COUNT is, where it can be, moved
 // forward by whole periods first (`fastForwarded`) and the rest is walked a step at a time, newest
-// start first, so the ancient expensive rules are the ones a cap cuts. A series cut by the event's or feed's cap keeps
-// what it reached and the feed says so (`truncated`). Past the run's cap or time, the feed is not
-// read at all this run (FeedTooLargeError): storing it would delete the rows it did not reach.
+// start first, so the ancient expensive rules are the ones a cap cuts.
 // ical.js can spend unbounded time inside one step of a rule that rarely or never matches, which
 // no step count sees, so a rule the iPhone does not write is not walked at all (see `walkableRule`).
-const MAX_STEPS_PER_EVENT = 30_000;
-const MAX_STEPS_PER_FEED = 60_000;
-export const MAX_STEPS_PER_RUN = 80_000;
-export const MAX_EXPANSION_MS = 800;
-
-// What is left of a run's work, shared by every feed the run expands: steps, and the milliseconds
-// of expansion (parsing included) already spent. `now` is the clock (performance.now by default),
-// injectable so the time limit is testable. `noFastForward` turns off the skip over the years before
-// the window (below), so that a test can compare the two walks.
-export type StepBudget = { remaining: number; spentMs?: number; now?: () => number; noFastForward?: boolean };
 
 // No zone is more than 14 hours from UTC, so a wall-clock time this far before the window start
 // is before it in every zone and needs no zone arithmetic.
@@ -42,8 +27,6 @@ const DAY_MS = 86_400_000;
 const KEY_SEPARATOR = '|';
 
 export class FeedParseError extends Error {}
-// The run's step budget ran out while this feed still had repeating events to walk.
-export class FeedTooLargeError extends Error {}
 
 const pad = (n: number, width = 2) => String(n).padStart(width, '0');
 const dateOf = (t: ICAL.Time) => `${pad(t.year, 4)}-${pad(t.month)}-${pad(t.day)}`;
@@ -126,15 +109,6 @@ function excludedStarts(ev: ICAL.Event, timezone: string): Set<number> {
 // rule a day at a time, so INTERVAL=100000000 takes it seconds inside one step.
 const MAX_INTERVAL = 999;
 
-// A step of a day-search shape (a monthly rule with BYSETPOS or an ordinal BYDAY, a yearly one with BYSETPOS
-// or an ordinal BYDAY) is an ical.js search inside a month or a year.
-const MAX_DAY_SEARCH_STEPS = 240;
-const DAY_SEARCH_MARGIN = 24;
-// A day-search step costs about 0.7 ms, so one feed may spend only this many of them across all its
-// series (about 420 ms): a feed of several series near MAX_DAY_SEARCH_STEPS is cut and synced, not left to
-// run out the clock, which stores nothing.
-const MAX_DAY_SEARCH_STEPS_PER_FEED = 600;
-
 const BARE_DAY = /^(SU|MO|TU|WE|TH|FR|SA)$/;
 const ORDINAL_DAY = /^([+-]?\d{1,2})(SU|MO|TU|WE|TH|FR|SA)$/;
 // "The first to the fifth, or the last": the only places the iPhone puts a weekday or a position.
@@ -156,10 +130,9 @@ const ordinal = (n: number) => (n >= 1 && n <= 5) || n === -1;
 // (the fifth Monday of a 28-day February, every 4 years) sends ical.js searching inside one step; and a
 // day-search step (a monthly ordinal BYDAY or BYSETPOS, a yearly ordinal BYDAY or BYSETPOS) costs about
 // 0.7 ms, so one that is walked from DTSTART (it has COUNT, or `fastForwarded` cannot move it: `moves`
-// says) is walked only when DTSTART is at most MAX_DAY_SEARCH_STEPS of its steps before the window
-// (`monthsToWindow`, in months). Whatever its path, such a walk is also cut at that many steps plus the
-// window's length in months (see `cap`).
-function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boolean): boolean {
+// says) is walked only when the budget admits its steps from DTSTART to the window (`monthsToWindow`, in
+// months). Whatever its path, such a walk is also cut by the budget's series cap.
+function walkableRule(rule: ICAL.Recur, monthsToWindow: number, admits: (steps: number) => boolean, moves: () => boolean): boolean {
   const parts = rule.parts as Record<string, unknown[] | undefined>;
   const names = Object.keys(parts).sort().join(',');
   const list = (name: string) => parts[name] ?? [];
@@ -174,8 +147,7 @@ function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boo
   if (rule.interval !== 1 && (days.some((day) => parseInt(day, 10) === 5) || position.includes(5))) return false;
   // Whether a day-search series is near enough to the window to walk from DTSTART, in its own steps: a
   // period of `months` months, each of the `perPeriod` months a yearly rule lists being a step.
-  const near = (months: number, perPeriod = 1) =>
-    Math.ceil(Math.max(0, monthsToWindow) / (rule.interval * months)) * perPeriod <= MAX_DAY_SEARCH_STEPS || moves();
+  const near = (months: number, perPeriod = 1) => admits(Math.ceil(Math.max(0, monthsToWindow) / (rule.interval * months)) * perPeriod) || moves();
   switch (rule.freq) {
     case 'DAILY':
       return names === '' || (names === 'BYDAY' && bare && rule.interval === 1);
@@ -204,18 +176,18 @@ function walkableRule(rule: ICAL.Recur, monthsToWindow: number, moves: () => boo
 
 // Whether the event's one rule is a repeat the iPhone can make (see walkableRule); two rules on one
 // event are not something it writes. Answering that for an old day-search series pays ical.js steps
-// (`moves` runs fastForwarded), so it first reads the run's steps and clock: a run with none left
-// throws FeedTooLargeError, as the walk does, before any iterator is made.
-function walkable(ev: ICAL.Event, start: ICAL.Time, lengthBound: number, windowStartMs: number, run: StepBudget, outOfTime: () => boolean): boolean {
+// (`moves` runs fastForwarded), so it first asks the budget whether the run has steps and time left: a run
+// with none left throws FeedTooLargeError, as the walk does, before any iterator is made.
+function walkable(ev: ICAL.Event, start: ICAL.Time, lengthBound: number, windowStartMs: number, feed: FeedBudget): boolean {
   const rules = ev.component.getAllProperties('rrule');
   const rule = rules.length === 1 ? rules[0]!.getFirstValue() : null;
   const window = new Date(windowStartMs);
   const monthsToWindow = window.getUTCFullYear() * 12 + window.getUTCMonth() - (start.year * 12 + start.month - 1);
   const moves = () => {
-    if (run.remaining <= 0 || outOfTime()) throw new FeedTooLargeError();
+    feed.start();
     return fastForwarded(ev, start, lengthBound, windowStartMs) !== null;
   };
-  return rule instanceof ICAL.Recur && walkableRule(rule, monthsToWindow, moves);
+  return rule instanceof ICAL.Recur && walkableRule(rule, monthsToWindow, (steps) => feed.admits('daySearch', steps), moves);
 }
 
 // Whether every rule of the event has ended before the window, in any zone: nothing to walk.
@@ -295,13 +267,13 @@ function fastForwarded(ev: ICAL.Event, start: ICAL.Time, lengthBound: number, wi
 const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
 const lcm = (a: number, b: number) => (a / gcd(a, b)) * b;
 
-// The starts an event's RDATEs name (a period names its start): the first MAX_PER_EVENT of them, and
+// The starts an event's RDATEs name (a period names its start): as many as the budget allows, and
 // whether there were more (the rest are ignored).
-function rdateStarts(ev: ICAL.Event): { starts: ICAL.Time[]; cut: boolean } {
+function rdateStarts(ev: ICAL.Event, series: SeriesBudget): { starts: ICAL.Time[]; cut: boolean } {
   const starts: ICAL.Time[] = [];
   for (const property of ev.component.getAllProperties('rdate')) {
     for (const value of property.getValues()) {
-      if (starts.length >= MAX_PER_EVENT) return { starts, cut: true };
+      if (!series.rdate()) return { starts, cut: true };
       starts.push(value instanceof ICAL.Period ? value.start : (value as ICAL.Time));
     }
   }
@@ -314,20 +286,21 @@ function rdateStarts(ev: ICAL.Event): { starts: ICAL.Time[]; cut: boolean } {
 // occurrences are read). Single events, RDATEs and moved occurrences are read first and always
 // kept; the repeating series fill what the feed's row cap leaves. Throws FeedParseError when the
 // text is not a calendar, and FeedTooLargeError when `run` (the steps and time left for the whole
-// run) runs out while a repeating event still needed walking.
+// run) runs out while a repeating event still needed walking. `noFastForward` turns off the skip over
+// the years before the window, so that a test can compare the two walks.
 export function expandFeed(
   text: string,
   timezone: string,
   windowStartMs: number,
   windowEndMs: number,
-  run: StepBudget = { remaining: MAX_STEPS_PER_RUN },
+  run: RunBudget = new RunBudget(),
+  options: { noFastForward?: boolean } = {},
 ): { rows: EventRow[]; truncated: boolean } {
-  const clock = run.now ?? (() => performance.now());
-  const began = clock();
+  const feed = run.feed(windowEndMs - windowStartMs);
   try {
-    return expand(text, timezone, windowStartMs, windowEndMs, run, () => (run.spentMs ?? 0) + (clock() - began) >= MAX_EXPANSION_MS);
+    return expand(text, timezone, windowStartMs, windowEndMs, feed, options.noFastForward === true);
   } finally {
-    run.spentMs = (run.spentMs ?? 0) + (clock() - began);
+    feed.end();
   }
 }
 
@@ -338,8 +311,8 @@ function expand(
   timezone: string,
   windowStartMs: number,
   windowEndMs: number,
-  run: StepBudget,
-  outOfTime: () => boolean,
+  feed: FeedBudget,
+  noFastForward: boolean,
 ): { rows: EventRow[]; truncated: boolean } {
   let calendar: ICAL.Component;
   try {
@@ -402,9 +375,8 @@ function expand(
 
     // The occurrences of one event that fall in the window go into `rows`; false once nothing
     // later can be wanted.
-    const emitterFor = ({ uid, ev, layout: l, excluded }: Series) => {
+    const emitterFor = ({ uid, ev, layout: l, excluded }: Series, scope: SeriesBudget) => {
       const lengthBound = l.isAllDay ? l.lengthDays * DAY_MS : l.lengthMs;
-      let emitted = 0;
       return (occurrence: ICAL.Time): boolean => {
         // Long before the window in any zone: no need to know which instant it is.
         const wall = Date.UTC(occurrence.year, occurrence.month - 1, occurrence.day, occurrence.hour, occurrence.minute, occurrence.second);
@@ -414,12 +386,10 @@ function expand(
         if (excluded.has(startMs) || replaced.has(`${uid}${KEY_SEPARATOR}${startMs}`)) return true;
         const endMs = endOf(l, occurrence, startMs);
         const row = overlaps(startMs, endMs) ? build(ev, uid, startMs, startMs, endMs, l.isAllDay) : null;
-        if (row) {
-          // DTSTART comes round again from the iterator: it counts once.
-          if (!rows.has(row.google_event_id)) emitted += 1;
-          rows.set(row.google_event_id, row);
-        }
-        return emitted < MAX_PER_EVENT && rows.size < MAX_PER_FEED;
+        // DTSTART comes round again from the iterator: it counts once.
+        const isNew = row !== null && !rows.has(row.google_event_id);
+        if (row) rows.set(row.google_event_id, row);
+        return scope.row(rows.size, isNew);
       };
     };
 
@@ -434,13 +404,14 @@ function expand(
           const s: Series = { uid, ev, layout: l, startMs: instantMs(l.start, timezone), excluded: excludedStarts(ev, timezone) };
           const lengthBound = l.isAllDay ? l.lengthDays * DAY_MS : l.lengthMs;
           const live = ev.component.hasProperty('rrule') && !endedBefore(ev, windowStartMs, lengthBound);
-          const canWalk = live && walkable(ev, l.start, lengthBound, windowStartMs, run, outOfTime);
-          const emit = emitterFor(s);
+          const canWalk = live && walkable(ev, l.start, lengthBound, windowStartMs, feed);
+          const scope = feed.series();
+          const emit = emitterFor(s, scope);
           // A series that is walked emits its own DTSTART there, where the row cap can stop it.
           if (!canWalk) emit(l.start);
           // A rule that could have had occurrences in the window and is not read: the feed says so.
           if (live && !canWalk && s.startMs < windowEndMs) truncated = true;
-          const rdates = rdateStarts(ev);
+          const rdates = rdateStarts(ev, scope);
           if (rdates.cut) truncated = true;
           // An RDATE in a year below 100 is refused like the event's other times (see layout).
           for (const at of rdates.starts) if (at.year >= 100) emit(at);
@@ -457,50 +428,43 @@ function expand(
     repeating.sort((a, b) => newest(b.startMs) - newest(a.startMs) || (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0));
     const fixed = new Set(rows.keys());
 
-    let budget = MAX_STEPS_PER_FEED;
-    let daySearchBudget = MAX_DAY_SEARCH_STEPS_PER_FEED;
     for (const s of repeating) {
-      if (rows.size >= MAX_PER_FEED) {
+      if (feed.full(rows.size)) {
         truncated = true;
         break;
       }
       try {
-        const emit = emitterFor(s);
+        // A day-search step costs 0.7 ms, so its walk is cut by the budget at what an admitted series needs
+        // (the age limit and the window, with a margin) however it is reached: a series with an occurrence
+        // years long, moved to a month before the window, would otherwise step to the row cap. Every walked
+        // monthly or yearly rule with a BYDAY (BYSETPOS always comes with one) is one. (A test that turns the
+        // skip off reads the plain walk whole.)
+        const rule = s.ev.component.getFirstPropertyValue('rrule');
+        const daySearch =
+          rule instanceof ICAL.Recur && (rule.freq === 'MONTHLY' || rule.freq === 'YEARLY') && rule.parts['BYDAY'] !== undefined && !noFastForward;
+        const scope = feed.series(daySearch ? 'daySearch' : 'plain');
+        const emit = emitterFor(s, scope);
         // A rule's first occurrence is DTSTART.
         if (!emit(s.layout.start)) continue;
-        const rule = s.ev.component.getFirstPropertyValue('rrule');
-        // A day-search step costs 0.7 ms, so its walk is cut at what an admitted series needs (the
-        // steps of the age limit and the window, with a margin) however it is reached: a series with an
-        // occurrence years long, moved to a month before the window, would otherwise step to the row cap.
-        // Every walked monthly or yearly rule with a BYDAY (BYSETPOS always comes with one) is one.
-        // (A test that turns the skip off reads the plain walk whole.)
-        const daySearch =
-          rule instanceof ICAL.Recur && (rule.freq === 'MONTHLY' || rule.freq === 'YEARLY') && rule.parts['BYDAY'] !== undefined && !run.noFastForward;
         // The feed's day-search steps are spent: this series is cut before its iterator is made, which
         // would itself cost a step's time for every one of however many such series the feed holds.
-        if (daySearch && daySearchBudget <= 0) {
+        if (daySearch && !feed.daySearch()) {
           truncated = true;
           continue;
         }
         // Before the iterator is made or its first step taken: a series that starts with the run out of
         // steps or time cannot be read, however long the one before it left the clock.
-        if (run.remaining <= 0 || outOfTime()) throw new FeedTooLargeError();
+        feed.start();
         const lengthBound = s.layout.isAllDay ? s.layout.lengthDays * DAY_MS : s.layout.lengthMs;
         const steps: { next(): ICAL.Time | null | undefined } =
-          (run.noFastForward ? null : fastForwarded(s.ev, s.layout.start, lengthBound, windowStartMs)) ?? s.ev.iterator();
-        const cap = daySearch ? Math.min(MAX_STEPS_PER_EVENT, MAX_DAY_SEARCH_STEPS + Math.ceil((windowEndMs - windowStartMs) / (28 * DAY_MS)) + DAY_SEARCH_MARGIN) : MAX_STEPS_PER_EVENT;
-        let n = 0;
+          (noFastForward ? null : fastForwarded(s.ev, s.layout.start, lengthBound, windowStartMs)) ?? s.ev.iterator();
         for (let next = steps.next(); next; next = steps.next()) {
-          if (n >= cap || budget <= 0 || (daySearch && daySearchBudget <= 0)) {
+          // The series' or the feed's steps are spent: this series is cut. The run's steps or time ran out
+          // with this series still to walk: the budget throws, and the feed is not read this time.
+          if (!scope.step()) {
             truncated = true;
             break;
           }
-          // The run's steps or time ran out with this series still to walk: the feed is not read this time.
-          if (run.remaining <= 0 || outOfTime()) throw new FeedTooLargeError();
-          n += 1;
-          budget -= 1;
-          if (daySearch) daySearchBudget -= 1;
-          run.remaining -= 1;
           if (!emit(next)) break;
         }
       } catch (error) {
@@ -508,7 +472,7 @@ function expand(
         // A rule that cannot be fulfilled, or a time ical.js cannot read: this event only.
       }
     }
-    if (rows.size >= MAX_PER_FEED) truncated = true;
+    if (feed.full(rows.size)) truncated = true;
 
     // The row cap limits only the repeating rows: what was read first is kept, and the earliest of
     // the repeating ones fill what room is left.
@@ -516,9 +480,9 @@ function expand(
     const all = [...rows.values()];
     const kept = all.filter((row) => fixed.has(row.google_event_id)).sort(byStart);
     const later = all.filter((row) => !fixed.has(row.google_event_id)).sort(byStart);
-    const room = Math.max(0, MAX_PER_FEED - kept.length);
-    if (later.length > room || kept.length > MAX_PER_FEED) truncated = true;
-    return { rows: [...kept, ...later.slice(0, room)].slice(0, MAX_PER_FEED).sort(byStart), truncated };
+    const fit = feed.fit(kept, later);
+    if (fit.cut) truncated = true;
+    return { rows: fit.rows.sort(byStart), truncated };
   } finally {
     ICAL.TimezoneService.reset();
   }

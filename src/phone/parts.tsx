@@ -1,8 +1,8 @@
 import { cn } from 'cn';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode, Ref } from 'react';
-import { BEYOND_RANGE, HATCH } from '../components/MonthCell';
 import { Button } from '../components/ui/button';
+import { BEYOND_RANGE } from '../lib/month-grid';
 import { WEEKDAYS } from '../lib/routines';
 
 // The parts the phone's screens are made of (docs/look.md, "The phone"; spec 0004): seven day chips, a control of a few, a
@@ -19,6 +19,11 @@ import { WEEKDAYS } from '../lib/routines';
 // the row that scrolls does not clip it.
 export const TOUCHING = 'group rounded-[14px] p-0.5 selected:bg-transparent selected:ring-0 active:bg-transparent focus-visible:-outline-offset-2';
 export const FACE = 'flex size-full items-center justify-center rounded-xl group-aria-pressed:bg-accent group-aria-pressed:font-semibold group-aria-pressed:ring-2 group-aria-pressed:ring-foreground group-aria-pressed:ring-inset';
+
+// The ground of a day beyond the range: thin diagonal lines in --input, so that "beyond the calendar's range" is told by a mark
+// and not by colour alone. --input holds 3:1 on the card in both modes (tests/look.test.ts). The date sits on a --card ground of
+// its own, so the lines never run under the digits. Used by the day chips, the phone's month and the tablet's (components/MonthCell.tsx).
+export const HATCH = 'bg-[repeating-linear-gradient(135deg,transparent_0_6px,var(--input)_6px_8px)]';
 
 // ---- Day chips ---------------------------------------------------------------------------------
 

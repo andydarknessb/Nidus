@@ -1,16 +1,21 @@
 import { cn } from 'cn';
 import { Pin } from 'lucide-react';
-import { dateWords, eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
+import { eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
 import type { Occurrence } from '../lib/calendar-occurrences';
-import { cellLines } from '../lib/month-grid';
+import { personStyle } from '../lib/look';
+import { BEYOND_RANGE, cellLines, type CellForm, type MonthCell } from '../lib/month-grid';
 import type { WallDay } from '../lib/paged-view';
+import type { MonthDot } from '../lib/phone-calendar';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, type PillPeople } from '../lib/schedule';
+import { FACE, HATCH, TOUCHING } from '../phone/parts';
 import { EventDiscs, EventFill } from './EventPill';
+import { TodayDisc } from './people';
 import { Button } from './ui/button';
 
-// One day of the month's grid. Inside the calendar's range it is a single button that opens the day and fills its cell: the date,
-// then the day's occurrences a line each, as many as fit, and "+N more" for the rest. Events are not tappable here, the day is.
+// One day of the month's grid, drawn from a MonthCell (month-grid.ts), on the Wall (DayCell) and on the phone (MonthDay). Inside the
+// calendar's range it is a single button that opens the day. On the Wall it fills its cell: the date, then the day's occurrences a line
+// each, as many as fit, and "+N more" for the rest. Events are not tappable here, the day is.
 
 // A day cell is drawn to these sizes, in rem like the classes that draw it, so the lines measured to fit are the lines drawn at
 // any text size: CELL_HEAD_REM above its first line (pt-1, the date's h-8.5 and mb-0.5, and the divider over its row, with a pixel to
@@ -18,44 +23,11 @@ import { Button } from './ui/button';
 export const CELL_HEAD_REM = 2.625;
 export const CELL_LINE_REM = 1.5;
 
-export const BEYOND_RANGE = "Beyond the calendar's range";
-// The ground of a day beyond the range: thin diagonal lines in --input, so that "beyond the calendar's range" is told by a mark
-// and not by colour alone. --input holds 3:1 on the card in both modes (tests/look.test.ts). The date sits on a --card ground of
-// its own, so the lines never run under the digits. Used by the tablet's grid and the phone's (src/phone/PhoneMonth.tsx).
-export const HATCH = 'bg-[repeating-linear-gradient(135deg,transparent_0_6px,var(--input)_6px_8px)]';
-
-// What the cell is called: the date drawn on it first, so a name spoken from the screen ("22") finds it, then "today" on today's
-// (which the disc says to the eye), then the day in full and how many events it holds. Until its week has been read there is no
-// count to give, and "no events" would call a day free that may not be.
-function cellName(day: WallDay, occurrences: Occurrence[] | null): string {
-  const date = Number(day.date.slice(8));
-  return `${date}, ${day.isToday ? 'today, ' : ''}${dateWords.cell(day.date, occurrences === null ? null : occurrences.length)}`;
-}
-
-// `occurrences` are the day's own, in order, and null until its week has been read; `profiles` fill each line, and the lines wait
-// for them, so the caller gives null for `occurrences` until it has them. A day beyond the range has nothing to open and nothing
-// known about it, so its cell says so rather than look like a free day.
-export function DayCell({
-  day,
-  inMonth,
-  beyond,
-  occurrences,
-  profiles,
-  lines,
-  onOpen,
-}: {
-  day: WallDay;
-  inMonth: boolean;
-  beyond: boolean;
-  occurrences: Occurrence[] | null;
-  profiles: readonly Profile[];
-  lines: number;
-  onOpen: (date: string) => void;
-}) {
-  // Today's date is in a filled disc (the date in a --primary disc, on every view): 34 px with a 20 px number, where the other dates
-  // are 22 px in the display face. Every date has the same 34 px row, so the lines under a week's dates start at the same place.
-  // Beyond the range the date sits on the card, so the hatch stays out from under it.
-  const date = (
+// The date of a Wall cell. Today's is in a filled disc (the date in a --primary disc, on every view): 34 px with a 20 px number, where the other
+// dates are 22 px in the display face. Every date has the same 34 px row, so the lines under a week's dates start at the same place.
+// Beyond the range the date sits on the card, so the hatch stays out from under it.
+function WallDate({ day, beyond = false }: { day: WallDay; beyond?: boolean }) {
+  return (
     <span
       className={cn(
         'mb-0.5 grid h-8.5 shrink-0 place-items-center self-start rounded-full font-display leading-none',
@@ -66,20 +38,54 @@ export function DayCell({
       {Number(day.date.slice(8))}
     </span>
   );
-  if (beyond) {
+}
+
+// A day beyond the range the calendar keeps (`beyond`), drawn once for both grids (WeekCells): no button, as it has nothing to open and
+// nothing known about it, so its cell says so rather than look like a free day. On the Wall it is the date and the words; on the phone
+// a 58 px cell that names its date too.
+export function BeyondCell({ cell, form }: { cell: MonthCell; form: CellForm }) {
+  if (form === 'lines') {
     return (
       <div className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden px-1.5 pt-1', HATCH)}>
-        {date}
+        <WallDate day={cell.day} beyond />
         <span className="sr-only">{BEYOND_RANGE}</span>
       </div>
     );
   }
-  const { shown, more } = cellLines(occurrences ?? [], lines);
+  return (
+    <div className="h-[58px] min-w-12 p-0.5">
+      <div className={cn('flex size-full flex-col items-center rounded-xl pt-1', HATCH)}>
+        <span aria-hidden className="grid h-[30px] min-w-8 place-items-center rounded-full bg-card px-1 font-display text-lg leading-none text-muted-foreground">
+          {Number(cell.day.date.slice(8))}
+        </span>
+        <span className="sr-only">{cell.name}</span>
+      </div>
+    </div>
+  );
+}
+
+// The Wall's day inside the range: a single button that opens the day and fills its cell. `cell.lines` are the day's own occurrences, in
+// order, null until its week has been read; `profiles` fill each line, and the lines wait for them, so the caller's occurrences are null
+// until it has them.
+export function DayCell({
+  cell,
+  profiles,
+  lines,
+  onOpen,
+}: {
+  cell: MonthCell<'lines'>;
+  profiles: readonly Profile[];
+  lines: number;
+  onOpen: (date: string) => void;
+}) {
+  const { day, inMonth, count } = cell;
+  const date = <WallDate day={day} />;
+  const { shown, more } = cellLines(cell.lines ?? [], lines);
   return (
     <Button
       variant="quiet"
       aria-current={day.isToday ? 'date' : undefined}
-      aria-label={cellName(day, occurrences)}
+      aria-label={cell.name}
       onClick={() => onOpen(day.date)}
       // A day of the neighbouring month is dimmed with the muted colour, which holds 7:1 on the card and on today's lifted ground.
       // The cell is a grid item and clips what it holds, so its focus ring is drawn inside it.
@@ -94,9 +100,9 @@ export function DayCell({
         // count is a number, since the room is the date's row; the cell's name says it in words.
         <span className="flex items-start justify-between gap-1">
           {date}
-          {occurrences !== null && occurrences.length > 0 && (
+          {count !== null && count > 0 && (
             <span aria-hidden data-testid="cell-count" className="pr-1 text-sm leading-[2.125rem] font-semibold text-muted-foreground">
-              {occurrences.length}
+              {count}
             </span>
           )}
         </span>
@@ -134,5 +140,47 @@ function EventLine({ occurrence, day, people }: { occurrence: Occurrence; day: W
         <EventDiscs people={people} size={16} />
       </span>
     </span>
+  );
+}
+
+function Dot({ dot }: { dot: MonthDot }) {
+  return dot.kind === 'household' ? (
+    <span className="size-[7px] rounded-full bg-primary" />
+  ) : (
+    <span className="person size-[7px] rounded-full bg-person-strong" style={personStyle(dot.profile.color)} />
+  );
+}
+
+// The phone's day inside the range (docs/look.md, "The phone", A Month cell): the date over up to three 7 px dots (`cell.dots`: who has
+// something that day), named by `cell.name`, so the dots are never the only telling. The button is 58 tall and a cell wide, and the
+// cells touch. The Selected fill and ring are drawn 2 px inside it, on an inner span, so two cells never read as one (as the day chips do).
+export function MonthDay({ cell, picked, onPick }: { cell: MonthCell<'dots'>; picked: boolean; onPick: (date: string) => void }) {
+  const { day, inMonth } = cell;
+  const number = Number(day.date.slice(8));
+  return (
+    <Button
+      variant="quiet"
+      data-day={day.date}
+      aria-label={cell.name}
+      aria-pressed={picked}
+      aria-current={day.isToday ? 'date' : undefined}
+      onClick={() => onPick(day.date)}
+      className={cn(TOUCHING, 'h-[58px] min-w-12')}
+    >
+      <span className={cn(FACE, 'flex-col gap-0.5')}>
+        {day.isToday ? (
+          <TodayDisc size={30}>{number}</TodayDisc>
+        ) : (
+          <span aria-hidden className={cn('flex h-[30px] items-center font-display text-lg leading-none', inMonth ? 'text-foreground' : 'text-muted-foreground')}>
+            {number}
+          </span>
+        )}
+        <span aria-hidden className="flex h-[7px] gap-1">
+          {cell.dots.map((dot) => (
+            <Dot key={dot.kind === 'household' ? 'household' : dot.profile.id} dot={dot} />
+          ))}
+        </span>
+      </span>
+    </Button>
   );
 }

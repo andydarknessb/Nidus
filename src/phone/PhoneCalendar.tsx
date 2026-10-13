@@ -2,10 +2,10 @@ import { useContext, useState } from 'react';
 import { BeforeHousehold } from '../components/BeforeHousehold';
 import { DayView } from '../components/FiveDayCalendar';
 import { statusLineClass } from '../components/phone';
-import { describeMonth } from '../lib/calendar-occurrences';
+import { describeMonth, pageWords } from '../lib/calendar-occurrences';
 import { navigationRailDate, type WallRoute } from '../lib/wall-routes';
 import { CALENDAR_LIMITS, canOpenDay, type CalendarView, type PagingWindow, type WallDay } from '../lib/paged-view';
-import { pageWords, pickedDay } from '../lib/phone-calendar';
+import { pickedDay } from '../lib/phone-calendar';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { usePagedView } from '../lib/use-paged-view';
@@ -33,21 +33,19 @@ const VIEWS: readonly { value: CalendarView; label: string }[] = [
 // the document scrolls past it, as the phone's column does everywhere else.
 const DAY_BOX = 'h-[max(36rem,calc(100svh-26.5rem))]';
 
-export function PhoneCalendar({ route, timezone, view, added, profiles, openView }: PhoneScreenProps & { route: Extract<WallRoute, { view: CalendarView }> }) {
+export function PhoneCalendar({ route, timezone, view, profiles, openView }: PhoneScreenProps & { route: Extract<WallRoute, { view: CalendarView }> }) {
   if (!timezone) return <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />;
-  return <Calendar timezone={timezone} route={route} added={added} profiles={profiles} openView={openView} />;
+  return <Calendar timezone={timezone} route={route} profiles={profiles} openView={openView} />;
 }
 
 function Calendar({
   timezone,
   route,
-  added,
   profiles,
   openView,
 }: {
   timezone: string;
   route: Extract<WallRoute, { view: CalendarView }>;
-  added: number;
   profiles: Profile[] | null;
   openView: (view: CalendarView, date: string) => void;
 }) {
@@ -71,7 +69,7 @@ function Calendar({
     <div className="contents" onPointerDownCapture={touch}>
       <Segmented label="Calendar view" options={VIEWS} value={calendarView} onChange={(chosen) => openView(chosen, navigationRailDate(chosen, route, householdDay(timezone).date))} />
       <Pager
-        words={days ? pageWords(days, today) : describeMonth(anchor)}
+        words={days ? pageWords(days, today, 'phone') : describeMonth(anchor)}
         headingRef={heading}
         previousLabel={`Previous ${calendarView}`}
         nextLabel={`Next ${calendarView}`}
@@ -84,7 +82,7 @@ function Calendar({
       </p>
       {/* Keyed on the view and the page, so a turned page, or the other view starting on the same day, never shows the last page's events. */}
       {calendarView === 'week' && days ? (
-        <PhoneWeek key={`week:${anchor}`} timezone={timezone} now={now} today={today} anchor={anchor} window={window} days={days} version={added} profiles={profiles} />
+        <PhoneWeek key={`week:${anchor}`} timezone={timezone} now={now} today={today} anchor={anchor} window={window} days={days} profiles={profiles} />
       ) : calendarView === 'day' && days ? (
         <div className={`flex flex-col ${DAY_BOX}`}>
           <DayView
@@ -92,13 +90,12 @@ function Calendar({
             timezone={timezone}
             now={now}
             day={days[0]!}
-            version={added}
             profiles={profiles}
             focusHeading={() => heading.current?.focus()}
           />
         </div>
       ) : (
-        <PhoneMonth key={`month:${anchor}`} timezone={timezone} now={now} today={today} anchor={anchor} window={window} version={added} profiles={profiles} />
+        <PhoneMonth key={`month:${anchor}`} timezone={timezone} now={now} today={today} anchor={anchor} window={window} profiles={profiles} />
       )}
     </div>
   );
@@ -113,7 +110,6 @@ function PhoneWeek({
   anchor,
   window,
   days,
-  version,
   profiles,
 }: {
   timezone: string;
@@ -122,12 +118,11 @@ function PhoneWeek({
   anchor: string;
   window: PagingWindow;
   days: WallDay[];
-  version: number;
   profiles: Profile[] | null;
 }) {
   const [pick, setPick] = useState<string | null>(null);
   const picked = pick ?? pickedDay('week', anchor, timezone, now);
-  const events = useDayEvents(days, version, profiles);
+  const events = useDayEvents(days, profiles);
   return (
     <PhoneCard label="Calendar">
       <DayChips label="Days of this week" dates={days.map((day) => day.date)} today={today} picked={picked} onPick={setPick} canPick={(date) => canOpenDay(date, window)} />

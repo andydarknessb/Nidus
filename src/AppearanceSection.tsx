@@ -4,7 +4,7 @@ import { statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import type { Appearance } from '@/lib/mode';
-import { useWriteProblem } from '@/lib/use-write-problem';
+import { useChange } from '@/lib/synced-read';
 import { NOT_SAVED } from '@/lib/write-failure';
 
 // Light and Dark carry the icon of what they are; Auto is the Wall following the sun, which no one icon says.
@@ -83,22 +83,21 @@ export function AppearanceSection({ household, onSaved }: { household: Household
   // The choice being saved shows as chosen at once; it goes back to the saved one if the save fails.
   const [saving, setSaving] = useState<Appearance | null>(null);
   const [status, setStatus] = useState<SaveStatus>('idle');
-  const problems = useWriteProblem();
+  const { change, isBusy, problem } = useChange();
 
   async function choose(appearance: Appearance) {
     // One save at a time, so a slow answer can never land after a newer one; the chosen one is already saved.
-    if (saving !== null || appearance === household.appearance) return;
+    if (isBusy() || appearance === household.appearance) return;
     setSaving(appearance);
     setStatus('idle');
-    try {
-      onSaved(await updateHousehold(household.id, { appearance }));
-      setStatus('saved');
-    } catch (error) {
-      problems.fail('appearance', error);
-      setStatus('failed');
-    } finally {
-      setSaving(null);
-    }
+    await change('appearance', () => updateHousehold(household.id, { appearance }), {
+      landed: (saved) => {
+        onSaved(saved);
+        setStatus('saved');
+      },
+      failed: () => setStatus('failed'),
+    });
+    setSaving(null);
   }
 
   return (
@@ -106,7 +105,7 @@ export function AppearanceSection({ household, onSaved }: { household: Household
       chosen={saving ?? household.appearance}
       weatherOn={household.weather_place !== null}
       status={status}
-      words={problems.at('appearance')?.words}
+      words={problem('appearance')?.words}
       onChoose={(appearance) => void choose(appearance)}
     />
   );
