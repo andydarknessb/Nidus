@@ -81,11 +81,6 @@ export function TimeSheet({ which, time, onDone, onClose }: { which: 'start' | '
   const [meridiem, setMeridiem] = useState(() => drumOf(time).meridiem);
   const drum = drumOf(shown);
 
-  // So that a time typed replaces the one there.
-  useEffect(() => {
-    field.current?.select();
-  }, []);
-
   const say = (words: string) => setProblem((last) => ({ words, n: (last?.n ?? 0) + 1 }));
 
   const roll = (part: Partial<DrumValue>) => {
@@ -137,7 +132,9 @@ export function TimeSheet({ which, time, onDone, onClose }: { which: 'start' | '
   );
 
   return (
-    <Sheet labelledBy={`${ids}-title`} title={title} onClose={onClose} onSubmit={submit} initialFocus={field} className="max-w-[420px]" header={header} footer={footer}>
+    // Focus lands on the sheet itself, not the field: a field focused on open brings a tablet's keyboard up over the drums and Done.
+    // A tap on the field brings it up, and selects the time there so a time typed replaces it.
+    <Sheet labelledBy={`${ids}-title`} title={title} onClose={onClose} onSubmit={submit} className="max-w-[420px]" header={header} footer={footer}>
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <label className="flex flex-col gap-2">
@@ -150,6 +147,7 @@ export function TimeSheet({ which, time, onDone, onClose }: { which: 'start' | '
               aria-describedby={`${ids}-hint`}
               className="h-15 px-4 text-[17px]"
               value={text}
+              onFocus={(e) => e.currentTarget.select()}
               onChange={(e) => {
                 setText(e.target.value);
                 setProblem(null);

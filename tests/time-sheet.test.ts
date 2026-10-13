@@ -157,9 +157,10 @@ describe('the time sheet over the form', () => {
     expect(scrim).toContain('role="dialog"');
   });
 
-  it('closes on the Sheet’s own keys and scrim, and opens the field', () => {
+  it('closes on the Sheet’s own keys and scrim, and does not open the field (a tablet’s keyboard would cover the drums)', () => {
     const sheet = source('components/TimeSheet.tsx');
-    expect(sheet).toContain('initialFocus={field}');
+    expect(sheet).not.toContain('initialFocus');
+    expect(sheet).toContain('onFocus={(e) => e.currentTarget.select()}');
     expect(sheet).toContain('onSubmit={submit}');
     expect(sheet).toContain('onClose={onClose}');
     // No canDismiss: the scrim always closes it, and nothing typed is kept.
