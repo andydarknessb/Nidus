@@ -71,6 +71,14 @@ describe('RunBudget: steps', () => {
     expect(run.remaining).toBe(0);
   });
 
+  it('cuts a series at its cap, rather than throwing, when the run is also out at that very step', () => {
+    const run = new RunBudget({ steps: SERIES_STEPS });
+    const series = run.feed(WINDOW_MS).series();
+    expect(drain(series, SERIES_STEPS)).toBe(SERIES_STEPS);
+    expect(run.remaining).toBe(0);
+    expect(series.step()).toBe(false);
+  });
+
   it('refuses a step of a run with none left, at once', () => {
     const feed = new RunBudget({ steps: 0 }).feed(WINDOW_MS);
     expect(() => feed.series().step()).toThrow(FeedTooLargeError);

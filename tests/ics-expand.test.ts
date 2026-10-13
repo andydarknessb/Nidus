@@ -774,6 +774,14 @@ RRULE:FREQ=MONTHLY;INTERVAL=${interval};BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1${end}`,
     expect(() => read(weekly, spentRun(RUN_MS))).toThrow(FeedTooLargeError);
   });
 
+  it('asks the run before it makes an iterator, even for a series whose iterator yields nothing', () => {
+    // The one occurrence is excluded, so no step is ever taken: only the ask before the iterator can see the run is out.
+    const excluded = feed(event('DTSTART:20261014T140000Z\nRRULE:FREQ=DAILY;COUNT=1\nEXDATE:20261014T140000Z', 'x'));
+    expect(read(excluded, budget()).rows).toEqual([]);
+    expect(() => read(excluded, budget(0))).toThrow(FeedTooLargeError);
+    expect(() => read(excluded, spentRun(RUN_MS))).toThrow(FeedTooLargeError);
+  });
+
   it('reads the clock of the run before it makes an iterator for an old day-search series, while gathering', () => {
     const spy = vi.spyOn(ICAL.Recur.prototype, 'iterator');
     try {
