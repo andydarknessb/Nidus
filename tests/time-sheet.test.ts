@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { TimeSheet } from '../src/components/TimeSheet';
+import { A_SHEET } from '../src/lib/inert-behind';
 import { elementAt } from './support/markup';
 
 // The time sheet as it is first drawn (docs/specs/0013, The time sheet; docs/look.md, A sheet and A field). Rendered to markup, so what is
@@ -143,6 +144,14 @@ describe('the time sheet over the form', () => {
   it('is drawn beside the form’s sheet and not inside it, so that its Escape never reaches the form’s dialog through the tree', () => {
     const form = source('components/NativeEventSheet.tsx');
     expect(form.indexOf('<TimeSheet')).toBeGreaterThan(form.indexOf('</Sheet>'));
+    expect(form.slice(form.indexOf('<Sheet'), form.indexOf('</Sheet>'))).not.toContain('<TimeSheet');
+  });
+
+  it('is drawn on a scrim that says it is a sheet, so that one opened over another holds the one under it inert', () => {
+    const html = draw();
+    const scrim = elementAt(html, html.indexOf(`<div ${A_SHEET}=""`));
+    expect(tag(scrim, /^<div[^>]*>/)).toMatch(/class="[^"]*\bfixed inset-0\b/);
+    expect(scrim).toContain('role="dialog"');
   });
 
   it('closes on the Sheet’s own keys and scrim, and opens the field', () => {
