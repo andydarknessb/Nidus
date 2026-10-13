@@ -25,8 +25,6 @@ import {
   showsTimeOfDayHeadings,
   updateRoutine,
   isScheduledOn,
-  type Burst,
-  type ChartPart,
   type Routine,
   type RoutineEdit,
   type TimeOfDay,
@@ -34,9 +32,8 @@ import {
 import { PictureField, RoutinePicture } from './lib/routine-pictures';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
-import { CHART_CHOICES, timeWord, useChartPart } from './lib/routine-chart';
+import { CHART_CHOICES, timeWord, type ChartColumn, type RoutineChart } from './lib/routine-chart';
 import { useOverflow } from './lib/use-overflow';
-import { useCelebration, type RoutinesToday } from './lib/use-routines-today';
 import { unnamed } from './lib/write-failure';
 import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
@@ -54,46 +51,14 @@ const COLUMN: ColumnLayout = {
 // In portrait (docs/specs/0009) the column is its natural height, with no foot of its own: the chart scrolls.
 const PORTRAIT_COLUMN: ColumnLayout = { ...COLUMN, className: COLUMN.className.replace('max-h-full ', '') };
 
-function Column({
-  profile,
-  routines,
-  done,
-  part,
-  held,
-  problem,
-  onToggle,
-  burst,
-  onFinish,
-  onLand,
-  portrait,
-}: {
-  profile: Profile;
-  routines: Routine[];
-  done: Set<string>;
-  part: ChartPart;
-  held: ReadonlySet<string>;
-  problem: string | undefined;
-  onToggle: (routine: Routine) => Promise<boolean>;
-  burst: Burst | undefined;
-  onFinish: (at: number) => void;
-  onLand: (id: number) => void;
-  portrait: boolean;
-}) {
+function Column({ column, tap, portrait }: { column: ChartColumn; tap: RoutineChart['tap']; portrait: boolean }) {
   // Whether the tiles hold more than the column shows. The button is the tiles' last child, stuck to their foot, so a tick, a part
   // or a person coming and going is a render of this column and reads it again.
   const more = useOverflow('y', 'over');
   return (
     <RoutineColumn
-      profile={profile}
-      routines={routines}
-      done={done}
-      part={part}
-      held={held}
-      problem={problem}
-      onToggle={onToggle}
-      burst={burst}
-      onFinish={onFinish}
-      onLand={onLand}
+      column={column}
+      tap={tap}
       layout={portrait ? PORTRAIT_COLUMN : COLUMN}
       tilesIn={(tiles) => (
         // The scrolling box has no padding, so the "More" button at its foot sticks flush with its end; the padding inside it is room for
@@ -102,7 +67,7 @@ function Column({
         <div ref={portrait ? undefined : more.scroller} className={portrait ? '-m-1' : cn('-m-1 min-h-0 overflow-y-auto', FOOT_CLEARANCE)}>
           <div className="flex flex-col gap-2.5 p-1">{tiles}</div>
           {/* The tiles are 4 px in from the box, so the button is. */}
-          {!portrait && <OverflowButton control={more} of={`${profile.name}'s routines`} surface="person" className="px-1" />}
+          {!portrait && <OverflowButton control={more} of={`${column.profile.name}'s routines`} surface="person" className="px-1" />}
         </div>
       )}
     />
@@ -115,9 +80,8 @@ function Column({
 // width does the row scroll sideways, and the heading row then holds a "More people" button that says so.
 // `portrait` is the Wall's one read of the window (useHomeLayout, from the shell): a tablet hung upright (docs/specs/0009). The columns then
 // sit in a grid, each its natural height, and the chart scrolls as one column with the shared "More" foot; there is no sideways "More".
-export function RoutinesChart({ routines, portrait = false }: { routines: RoutinesToday; portrait?: boolean }) {
-  const { problems, columns, done, toggle } = routines;
-  const celebration = useCelebration(routines);
+export function RoutinesChart({ routines, portrait = false }: { routines: RoutineChart; portrait?: boolean }) {
+  const { columns, part: shown, pickPart: pick, tap } = routines;
   // The row of columns, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row;
   // in portrait the box is the chart's column and the button is its foot.
   const row = useOverflow(portrait ? 'y' : 'x', portrait ? 'over' : undefined);
@@ -125,24 +89,7 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
 
-  const { shown, held, pick } = useChartPart(routines);
-
-  const people = columns.map(({ profile, routines: today }) => (
-    <Column
-      key={profile.id}
-      profile={profile}
-      routines={today}
-      done={done}
-      part={shown}
-      held={held}
-      problem={problems[profile.id]}
-      onToggle={toggle}
-      burst={celebration.bursts[profile.id]}
-      onFinish={(at) => celebration.start(profile.id, at)}
-      onLand={(id) => celebration.land(profile.id, id)}
-      portrait={portrait}
-    />
-  ));
+  const people = columns.map((column) => <Column key={column.profile.id} column={column} tap={tap} portrait={portrait} />);
 
   return (
     <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-4">

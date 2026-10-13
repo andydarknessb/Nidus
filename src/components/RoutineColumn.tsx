@@ -1,18 +1,27 @@
 import { cn } from 'cn';
-import { Star, type LucideIcon } from 'lucide-react';
+import { Moon, Star, Sun, Sunrise, type LucideIcon } from 'lucide-react';
 import { Fragment, useRef, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { personStyle } from '../lib/look';
 import { PROFILE_PALETTE, type Profile } from '../lib/profiles';
-import { PART_ICON, WORDS, timeWord } from '../lib/routine-chart';
+import { timeWord, type ChartColumn, type RoutineChart } from '../lib/routine-chart';
 import { RoutinePicture } from '../lib/routine-pictures';
-import { tapRoutine } from '../lib/routine-tap';
-import { groupByTimeOfDay, partDone, partView, routineProgress, type Burst, type ChartPart, type PartView, type Routine } from '../lib/routines';
+import { groupByTimeOfDay, type Routine, type TimeOfDay } from '../lib/routines';
 import { EmptyWords } from './EmptyWords';
 import { EmptyRing, MAX_PIPS, PersonDisc, Pips, Tick } from './people';
 
-// One Profile's Routines as the Wall's chart and the phone's Routines tab draw them, and the tile that Up next shares. What a tap does
-// is src/lib/routine-tap.ts; the Wall's column (src/RoutinesPage.tsx) and the phone's card (src/phone/PhoneRoutines.tsx) are the
-// layout around RoutineColumn and nothing more.
+// One Profile's Routines as the Wall's chart and the phone's Routines tab draw them, and the tile that Up next shares. What a column
+// holds and what a tap does is the Routine Chart's (src/lib/routine-chart.ts); the Wall's column (src/RoutinesPage.tsx) and the phone's
+// card (src/phone/PhoneRoutines.tsx) are the layout around RoutineColumn and nothing more.
+
+// The words of a tile, whatever they are. A word too long for its line is hyphenated (the page says lang="en") or, where that
+// cannot be done, broken onto the next line, and what is past the last line ends in an ellipsis: no letter is ever cut with
+// nothing to show it. `dir="auto"` on the element sets the direction from the words, so a right-to-left title starts at the
+// right and, when it is cut, is cut at its end; `text-start` follows that direction.
+const WORDS = 'min-w-0 text-start break-words hyphens-auto';
+
+// The icon each part of the day has on the chart's control and over a column.
+const PART_ICON: Record<TimeOfDay, LucideIcon> = { morning: Sunrise, afternoon: Sun, evening: Moon };
+
 
 // The pieces of one burst, one in each colour of the Profile palette: how far each flies sideways (as a
 // percentage of the group's width), how far it rises first and how far it then falls (rem, from where the
@@ -159,27 +168,11 @@ function Tiles({ list, profile, done, onTap }: { list: Routine[]; profile: Profi
 
 // What one Profile's column shows for the part of the day (or every part): the part's heading with its Done mark, its tiles, what is
 // left from earlier and the Routines for any time, or, on the whole day, every Routine under its part. The phone's card draws the same.
-// `view` is partView for the part, null on the whole day, and `finished` whether the Profile has done everything today.
-export function PartGroups({
-  profile,
-  routines,
-  done,
-  part,
-  view,
-  finished,
-  onTap,
-}: {
-  profile: Profile;
-  routines: Routine[];
-  done: ReadonlySet<string>;
-  part: ChartPart;
-  view: PartView | null;
-  finished: boolean;
-  onTap: (routine: Routine, button: HTMLElement) => void;
-}) {
+function PartGroups({ column, onTap }: { column: ChartColumn; onTap: (routine: Routine, button: HTMLElement) => void }) {
+  const { profile, part, routines, done, finished } = column;
   const tiles = (list: Routine[]) => <Tiles list={list} profile={profile} done={done} onTap={onTap} />;
-  if (view === null || part === 'whole') {
-    return groupByTimeOfDay(routines).map((group) => (
+  if (part === 'whole') {
+    return groupByTimeOfDay(routines.all).map((group) => (
       <Fragment key={group.label}>
         <GroupLabel icon={group.value === null ? undefined : PART_ICON[group.value]}>{group.label}</GroupLabel>
         {tiles(group.routines)}
@@ -195,7 +188,7 @@ export function PartGroups({
         // nothing more to a screen reader then.
         status={
           <span key={part} role="status" className="flex items-center gap-1.5 text-[14.5px] leading-[18px] font-semibold">
-            {partDone(view, done) && (
+            {column.partDone && (
               <>
                 {!finished && (
                   <span className="sr-only">
@@ -213,35 +206,35 @@ export function PartGroups({
       >
         {timeWord(part)}
       </GroupLabel>
-      {view.own.length > 0 && tiles(view.own)}
-      {view.earlier.length > 0 && (
+      {routines.own.length > 0 && tiles(routines.own)}
+      {routines.earlier.length > 0 && (
         <>
           <GroupLabel>Left from earlier</GroupLabel>
-          {tiles(view.earlier)}
+          {tiles(routines.earlier)}
         </>
       )}
-      {view.anytime.length > 0 && (
+      {routines.anytime.length > 0 && (
         <>
           <GroupLabel>Any time</GroupLabel>
-          {tiles(view.anytime)}
+          {tiles(routines.anytime)}
         </>
       )}
-      {view.own.length + view.earlier.length + view.anytime.length === 0 && <EmptyWords className="px-1">Nothing this {part}.</EmptyWords>}
+      {routines.visible.length === 0 && <EmptyWords className="px-1">Nothing this {part}.</EmptyWords>}
     </>
   );
 }
 
 // The foot line under a column: how many Routines of earlier parts are done, with a tick for each of the first three. Nothing when none.
-export function DoneEarlier({ view, color }: { view: PartView; color: string }) {
-  if (view.doneEarlier === 0) return null;
+function DoneEarlier({ done, color }: { done: number; color: string }) {
+  if (done === 0) return null;
   return (
     <div className="mt-1 flex h-6 flex-none items-center gap-2">
       <span aria-hidden className="flex gap-1">
-        {Array.from({ length: Math.min(view.doneEarlier, 3) }, (_, index) => (
+        {Array.from({ length: Math.min(done, 3) }, (_, index) => (
           <Tick key={index} size={20} color={color} strong />
         ))}
       </span>
-      <span className="min-w-0 flex-1 truncate text-sm leading-[1.2857] text-muted-foreground">{view.doneEarlier} done earlier today</span>
+      <span className="min-w-0 flex-1 truncate text-sm leading-[1.2857] text-muted-foreground">{done} done earlier today</span>
     </div>
   );
 }
@@ -252,57 +245,17 @@ export type ColumnLayout = { className: string; header: string; disc: number };
 
 // One Profile's Routines: its disc, name and how far it is today, its pips, then the part of the day that is showing (or every
 // part), then the foot line for what was done earlier. A tap on a tile ticks or unticks the Routine and, when it finishes the Profile,
-// starts the burst where the tile is (tapRoutine), measured from this section, which the burst is drawn over. A Profile with nothing
+// starts the burst where the tile is (the chart's tap), measured from this section, which the burst is drawn over. A Profile with nothing
 // today has the column and says so. `tilesIn` puts the tiles in a box of the screen's own (the Wall's scrolls); without it they are
 // the section's own children.
-export function RoutineColumn({
-  profile,
-  routines,
-  done,
-  part,
-  held,
-  problem,
-  onToggle,
-  burst,
-  onFinish,
-  onLand,
-  layout,
-  tilesIn,
-}: {
-  profile: Profile;
-  routines: Routine[];
-  done: Set<string>;
-  part: ChartPart;
-  held: ReadonlySet<string>;
-  // What the last tick of this Profile's that did not save says; empty when it was saved.
-  problem: string | undefined;
-  onToggle: (routine: Routine) => Promise<boolean>;
-  // Set while a burst plays over this column.
-  burst: Burst | undefined;
-  // A tap on a Routine here finished the Profile, `at` px down the column; the burst's last piece has landed.
-  onFinish: (at: number) => void;
-  onLand: (id: number) => void;
-  layout: ColumnLayout;
-  tilesIn?: (tiles: ReactNode) => ReactNode;
-}) {
-  const { done: count, total } = routineProgress(routines, done);
-  const finished = total > 0 && count === total;
+export function RoutineColumn({ column, tap, layout, tilesIn }: { column: ChartColumn; tap: RoutineChart['tap']; layout: ColumnLayout; tilesIn?: (tiles: ReactNode) => ReactNode }) {
+  const { profile, problem, burst, finished } = column;
+  const { done: count, total } = column.progress;
   // With more Routines than pips, the count is all that says how far along they are, so it is read out.
   const pips = total > 0 && total <= MAX_PIPS;
-  const view = part === 'whole' ? null : partView(routines, done, part, held);
   const frame = useRef<HTMLElement>(null);
 
-  const tiles = (
-    <PartGroups
-      profile={profile}
-      routines={routines}
-      done={done}
-      part={part}
-      view={view}
-      finished={finished}
-      onTap={(routine, button) => tapRoutine({ routines, done, routine, button, frame: frame.current, onToggle, onFinish })}
-    />
-  );
+  const tiles = <PartGroups column={column} onTap={(routine, button) => void tap(routine, { button, frame: frame.current })} />;
 
   return (
     <section ref={frame} aria-labelledby={`routines-${profile.id}`} className={layout.className} style={personStyle(profile.color)}>
@@ -337,13 +290,13 @@ export function RoutineColumn({
       </div>
       <Pips done={count} total={total} label={`${profile.name}: ${count} of ${total} ${total === 1 ? 'routine' : 'routines'} done`} color={profile.color} height={10} />
       {total > 0 && (tilesIn ? tilesIn(tiles) : tiles)}
-      {view !== null && <DoneEarlier view={view} color={profile.color} />}
+      <DoneEarlier done={column.routines.doneEarlier} color={profile.color} />
       {problem && (
         <p role="alert" className="flex-none px-1 text-[15px] leading-5">
           {problem}
         </p>
       )}
-      {burst !== undefined && <Confetti key={burst.id} at={burst.at} onDone={() => onLand(burst.id)} />}
+      {burst !== undefined && <Confetti key={burst.id} at={burst.at} onDone={burst.land} />}
     </section>
   );
 }

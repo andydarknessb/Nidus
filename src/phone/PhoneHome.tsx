@@ -10,7 +10,7 @@ import { fiveDays } from '../lib/calendar-occurrences';
 import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { focusElement } from '../lib/focus';
 import { ProfileFilterContext } from '../lib/profile-filter';
-import { UP_NEXT_TILES } from '../lib/routines';
+import { UP_NEXT_TILES } from '../lib/routine-chart';
 import { pillPeople, scheduleColumns } from '../lib/schedule';
 import { dayState, useDayEvents, useNow } from '../lib/wall-hooks';
 import { forecastDay } from '../lib/weather';

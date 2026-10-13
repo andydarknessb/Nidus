@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { HOME_HOLD_MS } from './routines';
+import { HOME_HOLD_MS } from './routine-chart';
 
 // Shared Lists (CONTEXT.md). Every function takes the client so the same code
 // runs in the app (the global client) and in tests (a Household Account or a

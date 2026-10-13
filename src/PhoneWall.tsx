@@ -2,7 +2,7 @@ import type { WallRoute } from './lib/wall-routes';
 import type { CalendarView } from './lib/paged-view';
 import type { HouseholdView } from './lib/household';
 import type { Profile } from './lib/profiles';
-import type { RoutinesToday } from './lib/use-routines-today';
+import type { RoutineChart } from './lib/routine-chart';
 import type { Forecast } from './lib/weather';
 import { PhoneCalendar } from './phone/PhoneCalendar';
 import { PhoneHome } from './phone/PhoneHome';
@@ -27,7 +27,7 @@ export type PhoneScreenProps = {
   // The Household's Profiles; null until read.
   profiles: Profile[] | null;
   // Today's Routines, read once by HomeShell.
-  routines: RoutinesToday;
+  routines: RoutineChart;
   openView: (view: CalendarView, date: string) => void;
   openRoutines: () => void;
   openLists: () => void;

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PeopleStrip } from '../src/components/PeopleStrip';
 import { createProfileFilter } from '../src/lib/profile-filter';
 import type { Profile } from '../src/lib/profiles';
-import type { RoutinesToday } from '../src/lib/use-routines-today';
+import { chartOf } from './support/routine-chart';
 import type { PhoneHome as PhoneHomeType } from '../src/phone/PhoneHome';
 
 // The phone's Home rendered to markup (docs/specs/0004): its cards in order, the Today card's words, and the people strip's phone
@@ -24,7 +24,7 @@ afterAll(() => {
 const noop = () => undefined;
 const classesOf = (tag: string) => (/class="([^"]*)"/.exec(tag)?.[1] ?? '').replaceAll('&amp;', '&').replaceAll('&gt;', '>').split(' ');
 
-const routines: RoutinesToday = { date: '2026-10-01', state: 'ready', settled: true, failed: false, part: 'evening', problems: {}, groups: [], columns: [], done: new Set(), finished: new Set(), toggle: async () => true };
+const routines = chartOf({ profiles: [], routines: [] });
 
 const home = (timezone: string | null) =>
   renderToStaticMarkup(
@@ -118,7 +118,7 @@ describe('the people strip on a phone', () => {
     expect(html).toContain('phone:size-9!');
     expect(html).not.toContain('More people');
     const ava = family[0]!;
-    const withRoutines: RoutinesToday = { ...routines, groups: [{ profile: ava, routines: [{ id: 'r1', profile_id: ava.id, title: 'Teeth', days_of_week: 127, time_of_day: null, sort_order: 0, archived_at: null, picture: null }] }] };
+    const withRoutines = chartOf({ profiles: [ava], routines: [{ id: 'r1', profile_id: ava.id, title: 'Teeth', days_of_week: 127, time_of_day: null, sort_order: 0, archived_at: null, picture: null }] });
     const progress = renderToStaticMarkup(createElement(PeopleStrip, { profiles: family, routines: withRoutines, filter: createProfileFilter(), pressed: [] }));
     expect(progress).toContain('hidden @min-[9.6rem]:block phone:block');
     expect(progress).toContain('role="progressbar"');
