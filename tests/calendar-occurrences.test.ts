@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadOccurrences, type Occurrence } from '../src/lib/calendar-occurrences';
+import { loadOccurrences, readPages, type Occurrence } from '../src/lib/calendar-occurrences';
+import { loadUpcomingNativeEvents, saveNativeEvent } from '../src/lib/native-events';
+import { addDays, householdDay, instantAt } from '../supabase/functions/_shared/zoned-time.ts';
 import { PROFILE_PALETTE, createProfile } from '../src/lib/profiles';
 import { arrangeCalendar, arrangeEvents } from './support/calendar';
 import {
@@ -190,5 +192,65 @@ describe('calendar_occurrences', () => {
 
     const titles = (await loadOccurrences(await asHouseholdAccount(account), WINDOW.from, WINDOW.to)).map((occurrence) => occurrence.title);
     expect(titles).toEqual(['Trip', 'Late']);
+  });
+});
+
+// The phone's list reads Occurrences, a Repeat's included, so it is read a page at a time like a month is.
+describe('reading the view a page at a time', () => {
+  const row = (n: number) => ({ source: 'native', id: `row-${String(n).padStart(5, '0')}` });
+
+  it('asks for the next 1000 rows until a page comes back short', async () => {
+    const asked: [number, number][] = [];
+    const rows = await readPages(async (first, last) => {
+      asked.push([first, last]);
+      return { data: Array.from({ length: Math.min(last, 2499) - first + 1 }, (_, index) => row(first + index)), error: null };
+    });
+    expect(asked).toEqual([[0, 999], [1000, 1999], [2000, 2999]]);
+    expect(rows).toHaveLength(2500);
+  });
+
+  it('keeps an occurrence that moved between two requests once', async () => {
+    const rows = await readPages(async (first) => ({ data: first === 0 ? Array.from({ length: 1000 }, (_, index) => row(index)) : [row(999), row(1000)], error: null }));
+    expect(rows.map((found) => found.id)).toHaveLength(1001);
+    expect(new Set(rows.map((found) => found.id)).size).toBe(1001);
+  });
+
+  it('is one request for a short answer, and none is lost when a page is exactly full', async () => {
+    const asked: [number, number][] = [];
+    expect(await readPages(async (first, last) => (asked.push([first, last]), { data: [row(0)], error: null }))).toHaveLength(1);
+    expect(asked).toEqual([[0, 999]]);
+    const full = await readPages(async (first) => ({ data: first === 0 ? Array.from({ length: 1000 }, (_, index) => row(index)) : [], error: null }));
+    expect(full).toHaveLength(1000);
+  });
+
+  it('throws what the database said', async () => {
+    await expect(readPages(async () => ({ data: null, error: new Error('no') }))).rejects.toThrow('no');
+  });
+
+  it('reads the phone\'s whole upcoming list, past the 1000 rows one request gives, in start order', async () => {
+    const account = await arrange();
+    const phone = await asHouseholdAccount(account);
+    const CHICAGO = 'America/Chicago';
+    // Two events every day from tomorrow: about 730 Occurrences each, two years ahead.
+    const first = addDays(householdDay(CHICAGO).date, 1);
+    const at = (time: string) => new Date(instantAt(first, time, CHICAGO)).toISOString();
+    for (const [title, start, end] of [['Pills', '08:00', '08:15'], ['Walk', '17:00', '17:30']] as const) {
+      await saveNativeEvent(phone, {
+        title, location: null, notes: null, starts_at: at(start), ends_at: at(end), is_all_day: false, profile_ids: [],
+        repeat_every: 'day', repeat_interval: 1, repeat_days: null, repeat_until: null,
+      });
+    }
+    await saveNativeEvent(phone, { title: 'Dentist', location: null, notes: null, starts_at: at('12:00'), ends_at: at('13:00'), is_all_day: false, profile_ids: [], repeat_every: null, repeat_interval: 1, repeat_days: null, repeat_until: null });
+
+    const upcoming = await loadUpcomingNativeEvents(phone, new Date());
+
+    const { count } = await asServiceRole().from('calendar_occurrences').select('id', { count: 'exact', head: true }).eq('household_id', account.household.id);
+    expect(count).toBeGreaterThan(1400);
+    expect(upcoming).toHaveLength(count!);
+    expect(new Set(upcoming.map((found) => found.id)).size).toBe(count);
+    const starts = upcoming.map((found) => Date.parse(found.starts_at));
+    expect(starts).toEqual([...starts].sort((a, b) => a - b));
+    // The far end of the two years is there, which one request would have cut off.
+    expect(upcoming.at(-1)!.starts_at.slice(0, 4)).toBe(String(Number(first.slice(0, 4)) + 2));
   });
 });
