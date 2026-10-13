@@ -72,7 +72,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
     // Matches from an earlier search are gone from the moment a new one starts.
     setMatches([]);
     try {
-      const found = await searchPlaces(name);
+      const found = await searchPlaces(globalThis.fetch.bind(globalThis), name);
       if (mine !== latestSearch.current) return;
       setMatches(found);
       setSearchStatus(found.length === 0 ? 'none' : 'found');

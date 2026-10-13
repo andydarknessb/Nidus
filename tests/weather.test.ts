@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   CURRENT_MAX_AGE_MS,
@@ -6,6 +5,7 @@ import {
   capPlace,
   describePlaces,
   describeWeather,
+  fetchForecast,
   forecastDay,
   forecastToShow,
   forecastUrl,
@@ -14,15 +14,14 @@ import {
   parsePlaces,
   readDelayMs,
   requestInit,
+  searchPlaces,
   staleDelayMs,
   type WeatherIcon,
 } from '../src/lib/weather';
+import { fakeOpenMeteo, recorded } from './support/open-meteo';
 
-// Open-Meteo's real answers, recorded once (tests/fixtures) and read here as data. Nothing in this
-// file calls or fakes the network.
-function recorded(name: string) {
-  return JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
-}
+// Open-Meteo's real answers, recorded once (tests/fixtures) and read here as data. The two fetchers are driven through a fake
+// Open-Meteo injected as their `fetch` (tests/support/open-meteo.ts); everything else is pure.
 
 // An instant written in UTC, so no test reads the machine's zone.
 const at = (iso: string) => Date.parse(`${iso}Z`);
@@ -644,5 +643,52 @@ describe('forecastDay', () => {
 
   it('finds nothing when there is no forecast', () => {
     expect(forecastDay(null, '2026-10-01')).toBeUndefined();
+  });
+});
+
+describe('fetchForecast', () => {
+  it('asks Open-Meteo for the place, unit and Household Timezone, with no cookies and no referrer, and gives the parsed forecast', async () => {
+    const open = fakeOpenMeteo({ forecast: recorded('open-meteo-forecast') });
+
+    const forecast = await fetchForecast(open.fetch, 30.27, -97.74, 'fahrenheit', 'America/Chicago');
+
+    expect(open.calls).toHaveLength(1);
+    expect(open.calls[0]!.url.href).toBe(forecastUrl(30.27, -97.74, 'fahrenheit', 'America/Chicago'));
+    expect(open.calls[0]!.init).toMatchObject({ credentials: 'omit', referrerPolicy: 'no-referrer' });
+    expect(forecast).toEqual(parseForecast(recorded('open-meteo-forecast')));
+    expect(forecast.current).toEqual({ temperature: 76, code: 80, isDay: true });
+    expect(forecast.days).toHaveLength(7);
+  });
+
+  it('fails on an HTTP failure status, and on an answer it does not expect, never giving a wrong number', async () => {
+    await expect(fetchForecast(fakeOpenMeteo({ forecast: 503 }).fetch, 30.27, -97.74, 'celsius', 'America/Chicago')).rejects.toThrow('Open-Meteo answered 503');
+    await expect(fetchForecast(fakeOpenMeteo({ forecast: { current: {} } }).fetch, 30.27, -97.74, 'celsius', 'America/Chicago')).rejects.toThrow();
+  });
+
+  it('fails when the connection does', async () => {
+    await expect(fetchForecast(fakeOpenMeteo({ forecast: null }).fetch, 30.27, -97.74, 'celsius', 'America/Chicago')).rejects.toThrow('Failed to fetch');
+  });
+});
+
+describe('searchPlaces', () => {
+  it('asks the geocoding service for what was typed and gives the parsed matches', async () => {
+    const open = fakeOpenMeteo({ places: recorded('open-meteo-places') });
+
+    const places = await searchPlaces(open.fetch, 'Aus tin & co');
+
+    expect(open.calls).toHaveLength(1);
+    expect(open.calls[0]!.url.href).toBe(geocodingUrl('Aus tin & co'));
+    expect(open.calls[0]!.init).toMatchObject({ credentials: 'omit', referrerPolicy: 'no-referrer' });
+    expect(places).toEqual(parsePlaces(recorded('open-meteo-places')));
+    expect(places).toHaveLength(5);
+    expect(places[0]).toMatchObject({ name: 'Austin', region: 'Texas' });
+  });
+
+  it('gives no matches when Open-Meteo found nothing', async () => {
+    expect(await searchPlaces(fakeOpenMeteo({ places: {} }).fetch, 'Nowhereville')).toEqual([]);
+  });
+
+  it('fails on an HTTP failure status', async () => {
+    await expect(searchPlaces(fakeOpenMeteo({ places: 500 }).fetch, 'Austin')).rejects.toThrow('Open-Meteo answered 500');
   });
 });
