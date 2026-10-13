@@ -12,6 +12,7 @@ import {
   type PagingWindow,
   type WallDay,
 } from '../lib/paged-view';
+import { cellName } from '../lib/month-grid';
 import { personStyle } from '../lib/look';
 import type { DayEvents as Read } from '../lib/day-events';
 import { pickedDay, type MonthDot } from '../lib/phone-calendar';
@@ -65,8 +66,8 @@ export function MonthDay({
   onPick: (date: string) => void;
 }) {
   const number = Number(day.date.slice(8));
-  // As the chips and the tablet's cells are named: the date and how many events, with ", today" on today's.
-  const words = `${dateWords.cell(day.date, occurrences === null ? null : occurrences.length)}${day.isToday ? ', today' : ''}`;
+  // Named as the tablet's cells are, by the one rule (cellName): the date and how many events, with ", today" on today's.
+  const words = cellName(day.date, day.isToday, occurrences === null ? null : occurrences.length);
   if (beyond) {
     return (
       <div className="h-[58px] min-w-12 p-0.5">

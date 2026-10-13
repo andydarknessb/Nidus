@@ -1,8 +1,8 @@
 import { cn } from 'cn';
 import { Pin } from 'lucide-react';
-import { dateWords, eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
+import { eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
 import type { Occurrence } from '../lib/calendar-occurrences';
-import { cellLines } from '../lib/month-grid';
+import { cellLines, cellName } from '../lib/month-grid';
 import type { WallDay } from '../lib/paged-view';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, type PillPeople } from '../lib/schedule';
@@ -23,14 +23,6 @@ export const BEYOND_RANGE = "Beyond the calendar's range";
 // and not by colour alone. --input holds 3:1 on the card in both modes (tests/look.test.ts). The date sits on a --card ground of
 // its own, so the lines never run under the digits. Used by the tablet's grid and the phone's (src/phone/PhoneMonth.tsx).
 export const HATCH = 'bg-[repeating-linear-gradient(135deg,transparent_0_6px,var(--input)_6px_8px)]';
-
-// What the cell is called: the date drawn on it first, so a name spoken from the screen ("22") finds it, then "today" on today's
-// (which the disc says to the eye), then the day in full and how many events it holds. Until its week has been read there is no
-// count to give, and "no events" would call a day free that may not be.
-function cellName(day: WallDay, occurrences: Occurrence[] | null): string {
-  const date = Number(day.date.slice(8));
-  return `${date}, ${day.isToday ? 'today, ' : ''}${dateWords.cell(day.date, occurrences === null ? null : occurrences.length)}`;
-}
 
 // `occurrences` are the day's own, in order, and null until its week has been read; `profiles` fill each line, and the lines wait
 // for them, so the caller gives null for `occurrences` until it has them. A day beyond the range has nothing to open and nothing
@@ -79,7 +71,7 @@ export function DayCell({
     <Button
       variant="quiet"
       aria-current={day.isToday ? 'date' : undefined}
-      aria-label={cellName(day, occurrences)}
+      aria-label={cellName(day.date, day.isToday, occurrences === null ? null : occurrences.length)}
       onClick={() => onOpen(day.date)}
       // A day of the neighbouring month is dimmed with the muted colour, which holds 7:1 on the card and on today's lifted ground.
       // The cell is a grid item and clips what it holds, so its focus ring is drawn inside it.

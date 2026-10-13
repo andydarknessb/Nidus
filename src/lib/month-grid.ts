@@ -1,5 +1,13 @@
-import { eventCount } from '../../supabase/functions/_shared/event-words.ts';
+import { dateWords, eventCount } from '../../supabase/functions/_shared/event-words.ts';
 import type { Occurrence } from './calendar-occurrences';
+
+// What a month cell is called, on the Wall and on the phone alike: the date's number first, so a name spoken from the screen ("22")
+// finds it, then the day in full and how many events it holds, then ", today" on today's (which the disc says to the eye), at the end
+// as the week's chips and the schedule's day headings have it. `occurrenceCount` is null until the day's week has been read: there is
+// no count to give then, and "no events" would call a day free that may not be.
+export function cellName(date: string, isToday: boolean, occurrenceCount: number | null): string {
+  return `${Number(date.slice(8))}, ${dateWords.cell(date, occurrenceCount)}${isToday ? ', today' : ''}`;
+}
 
 // How a month's day cells are fitted to the room the grid has (CONTEXT.md: Wall; docs/look.md "Month"): how many event lines a cell
 // can hold, what it says of the ones it has no line for, and the least height a month asks of the screen. Pure, so it is tested
