@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { NativeEventSheet as NativeEventSheetType } from '../src/components/NativeEventSheet';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
 import {
   addedSentence,
@@ -11,13 +14,12 @@ import {
   moveToDay,
   openingTimes,
   savedSentence,
-  stepEnd,
-  stepStart,
   type EventForm,
   type NativeEventInput,
 } from '../src/lib/native-events';
+import { setEnd, setStart } from '../src/lib/time-picker';
 
-// The Add event sheet's rules (spec 0003, Add event sheet): the steppers, the days, a form nothing has touched and the line
+// The Add event sheet's rules (spec 0003, Add event sheet): Starts and Ends, the days, a form nothing has touched and the line
 // the status line says after a save. All of it is pure, so none of it needs the local stack; the tests that write
 // through it are in native-events.test.ts. Every date goes through the Household Timezone, never the machine's.
 
@@ -26,120 +28,68 @@ const form = (startTime: string, endTime: string): EventForm => ({ ...blankEvent
 const times = (value: EventForm) => [value.startTime, value.endTime];
 
 describe('Starts and Ends', () => {
-  it('moves Starts a quarter hour, and Ends by the same amount', () => {
-    expect(times(stepStart(form('14:00', '15:30'), 1))).toEqual(['14:15', '15:45']);
-    expect(times(stepStart(form('14:00', '15:30'), -1))).toEqual(['13:45', '15:15']);
+  // (The rules for setting a time are in time-picker.test.ts.) The sheet opened by a tap cannot be drawn to markup; what is drawn is
+  // the two buttons that open it.
+  let NativeEventSheet: typeof NativeEventSheetType;
+  beforeAll(async () => {
+    // It imports the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough.
+    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+    ({ NativeEventSheet } = await import('../src/components/NativeEventSheet'));
   });
+  const props = { timezone: CHICAGO, profiles: [], onSaved: () => undefined, onClose: () => undefined };
+  const drawNew = () => renderToStaticMarkup(createElement(NativeEventSheet, { ...props, date: '2026-10-02' }));
+  const drawEdit = (changes: Partial<Occurrence> = {}) =>
+    renderToStaticMarkup(
+      createElement(NativeEventSheet, {
+        ...props,
+        occurrence: { title: 'Plumber', description: null, location: null, starts_at: '2026-10-02T19:10:00Z', ends_at: '2026-10-02T20:20:00Z', is_all_day: false, profile_ids: [], ...changes } as unknown as Occurrence,
+      }),
+    );
+  const buttonNamed = (html: string, label: string) => /<button[^>]*>/.exec(html.slice(html.indexOf(`aria-label="${label}"`) - 80))?.[0] ?? '';
 
-  it('moves Ends a quarter hour on its own', () => {
-    expect(times(stepEnd(form('14:00', '15:00'), 1))).toEqual(['14:00', '15:15']);
-    expect(times(stepEnd(form('14:00', '15:00'), -1))).toEqual(['14:00', '14:45']);
-  });
-
-  it('keeps Ends at least 15 minutes after Starts', () => {
-    expect(times(stepEnd(form('14:00', '14:30'), -1))).toEqual(['14:00', '14:15']);
-    // At 15 minutes there is nothing earlier to step to.
-    const least = form('14:00', '14:15');
-    expect(stepEnd(least, -1)).toBe(least);
-  });
-
-  it('stops Starts at 11:30 PM, and Ends goes with it as far as 11:45 PM', () => {
-    let current = form('22:30', '23:30');
-    const seen: string[][] = [];
-    for (let press = 0; press < 6; press += 1) {
-      current = stepStart(current, 1);
-      seen.push(times(current));
+  it('are two buttons, each named for its time: "Starts, 9:00 AM" and "Ends, 10:00 AM"', () => {
+    const html = drawNew();
+    for (const label of ['Starts, 9:00 AM', 'Ends, 10:00 AM']) {
+      expect(html).toContain(`aria-label="${label}"`);
+      const button = buttonNamed(html, label);
+      expect(button).toContain('type="button"');
+      expect(button).toMatch(/class="[^"]*\bh-15\b/);
+      expect(button).toMatch(/class="[^"]*\bw-full\b/);
+      expect(button).toMatch(/class="[^"]*\brounded-2xl\b[^"]*\bbg-muted\b[^"]*\bpx-4\b/);
     }
-    expect(seen).toEqual([
-      ['22:45', '23:45'],
-      ['23:00', '23:45'],
-      ['23:15', '23:45'],
-      ['23:30', '23:45'],
-      ['23:30', '23:45'],
-      ['23:30', '23:45'],
-    ]);
+    // Their captions are over them, and the buttons are named for the whole.
+    expect(html).toContain('>Starts</span>');
+    expect(html).toContain('>Ends</span>');
   });
 
-  it('stops Ends at 11:45 PM', () => {
-    const late = stepEnd(form('14:00', '23:30'), 1);
-    expect(late.endTime).toBe('23:45');
-    expect(stepEnd(late, 1)).toBe(late);
+  it('show the time as the steppers did: the clock in Young Serif at 24, the AM or PM small', () => {
+    const html = drawEdit();
+    expect(html).toContain('aria-label="Starts, 2:10 PM"');
+    expect(html).toContain('aria-label="Ends, 3:20 PM"');
+    expect(html).toContain('<span class="font-display text-2xl">2:10</span><span class="text-base font-medium">PM</span>');
+    expect(html).toContain('<span class="font-display text-2xl">3:20</span><span class="text-base font-medium">PM</span>');
   });
 
-  it('stops Starts at midnight, and Ends comes back with it', () => {
-    const early = stepStart(form('00:15', '01:15'), -1);
-    expect(times(early)).toEqual(['00:00', '01:00']);
-    expect(stepStart(early, -1)).toBe(early);
-    // An Ends that was held at 11:45 PM comes back by the same amount as Starts, not to where it was.
-    expect(times(stepStart(form('23:30', '23:45'), -1))).toEqual(['23:15', '23:30']);
-  });
-
-  it('keeps an existing event’s times off the quarter hour until a stepper moves one', () => {
-    const occurrence = {
-      title: 'Plumber',
-      description: null,
-      location: null,
-      starts_at: '2026-10-02T19:10:00Z',
-      ends_at: '2026-10-02T20:20:00Z',
-      is_all_day: false,
-      profile_ids: [],
-    } as unknown as Occurrence;
-    const opened = eventFormFromOccurrence(occurrence, CHICAGO);
-    expect(times(opened)).toEqual(['14:10', '15:20']);
-    // The one a stepper moves lands on the next quarter hour that way, and Ends follows Starts by the same amount.
-    expect(times(stepStart(opened, 1))).toEqual(['14:15', '15:25']);
-    expect(times(stepStart(opened, -1))).toEqual(['14:00', '15:10']);
-    expect(times(stepEnd(opened, 1))).toEqual(['14:10', '15:30']);
-    expect(times(stepEnd(opened, -1))).toEqual(['14:10', '15:15']);
-  });
-
-  it('lands inside the limits when an existing time is past them', () => {
-    // Starts at 11:40 PM can only come back, to 11:30 PM, and Ends is held 15 minutes after it.
-    const late = form('23:40', '23:50');
-    expect(stepStart(late, 1)).toBe(late);
-    expect(times(stepStart(late, -1))).toEqual(['23:30', '23:45']);
-    // Ends at 11:50 PM can only come back, to 11:45 PM; with Starts at 11:40 PM there is no room for it to move.
-    expect(stepEnd(form('14:00', '23:50'), 1).endTime).toBe('23:50');
-    expect(stepEnd(form('14:00', '23:50'), -1).endTime).toBe('23:45');
-    expect(stepEnd(late, -1)).toBe(late);
-  });
-
-  it('lets the steppers mend an existing event that is shorter than 15 minutes', () => {
-    expect(times(stepEnd(form('14:00', '14:00'), 1))).toEqual(['14:00', '14:15']);
-    expect(times(stepStart(form('14:00', '14:10'), 1))).toEqual(['14:15', '14:30']);
-    expect(times(stepEnd(form('14:10', '14:20'), 1))).toEqual(['14:10', '14:30']);
-  });
-
-  it('can never hold an end at or before its start, or a time past the limits', () => {
-    const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-    const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
-    const broken: string[] = [];
-    // Every pair of quarter hours the form can hold, and every press from each.
-    for (let start = 0; start <= 23 * 60 + 30; start += 15) {
-      for (let end = start + 15; end <= 23 * 60 + 45; end += 15) {
-        for (const direction of [1, -1] as const) {
-          for (const next of [stepStart(form(clock(start), clock(end)), direction), stepEnd(form(clock(start), clock(end)), direction)]) {
-            const [nextStart, nextEnd] = [minutes(next.startTime), minutes(next.endTime)];
-            if (nextStart < 0 || nextStart > 23 * 60 + 30 || nextEnd > 23 * 60 + 45 || nextEnd - nextStart < 15) {
-              broken.push(`${clock(start)} to ${clock(end)}, ${direction}: ${next.startTime} to ${next.endTime}`);
-            }
-          }
-        }
-      }
+  it('have no stepper left: no minus, no plus, no live region', () => {
+    for (const html of [drawNew(), drawEdit()]) {
+      expect(html).not.toMatch(/aria-label="(?:Start|End) (?:earlier|later)"/);
+      expect(html).not.toContain('<output');
+      expect(html).not.toContain('lucide-minus');
+      expect(html).not.toContain('lucide-plus');
     }
-    expect(broken).toEqual([]);
   });
 
-  it('only ever makes a form eventFormToInput takes, whatever is pressed', () => {
-    // A fixed walk of presses (a small generator, so the test is the same every run) from a new event.
-    let seed = 7;
-    const next = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31);
-    let current = { ...blankEventForm('2026-10-02'), title: 'Plumber' };
-    for (let press = 0; press < 400; press += 1) {
-      const pick = next() % 4;
-      current = (pick < 2 ? stepStart : stepEnd)(current, pick % 2 === 0 ? 1 : -1);
-      expect(eventFormToInput(current, CHICAGO)).not.toHaveProperty('problem');
-    }
+  it('draw no time sheet until one is tapped', () => {
+    const html = drawNew();
+    expect(html.match(/role="dialog"/g)).toHaveLength(1);
+    expect(html).not.toContain('Type a time like 4:30 PM');
+  });
+
+  it('are hidden by All day, and keep their room on the Wall', () => {
+    const html = drawEdit({ is_all_day: true });
+    expect(html).toContain('hidden min-[960px]:invisible min-[960px]:grid');
+    expect(drawNew()).not.toContain('min-[960px]:invisible');
   });
 
   it('says its times as the family reads them', () => {
@@ -243,15 +193,15 @@ describe('moving a new event to another day', () => {
   const now = new Date('2026-10-01T19:21:00-05:00');
   const opened = { ...blankEventForm('2026-10-01'), ...openingTimes('2026-10-01', CHICAGO, now) };
 
-  it('takes the new day’s opening times while no stepper has moved them', () => {
+  it('takes the new day’s opening times while no time has been set', () => {
     expect(times(opened)).toEqual(['20:00', '21:00']);
     const tomorrow = moveToDay(opened, '2026-10-02', false, CHICAGO, now);
     expect(tomorrow).toMatchObject({ date: '2026-10-02', startTime: '09:00', endTime: '10:00' });
     expect(moveToDay(tomorrow, '2026-10-01', false, CHICAGO, now)).toMatchObject({ date: '2026-10-01', startTime: '20:00', endTime: '21:00' });
   });
 
-  it('keeps its times once a stepper has moved them', () => {
-    const moved = stepStart(opened, 1);
+  it('keeps its times once a time has been set', () => {
+    const moved = setStart(opened, '20:15');
     expect(times(moved)).toEqual(['20:15', '21:15']);
     expect(moveToDay(moved, '2026-10-02', true, CHICAGO, now)).toEqual({ ...moved, date: '2026-10-02' });
   });
@@ -290,7 +240,7 @@ describe('a time the clocks skip', () => {
     expect(refused('2027-03-14', '00:30', '01:15', HAVANA)).toEqual(skipped('12:30 AM'));
   });
 
-  it('is named for every form the steppers can make that the clocks refuse', () => {
+  it('is named for every quarter-hour form that the clocks refuse', () => {
     const quarter = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
     const days: [string, string, RegExp][] = [
       [CHICAGO, '2027-03-14', /^The clocks go forward on this day, so there is no 2:\d\d AM\. Pick another time\.$/],
@@ -304,7 +254,7 @@ describe('a time the clocks skip', () => {
           const result = refused(date, quarter(start), quarter(end), zone);
           if (!('problem' in result)) continue;
           count += 1;
-          // The steppers never put an end before its start on the clock, so what is refused is the skipped hour's doing.
+          // An end is never before its start on the clock here, so what is refused is the skipped hour's doing.
           expect(result.problem).toMatch(message);
         }
       }
@@ -365,8 +315,8 @@ describe('a form nothing has touched', () => {
   it('is touched by anything changed', () => {
     expect(isUntouched({ ...opened, date: '2026-10-03' }, opened)).toBe(false);
     expect(isUntouched({ ...opened, allDay: true }, opened)).toBe(false);
-    expect(isUntouched(stepStart(opened, 1), opened)).toBe(false);
-    expect(isUntouched(stepEnd(opened, 1), opened)).toBe(false);
+    expect(isUntouched(setStart(opened, '09:15'), opened)).toBe(false);
+    expect(isUntouched(setEnd(opened, '10:15') as EventForm, opened)).toBe(false);
     expect(isUntouched({ ...opened, profileIds: ['ava'] }, opened)).toBe(false);
     expect(isUntouched({ ...opened, profileIds: [] }, opened)).toBe(false);
     expect(isUntouched({ ...opened, profileIds: ['ava', 'ben', 'cy'] }, opened)).toBe(false);
@@ -374,7 +324,7 @@ describe('a form nothing has touched', () => {
 
   it('is untouched again once what was changed is put back', () => {
     expect(isUntouched({ ...opened, title: '' }, opened)).toBe(true);
-    expect(isUntouched(stepStart(stepStart(opened, 1), -1), opened)).toBe(true);
+    expect(isUntouched(setStart(setStart(opened, '09:15'), '09:00'), opened)).toBe(true);
     expect(isUntouched({ ...opened, allDay: false }, opened)).toBe(true);
     // The same people in the order they were pressed in are the same people.
     expect(isUntouched({ ...opened, profileIds: ['ben', 'ava'] }, opened)).toBe(true);

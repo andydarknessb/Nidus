@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { occurrenceColumns, type Occurrence } from './calendar-occurrences';
 import { formatClock, dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { WEEKDAYS } from './routines';
+import { minutesOf } from './time-picker';
 import { addDays, dayStartMs, householdDay, instantAt } from '../../supabase/functions/_shared/zoned-time.ts';
 
 // Native Events (CONTEXT.md): created in Nidus, living only in Nidus. A Household Account (the
@@ -98,48 +99,12 @@ export function eventFormFromOccurrence(occurrence: Occurrence, timezone: string
 }
 
 // ---- What the sheet does with the form -------------------------------------------------
-// Starts and Ends are steppers of a quarter hour that stay on the chosen date: Starts stops at 11:30 PM and Ends at
-// 11:45 PM, and Ends is always at least 15 minutes after Starts (an event that runs past midnight belongs in Google).
-// So a form the steppers made never has an end at or before its start. eventFormToInput still checks, for an event made
-// before the steppers and for a wall time that does not exist on the day clocks go forward.
+// Starts and Ends are set in the time sheet (lib/time-picker.ts): Starts moves Ends with it to keep the event's length, and Ends
+// must be after Starts. An event ends on its own day (one that runs past midnight belongs in Google). So a form the sheet made
+// never has an end at or before its start. eventFormToInput still checks, for an event made before the time sheet and for a
+// wall time that does not exist on the day clocks go forward.
 
-const QUARTER = 15;
-const LAST_START = 23 * 60 + 30;
-const LAST_END = 23 * 60 + 45;
-
-// Minutes into the day for an 'HH:MM', or null when it is not one.
-function minutesOf(time: string): number | null {
-  const found = /^(\d{2}):(\d{2})$/.exec(time);
-  return found ? Number(found[1]) * 60 + Number(found[2]) : null;
-}
-
-const timeOf = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-const within = (value: number, least: number, most: number) => Math.min(Math.max(value, least), most);
-
-// Where a step lands: a full quarter hour from a time on the quarter hour, the next quarter hour that way from one off it.
-const quarterFrom = (minutes: number, direction: 1 | -1) => (direction > 0 ? Math.floor(minutes / QUARTER) + 1 : Math.ceil(minutes / QUARTER) - 1) * QUARTER;
-
-// A step of Starts, and Ends by the same amount, as far as the limits let it. At a limit it is the same form.
-export function stepStart(form: EventForm, direction: 1 | -1): EventForm {
-  const start = minutesOf(form.startTime);
-  const end = minutesOf(form.endTime);
-  if (start === null || end === null || (direction > 0 ? start >= LAST_START : start <= 0)) return form;
-  const next = within(quarterFrom(start, direction), 0, LAST_START);
-  return { ...form, startTime: timeOf(next), endTime: timeOf(within(end + next - start, next + QUARTER, LAST_END)) };
-}
-
-// A step of Ends on its own, never to less than 15 minutes after Starts (the first quarter hour that is, when Starts is
-// off the quarter hour). At a limit it is the same form.
-export function stepEnd(form: EventForm, direction: 1 | -1): EventForm {
-  const start = minutesOf(form.startTime);
-  const end = minutesOf(form.endTime);
-  if (start === null || end === null) return form;
-  const earliest = Math.ceil((start + QUARTER) / QUARTER) * QUARTER;
-  if (direction > 0 ? end >= LAST_END : end <= earliest) return form;
-  return { ...form, endTime: timeOf(within(quarterFrom(end, direction), earliest, LAST_END)) };
-}
-
-// The value of a time input, 'HH:MM', as a stepper shows it: "2:00 PM". (An event's own time is said by event words.)
+// The value of a time input, 'HH:MM', as the time field shows it: "2:00 PM". (An event's own time is said by event words.)
 export function timeInputWords(time: string): string {
   return formatClock(Date.UTC(1970, 0, 1, 0, minutesOf(time) ?? 0), 'UTC');
 }
@@ -174,8 +139,8 @@ export function openingTimes(date: string, timezone: string, now: Date = new Dat
   return { startTime: readOr(startsAt, '23:00'), endTime: readOr(startsAt + HOUR_MS, '23:45') };
 }
 
-// The form with its date moved to `date`. A new event whose times no stepper has moved takes that day's opening times (today
-// at the next whole hour, any other day at 9:00 AM); once a stepper has moved them, and always for an event being edited
+// The form with its date moved to `date`. A new event whose times no one has set takes that day's opening times (today
+// at the next whole hour, any other day at 9:00 AM); once a time has been set, and always for an event being edited
 // (`keepTimes`), they stay as they are.
 export function moveToDay(form: EventForm, date: string, keepTimes: boolean, timezone: string, now: Date = new Date()): EventForm {
   return { ...form, date, ...(keepTimes ? {} : openingTimes(date, timezone, now)) };
