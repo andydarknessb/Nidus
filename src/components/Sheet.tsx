@@ -25,12 +25,13 @@ export function SheetHandle() {
 // a crowded cluster opens, the Add and Edit event form and the meal sheet. A modal dialog: focus moves in on open (to the dialog, or to
 // `initialFocus`) and back to what opened it on close, Tab and Shift+Tab stay inside it (aria-modal), and Escape and Close always close
 // it. A tap on the scrim closes it when `canDismiss` says so (always, by default): the forms say not while something has been typed or
-// changed. The page behind it is inert while it is open, so a screen reader cannot swipe out of it, and it is drawn in the body,
-// outside what is made inert (InBody). `labelledBy` is the id of the title in `header`, and `title` is the same words, which name the
-// body's button ("More of Piano"). The title row (`header`) and the footer stay in view whatever the body holds: the dialog does not
-// scroll, the body between them does (SheetBody), unless the sheet is `plain` and draws its own. `onSubmit` makes the dialog a form.
-// `refocusOn` is a value that changes when a control in the sheet may have gone or been switched off (saving, a question): focus
-// is then put back on the sheet if it fell out of it. `scrim` is for a scrim that differs (its room round the card).
+// changed. The page behind it is inert while it is open, so a screen reader cannot swipe out of it, and so is a sheet it is opened over
+// (the time sheet over the Add event form); it is drawn in the body, outside what is made inert (InBody). `labelledBy` is the id of
+// the title in `header`, and `title` is the same words, which name the body's button ("More of Piano"). The title row (`header`) and
+// the footer stay in view whatever the body holds: the dialog does not scroll, the body between them does (SheetBody), unless the sheet
+// is `plain` and draws its own. `onSubmit` makes the dialog a form. `refocusOn` is a value that changes when a control in the sheet
+// may have gone or been switched off (saving, a question): focus is then put back on the sheet if it fell out of it. `scrim` is for a
+// scrim that differs (its room round the card).
 export function Sheet({
   labelledBy,
   title,
@@ -62,13 +63,14 @@ export function Sheet({
 }) {
   // A div or a form, whichever the dialog is: both are the one element it holds focus with.
   const dialog = useRef<HTMLDivElement & HTMLFormElement>(null);
+  const layer = useRef<HTMLDivElement>(null);
   const body = useOverflow('y', 'over');
 
   // The page behind is inert for as long as the sheet is open, and let go of before focus goes back to what opened the sheet (an inert
   // element takes no focus). The opener is noted first: making the page inert takes the focus off it.
   useLayoutEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
-    const release = holdBackground(appBehind());
+    const release = holdBackground(appBehind(layer.current));
     (initialFocus?.current ?? dialog.current)?.focus();
     return () => {
       release();
@@ -111,6 +113,9 @@ export function Sheet({
   return (
     <InBody>
       <div
+        ref={layer}
+        // What another sheet opened over this one holds inert (A_SHEET).
+        data-sheet=""
         className={cn('fixed inset-0 z-20 flex items-center justify-center bg-scrim p-4', scrim, PHONE_SCRIM)}
         // A press on the scrim must not take the focus off what had it. A sheet that stays open (something was typed) would otherwise
         // have its focus on the page behind it, and Escape, which the sheet hears, would never reach it.
