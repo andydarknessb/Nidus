@@ -33,10 +33,10 @@ export type Occurrence = {
   // A Native Event's own id, which an Occurrence of a Repeat does not share (its `id` is its own); null for a Synced Event.
   // Edit and delete a Native Event by this, never by `id`.
   event_id: string | null;
-  // The event's Repeat (CONTEXT.md: Repeat); all null, bar the interval's 1, when it does not repeat. A Synced Event has none:
-  // it repeats in its source and arrives expanded.
+  // The event's Repeat (CONTEXT.md: Repeat); all null, bar the interval's 1, when a Native Event does not repeat. A Synced
+  // Event has none, its interval null too: it repeats in its source and arrives expanded.
   repeat_every: 'day' | 'week' | 'month' | 'year' | null;
-  repeat_interval: number;
+  repeat_interval: number | null;
   // The weekdays of a weekly Repeat as a bitmask, Sunday = bit 0 (the Routines' days_of_week).
   repeat_days: number | null;
   // A Household Date, the last day an Occurrence may land on; null for forever.
