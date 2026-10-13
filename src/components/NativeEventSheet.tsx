@@ -9,15 +9,23 @@ import {
   timeInputWords,
   dayChoices,
   deleteNativeEvent,
+  deletedOnSentence,
   eventFormFromOccurrence,
   eventFormToInput,
+  eventIdOf,
   isUntouched,
   moveToDay,
   openingTimes,
+  saveEveryOne,
   saveNativeEvent,
+  saveThisOne,
   savedSentence,
+  skipNativeOccurrence,
+  weekdayBit,
   type EventForm,
+  type Repeat,
 } from '../lib/native-events';
+import { WEEKDAYS } from '../lib/routines';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { useStatusLine } from '../lib/status-line';
@@ -42,6 +50,13 @@ const footerButton = 'h-14 px-[24px] text-[17px]';
 // On the Wall they are the drawing's: 190 wide at the least, and the note takes the rest.
 const answers = 'flex max-w-full min-w-0 flex-auto items-center gap-3 min-[960px]:flex-none';
 const main = 'min-w-0 flex-1 min-[960px]:min-w-[190px] min-[960px]:flex-none';
+// The Repeats row's pills, and the plural a Repeat's number is counted in.
+const EVERY = [
+  { every: 'day', label: 'Every day', plural: 'days' },
+  { every: 'week', label: 'Every week', plural: 'weeks' },
+  { every: 'month', label: 'Every month', plural: 'months' },
+  { every: 'year', label: 'Every year', plural: 'years' },
+] as const;
 // Where the form's words about a write (or a field) are said: the one place of its footer.
 const PLACE = 'event';
 
@@ -63,6 +78,65 @@ function TimeField({ words, time, onOpen }: { words: string; time: string; onOpe
         </span>
       </button>
     </div>
+  );
+}
+
+// The footer's question. An event with no Repeat asks "Delete <title>?" and its answers are Keep it and Delete. An Occurrence of a
+// Repeat asks which of its events is meant, at Save ("Change this one, or every one?") and at Delete ("Delete this one, or every
+// one?"), and answers "This one" or "Every one"; Back takes the question away. Focus lands on the safe answer, so a screen reader
+// hears the question with it.
+export function EventQuestion({
+  asking,
+  title,
+  repeating,
+  busy,
+  onBack,
+  onOne,
+  onEvery,
+}: {
+  asking: 'delete' | 'save';
+  title: string;
+  repeating: boolean;
+  busy: boolean;
+  // Keep it, or Back.
+  onBack: () => void;
+  // "This one"; unused when there is no Repeat.
+  onOne: () => void;
+  // "Every one", or Delete when there is no Repeat.
+  onEvery: () => void;
+}) {
+  return (
+    <>
+      {/* A title may be long and gives way. The question about a Repeat is read whole: as wide as its words, on a row of its own when
+          the answers leave it less (a tablet upright). */}
+      <p id="ask-question" className={`${repeating ? 'min-w-0 flex-auto' : 'min-w-[min(12rem,100%)] flex-1 truncate'} text-[17px] font-medium`}>
+        {!repeating ? `Delete ${title}?` : asking === 'save' ? 'Change this one, or every one?' : 'Delete this one, or every one?'}
+      </p>
+      <div className={answers}>
+        {repeating ? (
+          <>
+            <Button variant="quiet" disabled={busy} className={`${footerButton} font-medium`} onClick={onBack}>
+              Back
+            </Button>
+            <Button variant="secondary" autoFocus aria-describedby="ask-question" disabled={busy} className={`${footerButton} font-medium`} onClick={onOne}>
+              This one
+            </Button>
+            <Button variant={asking === 'save' ? 'primary' : 'delete'} disabled={busy} className={`${footerButton} ${main}`} onClick={onEvery}>
+              Every one
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="secondary" autoFocus aria-describedby="ask-question" className={`${footerButton} px-6 font-medium`} onClick={onBack}>
+              Keep it
+            </Button>
+            <Button variant="delete" aria-label={`Delete ${title}`} disabled={busy} className={`${footerButton} ${main}`} onClick={onEvery}>
+              Delete
+            </Button>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -96,6 +170,7 @@ export function NativeEventSheet({
   | { date?: undefined; occurrence: Occurrence }
 )) {
   const dateField = useRef<HTMLInputElement>(null);
+  const untilField = useRef<HTMLInputElement>(null);
   const { clear: clearFilter } = useContext(ProfileFilterContext);
   const say = useStatusLine();
   const card = useChange();
@@ -113,10 +188,14 @@ export function NativeEventSheet({
   // "Another day" is a choice of its own, not what the date happens to be: a date picked in its field that is also today
   // or one of the next two must not take the field away from under the finger.
   const [another, setAnother] = useState(() => !days.some((day) => day.date === opened.date));
-  const [confirming, setConfirming] = useState(false);
+  // The question the footer is asking, if one: whether to delete, or, for an Occurrence of a Repeat, which of "this one" and "every one"
+  // to delete or to save.
+  const [asking, setAsking] = useState<'delete' | 'save' | null>(null);
   const { busy } = card;
   const problem = card.problem(PLACE);
   const editing = occurrence !== undefined;
+  const repeating = occurrence?.repeat_every != null;
+  const { repeat } = form;
   const title = editing ? 'Edit event' : 'New event';
   // Makes a change to the form and says whether it was one. A change that is none leaves a problem that is showing where it is;
   // one that is one takes it away.
@@ -131,6 +210,15 @@ export function NativeEventSheet({
   };
   const set = (changes: Partial<EventForm>) => change((prev) => ({ ...prev, ...changes }));
   const pickDay = (picked: string) => change((prev) => moveToDay(prev, picked, keepTimes.current, timezone));
+  // The Repeats row. Choosing a shape keeps the number and the end; a week starts with the form's day pressed.
+  const chooseEvery = (every: Repeat['every'] | null) =>
+    change((prev) => {
+      const was = prev.repeat;
+      if (every === null) return was === null ? prev : { ...prev, repeat: null };
+      if (was?.every === every) return prev;
+      return { ...prev, repeat: { every, interval: was?.interval ?? 1, days: every === 'week' ? weekdayBit(prev.date) : (was?.days ?? 0), until: was?.until ?? null } };
+    });
+  const setRepeat = (changes: Partial<Repeat>) => change((prev) => (prev.repeat ? { ...prev, repeat: { ...prev.repeat, ...changes } } : prev));
   // The time sheet's Done: Starts takes Ends with it, and an Ends that is not after Starts is refused, in words the time sheet says.
   const setTime = (which: 'start' | 'end', time: string): string | undefined => {
     const next = which === 'start' ? setStart(latest.current, time) : setEnd(latest.current, time);
@@ -141,14 +229,17 @@ export function NativeEventSheet({
   };
 
   // Saves or deletes through the one change, which words a write that did not go through (the Wall's one vocabulary, which says "No
-  // internet" when that is the trouble). Once it landed the filter is cleared, the status line says what happened, and the screen
-  // behind reads again (onSaved).
-  const write = (work: () => Promise<void>, said: string) =>
+  // internet" when that is the trouble). `work` gives what the status line says once it landed; then the filter is cleared and the
+  // screen behind reads again (onSaved). A write that failed takes the question away, so the footer can say why.
+  const write = (work: () => Promise<string>) =>
     card.change(PLACE, work, {
-      landed: () => {
+      landed: (said) => {
         clearFilter();
         say(said);
         onSaved();
+      },
+      failed: () => {
+        setAsking(null);
       },
     });
 
@@ -159,8 +250,32 @@ export function NativeEventSheet({
       card.say(PLACE, input.problem);
       return;
     }
-    void write(() => saveNativeEvent(supabase, input, occurrence?.id).then(() => undefined), editing ? savedSentence(input, timezone) : addedSentence(input, timezone));
+    // An Occurrence of a Repeat asks which of its events is meant before anything is written.
+    if (repeating) {
+      setAsking('save');
+      return;
+    }
+    void write(async () => {
+      await saveNativeEvent(supabase, input, occurrence && eventIdOf(occurrence));
+      return editing ? savedSentence(input, timezone) : addedSentence(input, timezone);
+    });
   }
+
+  // "This one" and "Every one" at Save and at Delete, for an Occurrence of a Repeat.
+  const saveOne = () => occurrence && void write(async () => savedSentence(await saveThisOne(supabase, form, occurrence, timezone), timezone));
+  const saveEvery = () => occurrence && void write(async () => savedSentence(await saveEveryOne(supabase, form, occurrence, timezone), timezone));
+  const deleteOne = () =>
+    occurrence &&
+    void write(async () => {
+      await skipNativeOccurrence(supabase, occurrence, timezone);
+      return deletedOnSentence(occurrence, timezone);
+    });
+  const deleteEvery = () =>
+    occurrence &&
+    void write(async () => {
+      await deleteNativeEvent(supabase, eventIdOf(occurrence));
+      return `Deleted ${occurrence.title}`;
+    });
 
   // Everyone is nobody pressed: pressing a person lets Everyone go, pressing Everyone lets every person go.
   const nobody = form.profileIds.length === 0;
@@ -180,32 +295,21 @@ export function NativeEventSheet({
 
   const footer = (
     <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2">
-      {confirming && occurrence ? (
-        <>
-          <p id="delete-question" className="min-w-[min(12rem,100%)] flex-1 truncate text-[17px] font-medium">
-            Delete {occurrence.title}?
-          </p>
-          <div className={answers}>
-            {/* Focus lands on the safe answer, so a screen reader hears the question with it. */}
-            <Button variant="secondary" autoFocus aria-describedby="delete-question" className={`${footerButton} px-6 font-medium`} onClick={() => setConfirming(false)}>
-              Keep it
-            </Button>
-            <Button
-              variant="delete"
-              aria-label={`Delete ${occurrence.title}`}
-              disabled={busy}
-              className={`${footerButton} ${main}`}
-              onClick={() => void write(() => deleteNativeEvent(supabase, occurrence.id), `Deleted ${occurrence.title}`)}
-            >
-              Delete
-            </Button>
-          </div>
-        </>
+      {asking && occurrence ? (
+        <EventQuestion
+          asking={asking}
+          title={occurrence.title}
+          repeating={repeating}
+          busy={busy}
+          onBack={() => setAsking(null)}
+          onOne={asking === 'save' ? saveOne : deleteOne}
+          onEvery={asking === 'save' ? saveEvery : deleteEvery}
+        />
       ) : (
         <>
           {/* A quiet button has no edge to line up with the fields, so its icon is what is brought to theirs. */}
           {editing && (
-            <Button variant="quiet" disabled={busy} className={`${footerButton} -ml-4 px-[20px] font-medium`} onClick={() => setConfirming(true)}>
+            <Button variant="quiet" disabled={busy} className={`${footerButton} -ml-4 px-[20px] font-medium`} onClick={() => setAsking('delete')}>
               <Trash2 aria-hidden />
               Delete
             </Button>
@@ -247,7 +351,7 @@ export function NativeEventSheet({
         // A stray tap on the scrim never throws away what was typed.
         canDismiss={() => isUntouched(form, opened)}
         onSubmit={submit}
-        refocusOn={`${confirming} ${busy}`}
+        refocusOn={`${asking} ${busy}`}
         scrim="p-3 min-[960px]:p-4"
         className="max-w-[940px] gap-[18px] p-4 min-[960px]:min-h-[min(580px,100%)] min-[960px]:p-6"
         header={header}
@@ -322,6 +426,84 @@ export function NativeEventSheet({
                 <span className="absolute top-1 left-1 size-6 rounded-full bg-muted-foreground transition-transform group-aria-checked:translate-x-6 group-aria-checked:bg-primary-foreground" />
               </button>
             </label>
+
+            <div role="group" aria-labelledby="repeats-label" className="flex flex-col gap-2">
+              <span id="repeats-label" className={caption}>
+                Repeats
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <Button aria-pressed={repeat === null} onClick={() => chooseEvery(null)} className={`${pill} flex-auto px-3`}>
+                  Doesn't repeat
+                </Button>
+                {EVERY.map((choice) => (
+                  <Button key={choice.every} aria-pressed={repeat?.every === choice.every} onClick={() => chooseEvery(choice.every)} className={`${pill} flex-auto px-3`}>
+                    {choice.label}
+                  </Button>
+                ))}
+              </div>
+              {repeat && (
+                <>
+                  <div className="flex items-center gap-3 text-[17px]">
+                    Every
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={99}
+                      aria-label="Every how many"
+                      className="h-15 w-20 px-2 text-center text-[19px]"
+                      value={repeat.interval || ''}
+                      onChange={(e) => setRepeat({ interval: Number(e.target.value) })}
+                    />
+                    {EVERY.find((choice) => choice.every === repeat.every)?.plural}
+                  </div>
+                  {repeat.every === 'week' && (
+                    <div role="group" aria-label="Repeat on" className="flex flex-wrap gap-2">
+                      {WEEKDAYS.map((day) => (
+                        <Button
+                          key={day.bit}
+                          aria-pressed={(repeat.days & (1 << day.bit)) !== 0}
+                          aria-label={day.name}
+                          onClick={() => setRepeat({ days: repeat.days ^ (1 << day.bit) })}
+                          className={`${pill} min-w-13 flex-auto px-2`}
+                        >
+                          {day.short}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  <div role="group" aria-labelledby="repeat-ends-label" className="flex flex-col gap-2">
+                    <span id="repeat-ends-label" className={caption}>
+                      Ends
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <Button aria-pressed={repeat.until === null} onClick={() => setRepeat({ until: null })} className={`${pill} flex-auto px-3`}>
+                        Never
+                      </Button>
+                      <Button
+                        aria-pressed={repeat.until !== null}
+                        onClick={() => {
+                          // As "Another day" does: the field is on the page at once and asks for its picker in this same tap.
+                          flushSync(() => setRepeat({ until: repeat.until ?? form.date }));
+                          try {
+                            untilField.current?.showPicker();
+                          } catch {
+                            untilField.current?.focus();
+                          }
+                        }}
+                        className={`${pill} flex-auto px-3`}
+                      >
+                        <Calendar aria-hidden />
+                        On a date
+                      </Button>
+                    </div>
+                    {repeat.until !== null && (
+                      <input ref={untilField} type="date" aria-label="Repeat until" className="h-13 w-full text-[17px]" value={repeat.until} onChange={(e) => setRepeat({ until: e.target.value })} required />
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="flex min-w-0 flex-col gap-[18px]">

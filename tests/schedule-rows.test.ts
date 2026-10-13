@@ -36,7 +36,7 @@ const ava: Profile = { id: 'a', name: 'Ava', color: '#93c5fd', avatar_url: null,
 let counter = 0;
 function event(title: string, startsAt: string, endsAt: string): Occurrence {
   counter += 1;
-  return { source: 'synced', id: `event-${counter}`, calendar_id: 'calendar-1', calendar_name: 'Family', title, description: null, location: null, starts_at: startsAt, ends_at: endsAt, is_all_day: false, profile_id: null, profile_ids: ['a'], event_id: null, repeat_every: null, repeat_interval: null, repeat_days: null, repeat_until: null };
+  return { source: 'synced', id: `event-${counter}`, household_id: 'household-1', calendar_id: 'calendar-1', calendar_name: 'Family', title, description: null, location: null, starts_at: startsAt, ends_at: endsAt, is_all_day: false, profile_id: null, profile_ids: ['a'], event_id: null, repeat_every: null, repeat_interval: null, repeat_days: null, repeat_until: null };
 }
 
 // Two events on Thursday, October 1 (given out of order), one on Saturday, October 3, and nothing on the other days.

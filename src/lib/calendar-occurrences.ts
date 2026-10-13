@@ -14,6 +14,8 @@ import { wallDays, type WallDay } from './paged-view';
 export type Occurrence = {
   source: 'synced' | 'native';
   id: string;
+  // The Household it belongs to: what a skipped day of a Repeat is written under (skipNativeOccurrence).
+  household_id: string;
   // The Mirrored Calendar a Synced Event came from; null for a Native Event, which has none.
   calendar_id: string | null;
   // A Native Event's is "Nidus".
@@ -44,18 +46,29 @@ export type Occurrence = {
 };
 
 export const occurrenceColumns =
-  'source, id, calendar_id, calendar_name, title, description, location, starts_at, ends_at, is_all_day, profile_id, profile_ids, event_id, repeat_every, repeat_interval, repeat_days, repeat_until';
+  'source, id, household_id, calendar_id, calendar_name, title, description, location, starts_at, ends_at, is_all_day, profile_id, profile_ids, event_id, repeat_every, repeat_interval, repeat_days, repeat_until';
 
 // What one request returns at most: the API stops there without saying so.
 const PAGE = 1000;
 
-// Household Account or Device. Everything that overlaps [from, to), in start order, read a page at a time until a page comes back
-// short, so a month of a busy Household is all there however many occurrences it holds. An occurrence that moves between two pages'
-// requests is kept once.
-export async function loadOccurrences(client: SupabaseClient, from: Date, to: Date): Promise<Occurrence[]> {
+// Reads a query of the view a page at a time until a page comes back short, so the answer is all there however many occurrences it
+// holds. `page` asks for rows `first` to `last`, both included, in an order that does not change. An occurrence that moves between
+// two pages' requests is kept once.
+export async function readPages(page: (first: number, last: number) => PromiseLike<{ data: unknown; error: unknown }>): Promise<Occurrence[]> {
   const found = new Map<string, Occurrence>();
   for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await client
+    const { data, error } = await page(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const rows = data as Occurrence[];
+    for (const occurrence of rows) found.set(`${occurrence.source} ${occurrence.id}`, occurrence);
+    if (rows.length < PAGE) return [...found.values()];
+  }
+}
+
+// Household Account or Device. Everything that overlaps [from, to), in start order, so a month of a busy Household is all there.
+export const loadOccurrences = (client: SupabaseClient, from: Date, to: Date): Promise<Occurrence[]> =>
+  readPages((first, last) =>
+    client
       .from('calendar_occurrences')
       .select(occurrenceColumns)
       .lt('starts_at', to.toISOString())
@@ -64,13 +77,8 @@ export async function loadOccurrences(client: SupabaseClient, from: Date, to: Da
       .order('starts_at')
       .order('source')
       .order('id')
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-    const page = data as Occurrence[];
-    for (const occurrence of page) found.set(`${occurrence.source} ${occurrence.id}`, occurrence);
-    if (page.length < PAGE) return [...found.values()];
-  }
-}
+      .range(first, last),
+  );
 
 // ---- Household Timezone arithmetic ------------------------------------------------
 
