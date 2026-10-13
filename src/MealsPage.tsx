@@ -4,7 +4,7 @@ import { InBody } from './components/InBody';
 import { ReadState } from './components/ReadState';
 import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
-import { describePage } from './lib/calendar-occurrences';
+import { pageWords } from './lib/calendar-occurrences';
 import type { WallDay } from './lib/paged-view';
 import { dialogKeys } from './lib/dialog';
 import { appBehind, holdBackground } from './lib/inert-behind';
@@ -28,7 +28,7 @@ export function MealsScreen({ timezone, date, onNavigate, portrait = false }: { 
   // Paging may disable or remove the button that was pressed: the plan puts focus on the page title instead of losing it, but only when
   // it was lost, so paging by keyboard stays on the button that was pressed; on arrival it goes to the title, as on the other screens.
   const plan = useMealPlan({ timezone, date, onNavigate, focus: { takesFocusOnArrival: true } });
-  const { days, previous, next, limit, heading } = plan;
+  const { days, today, previous, next, limit, heading } = plan;
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -44,7 +44,7 @@ export function MealsScreen({ timezone, date, onNavigate, portrait = false }: { 
           <ChevronRight aria-hidden className="size-6" strokeWidth={2.2} />
         </Button>
         <h2 ref={heading} tabIndex={-1} className="ml-3 font-display text-[28px] leading-[34px] outline-none">
-          {describePage(days)}
+          {pageWords(days, today, 'wall')}
         </h2>
       </nav>
       {/* Always mounted, so a screen reader announces the text when it appears. */}

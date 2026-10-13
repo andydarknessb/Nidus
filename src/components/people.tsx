@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import { Check, House } from 'lucide-react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { personStyle } from '../lib/look';
 import { initialOf } from '../lib/profiles';
 
@@ -39,6 +39,17 @@ export function HouseDisc({ size = 40, className }: { size?: number; className?:
   return (
     <span aria-hidden className={cn('flex shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground', className)} style={{ width: size, height: size }}>
       <House style={iconSize(Math.round(size * 0.54))} strokeWidth={2.4} />
+    </span>
+  );
+}
+
+// Today's date in a --primary disc, 38 px with a 21 px number for a heading (the schedule's, the Day title, the phone's Today) and 30 px
+// with an 18 px number in a phone Month cell. The words around it say "today", so it is hidden from a screen reader.
+const TODAY_DISC = { 30: 'size-[30px] text-lg', 38: 'size-[38px] text-[21px]' } as const;
+export function TodayDisc({ size, children }: { size: keyof typeof TODAY_DISC; children: ReactNode }) {
+  return (
+    <span aria-hidden className={cn('grid shrink-0 place-items-center rounded-full bg-primary font-display leading-none text-primary-foreground', TODAY_DISC[size])}>
+      {children}
     </span>
   );
 }

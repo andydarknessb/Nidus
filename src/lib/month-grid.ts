@@ -1,5 +1,14 @@
 import { dateWords, eventCount } from '../../supabase/functions/_shared/event-words.ts';
 import type { Occurrence } from './calendar-occurrences';
+import type { DayEvents } from './day-events';
+import { canOpenDay, type PagingWindow, type WallDay } from './paged-view';
+import type { MonthDot } from './phone-calendar';
+
+// The Month Cells (spec 0012): what every day cell of a month says, for the Wall's grid and the phone's alike, decided once and drawn by
+// components/MonthCell.tsx. Pure, so it is tested without a screen (tests/month-grid.test.ts).
+
+// The words a day beyond the range the calendar keeps is told by, to a screen reader; the eye has the hatch (components/MonthCell.tsx).
+export const BEYOND_RANGE = "Beyond the calendar's range";
 
 // What a month cell is called, on the Wall and on the phone alike: the date's number first, so a name spoken from the screen ("22")
 // finds it, then the day in full and how many events it holds, then ", today" on today's (which the disc says to the eye), at the end
@@ -7,6 +16,43 @@ import type { Occurrence } from './calendar-occurrences';
 // no count to give then, and "no events" would call a day free that may not be.
 export function cellName(date: string, isToday: boolean, occurrenceCount: number | null): string {
   return `${Number(date.slice(8))}, ${dateWords.cell(date, occurrenceCount)}${isToday ? ', today' : ''}`;
+}
+
+// One day of the month. `day` is the Household day itself (an event line tells its time by it); `inMonth` is false for a day of the
+// neighbouring month, drawn dimmed; `beyond` is a day past the range, which has nothing to open and nothing known about it, so it has no
+// count, no lines and no dots, and its name says so. `count` is how many events the day holds, null until its week has been read (and
+// for a day beyond the range). The Wall's cell (form `lines`) has the day's occurrences, in order and after the Profile Filter, which the
+// room turns into lines (cellLines); the phone's (form `dots`) has its dots, who has something that day (monthDots: the pressed
+// people only, CONTEXT.md, Profile Filter).
+type CellForms = { lines: { lines: Occurrence[] | null }; dots: { dots: MonthDot[] } };
+export type CellForm = keyof CellForms;
+export type MonthCell<Form extends CellForm = CellForm> = {
+  day: WallDay;
+  name: string;
+  inMonth: boolean;
+  beyond: boolean;
+  count: number | null;
+} & CellForms[Form];
+
+// The weeks of `weeks` (monthWeeks) as cells, from the day events read for them (`events`: the Profile Filter is already in them). A day
+// outside `window` is `beyond`, wherever its week falls, so a week wholly beyond holds nothing to read.
+export function monthCells<Form extends CellForm>(weeks: readonly (readonly WallDay[])[], anchor: string, window: PagingWindow, events: DayEvents, form: Form): MonthCell<Form>[][] {
+  return weeks.map((days) =>
+    days.map((day) => {
+      const beyond = !canOpenDay(day.date, window);
+      const occurrences = beyond ? null : events.on(day);
+      const count = occurrences === null ? null : occurrences.length;
+      const cell = {
+        day,
+        name: beyond ? `${dateWords.cell(day.date, null)}, ${BEYOND_RANGE}` : cellName(day.date, day.isToday, count),
+        inMonth: day.date.slice(0, 7) === anchor.slice(0, 7),
+        beyond,
+        count,
+        ...(form === 'lines' ? { lines: occurrences } : { dots: beyond ? [] : events.dots(day) }),
+      };
+      return cell as unknown as MonthCell<Form>;
+    }),
+  );
 }
 
 // How a month's day cells are fitted to the room the grid has (CONTEXT.md: Wall; docs/look.md "Month"): how many event lines a cell

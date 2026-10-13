@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useContext, useLayoutEffect, useRef, useState } from 'react';
-import { describeMonth, describePage, fiveDays } from '../lib/calendar-occurrences';
+import { describeMonth, fiveDays, pageWords } from '../lib/calendar-occurrences';
 import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
 import { aboveLabel, emptyRowWords, HOUR_REM, hoursThatFit, planDay } from '../lib/day-view';
 import { CALENDAR_LIMITS, pageStart, type CalendarView, type WallDay } from '../lib/paged-view';
@@ -13,6 +13,7 @@ import { forecastDay, type Forecast } from '../lib/weather';
 import { HourGrid, PillRow } from './DayGrid';
 import { EventSheets, type OpenEvent } from './EventSheets';
 import { MonthGrid } from './MonthGrid';
+import { TodayDisc } from './people';
 import { ReadState } from './ReadState';
 import { Schedule } from './Schedule';
 import { Button } from './ui/button';
@@ -128,7 +129,7 @@ export function PagedCalendar({
           aria-label={day?.isToday ? `Today, ${dateWords.cell(day.date, null)}` : undefined}
           className="ml-3 flex items-center gap-3 font-display text-[28px] leading-[34px] outline-none"
         >
-          {day ? <DayTitle day={day} /> : days ? describePage(days) : describeMonth(anchor)}
+          {day ? <DayTitle day={day} /> : days ? pageWords(days, today, 'wall') : describeMonth(anchor)}
         </h2>
         {/* The day's weather, at the right of the row. */}
         {day && (
@@ -174,9 +175,7 @@ function DayTitle({ day }: { day: WallDay }) {
   if (!day.isToday) return words;
   return (
     <>
-      <span aria-hidden className="grid size-[38px] shrink-0 place-items-center rounded-full bg-primary text-[21px] leading-none text-primary-foreground">
-        {Number(day.date.slice(8))}
-      </span>
+      <TodayDisc size={38}>{Number(day.date.slice(8))}</TodayDisc>
       <span>Today</span>
       <span className="font-sans text-[17px] leading-6 text-muted-foreground">{words}</span>
     </>

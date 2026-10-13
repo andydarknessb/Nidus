@@ -12,6 +12,7 @@ import { forecastDay, type Forecast, type ForecastDay } from '../lib/weather';
 import { EventPill } from './EventPill';
 import { EventSheets, type OpenEvent } from './EventSheets';
 import { BODY_CLEARANCE, OverflowButton } from './OverflowButton';
+import { TodayDisc } from './people';
 import { ReadState } from './ReadState';
 import { Button } from './ui/button';
 import { DayWeather } from './Weather';
@@ -34,7 +35,7 @@ function ColumnHeading({ day, onOpen }: { day: WallDay; onOpen: (() => void) | n
     <>
       <span className={cn('text-sm leading-[1.2857]', day.isToday ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground')}>{headingLabel(day)}</span>
       {day.isToday ? (
-        <span className="grid size-[38px] place-items-center rounded-full bg-primary font-display text-[21px] leading-none text-primary-foreground">{date}</span>
+        <TodayDisc size={38}>{date}</TodayDisc>
       ) : (
         <span className="flex h-[38px] items-center font-display text-[28px] leading-none text-foreground">{date}</span>
       )}

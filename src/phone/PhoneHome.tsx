@@ -3,6 +3,7 @@ import { BeforeHousehold } from '../components/BeforeHousehold';
 import { EmptyWords } from '../components/EmptyWords';
 import { EventPill } from '../components/EventPill';
 import { EventSheets, type OpenEvent } from '../components/EventSheets';
+import { TodayDisc } from '../components/people';
 import { ReadState } from '../components/ReadState';
 import { UpNext } from '../components/UpNext';
 import { DayWeather } from '../components/Weather';
@@ -48,9 +49,7 @@ function TodayCard({ timezone, added, forecast, weatherOn, profiles }: Pick<Phon
     <div className="contents" onPointerDownCapture={touch}>
       <PhoneCard label="Today">
         <div className="flex min-h-12 items-center gap-3 px-1">
-          <span aria-hidden className="grid size-[38px] shrink-0 place-items-center rounded-full bg-primary font-display text-[21px] leading-none text-primary-foreground">
-            {Number(day.date.slice(8))}
-          </span>
+          <TodayDisc size={38}>{Number(day.date.slice(8))}</TodayDisc>
           <h2 ref={heading} tabIndex={-1} aria-label={`Today, ${dateWords.cell(day.date, null)}`} className="font-display text-[22px] leading-7 outline-none">
             Today
           </h2>
