@@ -277,16 +277,23 @@ export function requestInit(): RequestInit {
   };
 }
 
-async function getJson(url: string): Promise<unknown> {
+// The one outside HTTP the client makes is injected, as the Edge Functions' is: the real `fetch` in the Wall, a recorded fake in a test.
+async function getJson(fetch: typeof globalThis.fetch, url: string): Promise<unknown> {
   const response = await fetch(url, requestInit());
   if (!response.ok) throw new Error(`Open-Meteo answered ${response.status}`);
   return response.json();
 }
 
-export async function fetchForecast(latitude: number, longitude: number, unit: TemperatureUnit, timezone: string): Promise<Forecast> {
-  return parseForecast(await getJson(forecastUrl(latitude, longitude, unit, timezone)));
+export async function fetchForecast(
+  fetch: typeof globalThis.fetch,
+  latitude: number,
+  longitude: number,
+  unit: TemperatureUnit,
+  timezone: string,
+): Promise<Forecast> {
+  return parseForecast(await getJson(fetch, forecastUrl(latitude, longitude, unit, timezone)));
 }
 
-export async function searchPlaces(name: string): Promise<PlaceMatch[]> {
-  return parsePlaces(await getJson(geocodingUrl(name)));
+export async function searchPlaces(fetch: typeof globalThis.fetch, name: string): Promise<PlaceMatch[]> {
+  return parsePlaces(await getJson(fetch, geocodingUrl(name)));
 }
