@@ -47,7 +47,7 @@ export function useHouseholdDay(timezone: string): HouseholdDay {
 // The day events of `days` (day-events.ts), read through the synced read: at once, when an event, a calendar or a Profile changes
 // anywhere in the Household, every 30 seconds and 5 after a failure. The span read is from the first day's start to the last day's
 // end; while a new span's first read is on its way (a turned page, Household midnight) what was read stays, and each day still shows
-// only its own events. An event written from a sheet is read at once: the event sheet host (components/EventSheets.tsx) calls
+// only its own events. An event written from a sheet is read at once: the event sheet host (lib/use-event-sheets.tsx) calls
 // `refresh`, or tells the change feed (the Add event sheet, which sits outside the calendar). The filter works on what was read, so pressing a chip never reads again. `state` is
 // the read's (ReadState draws "failed" for a view while nothing has ever loaded).
 export type DayEventsRead = DayEvents & { state: ReadStateName; refresh: () => void };

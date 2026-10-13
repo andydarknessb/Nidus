@@ -2,7 +2,7 @@ import type { Occurrence } from './calendar-occurrences';
 import type { WallDay } from './paged-view';
 import type { Pill } from './schedule';
 
-// The event sheet host's state (spec 0012), as plain TypeScript so a test needs no screen; `useEventSheets` (components/EventSheets.tsx)
+// The event sheet host's state (spec 0012), as plain TypeScript so a test needs no screen; `useEventSheets` (lib/use-event-sheets.tsx)
 // is its hook. What on a calendar has been tapped to open: an event's details, and from them Edit, for a Native Event; or the list of a
 // cluster the Day view folded into a "+N", and from it an event's details; or the sheet that adds an event. null is nothing open.
 export type OpenSheet =
