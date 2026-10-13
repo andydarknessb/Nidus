@@ -249,7 +249,7 @@ No migration.
 
 ## v12: a time to tap, and events that repeat
 
-Settled on 2026-10-13, one round of rulings, every recommendation taken. The spec is [0013](specs/0013-time-and-repeats.md); tracker #TRACKER. It reverses "a repeating event belongs in Google" for the household's own things ([ADR 0005](adr/0005-native-events-repeat-expanded-by-the-database.md)).
+Settled on 2026-10-13, one round of rulings, every recommendation taken. The spec is [0013](specs/0013-time-and-repeats.md); tracker #235. It reverses "a repeating event belongs in Google" for the household's own things ([ADR 0005](adr/0005-native-events-repeat-expanded-by-the-database.md)).
 
 ### Decisions
 

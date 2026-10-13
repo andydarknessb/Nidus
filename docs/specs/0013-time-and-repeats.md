@@ -1,6 +1,6 @@
 # Nidus v12: a time to tap, and events that repeat
 
-Tracker: GitHub issue #TRACKER; its sub-issues are the tickets. Vocabulary: [CONTEXT.md](../../CONTEXT.md) (Native Event, Repeat, Occurrence, Household Date, Household Timezone, Device, Household Account, Routine). Decisions: [PLAN.md](../PLAN.md) ("v12: a time to tap, and events that repeat"). [ADR 0005](../adr/0005-native-events-repeat-expanded-by-the-database.md) records the reversal of "a repeating event belongs in Google" and where Occurrences come from. The look: [look.md](../look.md) (A sheet, A field, Touch, Type). v8's rulings hold for every ticket: replace don't layer, plain TypeScript cores with thin hooks, facts not sentences, the lib client first, no DOM test library.
+Tracker: GitHub issue #235; its sub-issues #236 to #238 are the tickets. Vocabulary: [CONTEXT.md](../../CONTEXT.md) (Native Event, Repeat, Occurrence, Household Date, Household Timezone, Device, Household Account, Routine). Decisions: [PLAN.md](../PLAN.md) ("v12: a time to tap, and events that repeat"). [ADR 0005](../adr/0005-native-events-repeat-expanded-by-the-database.md) records the reversal of "a repeating event belongs in Google" and where Occurrences come from. The look: [look.md](../look.md) (A sheet, A field, Touch, Type). v8's rulings hold for every ticket: replace don't layer, plain TypeScript cores with thin hooks, facts not sentences, the lib client first, no DOM test library.
 
 ## Problem Statement
 
