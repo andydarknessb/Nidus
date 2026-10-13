@@ -6,10 +6,11 @@ import type { WallRoute } from '../src/lib/wall-routes';
 import { monthWeeks, type CalendarView } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
 import type { PhoneCalendar as PhoneCalendarType } from '../src/phone/PhoneCalendar';
-import type { WeekCells as WeekCellsType } from '../src/phone/PhoneMonth';
+import type { WeekCells as WeekCellsType } from '../src/components/MonthGrid';
 import { FACE, TOUCHING } from '../src/phone/parts';
 import type { PhoneScreenProps } from '../src/PhoneWall';
 import { dayEventsOf } from '../src/lib/day-events';
+import { monthCells } from '../src/lib/month-grid';
 
 // The phone's Calendar screen rendered to markup (docs/specs/0004, Screens, Calendar): the control with the view pressed, the pager named
 // for what it moves by, and the chips or cells of Week and Month. A static render reads nothing, so what the Profile filter does to the
@@ -25,7 +26,7 @@ beforeAll(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-08T17:00:00Z'));
   ({ PhoneCalendar } = await import('../src/phone/PhoneCalendar'));
-  ({ WeekCells } = await import('../src/phone/PhoneMonth'));
+  ({ WeekCells } = await import('../src/components/MonthGrid'));
 });
 afterAll(() => {
   vi.useRealTimers();
@@ -189,7 +190,12 @@ describe('the Profile filter reaches the Month cells', () => {
   // What a read gives the grid: the day events (dayEventsOf) cut it by the Profile filter, and the dots by the pressed people.
   const cells = (occurrences: Occurrence[], pressed: readonly string[]) =>
     renderToStaticMarkup(
-      createElement(WeekCells, { days: WEEK!, anchor: '2026-10-01', window: WINDOW, events: dayEventsOf(occurrences, [AVA, BEN, CORY], pressed), picked: '2026-10-08', onPick: noop }),
+      createElement(WeekCells, {
+        form: 'dots',
+        cells: monthCells([WEEK!], '2026-10-01', WINDOW, dayEventsOf(occurrences, [AVA, BEN, CORY], pressed), 'dots')[0]!,
+        picked: '2026-10-08',
+        onOpen: noop,
+      }),
     );
   const dots = (html: string) => html.match(/bg-person-strong/g)?.length ?? 0;
   const thursday = (html: string) => nameOf(buttons(html).find((button) => nameOf(button.tag)?.startsWith('8, Thursday, October 8'))!.tag);

@@ -1,10 +1,11 @@
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { InBody } from './components/InBody';
+import { TodayDisc } from './components/people';
 import { ReadState } from './components/ReadState';
 import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
-import { describePage } from './lib/calendar-occurrences';
+import { pageWords } from './lib/calendar-occurrences';
 import type { WallDay } from './lib/paged-view';
 import { dialogKeys } from './lib/dialog';
 import { appBehind, holdBackground } from './lib/inert-behind';
@@ -28,7 +29,7 @@ export function MealsScreen({ timezone, date, onNavigate, portrait = false }: { 
   // Paging may disable or remove the button that was pressed: the plan puts focus on the page title instead of losing it, but only when
   // it was lost, so paging by keyboard stays on the button that was pressed; on arrival it goes to the title, as on the other screens.
   const plan = useMealPlan({ timezone, date, onNavigate, focus: { takesFocusOnArrival: true } });
-  const { days, previous, next, limit, heading } = plan;
+  const { days, today, previous, next, limit, heading } = plan;
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -44,7 +45,7 @@ export function MealsScreen({ timezone, date, onNavigate, portrait = false }: { 
           <ChevronRight aria-hidden className="size-6" strokeWidth={2.2} />
         </Button>
         <h2 ref={heading} tabIndex={-1} className="ml-3 font-display text-[28px] leading-[34px] outline-none">
-          {describePage(days)}
+          {pageWords(days, today, 'wall')}
         </h2>
       </nav>
       {/* Always mounted, so a screen reader announces the text when it appears. */}
@@ -167,7 +168,11 @@ function DayHeading({ day }: { day: WallDay }) {
       className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[14px] font-normal ${day.isToday ? 'bg-muted' : ''}`}
     >
       <span className={`text-sm leading-[1.2857] ${day.isToday ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{day.isToday ? 'Today' : short}</span>
-      <span className={`flex h-[38px] items-center justify-center font-display leading-none ${day.isToday ? 'size-[38px] rounded-full bg-primary text-[21px] text-primary-foreground' : 'text-[22px]'}`}>{date}</span>
+      {day.isToday ? (
+        <TodayDisc size={38}>{date}</TodayDisc>
+      ) : (
+        <span className="flex h-[38px] items-center justify-center font-display text-[22px] leading-none">{date}</span>
+      )}
     </h3>
   );
 }

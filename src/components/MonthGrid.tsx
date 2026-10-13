@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { isTightCell, linesPerCell, monthMinRem } from '../lib/month-grid';
-import { canOpenDay, monthWeeks, type PagingWindow, type WallDay } from '../lib/paged-view';
-import type { DayEvents } from '../lib/day-events';
+import { isTightCell, linesPerCell, monthCells, monthMinRem, type MonthCell } from '../lib/month-grid';
+import { monthWeeks, type PagingWindow } from '../lib/paged-view';
 import type { Profile } from '../lib/profiles';
 import { WEEKDAYS } from '../lib/routines';
 import { useDayEvents } from '../lib/wall-hooks';
-import { CELL_HEAD_REM, CELL_LINE_REM, DayCell } from './MonthCell';
+import { BeyondCell, CELL_HEAD_REM, CELL_LINE_REM, DayCell, MonthDay } from './MonthCell';
 import { ReadState } from './ReadState';
 
 // The month view's grid: the weekday names and a row per week. Each day inside the mirror's window is one
 // button that opens that day (MonthCell.tsx). It lists the day's occurrences a line each, as many as fit, and says how many
-// more there are. Events are not tappable here, the day is.
+// more there are. Events are not tappable here, the day is. What each cell says is decided by monthCells (month-grid.ts), which the
+// phone's Month draws from too, through the same WeekCells.
 
 // `anchor` is the 1st of the month shown, read in one go (useDayEvents). `version` changes when the screen around the calendar has
 // written an event, so the month reads again at once. `profiles` are the Household's, read by that screen and handed down: they fill the
@@ -35,6 +35,7 @@ export function MonthGrid({
   // Built once a page and a day, not on every tick of the clock or measure of the grid: it is the slow part.
   const weeks = useMemo(() => monthWeeks(anchor, timezone, today), [anchor, timezone, today]);
   const events = useDayEvents(useMemo(() => weeks.flat(), [weeks]), version, profiles);
+  const cells = monthCells(weeks, anchor, window, events, 'lines');
   // The height the week rows share and the size of a rem, so the lines that fit a cell are measured, not
   // guessed, at whatever text size the tablet is set to.
   const rows = useRef<HTMLDivElement>(null);
@@ -74,56 +75,30 @@ export function MonthGrid({
       </div>
       <ReadState of="the calendar" read={events} say="failed" alert="p-4 text-xl" />
       <div ref={rows} style={{ gridTemplateRows: `repeat(${weeks.length}, minmax(0, 1fr))` }} className="grid min-h-0 flex-1 divide-y divide-border">
-        {weeks.map((days) => (
-          <WeekCells
-            key={days[0]!.date}
-            days={days}
-            anchor={anchor}
-            window={window}
-            // A week wholly beyond the window is drawn as one that holds nothing to read.
-            events={days.every((day) => !canOpenDay(day.date, window)) ? null : events}
-            profiles={profiles ?? []}
-            lines={lines}
-            onOpenDay={onOpenDay}
-          />
+        {cells.map((week) => (
+          <WeekCells key={week[0]!.day.date} form="lines" cells={week} profiles={profiles ?? []} lines={lines} onOpen={onOpenDay} />
         ))}
       </div>
     </section>
   );
 }
 
-// The seven cells of a week, from the month's day events (null for a week that is never read).
-function WeekCells({
-  days,
-  anchor,
-  window,
-  events,
-  profiles,
-  lines,
-  onOpenDay,
-}: {
-  days: WallDay[];
-  anchor: string;
-  window: PagingWindow;
-  events: DayEvents | null;
-  profiles: readonly Profile[];
-  lines: number;
-  onOpenDay: (date: string) => void;
-}) {
+// The seven cells of a week, for the Wall's grid (form `lines`: it opens a day, drawn `lines` lines tall with the Profiles filling them)
+// and for the phone's (form `dots`: it picks a day, `picked`). A day beyond the range is told once here (BeyondCell), whichever grid.
+// The form decides the cells it is given, so a week of dots cannot be drawn as the Wall's.
+export function WeekCells(
+  props: { onOpen: (date: string) => void } & (
+    | { form: 'lines'; cells: readonly MonthCell<'lines'>[]; profiles: readonly Profile[]; lines: number }
+    | { form: 'dots'; cells: readonly MonthCell<'dots'>[]; picked: string }
+  ),
+) {
+  const { form, onOpen } = props;
+  const beyond = (cell: MonthCell) => <BeyondCell key={cell.day.date} cell={cell} form={form} />;
   return (
-    <div className="grid min-h-0 grid-cols-7 grid-rows-[minmax(0,1fr)] divide-x divide-border">
-      {days.map((day) => (
-        <DayCell
-          key={day.date}
-          day={day}
-          inMonth={day.date.slice(0, 7) === anchor.slice(0, 7)}
-          beyond={!canOpenDay(day.date, window)}
-          occurrences={events === null ? null : events.on(day)}
-          profiles={profiles}
-          lines={lines}
-          onOpen={onOpenDay}
-        />
-      ))}
+    <div className={form === 'lines' ? 'grid min-h-0 grid-cols-7 grid-rows-[minmax(0,1fr)] divide-x divide-border' : 'grid grid-cols-7'}>
+      {props.form === 'lines'
+        ? props.cells.map((cell) => (cell.beyond ? beyond(cell) : <DayCell key={cell.day.date} cell={cell} profiles={props.profiles} lines={props.lines} onOpen={onOpen} />))
+        : props.cells.map((cell) => (cell.beyond ? beyond(cell) : <MonthDay key={cell.day.date} cell={cell} picked={cell.day.date === props.picked} onPick={onOpen} />))}
     </div>
   );
 }

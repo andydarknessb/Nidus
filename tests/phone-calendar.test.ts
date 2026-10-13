@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type Occurrence } from '../src/lib/calendar-occurrences';
-import { pageDays } from '../src/lib/paged-view';
-import { MAX_DOTS, monthDots, pageWords, pickedDay, type MonthDot } from '../src/lib/phone-calendar';
+import { MAX_DOTS, monthDots, pickedDay, type MonthDot } from '../src/lib/phone-calendar';
 import { filterOccurrences } from '../src/lib/profile-filter';
 import type { Profile } from '../src/lib/profiles';
 
@@ -204,25 +203,5 @@ describe('monthDots', () => {
   it('gives each dot the Profile it is for', () => {
     const [first] = monthDots([event(['b'])], everyone);
     expect(first).toEqual({ kind: 'person', profile: ben });
-  });
-});
-
-describe('pageWords', () => {
-  const NOW = new Date('2026-10-06T16:00:00Z');
-  const words = (view: 'day' | 'week', anchor: string, today = '2026-10-06') => pageWords(pageDays(view, anchor, NEW_YORK, NOW), today);
-
-  it('is a week as its first and last day, without the year while the week is in this one', () => {
-    expect(words('week', '2026-10-04')).toBe('Oct 4 to Oct 10');
-    expect(words('week', '2026-09-27')).toBe('Sep 27 to Oct 3');
-  });
-
-  it('is a day as its weekday and date', () => {
-    expect(words('day', '2026-09-30')).toBe('Wed, Sep 30');
-  });
-
-  it('keeps the year for a page that is not in the current one, or that crosses into the next', () => {
-    expect(words('week', '2027-01-10')).toContain('2027');
-    expect(words('day', '2027-01-04')).toContain('2027');
-    expect(words('week', '2026-12-27')).toContain('2027');
   });
 });

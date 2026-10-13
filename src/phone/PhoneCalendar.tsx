@@ -2,10 +2,10 @@ import { useContext, useState } from 'react';
 import { BeforeHousehold } from '../components/BeforeHousehold';
 import { DayView } from '../components/FiveDayCalendar';
 import { statusLineClass } from '../components/phone';
-import { describeMonth } from '../lib/calendar-occurrences';
+import { describeMonth, pageWords } from '../lib/calendar-occurrences';
 import { navigationRailDate, type WallRoute } from '../lib/wall-routes';
 import { CALENDAR_LIMITS, canOpenDay, type CalendarView, type PagingWindow, type WallDay } from '../lib/paged-view';
-import { pageWords, pickedDay } from '../lib/phone-calendar';
+import { pickedDay } from '../lib/phone-calendar';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { usePagedView } from '../lib/use-paged-view';
@@ -71,7 +71,7 @@ function Calendar({
     <div className="contents" onPointerDownCapture={touch}>
       <Segmented label="Calendar view" options={VIEWS} value={calendarView} onChange={(chosen) => openView(chosen, navigationRailDate(chosen, route, householdDay(timezone).date))} />
       <Pager
-        words={days ? pageWords(days, today) : describeMonth(anchor)}
+        words={days ? pageWords(days, today, 'phone') : describeMonth(anchor)}
         headingRef={heading}
         previousLabel={`Previous ${calendarView}`}
         nextLabel={`Next ${calendarView}`}

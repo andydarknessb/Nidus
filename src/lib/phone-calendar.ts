@@ -1,5 +1,5 @@
-import { describePage, type Occurrence } from './calendar-occurrences';
-import { clampToWindow, pageStart, pagingWindowAround, type WallDay } from './paged-view';
+import type { Occurrence } from './calendar-occurrences';
+import { clampToWindow, pageStart, pagingWindowAround } from './paged-view';
 import type { Profile } from './profiles';
 import { pillPeople } from './schedule';
 import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
@@ -45,16 +45,4 @@ export function monthDots(occurrences: readonly Occurrence[], profiles: readonly
   const dots: MonthDot[] = household ? [{ kind: 'household' }] : [];
   for (const profile of profiles) if (people.has(profile.id)) dots.push({ kind: 'person', profile });
   return dots.slice(0, MAX_DOTS);
-}
-
-// The pager's words for a Day or Week page, short enough for a phone's 22 px line between its two buttons: "Wed, Sep 30" for a day and
-// "Oct 4 to Oct 10" for a week, with the year ("Wed, Sep 30, 2027") only when the page is not in the Household's current year, `today`'s.
-// (The tablet's title always has it: describePage.)
-export function pageWords(days: readonly WallDay[], today: string): string {
-  const year = days[0]!.date.slice(0, 4);
-  const words = describePage([...days]);
-  const yearly = year !== today.slice(0, 4) || days[days.length - 1]!.date.slice(0, 4) !== today.slice(0, 4);
-  if (yearly) return words;
-  // "Wed, Sep 30, 2026" and "Oct 4 to Oct 10, 2026" without the year they end in.
-  return words.replace(/, \d{4}$/, '');
 }

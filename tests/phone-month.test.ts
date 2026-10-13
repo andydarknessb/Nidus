@@ -1,35 +1,40 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { WeekCells as WeekCellsType } from '../src/components/MonthGrid';
 import { type Occurrence } from '../src/lib/calendar-occurrences';
+import { dayEventsOf } from '../src/lib/day-events';
+import { monthCells } from '../src/lib/month-grid';
 import { monthWeeks } from '../src/lib/paged-view';
 import type { Profile } from '../src/lib/profiles';
-import type { MonthDay as MonthDayType } from '../src/phone/PhoneMonth';
-import { dayEventsOf } from '../src/lib/day-events';
 
-// A Month cell on the phone rendered to markup: its name (the full date and how many events), its marks and the sizes the look gives it.
-// Who the dots are for is tested without a screen in phone-calendar.test.ts; how the grid sits in a 390 px column is looked at in a browser.
+// A Month cell on the phone rendered to markup: its name (the full date and how many events), its marks and the sizes the look gives it. The cell
+// is fed from the core (monthCells) and drawn by the week's part (WeekCells), as the phone's Month does it. What the core decides, the name and who
+// the dots are for, is held in tests/month-grid.test.ts (and monthDots in phone-calendar.test.ts); how the grid sits in a 390 px column is looked
+// at in a browser.
 
-// MonthDay's module imports the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to
-// load it (as tests/phone-home.test.ts does), so CI, which has no .env.local, loads it the same way.
-let MonthDay: typeof MonthDayType;
+// WeekCells' module imports the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to load it
+// (as tests/phone-home.test.ts does), so CI, which has no .env.local, loads it the same way.
+let WeekCells: typeof WeekCellsType;
 beforeAll(async () => {
   vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
-  ({ MonthDay } = await import('../src/phone/PhoneMonth'));
+  ({ WeekCells } = await import('../src/components/MonthGrid'));
 });
 afterAll(() => {
   vi.unstubAllEnvs();
 });
 
 const noop = () => undefined;
-const [WEEK] = monthWeeks('2026-10-01', 'America/New_York', '2026-10-02');
-const dayOf = (date: string) => WEEK!.find((day) => day.date === date)!;
+const WINDOW = { first: '2026-09-01', last: '2027-04-01' };
+// The window of a calendar that begins after Oct 4, so Oct 2 is a day beyond its range.
+const LATER_WINDOW = { first: '2026-10-05', last: '2027-04-01' };
 const profile = (id: string, name: string): Profile => ({ id, name, color: '#93c5fd', avatar_url: null, sort_order: 0 });
 const AVA = profile('a', 'Ava');
 const BEN = profile('b', 'Ben');
 
 let count = 0;
+// Piano, 10:00 to 11:00 AM on Fri Oct 2, New York.
 const event = (profile_ids: string[]): Occurrence => ({
   source: 'synced',
   id: `e${++count}`,
@@ -44,37 +49,30 @@ const event = (profile_ids: string[]): Occurrence => ({
   profile_id: profile_ids[0] ?? null,
   profile_ids,
 });
+// The same occurrences, on `date`.
+const on = (date: string, occurrences: Occurrence[]): Occurrence[] => occurrences.map((each) => ({ ...each, starts_at: `${date}T14:00:00Z`, ends_at: `${date}T15:00:00Z` }));
 
-// A cell as the month draws it: its dots are the day events' (dayEventsOf), from the Profiles and the people pressed.
-function cell(date: string, { profiles = [AVA, BEN], pressed = [], ...props }: Partial<Parameters<typeof MonthDayType>[0]> & { profiles?: Profile[]; pressed?: string[] } = {}) {
-  const day = dayOf(date);
-  const occurrences = props.occurrences === undefined ? [] : props.occurrences;
-  const dots = dayEventsOf(occurrences, profiles, pressed).dots(day);
-  return renderToStaticMarkup(createElement(MonthDay, { day, inMonth: true, beyond: false, picked: false, occurrences, dots, onPick: noop, ...props }));
+type Options = { occurrences?: Occurrence[] | null; profiles?: Profile[]; pressed?: string[]; picked?: boolean; beyond?: boolean };
+
+// A cell as the month draws it: the core's cell for `date` (its dots are the day events', from the Profiles and the people pressed), drawn by the
+// week's part with the week's wrapper cut off. Today is Oct 2 unless `today` says otherwise.
+function cell(date: string, { occurrences = [], profiles = [AVA, BEN], pressed = [], picked = false, beyond = false }: Options = {}, today = '2026-10-02') {
+  const events = dayEventsOf(occurrences, profiles, pressed);
+  const weeks = monthWeeks('2026-10-01', 'America/New_York', today);
+  const one = monthCells(weeks, '2026-10-01', beyond ? LATER_WINDOW : WINDOW, events, 'dots').flat().find((each) => each.day.date === date)!;
+  const html = renderToStaticMarkup(createElement(WeekCells, { form: 'dots', cells: [one], picked: picked ? date : '', onOpen: noop }));
+  return html.slice(html.indexOf('>') + 1, html.length - '</div>'.length);
 }
 const tagOf = (html: string) => html.slice(0, html.indexOf('>') + 1);
 const classesOf = (html: string) => (/class="([^"]*)"/.exec(html)?.[1] ?? '').replaceAll('&amp;', '&').replaceAll('&gt;', '>').split(' ');
 
 describe('a phone Month cell', () => {
-  it('is a button named with the full date and how many events it has', () => {
+  it("is a button named by the core's name: the full date and how many events it has", () => {
     const four = cell('2026-10-02', { occurrences: [event([]), event(['a']), event(['b']), event(['a', 'b'])] });
     expect(tagOf(four)).toMatch(/^<button\b/);
     expect(tagOf(four)).toContain('aria-label="2, Friday, October 2, 4 events, today"');
-    expect(tagOf(cell('2026-10-03', { occurrences: [event(['a'])] }))).toContain('aria-label="3, Saturday, October 3, 1 event"');
+    expect(tagOf(cell('2026-10-03', { occurrences: on('2026-10-03', [event(['a'])]) }))).toContain('aria-label="3, Saturday, October 3, 1 event"');
     expect(tagOf(cell('2026-10-01'))).toContain('aria-label="1, Thursday, October 1, no events"');
-  });
-
-  it("names today's cell and another day's as the tablet's cells are named (tests/month-cell.test.ts), the same strings", () => {
-    const today = { ...dayOf('2026-10-01'), isToday: true };
-    const five = [1, 2, 3, 4, 5].map(() => event([]));
-    expect(tagOf(cell('2026-10-01', { day: today, occurrences: five }))).toContain('aria-label="1, Thursday, October 1, 5 events, today"');
-    expect(tagOf(cell('2026-10-01', { day: today, occurrences: null }))).toContain('aria-label="1, Thursday, October 1, today"');
-    expect(tagOf(cell('2026-10-03', { occurrences: [event([])] }))).toContain('aria-label="3, Saturday, October 3, 1 event"');
-  });
-
-  it('gives the date alone until its week has been read, so a free day is never claimed before it is known to be', () => {
-    expect(tagOf(cell('2026-10-02', { occurrences: null }))).toContain('aria-label="2, Friday, October 2, today"');
-    expect(/aria-label="([^"]*)"/.exec(tagOf(cell('2026-10-02', { occurrences: null })))![1]).not.toMatch(/event/);
   });
 
   it('marks today alone as the date, in a 30 px --primary disc', () => {
@@ -82,6 +80,8 @@ describe('a phone Month cell', () => {
     expect(tagOf(today)).toContain('aria-current="date"');
     expect(today).toContain('bg-primary');
     expect(today).toContain('size-[30px]');
+    // The digit stays on a line as tall as the disc (cn would drop leading-none if it came before the text size), so at larger text it does not run out of it.
+    expect(classesOf(today.slice(today.indexOf('<span aria-hidden')))).toEqual(expect.arrayContaining(['text-lg', 'leading-none']));
     expect(tagOf(cell('2026-10-03'))).not.toContain('aria-current');
   });
 
@@ -104,9 +104,9 @@ describe('a phone Month cell', () => {
   });
 
   it('dims the dates of the neighbouring months with the muted colour, never a lighter one', () => {
-    const dateOf = (html: string) => /<span aria-hidden="true" class="([^"]*)">3<\/span>/.exec(html)![1]!.split(' ');
-    expect(dateOf(cell('2026-10-03', { inMonth: false }))).toContain('text-muted-foreground');
-    expect(dateOf(cell('2026-10-03', { inMonth: true }))).toContain('text-foreground');
+    const dateOf = (html: string, number: number) => new RegExp(`<span aria-hidden="true" class="([^"]*)">${number}</span>`).exec(html)![1]!.split(' ');
+    expect(dateOf(cell('2026-09-27'), 27)).toContain('text-muted-foreground');
+    expect(dateOf(cell('2026-10-03'), 3)).toContain('text-foreground');
   });
 
   it('draws a 7 px dot for each person and the Household, in --primary for the Household, hidden from a screen reader', () => {
@@ -136,9 +136,10 @@ describe('a phone Month cell', () => {
     expect(cell('2026-10-02', { occurrences: shared, profiles }).match(/bg-person-strong/g)).toHaveLength(2);
   });
 
-  it('is no button beyond the range the calendar keeps, and says so', () => {
+  it('is no button beyond the range the calendar keeps, and says so with its date', () => {
     const html = cell('2026-10-02', { beyond: true });
     expect(html).not.toContain('<button');
     expect(html).toContain("Beyond the calendar's range".replace("'", '&#x27;'));
+    expect(html).toContain('Friday, October 2, Beyond');
   });
 });
