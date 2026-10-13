@@ -1,97 +1,88 @@
-import { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
 import type { Occurrence } from '../lib/calendar-occurrences';
+import type { OpenSheet } from '../lib/event-sheets';
 import type { WallDay } from '../lib/paged-view';
-import { focusEvent } from '../lib/focus';
 import type { Profile } from '../lib/profiles';
 import { pillPeople, type Pill } from '../lib/schedule';
-import { ClusterList } from './ClusterList';
 import { EventDetails } from './EventDetails';
+import { EventPill } from './EventPill';
 import { NativeEventSheet } from './NativeEventSheet';
+import { Sheet } from './Sheet';
+import { Button } from './ui/button';
 
-// What on the calendar has been tapped to open: an event's details, and from them Edit, for a Native Event; or the list of a
-// cluster the Day view folded into a "+N", and from it an event's details. The calendar view keeps this in a `useState` so it
-// can open a sheet from a pill, a block or a "+N"; null is nothing open.
-export type OpenEvent = { sheet: 'details' | 'edit'; occurrence: Occurrence } | { sheet: 'cluster'; day: WallDay; pills: Pill[] } | null;
-
-// How long after a sheet closes a read may still find focus fallen to the page, and put it back.
-const REFOCUS_MS = 10_000;
-
-// The event sheet host: the sheet `open` names, over the Wall, for every calendar view. `date` is the day the calendar is on, which
-// an edit starts from; `events` is the view's day events (useDayEvents), read again here after an edit is saved. `profiles` are the
-// Household's, which say who an event is for. Focus moves in on open and back to the tapped event on close (Sheet), so going from the
-// list to the details, or from the details to Edit, hands it on without losing it.
-//
-// A read can take that element away: an event that was deleted has no pill any more, and one that an edit moved is a pill somewhere
-// else. So when what the view has read changes soon after a sheet closed and focus is on the page, focus goes to the event's pill or
-// block if it is still on the screen, and if not to what stands for its place there, which the view names: `focusPlace` (the heading
-// of its day).
+// The sheet that is open (lib/event-sheets.ts), drawn: an event's details, and from them Edit, for a Native Event; the list of a
+// cluster the Day view folded into a "+N"; or the sheet that adds an event. Nothing until the Household Timezone is read. A screen draws
+// it through useEventSheets (lib/use-event-sheets.tsx), which gives it what to do on each way out.
 export function EventSheets({
   open,
-  onChange,
   timezone,
-  date,
   profiles,
-  events,
-  focusPlace,
+  onOpen,
+  onEdit,
+  onClose,
+  onSaved,
 }: {
-  open: OpenEvent;
-  onChange: (open: OpenEvent) => void;
-  timezone: string;
-  date: string;
+  open: OpenSheet;
+  timezone: string | null;
+  // The Household's, which say who an event is for.
   profiles: readonly Profile[];
-  events: { occurrences: Occurrence[] | null; refresh: () => void };
-  focusPlace: () => void;
+  onOpen: (occurrence: Occurrence) => void;
+  onEdit: () => void;
+  onClose: () => void;
+  onSaved: () => void;
 }) {
-  const { occurrences, refresh } = events;
-  // The view's way to its event's place, as it is on the render the focus is put back in.
-  const place = useRef(focusPlace);
-  useEffect(() => {
-    place.current = focusPlace;
-  });
-  // The event a sheet was last open for, and when that sheet closed (null while it is open).
-  const last = useRef<{ occurrence: Occurrence; closedAt: number | null } | null>(null);
-  useEffect(() => {
-    if (open && open.sheet !== 'cluster') last.current = { occurrence: open.occurrence, closedAt: null };
-    else if (open === null && last.current && last.current.closedAt === null) last.current.closedAt = Date.now();
-  }, [open]);
-  // Looked at a frame later, when what the read has drawn has settled (the schedule holds out of reach the pills that do not fit).
-  useEffect(() => {
-    const target = last.current;
-    if (open !== null || !target || target.closedAt === null || occurrences === null) return;
-    if (Date.now() - target.closedAt > REFOCUS_MS) {
-      last.current = null;
-      return;
-    }
-    const frame = requestAnimationFrame(() => {
-      if (document.activeElement === document.body && !focusEvent(target.occurrence.id)) place.current();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [open, occurrences]);
-
-  if (!open) return null;
-  if (open.sheet === 'cluster') {
-    return <ClusterList day={open.day} pills={open.pills} profiles={profiles} onOpen={(occurrence) => onChange({ sheet: 'details', occurrence })} onClose={() => onChange(null)} />;
+  if (!open || timezone === null) return null;
+  switch (open.sheet) {
+    case 'cluster':
+      return <ClusterSheet day={open.day} pills={open.pills} profiles={profiles} onOpen={onOpen} onClose={onClose} />;
+    case 'details':
+      return <EventDetails occurrence={open.occurrence} timezone={timezone} people={pillPeople(open.occurrence, profiles)} onClose={onClose} onEdit={onEdit} />;
+    case 'edit':
+      return <NativeEventSheet timezone={timezone} profiles={profiles} occurrence={open.occurrence} onClose={onClose} onSaved={onSaved} />;
+    case 'add':
+      return <NativeEventSheet timezone={timezone} profiles={profiles} date={open.date} onClose={onClose} onSaved={onSaved} />;
   }
-  const { occurrence } = open;
-  return open.sheet === 'details' ? (
-    <EventDetails
-      occurrence={occurrence}
-      timezone={timezone}
-      people={pillPeople(occurrence, profiles)}
-      onClose={() => onChange(null)}
-      onEdit={() => onChange({ sheet: 'edit', occurrence })}
-    />
-  ) : (
-    <NativeEventSheet
-      timezone={timezone}
-      profiles={profiles}
-      date={date}
-      occurrence={occurrence}
-      onClose={() => onChange(null)}
-      onSaved={() => {
-        onChange(null);
-        refresh();
-      }}
-    />
+}
+
+// The list a "+N" on the Day view opens: every event of that cluster, in time order, each as its pill (colour, discs, time) that
+// opens its details when tapped. `pills` say their time as the blocks do ("4:00 to 4:45 PM"). A dozen events are taller than the
+// screen: the title row stays in view and the list under it scrolls, and says so (Sheet).
+export function ClusterSheet({
+  day,
+  pills,
+  profiles,
+  onOpen,
+  onClose,
+}: {
+  day: WallDay;
+  pills: Pill[];
+  profiles: readonly Profile[];
+  onOpen: (occurrence: Occurrence) => void;
+  onClose: () => void;
+}) {
+  const title = `${pills.length} events around this time`;
+  return (
+    <Sheet
+      labelledBy="cluster-list-title"
+      title={title}
+      onClose={onClose}
+      className="max-w-[560px]"
+      header={
+        <header className="flex shrink-0 items-center justify-between gap-4">
+          <h2 id="cluster-list-title" className="font-display text-[30px] leading-9">
+            {title}
+          </h2>
+          <Button variant="quiet" aria-label="Close" onClick={onClose} className="size-12 rounded-full p-0">
+            <X aria-hidden className="size-[26px]" strokeWidth={2.2} />
+          </Button>
+        </header>
+      }
+    >
+      <div className="flex flex-col gap-2">
+        {pills.map((pill) => (
+          <EventPill key={pill.occurrence.id} pill={pill} day={day} people={pillPeople(pill.occurrence, profiles)} onOpen={onOpen} />
+        ))}
+      </div>
+    </Sheet>
   );
 }

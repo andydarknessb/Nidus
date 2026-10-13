@@ -11,7 +11,7 @@ import { usePagedView } from '../lib/use-paged-view';
 import { useDayEvents, useNow } from '../lib/wall-hooks';
 import { forecastDay, type Forecast } from '../lib/weather';
 import { HourGrid, PillRow } from './DayGrid';
-import { EventSheets, type OpenEvent } from './EventSheets';
+import { useEventSheets } from '../lib/use-event-sheets';
 import { MonthGrid } from './MonthGrid';
 import { TodayDisc } from './people';
 import { ReadState } from './ReadState';
@@ -25,14 +25,12 @@ import { DayWeather } from './Weather';
 // line at the current time behind the blocks. In all of them, tapping an event opens its details. An event is filled from
 // its Profiles' own colours, never from the Mirrored Calendar it came from.
 
-// The home screen: today and the next four days, or `days` of them (four on a screen under 1200 px wide, home-layout.ts). `version` changes when the screen around the calendar has written an
-// event, so the calendar reads again at once. `forecast` is the Household's weather, read once by the screen around the
-// calendar; `weatherOn` says the Household has a place, so each day heading keeps a line for it (empty while there is no
+// The home screen: today and the next four days, or `days` of them (four on a screen under 1200 px wide, home-layout.ts). `forecast` is the Household's weather, read
+// once by the screen around the calendar; `weatherOn` says the Household has a place, so each day heading keeps a line for it (empty while there is no
 // forecast, or none for that day). `profiles` are the Household's, read by that screen and handed down: they colour the events, and
 // are null until read. A touch anywhere in the calendar keeps the Profile filter open.
 export function FiveDayCalendar({
   timezone,
-  version = 0,
   onNavigate,
   forecast = null,
   weatherOn = false,
@@ -40,7 +38,6 @@ export function FiveDayCalendar({
   days = 5,
 }: {
   timezone: string;
-  version?: number;
   onNavigate: (view: CalendarView, date: string) => void;
   forecast?: Forecast | null;
   weatherOn?: boolean;
@@ -55,7 +52,6 @@ export function FiveDayCalendar({
         timezone={timezone}
         now={now}
         days={fiveDays(timezone, now).slice(0, days)}
-        version={version}
         onOpenDay={(date) => onNavigate('day', date)}
         forecast={forecast}
         weatherOn={weatherOn}
@@ -76,7 +72,6 @@ export function PagedCalendar({
   timezone,
   view,
   date,
-  version = 0,
   onNavigate,
   forecast = null,
   weatherOn = false,
@@ -86,7 +81,6 @@ export function PagedCalendar({
   timezone: string;
   view: CalendarView;
   date: string | null;
-  version?: number;
   onNavigate: (view: CalendarView, date: string) => void;
   forecast?: Forecast | null;
   weatherOn?: boolean;
@@ -150,7 +144,6 @@ export function PagedCalendar({
           timezone={timezone}
           now={now}
           days={days}
-          version={version}
           onOpenDay={(date) => onNavigate('day', date)}
           forecast={forecast}
           weatherOn={weatherOn}
@@ -158,10 +151,10 @@ export function PagedCalendar({
           rows={portrait}
         />
       ) : day ? (
-        <DayView key={`${view}:${day.date}`} timezone={timezone} now={now} day={day} version={version} profiles={profiles} focusHeading={() => heading.current?.focus()} />
+        <DayView key={`${view}:${day.date}`} timezone={timezone} now={now} day={day} profiles={profiles} focusHeading={() => heading.current?.focus()} />
       ) : (
         // The month's cells carry no weather: the spec puts it on the day headings of Home, Day and Week.
-        <MonthGrid key={`${view}:${anchor}`} timezone={timezone} today={today} anchor={anchor} window={window} version={version} onOpenDay={(date) => onNavigate('day', date)} profiles={profiles} />
+        <MonthGrid key={`${view}:${anchor}`} timezone={timezone} today={today} anchor={anchor} window={window} onOpenDay={(date) => onNavigate('day', date)} profiles={profiles} />
       )}
     </div>
   );
@@ -192,28 +185,33 @@ const FIT_UNTIL_MEASURED = 8;
 // button beside it (PillRow). Events that overlap sit side by side, two at most; a cluster of more folds into a "+N" in the second
 // lane that opens a list of it. The blocks wait for the Profiles, as the schedule's pills do, and are filled from them. Tapping an
 // event opens its details; after an event is deleted from its sheet, or moved by an edit, focus goes to its new pill or block, or
-// to the page title (`focusHeading`) if it is not on the day any more, and never to the page (EventSheets).
+// to the page title (`focusHeading`) if it is not on the day any more, and never to the page (useEventSheets).
 export function DayView({
   timezone,
   now,
   day,
-  version,
   profiles,
   focusHeading,
 }: {
   timezone: string;
   now: Date;
   day: WallDay;
-  version: number;
   profiles: Profile[] | null;
   focusHeading: () => void;
 }) {
-  // The event tapped and the sheet it opened.
-  const [open, setOpen] = useState<OpenEvent>(null);
-  const events = useDayEvents([day], version, profiles);
+  const events = useDayEvents([day], profiles);
   const occurrences = events.occurrences;
   const loaded = occurrences !== null;
   const people = profiles ?? [];
+  // The event tapped and the sheet it opened.
+  const { open, cluster, sheets } = useEventSheets({
+    timezone,
+    profiles: people,
+    refresh: events.refresh,
+    drawn: occurrences,
+    // After an event is deleted from its sheet, or moved by an edit, and is not on the day any more: the title.
+    focusPlace: focusHeading,
+  });
 
   // The room for the grid is what is left between the row above it and the row below it, which keep their height: the hours that
   // fit are whole 3 rem hours of it. Measured again when the room changes.
@@ -255,15 +253,15 @@ export function DayView({
         day={day}
         people={people}
         empty={loaded ? emptyRowWords('earlier', day.isToday) : ''}
-        onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })}
+        onOpen={open}
       />
       <div ref={room} className="flex min-h-0 flex-1 flex-col gap-2">
         <HourGrid
           plan={plan}
           day={day}
           people={people}
-          onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })}
-          onFold={(fold) => setOpen({ sheet: 'cluster', day, pills: fold.pills })}
+          onOpen={open}
+          onFold={(fold) => cluster(day, fold.pills)}
         />
         <PillRow
           ref={later}
@@ -275,19 +273,10 @@ export function DayView({
           day={day}
           people={people}
           empty={loaded ? emptyRowWords('later', day.isToday) : ''}
-          onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })}
+          onOpen={open}
         />
       </div>
-      <EventSheets
-        open={open}
-        onChange={setOpen}
-        timezone={timezone}
-        date={day.date}
-        profiles={people}
-        events={events}
-        // After an event is deleted from its sheet, or moved by an edit, and is not on the day any more: the title.
-        focusPlace={focusHeading}
-      />
+      {sheets}
     </section>
   );
 }

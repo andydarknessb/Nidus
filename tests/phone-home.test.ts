@@ -32,7 +32,6 @@ const home = (timezone: string | null) =>
       route: { view: 'home' },
       timezone,
       view: { household: null, failed: false },
-      added: 0,
       forecast: null,
       weatherOn: false,
       profiles: [],

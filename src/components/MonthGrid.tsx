@@ -12,15 +12,13 @@ import { ReadState } from './ReadState';
 // more there are. Events are not tappable here, the day is. What each cell says is decided by monthCells (month-grid.ts), which the
 // phone's Month draws from too, through the same WeekCells.
 
-// `anchor` is the 1st of the month shown, read in one go (useDayEvents). `version` changes when the screen around the calendar has
-// written an event, so the month reads again at once. `profiles` are the Household's, read by that screen and handed down: they fill the
+// `anchor` is the 1st of the month shown, read in one go (useDayEvents). `profiles` are the Household's, read by that screen and handed down: they fill the
 // event lines, and are null until read, when the lines wait for them as the schedule's pills do.
 export function MonthGrid({
   timezone,
   today,
   anchor,
   window,
-  version,
   onOpenDay,
   profiles,
 }: {
@@ -28,13 +26,12 @@ export function MonthGrid({
   today: string;
   anchor: string;
   window: PagingWindow;
-  version: number;
   onOpenDay: (date: string) => void;
   profiles: Profile[] | null;
 }) {
   // Built once a page and a day, not on every tick of the clock or measure of the grid: it is the slow part.
   const weeks = useMemo(() => monthWeeks(anchor, timezone, today), [anchor, timezone, today]);
-  const events = useDayEvents(useMemo(() => weeks.flat(), [weeks]), version, profiles);
+  const events = useDayEvents(useMemo(() => weeks.flat(), [weeks]), profiles);
   const cells = monthCells(weeks, anchor, window, events, 'lines');
   // The height the week rows share and the size of a rem, so the lines that fit a cell are measured, not
   // guessed, at whatever text size the tablet is set to.

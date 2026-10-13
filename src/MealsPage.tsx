@@ -1,14 +1,11 @@
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { InBody } from './components/InBody';
+import { useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { TodayDisc } from './components/people';
 import { ReadState } from './components/ReadState';
-import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
+import { Sheet } from './components/Sheet';
 import { Button } from './components/ui/button';
 import { pageWords } from './lib/calendar-occurrences';
 import type { WallDay } from './lib/paged-view';
-import { dialogKeys } from './lib/dialog';
-import { appBehind, holdBackground } from './lib/inert-behind';
 import { dayName, NOTHING_PLANNED, type MealSheetCell } from './lib/meal-plan';
 import { MEAL_SLOTS, nextMealWords, type MealSlot } from './lib/meals';
 import { WEEKDAYS } from './lib/routines';
@@ -140,17 +137,7 @@ function MealsGrid({ plan, portrait }: { plan: ReturnType<typeof useMealPlan>; p
               ...rows.flatMap((row) => [slotHeading(row), ...days.map((day) => cell(row, day))]),
             ]}
       </div>
-      {editing && (
-        // Drawn in the body, outside the page it holds inert while it is open (InBody).
-        <InBody>
-          <MealSheet
-            editing={editing}
-            save={save}
-            onClose={() => setEditing(null)}
-            onSaved={() => setEditing(null)}
-          />
-        </InBody>
-      )}
+      {editing && <MealSheet editing={editing} save={save} onClose={() => setEditing(null)} onSaved={() => setEditing(null)} />}
     </section>
   );
 }
@@ -182,7 +169,6 @@ function DayHeading({ day }: { day: WallDay }) {
 // Close, Cancel and Escape close it without writing, and so does a tap on the scrim while the field still holds what
 // it opened with. A blank field is a clear.
 export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editing; save: (date: string, slot: MealSlot, title: string) => Promise<void>; onSaved: () => void; onClose: () => void }) {
-  const dialog = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing.meal?.title ?? '');
   const [problem, setProblem] = useState('');
@@ -191,27 +177,6 @@ export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editin
   const failureWords = useFailureWords();
   // A stray tap on the scrim never throws away what was typed.
   const untouched = title === (editing.meal?.title ?? '');
-
-  // The page behind is inert for as long as the sheet is open, and let go of before focus goes back to the cell (an inert element takes
-  // no focus). The opener is noted first: making the page inert takes the focus off it.
-  useLayoutEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    const release = holdBackground(appBehind());
-    input.current?.focus();
-    return () => {
-      release();
-      opener?.focus();
-    };
-  }, []);
-
-  // A button that had focus is disabled while saving: focus then falls to the page behind (the
-  // browser lets it go a moment after this runs, so a disabled button still counts as lost), and
-  // Escape and Tab would no longer reach the sheet. Put it on the sheet, not the field, so a tapped
-  // Save does not bring the keyboard back up.
-  useEffect(() => {
-    const active = document.activeElement;
-    if (!dialog.current?.contains(active) || (active instanceof HTMLButtonElement && active.disabled)) dialog.current?.focus();
-  }, [busy]);
 
   // A save in flight holds the sheet open, so a late save never closes some other sheet and a
   // failed one never reports to a sheet that is gone.
@@ -237,29 +202,21 @@ export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editin
   }
 
   return (
-    <div
-      className={`fixed inset-0 z-20 flex items-center justify-center overflow-y-auto bg-scrim p-8 ${PHONE_SCRIM}`}
-      // A press on the scrim must not take focus off the field: the browser would hand it to the page behind, and
-      // Escape would then reach nothing.
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) event.preventDefault();
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget && untouched) close();
-      }}
-    >
-      <form
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="meal-sheet-title"
-        tabIndex={-1}
-        noValidate
-        onSubmit={submit}
-        onKeyDown={(event) => dialogKeys(event, close)}
-        className={`flex w-full max-w-lg flex-col gap-[18px] rounded-[28px] bg-card p-6 outline-none ${PHONE_FRAME} phone:min-h-0`}
-      >
-        <SheetHandle />
+    <Sheet
+      labelledBy="meal-sheet-title"
+      title={editing.heading}
+      onClose={close}
+      // A stray tap on the scrim never throws away what was typed.
+      canDismiss={() => untouched}
+      onSubmit={submit}
+      initialFocus={input}
+      // A button that is disabled while saving drops focus to the page behind: it is put on the sheet, not the field, so a tapped Save
+      // does not bring the keyboard back up.
+      refocusOn={busy}
+      scrim="overflow-y-auto p-8"
+      className="max-h-none max-w-lg gap-[18px]"
+      plain
+      header={
         <div className="flex h-12 items-center justify-between gap-4">
           <h2 id="meal-sheet-title" className="font-display text-[30px] leading-9">
             {editing.heading}
@@ -268,17 +225,8 @@ export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editin
             <X aria-hidden className="size-[26px]" strokeWidth={2.2} />
           </Button>
         </div>
-        {/* On a phone the field and what is said of it scroll between the title row and the buttons; on the Wall the box is not there
-            (display: contents), and the sheet is as it was. */}
-        <div className="contents phone:flex phone:min-h-0 phone:flex-col phone:gap-[18px] phone:overflow-y-auto">
-          <label className="flex flex-col gap-2">
-            <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
-            <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
-          </label>
-          <p role="alert" className="min-h-6 text-[15px] leading-5 font-medium empty:hidden">
-            {problem}
-          </p>
-        </div>
+      }
+      footer={
         <div className="flex phone:flex-none flex-wrap items-center justify-end gap-3">
           {editing.meal && (
             <Button className="mr-auto h-14 px-6 text-[17px]" disabled={busy} onClick={() => void write('')}>
@@ -292,8 +240,20 @@ export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editin
             Save
           </Button>
         </div>
-      </form>
-    </div>
+      }
+    >
+      {/* On a phone the field and what is said of it scroll between the title row and the buttons; on the Wall the box is not there
+          (display: contents), and the sheet is as it was. */}
+      <div className="contents phone:flex phone:min-h-0 phone:flex-col phone:gap-[18px] phone:overflow-y-auto">
+        <label className="flex flex-col gap-2">
+          <span className="text-[15px] leading-5 text-muted-foreground">Meal</span>
+          <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+        </label>
+        <p role="alert" className="min-h-6 text-[15px] leading-5 font-medium empty:hidden">
+          {problem}
+        </p>
+      </div>
+    </Sheet>
   );
 }
 

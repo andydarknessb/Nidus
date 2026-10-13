@@ -1,9 +1,7 @@
 import { Calendar, CircleAlert, MapPin, Minus, Pin, Plus, Trash2, X } from 'lucide-react';
-import { useContext, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type FormEvent, type ReactNode } from 'react';
+import { useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import type { Occurrence } from '../lib/calendar-occurrences';
-import { dialogKeys } from '../lib/dialog';
-import { appBehind, holdBackground } from '../lib/inert-behind';
 import { personStyle } from '../lib/look';
 import {
   addedSentence,
@@ -26,11 +24,9 @@ import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { useStatusLine } from '../lib/status-line';
 import { supabase } from '../lib/supabase';
-import { useFailureWords } from '../lib/use-failure-words';
-import { useOverflow } from '../lib/use-overflow';
-import { InBody } from './InBody';
+import { useChange } from '../lib/synced-read';
 import { HouseDisc, PersonDisc } from './people';
-import { PHONE_FRAME, PHONE_SCRIM, SheetBody, SheetHandle } from './Sheet';
+import { Sheet } from './Sheet';
 import { Button } from './ui/button';
 import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
@@ -46,6 +42,8 @@ const footerButton = 'h-14 px-[24px] text-[17px]';
 // On the Wall they are the drawing's: 190 wide at the least, and the note takes the rest.
 const answers = 'flex max-w-full min-w-0 flex-auto items-center gap-3 min-[960px]:flex-none';
 const main = 'min-w-0 flex-1 min-[960px]:min-w-[190px] min-[960px]:flex-none';
+// Where the form's words about a write (or a field) are said: the one place of its footer.
+const PLACE = 'event';
 
 // How long a finger holds a stepper before it steps again, and how often it steps after that.
 const HOLD_MS = 450;
@@ -131,13 +129,13 @@ function Stepper({ id, words, noun, time, earlierStuck, laterStuck, onStep }: { 
 // Household Account or a Device, whichever session `supabase` holds. On the Wall it is 940 x 580 over the scrim in two
 // columns, with its title row and its footer always in view; below 960 px it is one column that scrolls between them. What
 // scrolls between them is a SheetBody: with many people the Wall's two columns are taller than the screen, and it says so.
-// Focus moves in on open and back to what opened it on close. A tap on the scrim closes it only while nothing has been
-// typed or changed; Close, Cancel and Escape always do. After a save, an edit or a delete the status line says what
-// happened, from whichever screen opened the sheet (the Wall's, and the phone's pages have one too). On the Wall, a
-// save or a delete clears the Profile filter, which would otherwise hide the event just written (or the gap where
-// it was). The page behind it is inert while it is open, so a screen reader cannot swipe out of it (NativeEventSheet, below, draws it
-// in the body, outside what is made inert).
-function EventSheetForm({
+// Its frame is the Sheet's: focus moves in on open and back to what opened it on close, and the page behind it is inert. A tap on the
+// scrim closes it only while nothing has been typed or changed (its `canDismiss`); Close, Cancel and Escape always do. After a save,
+// an edit or a delete the status line says what happened, from whichever screen opened the sheet (the Wall's, and the phone's pages
+// have one too). On the Wall, a save or a delete clears the Profile filter, which would otherwise hide the event just written (or the
+// gap where it was). What a write that did not go through says is the change's (useChange), said in the footer and taken away by the
+// next edit.
+export function NativeEventSheet({
   timezone,
   profiles,
   date,
@@ -148,21 +146,18 @@ function EventSheetForm({
   timezone: string;
   // The Household's Profiles, from whichever screen opened the sheet: "Who is it for?" offers them. None yet is only Everyone.
   profiles: readonly Profile[];
-  // The Household date a new event starts on.
-  date: string;
-  // Present when editing.
-  occurrence?: Occurrence;
   // After a save or a delete, so the screen behind can read again.
   onSaved: () => void;
   onClose: () => void;
-}) {
-  const dialog = useRef<HTMLFormElement>(null);
+} & (
+  // Either the Household date a new event starts on, or the event being edited, which starts from itself.
+  | { date: string; occurrence?: undefined }
+  | { date?: undefined; occurrence: Occurrence }
+)) {
   const dateField = useRef<HTMLInputElement>(null);
-  // Whether the fields hold more than the sheet shows.
-  const body = useOverflow('y', 'over');
   const { clear: clearFilter } = useContext(ProfileFilterContext);
   const say = useStatusLine();
-  const failureWords = useFailureWords();
+  const card = useChange();
   // The form as the sheet opened with it: what "nothing has been typed or changed" is measured against. A new event opens at
   // the next whole hour when it is for today, and at 9:00 AM otherwise.
   const [opened] = useState<EventForm>(() => (occurrence ? eventFormFromOccurrence(occurrence, timezone) : { ...blankEventForm(date), ...openingTimes(date, timezone) }));
@@ -175,19 +170,19 @@ function EventSheetForm({
   // "Another day" is a choice of its own, not what the date happens to be: a date picked in its field that is also today
   // or one of the next two must not take the field away from under the finger.
   const [another, setAnother] = useState(() => !days.some((day) => day.date === opened.date));
-  const [problem, setProblem] = useState('');
-  const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const { busy } = card;
+  const problem = card.problem(PLACE);
   const editing = occurrence !== undefined;
   const title = editing ? 'Edit event' : 'New event';
   // Makes a change to the form and says whether it was one. A change that is none (a stepper at its limit) leaves a problem
-  // that is showing where it is.
+  // that is showing where it is; one that is one takes it away.
   const change = (next: (form: EventForm) => EventForm): boolean => {
     const before = latest.current;
     const after = next(before);
     if (after === before) return false;
     latest.current = after;
-    setProblem('');
+    card.clear(PLACE);
     setForm(after);
     return true;
   };
@@ -199,47 +194,26 @@ function EventSheetForm({
     return moved;
   };
 
-  // The page behind is inert for as long as the sheet is open, and let go of before focus goes back to what opened it (an inert element
-  // takes no focus). The opener is noted first: making the page inert takes the focus off it.
-  useLayoutEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    const release = holdBackground(appBehind());
-    dialog.current?.focus();
-    return () => {
-      release();
-      opener?.focus();
-    };
-  }, []);
-
-  // A button that had focus may go (Keep it) or be switched off (saving): focus then falls to the page behind, and
-  // Escape and Tab would no longer reach the sheet. Put it back on the sheet.
-  useEffect(() => {
-    if (!dialog.current?.contains(document.activeElement)) dialog.current?.focus();
-  }, [confirming, busy]);
-
-  async function run(work: () => Promise<void>, said: string) {
-    setBusy(true);
-    try {
-      await work();
-      clearFilter();
-      say(said);
-      onSaved();
-    } catch (error) {
-      // The Wall's one vocabulary for a write that did not go through, which says "No internet" when that is the trouble.
-      setProblem(failureWords(error));
-      setBusy(false);
-    }
-  }
+  // Saves or deletes through the one change, which words a write that did not go through (the Wall's one vocabulary, which says "No
+  // internet" when that is the trouble). Once it landed the filter is cleared, the status line says what happened, and the screen
+  // behind reads again (onSaved).
+  const write = (work: () => Promise<void>, said: string) =>
+    card.change(PLACE, work, {
+      landed: () => {
+        clearFilter();
+        say(said);
+        onSaved();
+      },
+    });
 
   function submit(event: FormEvent) {
     event.preventDefault();
     const input = eventFormToInput(form, timezone);
     if ('problem' in input) {
-      setProblem(input.problem);
+      card.say(PLACE, input.problem);
       return;
     }
-    setProblem('');
-    void run(() => saveNativeEvent(supabase, input, occurrence?.id).then(() => undefined), editing ? savedSentence(input, timezone) : addedSentence(input, timezone));
+    void write(() => saveNativeEvent(supabase, input, occurrence?.id).then(() => undefined), editing ? savedSentence(input, timezone) : addedSentence(input, timezone));
   }
 
   // Everyone is nobody pressed: pressing a person lets Everyone go, pressing Everyone lets every person go.
@@ -247,236 +221,217 @@ function EventSheetForm({
   const pressPerson = (id: string) =>
     change((prev) => ({ ...prev, profileIds: prev.profileIds.includes(id) ? prev.profileIds.filter((other) => other !== id) : [...prev.profileIds, id] }));
 
-  return (
-    <div
-      className={`fixed inset-0 z-20 flex items-center justify-center bg-scrim p-3 min-[960px]:p-4 ${PHONE_SCRIM}`}
-      // A press on the scrim must not take the focus off what had it. A sheet that stays open (something was typed) would
-      // otherwise have its focus on the page behind it, and Escape, which the sheet hears, would never reach it.
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) event.preventDefault();
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget && isUntouched(form, opened)) onClose();
-      }}
-    >
-      <form
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="native-event-title"
-        tabIndex={-1}
-        noValidate
-        onSubmit={submit}
-        onKeyDown={(event) => dialogKeys(event, onClose)}
-        className={`flex max-h-full min-h-0 w-full max-w-[940px] flex-col gap-[18px] rounded-[28px] bg-card p-4 outline-none min-[960px]:min-h-[min(580px,100%)] min-[960px]:p-6 ${PHONE_FRAME}`}
-      >
-        <SheetHandle />
-        <div className="flex h-12 flex-none items-center justify-between">
-          <h2 id="native-event-title" className="font-display text-[30px] leading-9">
-            {title}
-          </h2>
-          <Button variant="quiet" aria-label="Close" onClick={onClose} className="size-12 rounded-full p-0">
-            <X aria-hidden className="size-[26px]" strokeWidth={2.2} />
-          </Button>
-        </div>
-
-        {/* The fields scroll between the title row and the footer when the screen is short, or the family is large; on the Wall
-            the foot of the box says so. */}
-        <SheetBody title={title} control={body}>
-          <div className="grid grid-cols-1 gap-[18px] min-[960px]:grid-cols-2 min-[960px]:gap-x-6">
-            <div className="@container flex min-w-0 flex-col justify-start gap-[18px]">
-              <label className="flex flex-col gap-2">
-                <span className={caption}>What is it?</span>
-                <input className="h-15 px-4 text-[19px]" value={form.title} onChange={(e) => set({ title: e.target.value })} maxLength={200} required />
-              </label>
-
-              <div role="group" aria-labelledby="when-label" className="flex flex-col gap-2">
-                <span id="when-label" className={caption}>
-                  When
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {days.map((day) => (
-                    <Button
-                      key={day.date}
-                      aria-pressed={!another && form.date === day.date}
-                      onClick={() => {
-                        setAnother(false);
-                        pickDay(day.date);
-                      }}
-                      className={`${pill} flex-auto px-3`}
-                    >
-                      {day.label}
-                    </Button>
-                  ))}
-                  <Button
-                    aria-pressed={another}
-                    onClick={() => {
-                      // The field is on the page at once and asked for its picker in this same tap, which is the only moment a
-                      // browser lets it open. Where it cannot (it throws, or there is no showPicker), the field takes the focus.
-                      flushSync(() => setAnother(true));
-                      try {
-                        dateField.current?.showPicker();
-                      } catch {
-                        dateField.current?.focus();
-                      }
-                    }}
-                    className={`${pill} flex-auto px-3`}
-                  >
-                    <Calendar aria-hidden />
-                    Another day
-                  </Button>
-                </div>
-                {another && <input ref={dateField} type="date" aria-label="Date" className="h-13 w-full text-[17px]" value={form.date} onChange={(e) => pickDay(e.target.value)} required />}
-              </div>
-
-              {/* All day hides both. On the Wall they keep their room, so When and the switch stay where they were; on one
-                  column there is nothing to keep, and they go. */}
-              <div className={`grid-cols-1 gap-2 @min-[26rem]:grid-cols-2 ${form.allDay ? 'hidden min-[960px]:invisible min-[960px]:grid' : 'grid'}`}>
-                <Stepper
-                  id="starts-label"
-                  words="Starts"
-                  noun="Start"
-                  time={form.startTime}
-                  earlierStuck={stepStart(form, -1) === form}
-                  laterStuck={stepStart(form, 1) === form}
-                  onStep={(direction) => stepTimes((prev) => stepStart(prev, direction))}
-                />
-                <Stepper
-                  id="ends-label"
-                  words="Ends"
-                  noun="End"
-                  time={form.endTime}
-                  earlierStuck={stepEnd(form, -1) === form}
-                  laterStuck={stepEnd(form, 1) === form}
-                  onStep={(direction) => stepTimes((prev) => stepEnd(prev, direction))}
-                />
-              </div>
-
-              {/* The whole row is the label, so a tap on its words flips the switch too. */}
-              <label className="flex h-14 items-center justify-between rounded-2xl bg-muted px-4 text-[17px]">
-                All day
-                {/* A 56 x 32 track inside a 72 x 48 target: the transparent border is the room a finger needs. */}
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={form.allDay}
-                  onClick={() => change((prev) => ({ ...prev, allDay: !prev.allDay }))}
-                  className="group relative -mr-2 box-content h-8 w-14 shrink-0 rounded-full border-8 border-transparent bg-accent bg-clip-padding shadow-[inset_0_0_0_1.5px_var(--input)] focus-visible:-outline-offset-6 aria-checked:bg-primary"
-                >
-                  <span className="absolute top-1 left-1 size-6 rounded-full bg-muted-foreground transition-transform group-aria-checked:translate-x-6 group-aria-checked:bg-primary-foreground" />
-                </button>
-              </label>
-            </div>
-
-            <div className="flex min-w-0 flex-col gap-[18px]">
-              <div role="group" aria-labelledby="who-label" className="flex flex-col gap-2">
-                <span id="who-label" className={caption}>
-                  Who is it for?
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  <Button aria-pressed={nobody} onClick={() => set({ profileIds: [] })} className={`${chip} selected:bg-secondary`}>
-                    <HouseDisc size={34} />
-                    Everyone
-                  </Button>
-                  {profiles.map((profile) => (
-                    <Button
-                      key={profile.id}
-                      variant="quiet"
-                      aria-pressed={form.profileIds.includes(profile.id)}
-                      onClick={() => pressPerson(profile.id)}
-                      style={personStyle(profile.color)}
-                      className={`person ${chip} bg-person-soft text-foreground selected:bg-person-soft`}
-                    >
-                      <PersonDisc name={profile.name} color={profile.color} size={34} />
-                      <span className="truncate">{profile.name}</span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <label className="flex flex-col gap-2">
-                <span className={caption}>Where (optional)</span>
-                <span className="relative block h-14">
-                  <input className="h-14 w-full pr-4 pl-12 text-[17px]" value={form.location} onChange={(e) => set({ location: e.target.value })} maxLength={500} placeholder="Add a place" />
-                  <MapPin aria-hidden className="pointer-events-none absolute top-[18px] left-4 size-5 text-muted-foreground" />
-                </span>
-              </label>
-
-              {/* The box takes what height is left, so a tall left column (the date field is showing) does not leave a gap under it. */}
-              <label className="flex flex-1 flex-col gap-2">
-                <span className={caption}>Notes (optional)</span>
-                <textarea className="min-h-24 w-full flex-1 resize-none px-4 py-3 text-[17px]" value={form.notes} onChange={(e) => set({ notes: e.target.value })} maxLength={5000} />
-              </label>
-            </div>
-          </div>
-        </SheetBody>
-
-        <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2">
-          {confirming && occurrence ? (
-            <>
-              <p id="delete-question" className="min-w-[min(12rem,100%)] flex-1 truncate text-[17px] font-medium">
-                Delete {occurrence.title}?
-              </p>
-              <div className={answers}>
-                {/* Focus lands on the safe answer, so a screen reader hears the question with it. */}
-                <Button variant="secondary" autoFocus aria-describedby="delete-question" className={`${footerButton} px-6 font-medium`} onClick={() => setConfirming(false)}>
-                  Keep it
-                </Button>
-                <Button
-                  variant="delete"
-                  aria-label={`Delete ${occurrence.title}`}
-                  disabled={busy}
-                  className={`${footerButton} ${main}`}
-                  onClick={() => void run(() => deleteNativeEvent(supabase, occurrence.id), `Deleted ${occurrence.title}`)}
-                >
-                  Delete
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* A quiet button has no edge to line up with the fields, so its icon is what is brought to theirs. */}
-              {editing && (
-                <Button variant="quiet" disabled={busy} className={`${footerButton} -ml-4 px-[20px] font-medium`} onClick={() => setConfirming(true)}>
-                  <Trash2 aria-hidden />
-                  Delete
-                </Button>
-              )}
-              {problem ? (
-                // A problem has a row of its own on one column (with Delete above it, when editing), so a sentence as long as the
-                // clocks' one is read whole.
-                <p role="alert" className="flex min-w-[min(12rem,100%)] grow basis-full items-center gap-2 text-[15px] font-medium min-[960px]:basis-0">
-                  <CircleAlert aria-hidden className="size-[18px] shrink-0" />
-                  <span className="line-clamp-3 min-w-0 leading-5 min-[960px]:line-clamp-2">{problem}</span>
-                </p>
-              ) : (
-                <p className="flex min-w-[min(12rem,100%)] flex-1 items-center gap-2 text-[15px] text-muted-foreground">
-                  <Pin aria-hidden className="size-[18px] shrink-0" />
-                  <span className="line-clamp-2 min-w-0 leading-5">{editing ? 'Added here. Not in Google Calendar.' : 'Saved here only. It will not appear in Google Calendar.'}</span>
-                </p>
-              )}
-              <div className={answers}>
-                <Button variant="quiet" className={`${footerButton} font-medium`} onClick={onClose}>
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" disabled={busy} className={`${footerButton} ${main}`}>
-                  {editing ? 'Save changes' : 'Add event'}
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
-      </form>
+  const header = (
+    <div className="flex h-12 flex-none items-center justify-between">
+      <h2 id="native-event-title" className="font-display text-[30px] leading-9">
+        {title}
+      </h2>
+      <Button variant="quiet" aria-label="Close" onClick={onClose} className="size-12 rounded-full p-0">
+        <X aria-hidden className="size-[26px]" strokeWidth={2.2} />
+      </Button>
     </div>
   );
-}
 
-// The sheet, drawn in the body: outside the page it holds inert (InBody), so a screen reader on the phone or the Wall cannot swipe out of
-// it to what is behind.
-export function NativeEventSheet(props: ComponentProps<typeof EventSheetForm>) {
+  const footer = (
+    <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2">
+      {confirming && occurrence ? (
+        <>
+          <p id="delete-question" className="min-w-[min(12rem,100%)] flex-1 truncate text-[17px] font-medium">
+            Delete {occurrence.title}?
+          </p>
+          <div className={answers}>
+            {/* Focus lands on the safe answer, so a screen reader hears the question with it. */}
+            <Button variant="secondary" autoFocus aria-describedby="delete-question" className={`${footerButton} px-6 font-medium`} onClick={() => setConfirming(false)}>
+              Keep it
+            </Button>
+            <Button
+              variant="delete"
+              aria-label={`Delete ${occurrence.title}`}
+              disabled={busy}
+              className={`${footerButton} ${main}`}
+              onClick={() => void write(() => deleteNativeEvent(supabase, occurrence.id), `Deleted ${occurrence.title}`)}
+            >
+              Delete
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* A quiet button has no edge to line up with the fields, so its icon is what is brought to theirs. */}
+          {editing && (
+            <Button variant="quiet" disabled={busy} className={`${footerButton} -ml-4 px-[20px] font-medium`} onClick={() => setConfirming(true)}>
+              <Trash2 aria-hidden />
+              Delete
+            </Button>
+          )}
+          {problem ? (
+            // A problem has a row of its own on one column (with Delete above it, when editing), so a sentence as long as the
+            // clocks' one is read whole. `n` counts what has been said, so a failure that is the same again is a new alert, heard again.
+            <p key={problem.n} role="alert"className="flex min-w-[min(12rem,100%)] grow basis-full items-center gap-2 text-[15px] font-medium min-[960px]:basis-0">
+              <CircleAlert aria-hidden className="size-[18px] shrink-0" />
+              <span className="line-clamp-3 min-w-0 leading-5 min-[960px]:line-clamp-2">{problem.words}</span>
+            </p>
+          ) : (
+            <p className="flex min-w-[min(12rem,100%)] flex-1 items-center gap-2 text-[15px] text-muted-foreground">
+              <Pin aria-hidden className="size-[18px] shrink-0" />
+              <span className="line-clamp-2 min-w-0 leading-5">{editing ? 'Added here. Not in Google Calendar.' : 'Saved here only. It will not appear in Google Calendar.'}</span>
+            </p>
+          )}
+          <div className={answers}>
+            <Button variant="quiet" className={`${footerButton} font-medium`} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={busy} className={`${footerButton} ${main}`}>
+              {editing ? 'Save changes' : 'Add event'}
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
   return (
-    <InBody>
-      <EventSheetForm {...props} />
-    </InBody>
+    <Sheet
+      labelledBy="native-event-title"
+      title={title}
+      onClose={onClose}
+      // A stray tap on the scrim never throws away what was typed.
+      canDismiss={() => isUntouched(form, opened)}
+      onSubmit={submit}
+      refocusOn={`${confirming} ${busy}`}
+      scrim="p-3 min-[960px]:p-4"
+      className="max-w-[940px] gap-[18px] p-4 min-[960px]:min-h-[min(580px,100%)] min-[960px]:p-6"
+      header={header}
+      footer={footer}
+    >
+      {/* The fields scroll between the title row and the footer when the screen is short, or the family is large; on the Wall
+          the foot of the box says so. */}
+      <div className="grid grid-cols-1 gap-[18px] min-[960px]:grid-cols-2 min-[960px]:gap-x-6">
+        <div className="@container flex min-w-0 flex-col justify-start gap-[18px]">
+          <label className="flex flex-col gap-2">
+            <span className={caption}>What is it?</span>
+            <input className="h-15 px-4 text-[19px]" value={form.title} onChange={(e) => set({ title: e.target.value })} maxLength={200} required />
+          </label>
+
+          <div role="group" aria-labelledby="when-label" className="flex flex-col gap-2">
+            <span id="when-label" className={caption}>
+              When
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {days.map((day) => (
+                <Button
+                  key={day.date}
+                  aria-pressed={!another && form.date === day.date}
+                  onClick={() => {
+                    setAnother(false);
+                    pickDay(day.date);
+                  }}
+                  className={`${pill} flex-auto px-3`}
+                >
+                  {day.label}
+                </Button>
+              ))}
+              <Button
+                aria-pressed={another}
+                onClick={() => {
+                  // The field is on the page at once and asked for its picker in this same tap, which is the only moment a
+                  // browser lets it open. Where it cannot (it throws, or there is no showPicker), the field takes the focus.
+                  flushSync(() => setAnother(true));
+                  try {
+                    dateField.current?.showPicker();
+                  } catch {
+                    dateField.current?.focus();
+                  }
+                }}
+                className={`${pill} flex-auto px-3`}
+              >
+                <Calendar aria-hidden />
+                Another day
+              </Button>
+            </div>
+            {another && <input ref={dateField} type="date" aria-label="Date" className="h-13 w-full text-[17px]" value={form.date} onChange={(e) => pickDay(e.target.value)} required />}
+          </div>
+
+          {/* All day hides both. On the Wall they keep their room, so When and the switch stay where they were; on one
+              column there is nothing to keep, and they go. */}
+          <div className={`grid-cols-1 gap-2 @min-[26rem]:grid-cols-2 ${form.allDay ? 'hidden min-[960px]:invisible min-[960px]:grid' : 'grid'}`}>
+            <Stepper
+              id="starts-label"
+              words="Starts"
+              noun="Start"
+              time={form.startTime}
+              earlierStuck={stepStart(form, -1) === form}
+              laterStuck={stepStart(form, 1) === form}
+              onStep={(direction) => stepTimes((prev) => stepStart(prev, direction))}
+            />
+            <Stepper
+              id="ends-label"
+              words="Ends"
+              noun="End"
+              time={form.endTime}
+              earlierStuck={stepEnd(form, -1) === form}
+              laterStuck={stepEnd(form, 1) === form}
+              onStep={(direction) => stepTimes((prev) => stepEnd(prev, direction))}
+            />
+          </div>
+
+          {/* The whole row is the label, so a tap on its words flips the switch too. */}
+          <label className="flex h-14 items-center justify-between rounded-2xl bg-muted px-4 text-[17px]">
+            All day
+            {/* A 56 x 32 track inside a 72 x 48 target: the transparent border is the room a finger needs. */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={form.allDay}
+              onClick={() => change((prev) => ({ ...prev, allDay: !prev.allDay }))}
+              className="group relative -mr-2 box-content h-8 w-14 shrink-0 rounded-full border-8 border-transparent bg-accent bg-clip-padding shadow-[inset_0_0_0_1.5px_var(--input)] focus-visible:-outline-offset-6 aria-checked:bg-primary"
+            >
+              <span className="absolute top-1 left-1 size-6 rounded-full bg-muted-foreground transition-transform group-aria-checked:translate-x-6 group-aria-checked:bg-primary-foreground" />
+            </button>
+          </label>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-[18px]">
+          <div role="group" aria-labelledby="who-label" className="flex flex-col gap-2">
+            <span id="who-label" className={caption}>
+              Who is it for?
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <Button aria-pressed={nobody} onClick={() => set({ profileIds: [] })} className={`${chip} selected:bg-secondary`}>
+                <HouseDisc size={34} />
+                Everyone
+              </Button>
+              {profiles.map((profile) => (
+                <Button
+                  key={profile.id}
+                  variant="quiet"
+                  aria-pressed={form.profileIds.includes(profile.id)}
+                  onClick={() => pressPerson(profile.id)}
+                  style={personStyle(profile.color)}
+                  className={`person ${chip} bg-person-soft text-foreground selected:bg-person-soft`}
+                >
+                  <PersonDisc name={profile.name} color={profile.color} size={34} />
+                  <span className="truncate">{profile.name}</span>
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <label className="flex flex-col gap-2">
+            <span className={caption}>Where (optional)</span>
+            <span className="relative block h-14">
+              <input className="h-14 w-full pr-4 pl-12 text-[17px]" value={form.location} onChange={(e) => set({ location: e.target.value })} maxLength={500} placeholder="Add a place" />
+              <MapPin aria-hidden className="pointer-events-none absolute top-[18px] left-4 size-5 text-muted-foreground" />
+            </span>
+          </label>
+
+          {/* The box takes what height is left, so a tall left column (the date field is showing) does not leave a gap under it. */}
+          <label className="flex flex-1 flex-col gap-2">
+            <span className={caption}>Notes (optional)</span>
+            <textarea className="min-h-24 w-full flex-1 resize-none px-4 py-3 text-[17px]" value={form.notes} onChange={(e) => set({ notes: e.target.value })} maxLength={5000} />
+          </label>
+        </div>
+      </div>
+    </Sheet>
   );
 }

@@ -1,9 +1,9 @@
 import { Pin, Plus } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { EventDiscs } from './components/EventPill';
 import { Card } from './components/phone';
 import { Button } from './components/ui/button';
-import { NativeEventSheet } from './components/NativeEventSheet';
+import { useEventSheets } from './lib/use-event-sheets';
 import { eventTime, timeWords } from '../supabase/functions/_shared/event-words.ts';
 import type { Occurrence } from './lib/calendar-occurrences';
 import type { Household } from './lib/household';
@@ -51,24 +51,21 @@ export function EventsSection({ household }: { household: Household }) {
   );
   const events = read.data?.events ?? null;
   const profiles = read.data?.profiles ?? NO_PROFILES;
-  // The sheet: a new event, or the one being edited.
-  const [sheet, setSheet] = useState<{ occurrence?: Occurrence } | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
-  // How many times the sheet has closed on a write and the list been read again since.
-  const [settled, setSettled] = useState(0);
-
-  // The sheet gives the focus back to what opened it, and an event that was deleted took that row with it when the list was read
-  // again: focus never falls to the page, it goes to Add event.
-  useEffect(() => {
-    if (settled === 0) return;
-    const active = document.activeElement;
-    if (!active || active === document.body) addButton.current?.focus();
-  }, [settled]);
+  // The sheet: a new event, or the one being edited. The sheet gives the focus back to what opened it, and an event that was deleted took
+  // that row with it when the list was read again: focus never falls to the page, it goes to Add event.
+  const { add, open, sheets } = useEventSheets({
+    timezone: household.timezone,
+    profiles,
+    refresh: read.refresh,
+    drawn: events,
+    focusPlace: () => addButton.current?.focus(),
+  });
 
   return (
     <Card title="Events added in Nidus">
       <p className="text-base leading-6">Events added here and on the Wall live only in Nidus. They are not in Google Calendar.</p>
-      <Button ref={addButton} variant="secondary" size="phone" className="w-full" onClick={() => setSheet({})}>
+      <Button ref={addButton} variant="secondary" size="phone" className="w-full" onClick={() => add(householdDay(household.timezone).date)}>
         <Plus aria-hidden />
         Add event
       </Button>
@@ -81,23 +78,11 @@ export function EventsSection({ household }: { household: Household }) {
       <ul className="flex flex-col gap-2">
         {events?.map((event) => (
           <li key={event.id}>
-            <EventRow event={event} profiles={profiles} timezone={household.timezone} onOpen={() => setSheet({ occurrence: event })} />
+            <EventRow event={event} profiles={profiles} timezone={household.timezone} onOpen={() => open(event)} />
           </li>
         ))}
       </ul>
-      {sheet && (
-        <NativeEventSheet
-          timezone={household.timezone}
-          profiles={profiles}
-          date={householdDay(household.timezone).date}
-          {...(sheet.occurrence ? { occurrence: sheet.occurrence } : {})}
-          onClose={() => setSheet(null)}
-          onSaved={() => {
-            setSheet(null);
-            void read.readBack().then(() => setSettled((count) => count + 1));
-          }}
-        />
-      )}
+      {sheets}
     </Card>
   );
 }

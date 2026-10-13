@@ -24,14 +24,12 @@ import { PhoneCard, SideScroll } from './parts';
 const ROW_FLOOR = 'min-w-[calc(7*max(48px,2.4rem))]';
 
 // The Month page anchored on `anchor` (the 1st), read in one go (useDayEvents), so the picked day's list needs no read of its own.
-// `version` changes when the screen around the calendar has written an event, so the month reads again at once.
 export function PhoneMonth({
   timezone,
   now,
   today,
   anchor,
   window,
-  version,
   profiles,
 }: {
   timezone: string;
@@ -39,12 +37,11 @@ export function PhoneMonth({
   today: string;
   anchor: string;
   window: PagingWindow;
-  version: number;
   profiles: Profile[] | null;
 }) {
   // Built once a page and a day, not on every tick of the clock: it is the slow part.
   const weeks = useMemo(() => monthWeeks(anchor, timezone, today), [anchor, timezone, today]);
-  const events = useDayEvents(useMemo(() => weeks.flat(), [weeks]), version, profiles);
+  const events = useDayEvents(useMemo(() => weeks.flat(), [weeks]), profiles);
   const cells = monthCells(weeks, anchor, window, events, 'dots');
   // The pick is the screen's own: until a day is tapped it is the default, which follows today across Household midnight.
   const [pick, setPick] = useState<string | null>(null);
