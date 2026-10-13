@@ -48,6 +48,7 @@ const event = (profile_ids: string[]): Occurrence => ({
   is_all_day: false,
   profile_id: profile_ids[0] ?? null,
   profile_ids,
+  event_id: null, repeat_every: null, repeat_interval: 1, repeat_days: null, repeat_until: null,
 });
 // The same occurrences, on `date`.
 const on = (date: string, occurrences: Occurrence[]): Occurrence[] => occurrences.map((each) => ({ ...each, starts_at: `${date}T14:00:00Z`, ends_at: `${date}T15:00:00Z` }));

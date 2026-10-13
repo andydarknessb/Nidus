@@ -21,6 +21,7 @@ function event(title: string, startsAt: string, endsAt: string, allDay = false):
     is_all_day: allDay,
     profile_id: null,
     profile_ids: [],
+    event_id: null, repeat_every: null, repeat_interval: 1, repeat_days: null, repeat_until: null,
   };
 }
 

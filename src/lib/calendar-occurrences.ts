@@ -30,10 +30,21 @@ export type Occurrence = {
   profile_id: string | null;
   // Every Profile the occurrence is attributed to, in the Profiles' own order; empty for the whole Household.
   profile_ids: string[];
+  // A Native Event's own id, which an Occurrence of a Repeat does not share (its `id` is its own); null for a Synced Event.
+  // Edit and delete a Native Event by this, never by `id`.
+  event_id: string | null;
+  // The event's Repeat (CONTEXT.md: Repeat); all null, bar the interval's 1, when it does not repeat. A Synced Event has none:
+  // it repeats in its source and arrives expanded.
+  repeat_every: 'day' | 'week' | 'month' | 'year' | null;
+  repeat_interval: number;
+  // The weekdays of a weekly Repeat as a bitmask, Sunday = bit 0 (the Routines' days_of_week).
+  repeat_days: number | null;
+  // A Household Date, the last day an Occurrence may land on; null for forever.
+  repeat_until: string | null;
 };
 
 export const occurrenceColumns =
-  'source, id, calendar_id, calendar_name, title, description, location, starts_at, ends_at, is_all_day, profile_id, profile_ids';
+  'source, id, calendar_id, calendar_name, title, description, location, starts_at, ends_at, is_all_day, profile_id, profile_ids, event_id, repeat_every, repeat_interval, repeat_days, repeat_until';
 
 // What one request returns at most: the API stops there without saying so.
 const PAGE = 1000;

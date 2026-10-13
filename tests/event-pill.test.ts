@@ -40,6 +40,7 @@ function event(title: string, profileIds: string[], more: Partial<Occurrence> = 
     is_all_day: false,
     profile_id: profileIds[0] ?? null,
     profile_ids: profileIds,
+    event_id: null, repeat_every: null, repeat_interval: 1, repeat_days: null, repeat_until: null,
     ...more,
   };
 }
