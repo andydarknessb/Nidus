@@ -283,13 +283,16 @@ export async function saveThisOne(client: SupabaseClient, form: EventForm, occur
 
 // "Change every one": the Native Event itself, written by its own id. The form is of one Occurrence, so its day is that Occurrence's
 // day moved: the event's first day moves by as many days as the form's date is from the Occurrence's, and the times are the form's.
-// Returns what was written, for its sentence.
+// A week Repeat whose one day is the Occurrence's weekday moves that day with the date, as moveToDay does in the sheet (a form the sheet
+// moved has it moved already, and is left as it is); several days stay. Returns what was written, for its sentence.
 export async function saveEveryOne(client: SupabaseClient, form: EventForm, occurrence: Occurrence, timezone: string): Promise<NativeEventInput> {
   const id = eventIdOf(occurrence);
   const { data, error } = await client.from('native_events').select('starts_at').eq('id', id).single();
   if (error) throw error;
-  const delta = (Date.parse(`${form.date}T00:00:00Z`) - Date.parse(`${occurrenceDate(occurrence, timezone)}T00:00:00Z`)) / 86_400_000;
-  const input = eventFormToInput({ ...form, date: addDays(householdDay(timezone, new Date(data.starts_at as string)).date, delta) }, timezone);
+  const on = occurrenceDate(occurrence, timezone);
+  const moved = moveToDay({ ...form, date: on }, form.date, true, timezone);
+  const delta = (Date.parse(`${form.date}T00:00:00Z`) - Date.parse(`${on}T00:00:00Z`)) / 86_400_000;
+  const input = eventFormToInput({ ...moved, date: addDays(householdDay(timezone, new Date(data.starts_at as string)).date, delta) }, timezone);
   if ('problem' in input) throw new Error(input.problem);
   await saveNativeEvent(client, input, id);
   return input;

@@ -562,6 +562,22 @@ describe('Repeats written from the form', () => {
     expect(rows.every((row) => eventIdOf(row) === id && row.title === 'Soccer, Wednesdays' && row.repeat_every === 'week' && row.repeat_days === 8)).toBe(true);
   });
 
+  it("moves a week Repeat's one day with the first day when the form's date moved and its day did not", async () => {
+    const account = await arrange();
+    const device = await arrangeDevice(account);
+    await saveNativeEvent(device.client, asInput(soccer));
+    const third = (await loadOccurrences(device.client, OCTOBER.from, OCTOBER.to))[2]!;
+
+    // Opened on Tuesday, Oct 20 and given Thursday, Oct 22 by a caller that is not the sheet: Tuesday goes to Thursday with it.
+    const written = await saveEveryOne(device.client, { ...eventFormFromOccurrence(third, CHICAGO), date: '2026-10-22' }, third, CHICAGO);
+
+    expect(written).toMatchObject({ repeat_every: 'week', repeat_days: weekdayBit('2026-10-22') });
+    expect((await loadOccurrences(device.client, OCTOBER.from, OCTOBER.to)).map((row) => row.starts_at.slice(0, 10))).toEqual(['2026-10-08', '2026-10-15', '2026-10-22', '2026-10-29']);
+    // Two days pressed stay as they are.
+    const both = await saveEveryOne(device.client, { ...eventFormFromOccurrence(third, CHICAGO), date: '2026-10-21', repeat: { every: 'week', interval: 1, days: 4 | 16, until: null } }, third, CHICAGO);
+    expect(both).toMatchObject({ repeat_days: 4 | 16 });
+  });
+
   it('keeps the first day when the form did not move', async () => {
     const account = await arrange();
     const phone = await asHouseholdAccount(account);
