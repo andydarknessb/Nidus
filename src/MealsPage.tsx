@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { InBody } from './components/InBody';
+import { TodayDisc } from './components/people';
 import { ReadState } from './components/ReadState';
 import { PHONE_FRAME, PHONE_SCRIM, SheetHandle } from './components/Sheet';
 import { Button } from './components/ui/button';
@@ -167,7 +168,11 @@ function DayHeading({ day }: { day: WallDay }) {
       className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-[14px] font-normal ${day.isToday ? 'bg-muted' : ''}`}
     >
       <span className={`text-sm leading-[1.2857] ${day.isToday ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{day.isToday ? 'Today' : short}</span>
-      <span className={`flex h-[38px] items-center justify-center font-display leading-none ${day.isToday ? 'size-[38px] rounded-full bg-primary text-[21px] text-primary-foreground' : 'text-[22px]'}`}>{date}</span>
+      {day.isToday ? (
+        <TodayDisc size={38}>{date}</TodayDisc>
+      ) : (
+        <span className="flex h-[38px] items-center justify-center font-display text-[22px] leading-none">{date}</span>
+      )}
     </h3>
   );
 }
