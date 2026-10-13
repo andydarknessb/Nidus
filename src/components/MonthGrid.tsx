@@ -85,24 +85,20 @@ export function MonthGrid({
 
 // The seven cells of a week, for the Wall's grid (form `lines`: it opens a day, drawn `lines` lines tall with the Profiles filling them)
 // and for the phone's (form `dots`: it picks a day, `picked`). A day beyond the range is told once here (BeyondCell), whichever grid.
+// The form decides the cells it is given, so a week of dots cannot be drawn as the Wall's.
 export function WeekCells(
-  props: { cells: readonly MonthCell[]; onOpen: (date: string) => void } & (
-    | { form: 'lines'; profiles: readonly Profile[]; lines: number }
-    | { form: 'dots'; picked: string }
+  props: { onOpen: (date: string) => void } & (
+    | { form: 'lines'; cells: readonly MonthCell<'lines'>[]; profiles: readonly Profile[]; lines: number }
+    | { form: 'dots'; cells: readonly MonthCell<'dots'>[]; picked: string }
   ),
 ) {
   const { form, onOpen } = props;
+  const beyond = (cell: MonthCell) => <BeyondCell key={cell.day.date} cell={cell} form={form} />;
   return (
     <div className={form === 'lines' ? 'grid min-h-0 grid-cols-7 grid-rows-[minmax(0,1fr)] divide-x divide-border' : 'grid grid-cols-7'}>
-      {props.cells.map((cell) =>
-        cell.beyond ? (
-          <BeyondCell key={cell.day.date} cell={cell} form={form} />
-        ) : props.form === 'lines' ? (
-          <DayCell key={cell.day.date} cell={cell as MonthCell<'lines'>} profiles={props.profiles} lines={props.lines} onOpen={onOpen} />
-        ) : (
-          <MonthDay key={cell.day.date} cell={cell as MonthCell<'dots'>} picked={cell.day.date === props.picked} onPick={onOpen} />
-        ),
-      )}
+      {props.form === 'lines'
+        ? props.cells.map((cell) => (cell.beyond ? beyond(cell) : <DayCell key={cell.day.date} cell={cell} profiles={props.profiles} lines={props.lines} onOpen={onOpen} />))
+        : props.cells.map((cell) => (cell.beyond ? beyond(cell) : <MonthDay key={cell.day.date} cell={cell} picked={cell.day.date === props.picked} onPick={onOpen} />))}
     </div>
   );
 }

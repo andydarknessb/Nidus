@@ -36,7 +36,8 @@ export type MonthCell<Form extends CellForm = CellForm> = {
 
 // The weeks of `weeks` (monthWeeks) as cells, from the day events read for them (`events`: the Profile Filter is already in them). A day
 // outside `window` is `beyond`, wherever its week falls, so a week wholly beyond holds nothing to read.
-export function monthCells<Form extends CellForm>(weeks: readonly (readonly WallDay[])[], anchor: string, window: PagingWindow, events: DayEvents, form: Form): MonthCell<Form>[][] {
+export function monthCells<Form extends CellForm>(weeks: readonly (readonly WallDay[])[], anchor: string, window: PagingWindow, events: DayEvents, form: Form): MonthCell<Form>[][];
+export function monthCells(weeks: readonly (readonly WallDay[])[], anchor: string, window: PagingWindow, events: DayEvents, form: CellForm): MonthCell[][] {
   return weeks.map((days) =>
     days.map((day) => {
       const beyond = !canOpenDay(day.date, window);
@@ -48,9 +49,8 @@ export function monthCells<Form extends CellForm>(weeks: readonly (readonly Wall
         inMonth: day.date.slice(0, 7) === anchor.slice(0, 7),
         beyond,
         count,
-        ...(form === 'lines' ? { lines: occurrences } : { dots: beyond ? [] : events.dots(day) }),
       };
-      return cell as unknown as MonthCell<Form>;
+      return form === 'lines' ? { ...cell, lines: occurrences } : { ...cell, dots: beyond ? [] : events.dots(day) };
     }),
   );
 }

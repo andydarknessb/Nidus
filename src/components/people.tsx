@@ -44,11 +44,12 @@ export function HouseDisc({ size = 40, className }: { size?: number; className?:
 }
 
 // Today's date in a --primary disc, 38 px with a 21 px number for a heading (the schedule's, the Day title, the phone's Today) and 30 px
-// with an 18 px number in a phone Month cell. The words around it say "today", so it is hidden from a screen reader.
+// with an 18 px number in a phone Month cell. The words around it say "today", so it is hidden from a screen reader. `leading-none` comes
+// last: cn merges a `text-` size over an earlier `leading-`, and a digit on a line taller than its disc runs out of it at larger text.
 const TODAY_DISC = { 30: 'size-[30px] text-lg', 38: 'size-[38px] text-[21px]' } as const;
 export function TodayDisc({ size, children }: { size: keyof typeof TODAY_DISC; children: ReactNode }) {
   return (
-    <span aria-hidden className={cn('grid shrink-0 place-items-center rounded-full bg-primary font-display leading-none text-primary-foreground', TODAY_DISC[size])}>
+    <span aria-hidden className={cn('grid shrink-0 place-items-center rounded-full bg-primary font-display text-primary-foreground', TODAY_DISC[size], 'leading-none')}>
       {children}
     </span>
   );

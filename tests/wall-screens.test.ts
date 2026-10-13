@@ -49,13 +49,13 @@ describe('the Meals screen', () => {
 
   it("puts today's date in its 38 px disc at 21 px, as the schedule does, and the other dates at 22", () => {
     const html = meals();
-    const number = (heading: string) => /<span class="([^"]*)">\d+<\/span><\/h3>$/.exec(heading)?.[1] ?? '';
+    const number = (heading: string) => /<span (?:aria-hidden="true" )?class="([^"]*)">\d+<\/span><\/h3>$/.exec(heading)?.[1] ?? '';
     const headings = [...html.matchAll(/<h3 [^>]*aria-label="[A-Z][a-z]+ \d+(, today)?"[^>]*>.*?<\/h3>/g)].map(([heading]) => heading);
     const today = headings.filter((heading) => heading.includes('aria-current="date"'));
     const others = headings.filter((heading) => !heading.includes('aria-current="date"'));
     expect(today).toHaveLength(1);
     expect(others.length).toBeGreaterThan(0);
-    expect(number(today[0] ?? '').split(' ')).toEqual(expect.arrayContaining(['size-[38px]', 'rounded-full', 'bg-primary', 'text-[21px]']));
+    expect(number(today[0] ?? '').split(' ')).toEqual(expect.arrayContaining(['size-[38px]', 'rounded-full', 'bg-primary', 'text-[21px]', 'leading-none']));
     expect(number(today[0] ?? '')).not.toContain('text-[22px]');
     for (const heading of others) expect(number(heading).split(' ')).toContain('text-[22px]');
   });

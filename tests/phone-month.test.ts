@@ -80,6 +80,8 @@ describe('a phone Month cell', () => {
     expect(tagOf(today)).toContain('aria-current="date"');
     expect(today).toContain('bg-primary');
     expect(today).toContain('size-[30px]');
+    // The digit stays on a line as tall as the disc (cn would drop leading-none if it came before the text size), so at larger text it does not run out of it.
+    expect(classesOf(today.slice(today.indexOf('<span aria-hidden')))).toEqual(expect.arrayContaining(['text-lg', 'leading-none']));
     expect(tagOf(cell('2026-10-03'))).not.toContain('aria-current');
   });
 
