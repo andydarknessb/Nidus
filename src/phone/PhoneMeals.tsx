@@ -1,7 +1,6 @@
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { BeforeHousehold } from '../components/BeforeHousehold';
-import { InBody } from '../components/InBody';
 import { ReadState } from '../components/ReadState';
 import { Button } from '../components/ui/button';
 import type { WallRoute } from '../lib/wall-routes';
@@ -89,17 +88,7 @@ function MealsDay({ plan }: { plan: ReturnType<typeof useMealPlan> }) {
         const { meal, heard, sheet } = cellFor(day, slot);
         return <SlotRow key={slot} label={label} slot={slot} meal={meal} heard={heard} onOpen={() => setEditing(sheet)} />;
       })}
-      {editing && (
-        // Drawn in the body, outside the page it holds inert while it is open (InBody).
-        <InBody>
-          <MealSheet
-            editing={editing}
-            save={save}
-            onClose={() => setEditing(null)}
-            onSaved={() => setEditing(null)}
-          />
-        </InBody>
-      )}
+      {editing && <MealSheet editing={editing} save={save} onClose={() => setEditing(null)} onSaved={() => setEditing(null)} />}
     </PhoneCard>
   );
 }

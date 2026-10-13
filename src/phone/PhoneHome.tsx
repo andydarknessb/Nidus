@@ -1,8 +1,8 @@
-import { useContext, useRef, useState } from 'react';
+import { useContext, useRef } from 'react';
 import { BeforeHousehold } from '../components/BeforeHousehold';
 import { EmptyWords } from '../components/EmptyWords';
 import { EventPill } from '../components/EventPill';
-import { EventSheets, type OpenEvent } from '../components/EventSheets';
+import { useEventSheets } from '../lib/use-event-sheets';
 import { TodayDisc } from '../components/people';
 import { ReadState } from '../components/ReadState';
 import { UpNext } from '../components/UpNext';
@@ -30,19 +30,26 @@ const PHONE_LIST_ROWS = 6;
 // Today: today's disc, "Today", the day's high and low when the Household has weather, then every event of the day as the schedule's
 // stacked pills, ringed when on now, in the schedule's order and filtered by the strip (the Profile filter, in useDayEvents). The
 // day is the Household's today, so it moves on at Household midnight with no reload (useNow). Tapping a pill opens its details,
-// and from them a Native Event is changed or deleted (EventSheets).
-function TodayCard({ timezone, added, forecast, weatherOn, profiles }: Pick<PhoneScreenProps, 'added' | 'forecast' | 'weatherOn' | 'profiles'> & { timezone: string }) {
+// and from them a Native Event is changed or deleted (useEventSheets).
+function TodayCard({ timezone, forecast, weatherOn, profiles }: Pick<PhoneScreenProps, 'forecast' | 'weatherOn' | 'profiles'> & { timezone: string }) {
   const now = useNow(timezone);
   const { touch } = useContext(ProfileFilterContext);
   const day = fiveDays(timezone, now)[0]!;
-  const [open, setOpen] = useState<OpenEvent>(null);
-  const events = useDayEvents([day], added, profiles);
+  const events = useDayEvents([day], profiles);
   const occurrences = events.occurrences;
   const heading = useRef<HTMLHeadingElement>(null);
   // Until the Profiles are read the pills wait, as the schedule's do.
   const [column] = scheduleColumns(occurrences ?? [], [day], now);
   const pills = column!.pills;
   const people = profiles ?? [];
+  const { open, sheets } = useEventSheets({
+    timezone,
+    profiles: people,
+    refresh: events.refresh,
+    drawn: occurrences,
+    // After an event is deleted from its sheet, or moved by an edit, and is not on today any more: the card's heading.
+    focusPlace: () => focusElement(heading.current),
+  });
   const weather = weatherOn ? forecastDay(forecast, day.date) : undefined;
 
   return (
@@ -62,30 +69,21 @@ function TodayCard({ timezone, added, forecast, weatherOn, profiles }: Pick<Phon
         {pills.length > 0 && (
           <div className="flex flex-col gap-2">
             {pills.map((pill) => (
-              <EventPill key={pill.occurrence.id} pill={pill} day={day} people={pillPeople(pill.occurrence, people)} onOpen={(occurrence) => setOpen({ sheet: 'details', occurrence })} />
+              <EventPill key={pill.occurrence.id} pill={pill} day={day} people={pillPeople(pill.occurrence, people)} onOpen={open} />
             ))}
           </div>
         )}
-        <EventSheets
-          open={open}
-          onChange={setOpen}
-          timezone={timezone}
-          date={day.date}
-          profiles={people}
-          events={events}
-          // After an event is deleted from its sheet, or moved by an edit, and is not on today any more: the card's heading.
-          focusPlace={() => focusElement(heading.current)}
-        />
+        {sheets}
       </PhoneCard>
     </div>
   );
 }
 
-export function PhoneHome({ timezone, view, added, forecast, weatherOn, profiles, routines, openRoutines, openLists }: PhoneScreenProps) {
+export function PhoneHome({ timezone, view, forecast, weatherOn, profiles, routines, openRoutines, openLists }: PhoneScreenProps) {
   return (
     <>
       {timezone ? (
-        <TodayCard timezone={timezone} added={added} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
+        <TodayCard timezone={timezone} forecast={forecast} weatherOn={weatherOn} profiles={profiles} />
       ) : (
         <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />
       )}

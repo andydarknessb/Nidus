@@ -104,7 +104,7 @@ const header = (owner: boolean, household: Household | null = HOUSEHOLD) =>
 // A change feed that says what it is told: the Realtime connection is the only thing here that is not the database, and a static
 // render never opens one.
 function feedThatIs(status: Connection): ChangeFeed {
-  return { watch: () => () => undefined, status: () => status, onStatus: () => () => undefined, ready: Promise.resolve(), close: noop };
+  return { watch: () => () => undefined, notify: noop, status: () => status, onStatus: () => () => undefined, ready: Promise.resolve(), close: noop };
 }
 const HOUR = 3_600_000;
 const NOW = Date.parse('2026-10-06T15:00:00Z');
@@ -278,13 +278,8 @@ describe('sheets and the tab bar', () => {
     const { Sheet } = await import('../src/components/Sheet');
     const sheet = renderToStaticMarkup(createElement(Sheet, { labelledBy: 't', title: 'T', onClose: noop, header: createElement('h2', { id: 't' }, 'T'), children: null }));
     expect(zOf(/<div[^>]*>/.exec(sheet)![0])).toBeGreaterThanOrEqual(Math.max(bar, add));
-    // The two dialogs that draw their own scrim: the Native Event sheet and the meal sheet.
-    for (const file of ['../src/components/NativeEventSheet.tsx', '../src/MealsPage.tsx']) {
-      const source = readFileSync(new URL(file, import.meta.url), 'utf8');
-      const scrim = /fixed inset-0 z-(\d+)[^`'"]*bg-scrim/.exec(source);
-      expect(scrim, file).not.toBeNull();
-      expect(Number(scrim![1]), file).toBeGreaterThanOrEqual(Math.max(bar, add));
-    }
+    // The Native Event sheet and the meal sheet draw no scrim of their own any more: they are drawn through the Sheet's, so the one
+    // checked above is theirs too (tests/sheet.test.ts: they pass through it).
     const status = readFileSync(new URL('../src/components/StatusLine.tsx', import.meta.url), 'utf8');
     expect(Number(/fixed[^"]*\bz-(\d+)/.exec(status)![1])).toBeGreaterThan(Math.max(bar, add));
   });

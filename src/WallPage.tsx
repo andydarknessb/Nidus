@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { isDeviceSession, requestPairingCode, touchDevice, type PairingCode } from './lib/device';
 import { formatCountdown } from './lib/device-format';
@@ -7,7 +7,7 @@ import { BeforeHousehold } from './components/BeforeHousehold';
 import { ChangeFeedProvider } from './components/ChangeFeedProvider';
 import { ReadState } from './components/ReadState';
 import { HomeRail } from './components/HomeRail';
-import { NativeEventSheet } from './components/NativeEventSheet';
+import { useEventSheets } from './lib/use-event-sheets';
 import { NavigationRail } from './components/NavigationRail';
 import { PeopleStrip } from './components/PeopleStrip';
 import { PhoneShell } from './components/PhoneShell';
@@ -16,6 +16,7 @@ import { WallHeader, WallTime } from './components/WallHeader';
 import { onCalendarScreen, useWallRoute, wallDate, type WallRoute } from './lib/wall-routes';
 import { loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { deviceStorage, gateWords, recallHousehold, rememberHousehold } from './lib/remembered-household';
+import { ChangeFeedContext } from './lib/change-feed';
 import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useStatusLine } from './lib/status-line';
@@ -222,9 +223,6 @@ function HomeShell({ owner }: { owner: boolean }) {
   // to every calendar view, the Routines reader below and the Add event sheet: the Wall has no other reader of them.
   const profiles = useProfiles(filter);
   useEffect(() => () => filter.dispose(), [filter]);
-  // The sheet that adds a Native Event, and a count of events added from it so the calendar reads again at once.
-  const [adding, setAdding] = useState(false);
-  const [added, setAdded] = useState(0);
   // The Household, read through the synced read (every 30 seconds, 5 after a failure, and at once when it changes). The Household
   // Timezone decides which day Up next and the Routines chart show; none until it is read. Each read is remembered on the tablet.
   const household = useSyncedRead<Household>(
@@ -238,12 +236,25 @@ function HomeShell({ owner }: { owner: boolean }) {
   );
   const view = useMemo<HouseholdView>(() => ({ household: household.data, failed: household.failed }), [household.data, household.failed]);
   const timezone = view.household?.timezone ?? null;
+  // The sheet that adds a Native Event, from the Add event button. It sits outside the calendar, which holds the read of the day: once
+  // an event is saved the change feed is told of it, so every calendar reads again at once rather than when the server's notice arrives.
+  const feed = useContext(ChangeFeedContext);
+  // A new event starts on the day the wall is on, today when the page shown holds it, else that page's first day. Pressed before the
+  // Household is read, Add waits for it.
+  const eventSheets = useEventSheets({
+    timezone,
+    profiles: profiles ?? [],
+    // Every calendar read watches native_events, so they all read again at once; the rest of the occurrence tables did not change.
+    refresh: () => feed?.notify(['native_events', 'native_event_profiles']),
+    startsOn: timezone ? wallDate(route, householdDay(timezone).date) : null,
+  });
   // How many days and Up next tiles Home holds at this screen's size, and whether the screen is a phone (below 768 px wide), which
   // swaps the chrome below and follows the phone's own light or dark setting.
   const home = useHomeLayout();
   // The Add event sheet is the phone's or the tablet's, so it closes when the layout swaps (a window resized across 768 px). It sits in the
   // same frame in landscape and in portrait, so turning the tablet leaves it open.
-  useEffect(() => setAdding(false), [home.phone]);
+  const { add, close: closeSheets } = eventSheets;
+  useEffect(() => closeSheets(), [home.phone, closeSheets]);
   // The Household's weather, read once here for the header and every calendar view: nothing, and no
   // request, while it has no place. `weatherOn` is that fact, so the day headings can keep a line for it.
   // `sun` is what the mode goes on besides the Household: the forecast's sunrise and sunset.
@@ -263,20 +274,7 @@ function HomeShell({ owner }: { owner: boolean }) {
   // The people strip is for the calendar screens (Home, Day, Week and Month), and for no other.
   const onCalendar = onCalendarScreen(route.view);
   const strip = onCalendar && <PeopleStrip profiles={profiles} routines={routines} filter={filter} pressed={pressed} />;
-  // The Add event sheet, the same on both layouts.
-  const sheet = adding && timezone && today && (
-    <NativeEventSheet
-      timezone={timezone}
-      profiles={profiles ?? []}
-      // The day the wall is on: today when the page shown holds it, else that page's first day.
-      date={wallDate(route, today)}
-      onClose={() => setAdding(false)}
-      onSaved={() => {
-        setAdding(false);
-        setAdded((count) => count + 1);
-      }}
-    />
-  );
+  const addEvent = () => add();
 
   // The phone: a header, one column and five tabs. Everything above is shared with the tablet, so a resize across 768 px keeps the
   // route, the Profile filter and what has been read; only the chrome is drawn differently.
@@ -295,13 +293,12 @@ function HomeShell({ owner }: { owner: boolean }) {
           onRoutines={openRoutines}
           onMeals={() => openMeals(null)}
           onLists={openLists}
-          onAdd={() => setAdding(true)}
+          onAdd={addEvent}
         >
           <PhoneWall
             route={route}
             timezone={timezone}
             view={view}
-            added={added}
             forecast={forecast}
             weatherOn={weatherOn}
             profiles={profiles}
@@ -312,7 +309,7 @@ function HomeShell({ owner }: { owner: boolean }) {
             openMeals={openMeals}
           />
         </PhoneShell>
-        {sheet}
+        {eventSheets.sheets}
       </ProfileFilterContext.Provider>
     );
   }
@@ -329,7 +326,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           onRoutines={openRoutines}
           onMeals={() => openMeals(null)}
           onLists={openLists}
-          onAdd={() => setAdding(true)}
+          onAdd={addEvent}
           onToggleMode={toggleMode}
         />
       }
@@ -361,7 +358,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
           <ListsScreen portrait={home.portrait} />
         ) : route.view !== 'home' && timezone ? (
-          <PagedCalendar timezone={timezone} view={route.view} date={route.date} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} portrait={home.portrait} />
+          <PagedCalendar timezone={timezone} view={route.view} date={route.date} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} portrait={home.portrait} />
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day, Week or Month.
@@ -369,14 +366,14 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : (
         <div className={homeGrid(home.portrait)}>
           {timezone ? (
-            <FiveDayCalendar timezone={timezone} version={added} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
+            <FiveDayCalendar timezone={timezone} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
           ) : (
             <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />
           )}
           <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} row={home.portrait} onOpenRoutines={openRoutines} onOpenLists={openLists} />
         </div>
         )}
-        {sheet}
+        {eventSheets.sheets}
       </ProfileFilterContext.Provider>
     </WallFrame>
   );

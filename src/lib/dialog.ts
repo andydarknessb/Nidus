@@ -18,3 +18,9 @@ export function dialogKeys(event: KeyboardEvent<HTMLElement>, onClose: () => voi
     first.focus();
   }
 }
+
+// Whether a tap on the scrim closes a sheet: only a tap on the scrim itself (not on the dialog), and only when the sheet says it may
+// (`canDismiss`, which is always, unless a sheet holds something that a stray tap would throw away).
+export function dismissOnScrim(event: { target: unknown; currentTarget: unknown }, onClose: () => void, canDismiss: () => boolean = () => true): void {
+  if (event.target === event.currentTarget && canDismiss()) onClose();
+}

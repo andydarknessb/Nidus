@@ -32,6 +32,9 @@ export type ChangeFeed = {
   // Calls `onChange` once a watched table changes, merging a burst of changes into one call.
   // Returns the function that stops watching.
   watch(tables: readonly WatchedTable[], onChange: () => void): () => void;
+  // Tells the screens that watch any of `tables` of a change this screen made, at once and not merged: for the moment before the server's
+  // notice arrives (the Add event sheet saved an event, and the calendars read it now). A local write is not a burst.
+  notify(tables: readonly WatchedTable[]): void;
   status(): Connection;
   onStatus(listener: (status: Connection) => void): () => void;
   // Resolves the first time the subscription is live.
@@ -160,6 +163,10 @@ export function openChangeFeed(
         clearTimeout(watcher.timer);
         watchers.delete(watcher);
       };
+    },
+    notify(changed) {
+      const touched = new Set<string>(changed);
+      for (const watcher of watchers) if ([...watcher.tables].some((table) => touched.has(table))) watcher.onChange();
     },
     status: () => current,
     onStatus(listener) {

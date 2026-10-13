@@ -20,8 +20,6 @@ export type PhoneScreenProps = {
   timezone: string | null;
   // The Household read, for a screen's "could not load" words.
   view: HouseholdView;
-  // How many events the Add event sheet has saved, which makes the calendar read again at once.
-  added: number;
   forecast: Forecast | null;
   weatherOn: boolean;
   // The Household's Profiles; null until read.

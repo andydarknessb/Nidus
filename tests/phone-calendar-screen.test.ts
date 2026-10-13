@@ -43,7 +43,7 @@ const CORY = profile('c', 'Cory', 2);
 type CalendarRoute = Extract<WallRoute, { view: CalendarView }>;
 function screen(view: CalendarView, date: string | null) {
   const route: CalendarRoute = { view, date };
-  const props = { route, timezone: CHICAGO, added: 0, profiles: [AVA, BEN, CORY], openView: noop } as unknown as PhoneScreenProps;
+  const props = { route, timezone: CHICAGO, profiles: [AVA, BEN, CORY], openView: noop } as unknown as PhoneScreenProps;
   return renderToStaticMarkup(createElement(PhoneCalendar, { ...props, route }));
 }
 

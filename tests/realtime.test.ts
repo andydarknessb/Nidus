@@ -79,6 +79,21 @@ describe('Realtime change feed', () => {
     expect(feed.status()).toBe('online');
   });
 
+  // The Add event sheet sits outside the calendars that read the day: it tells the feed of its write, so they read before the
+  // server's own notice arrives (spec 0012).
+  it('tells the watchers of the tables a screen says it changed, and no others', async () => {
+    const { kitchen } = await setUp();
+    const feed = await openFeed(kitchen.client);
+    const heard: string[] = [];
+    feed.watch(['native_events', 'profiles'], () => heard.push('events'));
+    feed.watch(['meals'], () => heard.push('meals'));
+    feed.notify(['native_events', 'synced_events']);
+    // At once, not after the feed's debounce: a local write is not a burst.
+    expect(heard).toEqual(['events']);
+    feed.notify(['native_events']);
+    expect(heard).toEqual(['events', 'events']);
+  });
+
   // A frontend deployed ahead of the migration that publishes a watched table: the server refuses the
   // subscription, the feed was never live, and it must say so rather than stay "connecting" for good.
   it('reports offline when the subscription is never accepted', async () => {
