@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useConnection, useRefetchOn } from './change-feed';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { ChangeFeedContext, useRefetchOn } from './change-feed';
 import type { WatchedTable } from './realtime';
 import { keepIfSame } from './same-data';
 import { createCardWrite, type CardWriteOutcome, type CardWriteThen, type FailWords } from './card-write';
@@ -268,16 +268,13 @@ export function createChange<T = never>(options: { read?: () => Pick<SyncedRead<
 // back; without (a lone write: the Household's name, the Appearance, the weather, joining) it is only written. `useSyncedRead` hands
 // one on for its read; a card with a second action that must not wait on the first makes another of its own with `useChange(read)`.
 export function useChange<T = never>(read?: Pick<SyncedRead<T>, 'write' | 'readBack'>) {
-  const latest = useRef(read);
-  const offline = useRef(false);
-  const connection = useConnection();
+  // The read and the feed as of the last draw; the feed's status is asked when a write fails, so a connection change draws nothing.
+  const feed = useContext(ChangeFeedContext);
+  const latest = useRef({ read, feed });
   useEffect(() => {
-    latest.current = read;
+    latest.current = { read, feed };
   });
-  useEffect(() => {
-    offline.current = connection === 'offline';
-  }, [connection]);
-  const [core] = useState(() => createChange<T>({ read: () => latest.current, offline: () => offline.current }));
+  const [core] = useState(() => createChange<T>({ read: () => latest.current.read, offline: () => latest.current.feed?.status() === 'offline' }));
   const [state, setState] = useState(core.state);
   useEffect(() => {
     setState(core.state());
@@ -308,7 +305,7 @@ export function couldNotLoad(what: string): string {
 // should be a constant, as useRefetchOn asks.
 const NOTHING: SyncedState<never> = { data: null, state: 'loading', failed: false, error: null };
 
-// The card's change (`useChange`) comes with it: `change`, `problem`, `busy`, `isBusy`, `focus`.
+// The card's change (`useChange`) comes with it: `change`, `problem`, `say`, `fail`, `clear`, `busy`, `isBusy`, `focus`.
 export function useSyncedRead<T>(
   load: () => Promise<T>,
   tables: readonly WatchedTable[],
@@ -339,7 +336,7 @@ export function useSyncedRead<T>(
   const write = useCallback<SyncedRead<T>['write']>((work, change, landed) => (current.current ? current.current.write(work, change, landed) : work()), []);
   const refresh = useCallback(() => current.current?.poke(), []);
   const readBack = useCallback(() => current.current?.readBack() ?? Promise.resolve(), []);
-  // The card's one-at-a-time guard, with its write and read-back: `change`, `busy`, `isBusy`, `focus`.
+  // The card's one-at-a-time guard, with its write and read-back: `change`, `problem`, `say`, `fail`, `clear`, `busy`, `isBusy`, `focus`.
   const guard = useChange<T>({ write, readBack });
   return { ...state, write, refresh, readBack, ...guard };
 }
