@@ -178,7 +178,7 @@ describe('the columns', () => {
     expect(columnsOf([P1], all, householdDay(CHICAGO, friday).weekday)).toEqual([['p1', ['weekdays', 'daily']]]);
   });
 
-  it("groups under each Profile in the Profile's order, leaving out Profiles with nothing today", () => {
+  it("groups under each Profile in the Profile's order, a Profile with nothing today keeping an empty column, and one with no Routines at all left out", () => {
     const profiles = [profile('p1', 0, 'Mom'), profile('p2', 1, 'Sam'), profile('p3', 2, 'Dad')];
     const rows = [routine('a', 'p2', null, 1), routine('b', 'p2', null, 0), routine('c', 'p1', null, 0, { days_of_week: maskOf([SAT]) })];
     // Mom's Routine is on Saturdays, so Monday leaves her column empty: it is there, with nothing in it, and Dad has none at all.

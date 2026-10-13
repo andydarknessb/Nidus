@@ -169,16 +169,18 @@ export function pillName(pill: Pill, day: WallDay, people: PillPeople): string {
 
 // One person's pill on the strip: how far through today's Routines, in words ("3 of 5", "All done", or none when there
 // are none today), and the name a screen reader hears. The pips are drawn from done and total (and give way to the count
-// alone past eight, in the atom).
-export type StripPerson = { profile: Profile; done: number; total: number; words: string; label: string };
+// alone past eight, in the atom). `finished` is the chart's own word for "All done".
+export type StripPerson = { profile: Profile; done: number; total: number; finished: boolean; words: string; label: string };
 
 // A person for every Profile, in the order given, with what they have done of the Routines the chart holds for them today (a Profile
 // the chart has no column for has none).
 export function stripPeople(profiles: readonly Profile[], chart: Pick<RoutineChart, 'columnFor'>): StripPerson[] {
   return profiles.map((profile) => {
-    const { done, total } = chart.columnFor(profile.id)?.progress ?? { done: 0, total: 0 };
-    const words = total === 0 ? '' : done === total ? 'All done' : `${done} of ${total}`;
+    const column = chart.columnFor(profile.id);
+    const { done, total } = column?.progress ?? { done: 0, total: 0 };
+    const finished = column?.finished ?? false;
+    const words = finished ? 'All done' : total === 0 ? '' : `${done} of ${total}`;
     // Plain words for the family: "routines" in lower case ("Ava, 3 of 5 routines done"); the glossary's capitals are for code.
-    return { profile, done, total, words, label: total === 0 ? profile.name : `${profile.name}, ${done} of ${total} ${total === 1 ? 'routine' : 'routines'} done` };
+    return { profile, done, total, finished, words, label: total === 0 ? profile.name : `${profile.name}, ${done} of ${total} ${total === 1 ? 'routine' : 'routines'} done` };
   });
 }

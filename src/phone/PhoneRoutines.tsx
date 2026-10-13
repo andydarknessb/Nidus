@@ -35,7 +35,7 @@ function PersonChip({ person, picked, onPick }: { person: StripPerson; picked: b
       <PersonDisc name={profile.name} color={profile.color} size={40} />
       <span className="flex min-w-0 flex-col">
         <span className="truncate text-base leading-5 font-semibold">{profile.name}</span>
-        <span className={cn('truncate text-sm leading-[18px]', words === 'All done' ? 'font-semibold' : 'text-muted-foreground')}>{total === 0 ? 'Nothing today' : words}</span>
+        <span className={cn('truncate text-sm leading-[18px]', person.finished ? 'font-semibold' : 'text-muted-foreground')}>{total === 0 ? 'Nothing today' : words}</span>
       </span>
     </Button>
   );
