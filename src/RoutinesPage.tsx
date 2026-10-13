@@ -332,6 +332,7 @@ export function RoutinesPage({ household }: { household: Household }) {
   // (undefined) when another change was on its way and this one did nothing. `landed` is what the page then does.
   async function change(work: () => Promise<void>, failure = '', landed?: () => void): Promise<boolean | undefined> {
     const outcome = await read.change(
+      null,
       async () => {
         await work();
         setProblem('');

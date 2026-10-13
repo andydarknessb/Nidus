@@ -3,10 +3,10 @@
 // the guard is let go on every exit, a throw included; and the card says where focus goes once the action has landed. Choices that
 // stack up (a calendar's switch, a tick, a list item) are not one-shot actions and do not come through here: they are pending
 // changes on the synced read. The state holder is plain TypeScript, as the status line is, so a test needs no screen. It is the
-// synced read's own, behind `read.change` (synced-read.ts: the guard, then the write, then the read-back), which wires it to a card
+// change's own (synced-read.ts: the guard, then the write, then the read-back, then the words), which wires it to a card
 // and draws `aria-disabled` from `busy`, never `disabled`: a button that is disabled while it has focus drops it to the page.
 
-// What a write-problem failure may be worded with: the words for a value the database refused, and for an action that is not a save.
+// What a failed change may be worded with: the words for a value the database refused, and for an action that is not a save.
 export type FailWords = { refusal?: string; said?: { failed: string; offline: string } } | undefined;
 
 export type CardWriteState = {
@@ -24,7 +24,7 @@ export type CardWriteThen<T> = {
   // The id it returns is where focus goes. It may be a card's own state changes; if it throws, the guard is let go and the error
   // goes on to the caller.
   landed?: ((value: T) => string | null | undefined | void) | undefined;
-  // What the card does with a failure, before the guard is let go: it says so in the write-problem words (use-write-problem).
+  // What the card does with a failure, before the guard is let go: it says so in the change's words (synced-read.ts).
   failed?: ((error: unknown) => void) | undefined;
 };
 
@@ -80,13 +80,3 @@ export function createCardWrite(): CardWrite {
   };
 }
 
-// Where a failure goes: to the card first, which may word it itself (returns true when it did); otherwise to the write-problem words
-// (`fail`, useWriteProblem's), at `place` and only when the card named one.
-export function sayFailure(
-  error: unknown,
-  action: { place?: string | undefined; words?: FailWords | undefined; failed?: ((error: unknown) => boolean | void) | undefined },
-  fail?: (place: string, error: unknown, words?: FailWords) => void,
-): void {
-  if (action.failed?.(error) === true) return;
-  if (fail && action.place !== undefined) fail(action.place, error, action.words);
-}
