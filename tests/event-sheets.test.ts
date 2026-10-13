@@ -59,6 +59,13 @@ describe('what is open', () => {
     expect(sheets.state()).toEqual({ sheet: 'edit', occurrence: PIANO });
   });
 
+  it('opens Edit for an event at once, with no details first (the Settings list)', () => {
+    const { sheets, told } = harness();
+    sheets.openEdit(PIANO);
+    expect(sheets.state()).toEqual({ sheet: 'edit', occurrence: PIANO });
+    expect(told).toEqual([{ sheet: 'edit', occurrence: PIANO }]);
+  });
+
   it('does not go to Edit from anything but the details', () => {
     const { sheets } = harness();
     sheets.edit();
@@ -225,6 +232,23 @@ describe('where focus goes back to when a read took the opener away', () => {
     sheets.open(SWIM);
     sheets.close();
     expect(sheets.refocus()).toEqual({ id: 'swim' });
+  });
+
+  it('is the same for Edit opened at once as for Edit reached from the details', () => {
+    const viaDetails = harness().sheets;
+    viaDetails.open(PIANO);
+    viaDetails.edit();
+    viaDetails.saved();
+    const direct = harness().sheets;
+    direct.openEdit(PIANO);
+    expect(direct.refocus()).toBeNull();
+    direct.saved();
+    expect(direct.refocus()).toEqual(viaDetails.refocus());
+    expect(direct.refocus()).toEqual({ id: 'piano' });
+    // The same ten seconds, from the close.
+    vi.advanceTimersByTime(REFOCUS_MS + 1);
+    expect(direct.refocus()).toBeNull();
+    expect(viaDetails.refocus()).toBeNull();
   });
 
   it('is no event for a sheet that added one: what stands for its place', () => {

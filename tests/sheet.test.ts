@@ -274,6 +274,8 @@ describe('a sheet on a phone', () => {
     );
     for (const html of [native, meal]) {
       expect(hasFrame(scrimOf(html), PHONE_SCRIM)).toBe(true);
+      // The scrim passes through cn: a caller's z-* would replace the Sheet's, which sits at or above the bar and Add event (phone-shell).
+      expect(classesOf(scrimOf(html)).filter((name) => /^z-/.test(name))).toEqual(['z-20']);
       expect(hasFrame(dialogOf(html), PHONE_FRAME)).toBe(true);
       expect(handleOf(html)).toContain('aria-hidden="true"');
       expect(html.indexOf(handleOf(html))).toBeLessThan(html.indexOf('<h2'));

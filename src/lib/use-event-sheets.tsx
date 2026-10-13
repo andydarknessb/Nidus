@@ -5,8 +5,8 @@ import { focusEvent } from './focus';
 import type { Profile } from './profiles';
 
 // The event sheet host (spec 0012): the sheets over the Wall for every screen that shows events. A screen calls `open(occurrence)` for
-// an event's details (and from them Edit, for a Native Event), `cluster(day, pills)` for the list a "+N" on the Day view folds, or
-// `add(date)` for the sheet that adds one, and draws `sheets`, the element for whichever is open. The rules of what is open, what is
+// an event's details (and from them Edit, for a Native Event), `edit(occurrence)` for its Edit form at once, `cluster(day, pills)` for
+// the list a "+N" on the Day view folds, or `add(date)` for the sheet that adds one, and draws `sheets`, the element for whichever is open. The rules of what is open, what is
 // remembered of the last sheet and when it is used are the core's (lib/event-sheets.ts); this is its hook, and components/EventSheets.tsx
 // draws the sheets.
 //
@@ -64,6 +64,6 @@ export function useEventSheets({
 
   const sheets = <EventSheets open={open} timezone={timezone} profiles={profiles} onOpen={core.open} onEdit={core.edit} onClose={core.close} onSaved={core.saved} />;
   const add = (date: string | null = startsOn ?? null) => core.add(date);
-  return { open: core.open, cluster: core.cluster, add, close: core.close, sheets };
+  return { open: core.open, edit: core.openEdit, cluster: core.cluster, add, close: core.close, sheets };
 }
 

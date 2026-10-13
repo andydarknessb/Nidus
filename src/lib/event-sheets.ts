@@ -54,6 +54,12 @@ export function createEventSheets(options: { refresh?: () => void; now?: () => n
       last = { id: open.occurrence.id, closedAt: null };
       set({ sheet: 'edit', occurrence: open.occurrence });
     },
+    // Edit for `occurrence` at once, with no details first (the Settings list, where a tap on an event is a change to it). It keeps the
+    // same record of the last sheet as an Edit reached from the details.
+    openEdit(occurrence: Occurrence) {
+      last = { id: occurrence.id, closedAt: null };
+      set({ sheet: 'edit', occurrence });
+    },
     // The sheet that adds an event, starting on the Household Date `date`. A press before the screen knows its day (`date` null) waits:
     // it is the sheet that opens once the day is known (`dayKnown`).
     add(date: string | null) {

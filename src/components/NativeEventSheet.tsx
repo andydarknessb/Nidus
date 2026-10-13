@@ -267,7 +267,7 @@ export function NativeEventSheet({
           {problem ? (
             // A problem has a row of its own on one column (with Delete above it, when editing), so a sentence as long as the
             // clocks' one is read whole. `n` counts what has been said, so a failure that is the same again is a new alert, heard again.
-            <p key={problem.n} role="alert"className="flex min-w-[min(12rem,100%)] grow basis-full items-center gap-2 text-[15px] font-medium min-[960px]:basis-0">
+            <p key={problem.n} role="alert" className="flex min-w-[min(12rem,100%)] grow basis-full items-center gap-2 text-[15px] font-medium min-[960px]:basis-0">
               <CircleAlert aria-hidden className="size-[18px] shrink-0" />
               <span className="line-clamp-3 min-w-0 leading-5 min-[960px]:line-clamp-2">{problem.words}</span>
             </p>

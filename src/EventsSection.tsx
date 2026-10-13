@@ -54,7 +54,7 @@ export function EventsSection({ household }: { household: Household }) {
   const addButton = useRef<HTMLButtonElement>(null);
   // The sheet: a new event, or the one being edited. The sheet gives the focus back to what opened it, and an event that was deleted took
   // that row with it when the list was read again: focus never falls to the page, it goes to Add event.
-  const { add, open, sheets } = useEventSheets({
+  const { add, edit, sheets } = useEventSheets({
     timezone: household.timezone,
     profiles,
     refresh: read.refresh,
@@ -78,7 +78,7 @@ export function EventsSection({ household }: { household: Household }) {
       <ul className="flex flex-col gap-2">
         {events?.map((event) => (
           <li key={event.id}>
-            <EventRow event={event} profiles={profiles} timezone={household.timezone} onOpen={() => open(event)} />
+            <EventRow event={event} profiles={profiles} timezone={household.timezone} onOpen={() => edit(event)} />
           </li>
         ))}
       </ul>

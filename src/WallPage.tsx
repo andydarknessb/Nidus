@@ -17,7 +17,6 @@ import { onCalendarScreen, useWallRoute, wallDate, type WallRoute } from './lib/
 import { loadHousehold, type Household, type HouseholdView } from './lib/household';
 import { deviceStorage, gateWords, recallHousehold, rememberHousehold } from './lib/remembered-household';
 import { ChangeFeedContext } from './lib/change-feed';
-import { OCCURRENCE_TABLES } from './lib/realtime';
 import { createProfileFilter, ProfileFilterContext, sayOnCalendar } from './lib/profile-filter';
 import { supabase } from './lib/supabase';
 import { useStatusLine } from './lib/status-line';
@@ -245,7 +244,8 @@ function HomeShell({ owner }: { owner: boolean }) {
   const eventSheets = useEventSheets({
     timezone,
     profiles: profiles ?? [],
-    refresh: () => feed?.notify(OCCURRENCE_TABLES),
+    // Every calendar read watches native_events, so they all read again at once; the rest of the occurrence tables did not change.
+    refresh: () => feed?.notify(['native_events', 'native_event_profiles']),
     startsOn: timezone ? wallDate(route, householdDay(timezone).date) : null,
   });
   // How many days and Up next tiles Home holds at this screen's size, and whether the screen is a phone (below 768 px wide), which
