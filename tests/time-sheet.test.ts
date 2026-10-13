@@ -73,6 +73,9 @@ describe('the time sheet', () => {
       for (const row of rows(drum)) {
         expect(row).toMatch(/class="[^"]*\bh-12\b[^"]*\bsnap-center\b/);
         expect(row).toContain('items-center justify-center');
+        // The row alone is what snaps, not the scroll margin the sheet's body gives everything in it (BODY_CLEARANCE): with it, each
+        // row came to rest 36 px high and was read as the row below (an AM time opened as PM).
+        expect(row).toMatch(/class="[^"]*\bscroll-m-0!/);
       }
       // Two rows of room above the first and below the last, so the chosen one can sit in the middle.
       expect(drum.match(/<div class="h-24"><\/div>/g)).toHaveLength(2);

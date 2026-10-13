@@ -14,7 +14,8 @@ const MERIDIEMS = ['AM', 'PM'];
 const footerButton = 'h-14 px-[24px] text-[17px]';
 
 // One drum: a column of 48 px rows that scroll-snaps (CSS, no library), the chosen row centred. Two rows of room above and below let the
-// first and the last rows reach the middle. The drums are decorative for a screen reader (aria-hidden, not in the tab order): the typed
+// first and the last rows reach the middle. A row's snap area is the row alone: the sheet's body gives everything in it a scroll margin
+// at its foot (BODY_CLEARANCE), which would snap each row 36 px high, read as the row below it. The drums are decorative for a screen reader (aria-hidden, not in the tab order): the typed
 // field is the accessible control. A roll is read where it ends (`scrollend`, or in a browser with none a scroll that has stopped
 // coming in for 150 ms) and handed to `onRoll` as the row it came to rest on; a scroll the sheet made itself comes to rest on the row
 // it is already on, which `onRoll` ignores.
@@ -52,7 +53,7 @@ function Drum({ rows, index, onRoll }: { rows: string[]; index: number; onRoll: 
     <div ref={box} aria-hidden="true" tabIndex={-1} className="h-60 flex-1 snap-y snap-mandatory overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
       <div className="h-24" />
       {rows.map((row, i) => (
-        <div key={row} className={`flex h-12 snap-center items-center justify-center ${i === index ? 'text-[22px] font-semibold text-foreground' : 'text-muted-foreground'}`}>
+        <div key={row} className={`flex h-12 snap-center scroll-m-0! items-center justify-center ${i === index ? 'text-[22px] font-semibold text-foreground' : 'text-muted-foreground'}`}>
           {row}
         </div>
       ))}
