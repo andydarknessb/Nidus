@@ -246,3 +246,19 @@ Settled on 2026-10-12 from an architecture review of the finished v10 branch, th
 ### Tables
 
 No migration.
+
+## v12: a time to tap, and events that repeat
+
+Settled on 2026-10-13, one round of rulings, every recommendation taken. The spec is [0013](specs/0013-time-and-repeats.md); tracker #235. It reverses "a repeating event belongs in Google" for the household's own things ([ADR 0005](adr/0005-native-events-repeat-expanded-by-the-database.md)).
+
+### Decisions
+
+- **A time sheet of our own** replaces the quarter-hour steppers: three drums (hour, minute in fives, AM or PM) and a typed field that takes "4", "4:30", "430", "16:30", "4pm". Moving the start keeps the event's length. Same on the tablet, the Elo and a phone; not `<input type="time">`.
+- **Repeats** on Native Events: every N days, weeks on chosen weekdays, months on the same date, years; until a date or forever; N is 1 to 99. "This one" or "every one" at Save and Delete; "this one" skips the day. No "this and after", no count, no "second Tuesday", no pill mark.
+- **The database expands a Repeat** into Occurrences in the `calendar_occurrences` view as it is read, two years ahead and back to the first day, minus the skipped days. No job, no rows for days to come; the push reminders read it unchanged.
+- **Repeat** and **Occurrence** enter the glossary.
+
+### Tables
+
+- `native_events` gains `repeat_every`, `repeat_interval`, `repeat_days`, `repeat_until`.
+- `native_event_skips`: the days a Repeat leaves out.

@@ -221,6 +221,52 @@ describe('event reminders', () => {
     expect(push.sent[0]!.payload.tag).toMatch(/^event:native:/);
   });
 
+  it('reminds of an Occurrence of a weekly Repeat once, keyed by its start, and is silent on a skipped day', async () => {
+    const account = await arrange();
+    await subscribe(account.authUserId, { event_reminders: true });
+    // Tuesdays at 3:10 PM CDT from Sep 29; NOW (Tue, Oct 6, 3:00 PM) has the Oct 6 Occurrence ten minutes ahead.
+    const phone = await asHouseholdAccount(account);
+    const { data: eventId, error } = await phone.rpc('save_native_event', {
+      p_id: null,
+      p_title: 'Soccer',
+      p_location: 'Field 2',
+      p_notes: null,
+      p_starts_at: '2026-09-29T20:10:00Z',
+      p_ends_at: '2026-09-29T21:10:00Z',
+      p_is_all_day: false,
+      p_profile_ids: [],
+      p_repeat_every: 'week',
+      p_repeat_interval: 1,
+      p_repeat_days: 4,
+    });
+    if (error) throw error;
+    const { data: occurrence } = await asServiceRole()
+      .from('calendar_occurrences')
+      .select('id')
+      .eq('event_id', eventId as string)
+      .eq('starts_at', at(NOW + 10 * MINUTE))
+      .single<{ id: string }>();
+    const push = fakePush();
+
+    const first = await run(deps(account, push, NOW));
+    const second = await run(deps(account, push, NOW + MINUTE));
+
+    expect(first).toMatchObject({ event: 1, errors: [] });
+    expect(second.event).toBe(0);
+    expect(push.sent).toHaveLength(1);
+    expect(push.sent[0]!.payload).toMatchObject({ title: 'Soccer', body: 'At 3:10 PM, in 10 minutes\nField 2', tag: `event:native:${occurrence!.id}:${NOW + 10 * MINUTE}` });
+
+    // The next Tuesday is its own reminder; with its day skipped, it is none.
+    const WEEK = 7 * 24 * 60 * MINUTE;
+    await run(deps(account, push, NOW + WEEK));
+    expect(push.sent).toHaveLength(2);
+    expect(push.sent[1]!.payload.tag).not.toBe(push.sent[0]!.payload.tag);
+    const { error: skipError } = await phone.from('native_event_skips').insert({ native_event_id: eventId as string, household_id: account.household.id, skipped_on: '2026-10-20' });
+    if (skipError) throw skipError;
+    await run(deps(account, push, NOW + 2 * WEEK));
+    expect(push.sent).toHaveLength(2);
+  });
+
   it('honours each subscription\'s own lead time', async () => {
     const account = await arrange();
     const other = await addAccount(account);

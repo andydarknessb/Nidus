@@ -1,8 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StatusLineProvider } from '../src/components/StatusLine';
-import { BEHIND_SHEETS, holdBackground } from '../src/lib/inert-behind';
+import { A_SHEET, BEHIND_SHEETS, appBehind, holdBackground } from '../src/lib/inert-behind';
 
 // While a sheet is open the page behind it is inert (docs/look.md, A sheet): out of the accessibility tree, so a screen reader cannot
 // swipe out of the sheet to the rail's buttons, and out of reach of the keyboard and of a touch. The rule is a count, so that a sheet
@@ -82,5 +82,36 @@ describe('what is behind a sheet', () => {
     const html = page();
     expect(html.slice(0, html.indexOf('</main></div>'))).not.toContain('role="status"');
     expect(html.indexOf('role="status"')).toBeGreaterThan(html.indexOf('</main></div>'));
+  });
+});
+
+// A sheet opened over another (the time sheet over the Add event form) is drawn in the body beside it, outside what BEHIND_SHEETS marks,
+// so it holds the sheet under it as well as the app: a screen reader must not swipe from the time sheet into the form. The page is a
+// stand-in that answers an attribute selector, so no DOM is needed.
+describe('what a sheet holds', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const page = (parts: { inert: boolean; attribute: string }[]) =>
+    vi.stubGlobal('document', { querySelectorAll: (selector: string) => parts.filter((each) => selector.split(/,\s*/).includes(`[${each.attribute}]`)) });
+
+  it('is the app and every other sheet open under it, never itself, and the form is reachable again when the time sheet closes', () => {
+    const app = { inert: false, attribute: BEHIND_SHEETS };
+    const form = { inert: false, attribute: A_SHEET };
+    const time = { inert: false, attribute: A_SHEET };
+    const status = { inert: false, attribute: 'role' };
+
+    page([app, status, form]);
+    const formRelease = holdBackground(appBehind(form as never));
+    expect([app.inert, form.inert, status.inert]).toEqual([true, false, false]);
+
+    page([app, status, form, time]);
+    expect(appBehind(time as never)).toEqual([app, form]);
+    const timeRelease = holdBackground(appBehind(time as never));
+    expect([app.inert, form.inert, time.inert]).toEqual([true, true, false]);
+
+    timeRelease();
+    expect([app.inert, form.inert]).toEqual([true, false]);
+    formRelease();
+    expect(app.inert).toBe(false);
   });
 });

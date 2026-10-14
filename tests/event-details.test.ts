@@ -5,6 +5,7 @@ import { EventDetails } from '../src/components/EventDetails';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
 import type { Profile } from '../src/lib/profiles';
 import { pillPeople } from '../src/lib/schedule';
+import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
 // An event's details rendered to markup, so what is asserted is what the browser is given: who the event is for (by name, or
 // "Everyone"), where it lives and so where to change it, and the controls that follow from that.
@@ -28,6 +29,7 @@ function event(more: Partial<Occurrence> = {}): Occurrence {
     is_all_day: false,
     profile_id: null,
     profile_ids: [],
+    household_id: 'household-1', event_id: null, repeat_every: null, repeat_interval: null, repeat_days: null, repeat_until: null,
     ...more,
   };
 }
@@ -129,5 +131,39 @@ describe('the sheet', () => {
     expect(html).toMatch(/<h2[^>]*class="[^"]*\bfont-display\b[^"]*"/);
     expect(html).not.toMatch(/<h2[^>]*class="[^"]*\bfont-(semibold|bold)\b/);
     expect(html).not.toMatch(/[\u2013\u2014]/);
+  });
+});
+
+describe('the Repeats line', () => {
+  // Tuesday, Oct 6, 3:00 PM to 4:00 PM in Chicago, every 2 weeks.
+  const soccer = (more: Partial<Occurrence> = {}) =>
+    event({ source: 'native', calendar_id: null, calendar_name: 'Nidus', title: 'Soccer', starts_at: '2026-10-06T20:00:00Z', ends_at: '2026-10-06T21:00:00Z', event_id: 'soccer', repeat_every: 'week', repeat_interval: 2, repeat_days: 4, ...more });
+
+  it('is after When for an Occurrence of a Repeat', () => {
+    const said = words(render(soccer({ location: 'The field' })));
+    expect(said).toContain('When Tue, Oct 6, 3:00 PM to 4:00 PM');
+    expect(said).toContain('Repeats Every 2 weeks on Tuesday');
+    expect(said.indexOf('When')).toBeLessThan(said.indexOf('Repeats'));
+    expect(said.indexOf('Repeats')).toBeLessThan(said.indexOf('Where'));
+  });
+
+  it('gives a month its date and a year its day, from the Occurrence it opened', () => {
+    expect(words(render(soccer({ repeat_every: 'month', repeat_interval: 1, repeat_days: null, starts_at: '2026-10-15T20:00:00Z' })))).toContain('Repeats Every month on the 15th');
+    expect(words(render(soccer({ repeat_every: 'year', repeat_interval: 1, repeat_days: null })))).toContain('Repeats Every year on Oct 6');
+  });
+
+  it('says when it ends, with the year when it is not this year', () => {
+    const thisYear = householdDay(CHICAGO).date.slice(0, 4);
+    expect(words(render(soccer({ repeat_until: `${thisYear}-12-20` })))).toContain('Repeats Every 2 weeks on Tuesday, until Dec 20 ');
+    expect(words(render(soccer({ repeat_until: '2099-12-20' })))).toContain('Repeats Every 2 weeks on Tuesday, until Dec 20, 2099');
+  });
+
+  it('is not there for an event that does not repeat, or for a Synced Event', () => {
+    expect(words(render(soccer({ repeat_every: null, repeat_interval: 1, repeat_days: null })))).not.toContain('Repeats');
+    expect(words(render(event()))).not.toContain('Repeats');
+  });
+
+  it('uses no dash of any length', () => {
+    expect(render(soccer({ repeat_until: '2099-12-20' }))).not.toMatch(/[\u2013\u2014]/);
   });
 });

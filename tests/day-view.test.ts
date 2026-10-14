@@ -40,6 +40,7 @@ function make(title: string, startsAt: number, endsAt: number, more: Partial<Occ
     is_all_day: false,
     profile_id: null,
     profile_ids: [],
+    household_id: 'household-1', event_id: null, repeat_every: null, repeat_interval: null, repeat_days: null, repeat_until: null,
     ...more,
   };
 }

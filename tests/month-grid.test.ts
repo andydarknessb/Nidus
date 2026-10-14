@@ -21,6 +21,7 @@ function event(title: string, startsAt: string, endsAt: string, allDay = false):
     is_all_day: allDay,
     profile_id: null,
     profile_ids: [],
+    household_id: 'household-1', event_id: null, repeat_every: null, repeat_interval: null, repeat_days: null, repeat_until: null,
   };
 }
 

@@ -3,9 +3,11 @@ import type { ReactNode } from 'react';
 import { eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
 import type { Occurrence } from '../lib/calendar-occurrences';
 import { whoWords } from '../lib/day-view';
+import { occurrenceDate, repeatWords } from '../lib/native-events';
 import type { PillPeople } from '../lib/schedule';
 import { EventDiscs, EventFill } from './EventPill';
 import { Sheet } from './Sheet';
+import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 import { Button } from './ui/button';
 
 // What the sheet says of where an event lives, and so of where to change it: a Synced Event is read-only here and is changed in
@@ -75,6 +77,15 @@ export function EventDetails({
           </span>
         </Detail>
         <Detail label="When">{timeWords(eventTime(occurrence, { timezone }), 'sheet')}</Detail>
+        {occurrence.repeat_every && (
+          <Detail label="Repeats">
+            {repeatWords(
+              { every: occurrence.repeat_every, interval: occurrence.repeat_interval ?? 1, days: occurrence.repeat_days ?? 0, until: occurrence.repeat_until },
+              occurrenceDate(occurrence, timezone),
+              householdDay(timezone).date,
+            )}
+          </Detail>
+        )}
         {occurrence.location && <Detail label="Where">{occurrence.location}</Detail>}
         {occurrence.description && <Detail label="Notes">{occurrence.description}</Detail>}
         {!native && <Detail label="Calendar">{occurrence.calendar_name}</Detail>}

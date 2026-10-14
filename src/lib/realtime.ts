@@ -14,6 +14,7 @@ export const WATCHED_TABLES = [
   'synced_events',
   'native_events',
   'native_event_profiles',
+  'native_event_skips',
   'routines',
   'routine_completions',
   'shared_lists',
@@ -23,8 +24,8 @@ export const WATCHED_TABLES = [
 
 export type WatchedTable = (typeof WATCHED_TABLES)[number];
 
-// The tables behind the `calendar_occurrences` view: an event, its Profiles, and the colour each inherits.
-export const OCCURRENCE_TABLES: readonly WatchedTable[] = ['synced_events', 'native_events', 'native_event_profiles', 'mirrored_calendars', 'profiles'];
+// The tables behind the `calendar_occurrences` view: an event, its Profiles, the days of a Repeat it skips, and the colour each inherits.
+export const OCCURRENCE_TABLES: readonly WatchedTable[] = ['synced_events', 'native_events', 'native_event_profiles', 'native_event_skips', 'mirrored_calendars', 'profiles'];
 
 export type Connection = 'connecting' | 'online' | 'offline';
 

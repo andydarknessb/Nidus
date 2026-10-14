@@ -64,8 +64,16 @@ The people pressed on a screen's people strip; none pressed means everyone. It n
 _Avoid_: Person filter, chip filter
 
 **Native Event**:
-An event created in Nidus that exists only in Nidus and is never pushed to any provider.
+An event created in Nidus that exists only in Nidus and is never pushed to any provider. It may carry a Repeat.
 _Avoid_: Local event, manual event
+
+**Repeat**:
+The rule a Native Event follows to happen again: every so many days, weeks (on chosen weekdays), months (on the same date) or years, until a Household Date or forever. A Repeat is a calendar thing and is never completed: soccer every Tuesday at four is a Repeat, brushing teeth every morning is a Routine. A day the family deleted or changed on its own is skipped by the Repeat and never comes back.
+_Avoid_: Recurrence, series, RRULE, recurring event
+
+**Occurrence**:
+One showing of an event on the calendar: a Synced Event is one, a Native Event without a Repeat is one, and a Native Event with a Repeat is one for every day its Repeat lands on. What a person taps, is reminded of, and edits "this one" of.
+_Avoid_: Instance, event (when the Native Event itself is meant)
 
 ### Tasks & lists
 

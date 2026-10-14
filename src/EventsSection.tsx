@@ -14,7 +14,8 @@ import { supabase } from './lib/supabase';
 import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
 
-const EVENT_TABLES = ['native_events', 'native_event_profiles', 'profiles'] as const;
+// What the list is read from: the view's Native Event tables (a skipped day of a Repeat among them) and the Profiles that colour it.
+export const EVENT_TABLES = ['native_events', 'native_event_profiles', 'native_event_skips', 'profiles'] as const;
 const NO_PROFILES: Profile[] = [];
 
 // One event of the list: its title with the pin of a Native Event, when it is, and who it is for as the discs of the Wall's own

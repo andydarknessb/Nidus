@@ -37,7 +37,12 @@ export function holdBackground(behind: Iterable<Holdable>): () => void {
   };
 }
 
-// What is behind a sheet on this page now, for a sheet to hold.
-export function appBehind(): HTMLElement[] {
-  return [...document.querySelectorAll<HTMLElement>(`[${BEHIND_SHEETS}]`)];
+// Every sheet's scrim carries this (components/Sheet.tsx), so that a sheet opened over another (the time sheet over the Add event form)
+// holds the one under it too: drawn in the body, it is outside what BEHIND_SHEETS marks, and a screen reader could swipe into it.
+export const A_SHEET = 'data-sheet';
+
+// What is behind a sheet on this page now, for a sheet to hold: the app, and every other sheet open under it. `mine` is the sheet's own
+// scrim, which is in the body already when it looks.
+export function appBehind(mine: Element | null): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>(`[${BEHIND_SHEETS}], [${A_SHEET}]`)].filter((part) => part !== mine);
 }

@@ -1,5 +1,5 @@
-import { Calendar, CircleAlert, MapPin, Minus, Pin, Plus, Trash2, X } from 'lucide-react';
-import { useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Calendar, CircleAlert, MapPin, Pin, Trash2, X } from 'lucide-react';
+import { useContext, useRef, useState, type FormEvent } from 'react';
 import { flushSync } from 'react-dom';
 import type { Occurrence } from '../lib/calendar-occurrences';
 import { personStyle } from '../lib/look';
@@ -9,24 +9,32 @@ import {
   timeInputWords,
   dayChoices,
   deleteNativeEvent,
+  deletedOnSentence,
   eventFormFromOccurrence,
   eventFormToInput,
+  eventIdOf,
   isUntouched,
   moveToDay,
   openingTimes,
+  saveEveryOne,
   saveNativeEvent,
+  saveThisOne,
   savedSentence,
-  stepEnd,
-  stepStart,
+  skipNativeOccurrence,
+  weekdayBit,
   type EventForm,
+  type Repeat,
 } from '../lib/native-events';
+import { WEEKDAYS } from '../lib/routines';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { useStatusLine } from '../lib/status-line';
 import { supabase } from '../lib/supabase';
 import { useChange } from '../lib/synced-read';
+import { setEnd, setStart } from '../lib/time-picker';
 import { HouseDisc, PersonDisc } from './people';
 import { Sheet } from './Sheet';
+import { TimeSheet } from './TimeSheet';
 import { Button } from './ui/button';
 import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
 
@@ -42,86 +50,93 @@ const footerButton = 'h-14 px-[24px] text-[17px]';
 // On the Wall they are the drawing's: 190 wide at the least, and the note takes the rest.
 const answers = 'flex max-w-full min-w-0 flex-auto items-center gap-3 min-[960px]:flex-none';
 const main = 'min-w-0 flex-1 min-[960px]:min-w-[190px] min-[960px]:flex-none';
+// The Repeats row's pills, and the plural a Repeat's number is counted in.
+const EVERY = [
+  { every: 'day', label: 'Every day', plural: 'days' },
+  { every: 'week', label: 'Every week', plural: 'weeks' },
+  { every: 'month', label: 'Every month', plural: 'months' },
+  { every: 'year', label: 'Every year', plural: 'years' },
+] as const;
 // Where the form's words about a write (or a field) are said: the one place of its footer.
 const PLACE = 'event';
 
-// How long a finger holds a stepper before it steps again, and how often it steps after that.
-const HOLD_MS = 450;
-const REPEAT_MS = 120;
-
-// One of a stepper's two buttons. A press steps once at once; held, it steps again after a pause and then every little while,
-// until the finger lifts or leaves the button, or `step` says it has nowhere further to go (`step` moves, and says whether it
-// did). The pointer is captured, so the lift is heard wherever the finger has slid to. A click is for the keyboard and a
-// screen reader, which send it with no pointer behind it (`detail` 0): a tap has stepped already. A press that cannot move
-// the time (a limit) is dimmed, not switched off, so a key or switch user's focus stays where it was, and does nothing.
-function StepButton({ name, stuck, step, children }: { name: string; stuck: boolean; step: () => boolean; children: ReactNode }) {
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const stop = () => clearTimeout(timer.current);
-  const again = () => {
-    if (step()) timer.current = setTimeout(again, REPEAT_MS);
-  };
-  // No timer outlives the sheet.
-  useEffect(() => {
-    const held = timer;
-    return () => clearTimeout(held.current);
-  }, []);
+// Starts or Ends: its words over a button that shows the time and opens the time sheet for it. The AM or PM is set small, as the
+// header's clock sets it. The button's name says which time it is and what it is ("Starts, 2:00 PM"), so the caption over it is
+// not read twice.
+function TimeField({ words, time, onOpen }: { words: string; time: string; onOpen: () => void }) {
+  const said = timeInputWords(time);
+  const [clock, meridiem] = said.split(' ');
   return (
-    <Button
-      aria-label={name}
-      aria-disabled={stuck || undefined}
-      onPointerDown={(event) => {
-        if (stuck || event.button !== 0) return;
-        try {
-          event.currentTarget.setPointerCapture(event.pointerId);
-        } catch {
-          // A pointer that is already gone has nothing to hold.
-        }
-        stop();
-        if (step()) timer.current = setTimeout(again, HOLD_MS);
-      }}
-      onPointerMove={(event) => {
-        const box = event.currentTarget.getBoundingClientRect();
-        if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) stop();
-      }}
-      onPointerUp={stop}
-      onPointerCancel={stop}
-      onLostPointerCapture={stop}
-      onClick={(event) => {
-        if (event.detail === 0 && !stuck) step();
-      }}
-      className="size-12 rounded-[10px] bg-accent p-0 aria-disabled:pointer-events-none aria-disabled:opacity-40"
-    >
-      {children}
-    </Button>
+    <div className="flex min-w-0 flex-col gap-2">
+      <span aria-hidden="true" className={caption}>
+        {words}
+      </span>
+      <button type="button" aria-label={`${words}, ${said}`} onClick={onOpen} className="flex h-15 w-full items-center justify-center rounded-2xl bg-muted px-4 whitespace-nowrap active:bg-accent">
+        <span className="flex items-baseline gap-1">
+          <span className="font-display text-2xl">{clock}</span>
+          <span className="text-base font-medium">{meridiem}</span>
+        </span>
+      </button>
+    </div>
   );
 }
 
-// Starts or Ends: its words, the time between a minus and a plus. One press is a quarter hour. The drawing's 105 px between
-// the buttons holds "2:00 PM" in Young Serif and no more, and "10:00 AM" is wider, so the AM or PM is set small, as the
-// header's clock sets it. The time is a live region that says which time it is ("Starts 9:15 AM") with a real space before the
-// AM or PM, so a screen reader hears what changed.
-function Stepper({ id, words, noun, time, earlierStuck, laterStuck, onStep }: { id: string; words: string; noun: string; time: string; earlierStuck: boolean; laterStuck: boolean; onStep: (direction: 1 | -1) => boolean }) {
-  const [clock, meridiem] = timeInputWords(time).split(' ');
+// The footer's question. An event with no Repeat asks "Delete <title>?" and its answers are Keep it and Delete. An Occurrence of a
+// Repeat asks which of its events is meant, at Save ("Change this one, or every one?") and at Delete ("Delete this one, or every
+// one?"), and answers "This one" or "Every one"; Back takes the question away. Focus lands on the safe answer, so a screen reader
+// hears the question with it.
+export function EventQuestion({
+  asking,
+  title,
+  repeating,
+  busy,
+  onBack,
+  onOne,
+  onEvery,
+}: {
+  asking: 'delete' | 'save';
+  title: string;
+  repeating: boolean;
+  busy: boolean;
+  // Keep it, or Back.
+  onBack: () => void;
+  // "This one"; unused when there is no Repeat.
+  onOne: () => void;
+  // "Every one", or Delete when there is no Repeat.
+  onEvery: () => void;
+}) {
   return (
-    <div role="group" aria-labelledby={id} className="flex min-w-0 flex-col gap-2">
-      <span id={id} className={caption}>
-        {words}
-      </span>
-      <div className="flex h-15 items-center rounded-2xl bg-muted px-1.5">
-        <StepButton name={`${noun} earlier`} stuck={earlierStuck} step={() => onStep(-1)}>
-          <Minus aria-hidden className="size-6" strokeWidth={2.4} />
-        </StepButton>
-        <output className="flex min-w-0 flex-1 items-baseline justify-center gap-1 whitespace-nowrap">
-          <span className="sr-only">{`${words} `}</span>
-          <span className="font-display text-2xl">{clock}</span>
-          {' '}
-          <span className="text-base font-medium">{meridiem}</span>
-        </output>
-        <StepButton name={`${noun} later`} stuck={laterStuck} step={() => onStep(1)}>
-          <Plus aria-hidden className="size-6" strokeWidth={2.4} />
-        </StepButton>
+    <>
+      {/* A title may be long and gives way. The question about a Repeat is read whole: as wide as its words, on a row of its own when
+          the answers leave it less (a tablet upright). */}
+      <p id="ask-question" className={`${repeating ? 'min-w-0 flex-auto' : 'min-w-[min(12rem,100%)] flex-1 truncate'} text-[17px] font-medium`}>
+        {!repeating ? `Delete ${title}?` : asking === 'save' ? 'Change this one, or every one?' : 'Delete this one, or every one?'}
+      </p>
+      <div className={answers}>
+        {repeating ? (
+          <>
+            <Button variant="quiet" disabled={busy} className={`${footerButton} font-medium`} onClick={onBack}>
+              Back
+            </Button>
+            <Button variant="secondary" autoFocus aria-describedby="ask-question" disabled={busy} className={`${footerButton} font-medium`} onClick={onOne}>
+              This one
+            </Button>
+            <Button variant={asking === 'save' ? 'primary' : 'delete'} disabled={busy} className={`${footerButton} ${main}`} onClick={onEvery}>
+              Every one
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="secondary" autoFocus aria-describedby="ask-question" className={`${footerButton} px-6 font-medium`} onClick={onBack}>
+              Keep it
+            </Button>
+            <Button variant="delete" aria-label={`Delete ${title}`} disabled={busy} className={`${footerButton} ${main}`} onClick={onEvery}>
+              Delete
+            </Button>
+          </>
+        )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -155,6 +170,7 @@ export function NativeEventSheet({
   | { date?: undefined; occurrence: Occurrence }
 )) {
   const dateField = useRef<HTMLInputElement>(null);
+  const untilField = useRef<HTMLInputElement>(null);
   const { clear: clearFilter } = useContext(ProfileFilterContext);
   const say = useStatusLine();
   const card = useChange();
@@ -162,21 +178,27 @@ export function NativeEventSheet({
   // the next whole hour when it is for today, and at 9:00 AM otherwise.
   const [opened] = useState<EventForm>(() => (occurrence ? eventFormFromOccurrence(occurrence, timezone) : { ...blankEventForm(date), ...openingTimes(date, timezone) }));
   const [form, setForm] = useState<EventForm>(opened);
-  // The form as the last change left it, which a step in a held press reads between renders. `change` is the one way to alter it.
+  // The form as the last change left it, which the time sheet's Done reads. `change` is the one way to alter it.
   const latest = useRef<EventForm>(opened);
-  // Once a stepper has moved the times, they stay when the day changes; so they do, always, for an event being edited.
+  // Once a time has been set, the times stay when the day changes; so they do, always, for an event being edited.
   const keepTimes = useRef(occurrence !== undefined);
+  // Which time the time sheet is open for, if one is.
+  const [picking, setPicking] = useState<'start' | 'end' | null>(null);
   const days = dayChoices(householdDay(timezone).date);
   // "Another day" is a choice of its own, not what the date happens to be: a date picked in its field that is also today
   // or one of the next two must not take the field away from under the finger.
   const [another, setAnother] = useState(() => !days.some((day) => day.date === opened.date));
-  const [confirming, setConfirming] = useState(false);
+  // The question the footer is asking, if one: whether to delete, or, for an Occurrence of a Repeat, which of "this one" and "every one"
+  // to delete or to save.
+  const [asking, setAsking] = useState<'delete' | 'save' | null>(null);
   const { busy } = card;
   const problem = card.problem(PLACE);
   const editing = occurrence !== undefined;
+  const repeating = occurrence?.repeat_every != null;
+  const { repeat } = form;
   const title = editing ? 'Edit event' : 'New event';
-  // Makes a change to the form and says whether it was one. A change that is none (a stepper at its limit) leaves a problem
-  // that is showing where it is; one that is one takes it away.
+  // Makes a change to the form and says whether it was one. A change that is none leaves a problem that is showing where it is;
+  // one that is one takes it away.
   const change = (next: (form: EventForm) => EventForm): boolean => {
     const before = latest.current;
     const after = next(before);
@@ -188,21 +210,36 @@ export function NativeEventSheet({
   };
   const set = (changes: Partial<EventForm>) => change((prev) => ({ ...prev, ...changes }));
   const pickDay = (picked: string) => change((prev) => moveToDay(prev, picked, keepTimes.current, timezone));
-  const stepTimes = (move: (form: EventForm) => EventForm) => {
-    const moved = change(move);
-    if (moved) keepTimes.current = true;
-    return moved;
+  // The Repeats row. Choosing a shape keeps the number and the end; a week starts with the form's day pressed.
+  const chooseEvery = (every: Repeat['every'] | null) =>
+    change((prev) => {
+      const was = prev.repeat;
+      if (every === null) return was === null ? prev : { ...prev, repeat: null };
+      if (was?.every === every) return prev;
+      return { ...prev, repeat: { every, interval: was?.interval ?? 1, days: every === 'week' ? weekdayBit(prev.date) : (was?.days ?? 0), until: was?.until ?? null } };
+    });
+  const setRepeat = (changes: Partial<Repeat>) => change((prev) => (prev.repeat ? { ...prev, repeat: { ...prev.repeat, ...changes } } : prev));
+  // The time sheet's Done: Starts takes Ends with it, and an Ends that is not after Starts is refused, in words the time sheet says.
+  const setTime = (which: 'start' | 'end', time: string): string | undefined => {
+    const next = which === 'start' ? setStart(latest.current, time) : setEnd(latest.current, time);
+    if ('problem' in next) return next.problem;
+    change(() => next);
+    keepTimes.current = true;
+    return undefined;
   };
 
   // Saves or deletes through the one change, which words a write that did not go through (the Wall's one vocabulary, which says "No
-  // internet" when that is the trouble). Once it landed the filter is cleared, the status line says what happened, and the screen
-  // behind reads again (onSaved).
-  const write = (work: () => Promise<void>, said: string) =>
+  // internet" when that is the trouble). `work` gives what the status line says once it landed; then the filter is cleared and the
+  // screen behind reads again (onSaved). A write that failed takes the question away, so the footer can say why.
+  const write = (work: () => Promise<string>) =>
     card.change(PLACE, work, {
-      landed: () => {
+      landed: (said) => {
         clearFilter();
         say(said);
         onSaved();
+      },
+      failed: () => {
+        setAsking(null);
       },
     });
 
@@ -213,8 +250,32 @@ export function NativeEventSheet({
       card.say(PLACE, input.problem);
       return;
     }
-    void write(() => saveNativeEvent(supabase, input, occurrence?.id).then(() => undefined), editing ? savedSentence(input, timezone) : addedSentence(input, timezone));
+    // An Occurrence of a Repeat asks which of its events is meant before anything is written.
+    if (repeating) {
+      setAsking('save');
+      return;
+    }
+    void write(async () => {
+      await saveNativeEvent(supabase, input, occurrence && eventIdOf(occurrence));
+      return editing ? savedSentence(input, timezone) : addedSentence(input, timezone);
+    });
   }
+
+  // "This one" and "Every one" at Save and at Delete, for an Occurrence of a Repeat.
+  const saveOne = () => occurrence && void write(async () => savedSentence(await saveThisOne(supabase, form, occurrence, timezone), timezone));
+  const saveEvery = () => occurrence && void write(async () => savedSentence(await saveEveryOne(supabase, form, occurrence, timezone), timezone));
+  const deleteOne = () =>
+    occurrence &&
+    void write(async () => {
+      await skipNativeOccurrence(supabase, occurrence, timezone);
+      return deletedOnSentence(occurrence, timezone);
+    });
+  const deleteEvery = () =>
+    occurrence &&
+    void write(async () => {
+      await deleteNativeEvent(supabase, eventIdOf(occurrence));
+      return `Deleted ${occurrence.title}`;
+    });
 
   // Everyone is nobody pressed: pressing a person lets Everyone go, pressing Everyone lets every person go.
   const nobody = form.profileIds.length === 0;
@@ -234,32 +295,21 @@ export function NativeEventSheet({
 
   const footer = (
     <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2">
-      {confirming && occurrence ? (
-        <>
-          <p id="delete-question" className="min-w-[min(12rem,100%)] flex-1 truncate text-[17px] font-medium">
-            Delete {occurrence.title}?
-          </p>
-          <div className={answers}>
-            {/* Focus lands on the safe answer, so a screen reader hears the question with it. */}
-            <Button variant="secondary" autoFocus aria-describedby="delete-question" className={`${footerButton} px-6 font-medium`} onClick={() => setConfirming(false)}>
-              Keep it
-            </Button>
-            <Button
-              variant="delete"
-              aria-label={`Delete ${occurrence.title}`}
-              disabled={busy}
-              className={`${footerButton} ${main}`}
-              onClick={() => void write(() => deleteNativeEvent(supabase, occurrence.id), `Deleted ${occurrence.title}`)}
-            >
-              Delete
-            </Button>
-          </div>
-        </>
+      {asking && occurrence ? (
+        <EventQuestion
+          asking={asking}
+          title={occurrence.title}
+          repeating={repeating}
+          busy={busy}
+          onBack={() => setAsking(null)}
+          onOne={asking === 'save' ? saveOne : deleteOne}
+          onEvery={asking === 'save' ? saveEvery : deleteEvery}
+        />
       ) : (
         <>
           {/* A quiet button has no edge to line up with the fields, so its icon is what is brought to theirs. */}
           {editing && (
-            <Button variant="quiet" disabled={busy} className={`${footerButton} -ml-4 px-[20px] font-medium`} onClick={() => setConfirming(true)}>
+            <Button variant="quiet" disabled={busy} className={`${footerButton} -ml-4 px-[20px] font-medium`} onClick={() => setAsking('delete')}>
               <Trash2 aria-hidden />
               Delete
             </Button>
@@ -290,148 +340,215 @@ export function NativeEventSheet({
     </div>
   );
 
+  // The time sheet is drawn beside the form's sheet and not inside it: a React event goes up a portal to the component that drew
+  // it, so inside, its Escape would close this sheet too.
   return (
-    <Sheet
-      labelledBy="native-event-title"
-      title={title}
-      onClose={onClose}
-      // A stray tap on the scrim never throws away what was typed.
-      canDismiss={() => isUntouched(form, opened)}
-      onSubmit={submit}
-      refocusOn={`${confirming} ${busy}`}
-      scrim="p-3 min-[960px]:p-4"
-      className="max-w-[940px] gap-[18px] p-4 min-[960px]:min-h-[min(580px,100%)] min-[960px]:p-6"
-      header={header}
-      footer={footer}
-    >
-      {/* The fields scroll between the title row and the footer when the screen is short, or the family is large; on the Wall
-          the foot of the box says so. */}
-      <div className="grid grid-cols-1 gap-[18px] min-[960px]:grid-cols-2 min-[960px]:gap-x-6">
-        <div className="@container flex min-w-0 flex-col justify-start gap-[18px]">
-          <label className="flex flex-col gap-2">
-            <span className={caption}>What is it?</span>
-            <input className="h-15 px-4 text-[19px]" value={form.title} onChange={(e) => set({ title: e.target.value })} maxLength={200} required />
-          </label>
+    <>
+      <Sheet
+        labelledBy="native-event-title"
+        title={title}
+        onClose={onClose}
+        // A stray tap on the scrim never throws away what was typed.
+        canDismiss={() => isUntouched(form, opened)}
+        onSubmit={submit}
+        refocusOn={`${asking} ${busy}`}
+        scrim="p-3 min-[960px]:p-4"
+        className="max-w-[940px] gap-[18px] p-4 min-[960px]:min-h-[min(580px,100%)] min-[960px]:p-6"
+        header={header}
+        footer={footer}
+      >
+        {/* The fields scroll between the title row and the footer when the screen is short, or the family is large; on the Wall
+            the foot of the box says so. */}
+        <div className="grid grid-cols-1 gap-[18px] min-[960px]:grid-cols-2 min-[960px]:gap-x-6">
+          <div className="@container flex min-w-0 flex-col justify-start gap-[18px]">
+            <label className="flex flex-col gap-2">
+              <span className={caption}>What is it?</span>
+              <input className="h-15 px-4 text-[19px]" value={form.title} onChange={(e) => set({ title: e.target.value })} maxLength={200} required />
+            </label>
 
-          <div role="group" aria-labelledby="when-label" className="flex flex-col gap-2">
-            <span id="when-label" className={caption}>
-              When
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {days.map((day) => (
+            <div role="group" aria-labelledby="when-label" className="flex flex-col gap-2">
+              <span id="when-label" className={caption}>
+                When
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {days.map((day) => (
+                  <Button
+                    key={day.date}
+                    aria-pressed={!another && form.date === day.date}
+                    onClick={() => {
+                      setAnother(false);
+                      pickDay(day.date);
+                    }}
+                    className={`${pill} flex-auto px-3`}
+                  >
+                    {day.label}
+                  </Button>
+                ))}
                 <Button
-                  key={day.date}
-                  aria-pressed={!another && form.date === day.date}
+                  aria-pressed={another}
                   onClick={() => {
-                    setAnother(false);
-                    pickDay(day.date);
+                    // The field is on the page at once and asked for its picker in this same tap, which is the only moment a
+                    // browser lets it open. Where it cannot (it throws, or there is no showPicker), the field takes the focus.
+                    flushSync(() => setAnother(true));
+                    try {
+                      dateField.current?.showPicker();
+                    } catch {
+                      dateField.current?.focus();
+                    }
                   }}
                   className={`${pill} flex-auto px-3`}
                 >
-                  {day.label}
+                  <Calendar aria-hidden />
+                  Another day
                 </Button>
-              ))}
-              <Button
-                aria-pressed={another}
-                onClick={() => {
-                  // The field is on the page at once and asked for its picker in this same tap, which is the only moment a
-                  // browser lets it open. Where it cannot (it throws, or there is no showPicker), the field takes the focus.
-                  flushSync(() => setAnother(true));
-                  try {
-                    dateField.current?.showPicker();
-                  } catch {
-                    dateField.current?.focus();
-                  }
-                }}
-                className={`${pill} flex-auto px-3`}
+              </div>
+              {another && <input ref={dateField} type="date" aria-label="Date" className="h-13 w-full text-[17px]" value={form.date} onChange={(e) => pickDay(e.target.value)} required />}
+            </div>
+
+            {/* All day hides both. On the Wall they keep their room, so When and the switch stay where they were; on one
+                column there is nothing to keep, and they go. */}
+            <div className={`grid-cols-1 gap-2 @min-[26rem]:grid-cols-2 ${form.allDay ? 'hidden min-[960px]:invisible min-[960px]:grid' : 'grid'}`}>
+              <TimeField words="Starts" time={form.startTime} onOpen={() => setPicking('start')} />
+              <TimeField words="Ends" time={form.endTime} onOpen={() => setPicking('end')} />
+            </div>
+
+            {/* The whole row is the label, so a tap on its words flips the switch too. */}
+            <label className="flex h-14 items-center justify-between rounded-2xl bg-muted px-4 text-[17px]">
+              All day
+              {/* A 56 x 32 track inside a 72 x 48 target: the transparent border is the room a finger needs. */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.allDay}
+                onClick={() => change((prev) => ({ ...prev, allDay: !prev.allDay }))}
+                className="group relative -mr-2 box-content h-8 w-14 shrink-0 rounded-full border-8 border-transparent bg-accent bg-clip-padding shadow-[inset_0_0_0_1.5px_var(--input)] focus-visible:-outline-offset-6 aria-checked:bg-primary"
               >
-                <Calendar aria-hidden />
-                Another day
-              </Button>
-            </div>
-            {another && <input ref={dateField} type="date" aria-label="Date" className="h-13 w-full text-[17px]" value={form.date} onChange={(e) => pickDay(e.target.value)} required />}
-          </div>
+                <span className="absolute top-1 left-1 size-6 rounded-full bg-muted-foreground transition-transform group-aria-checked:translate-x-6 group-aria-checked:bg-primary-foreground" />
+              </button>
+            </label>
 
-          {/* All day hides both. On the Wall they keep their room, so When and the switch stay where they were; on one
-              column there is nothing to keep, and they go. */}
-          <div className={`grid-cols-1 gap-2 @min-[26rem]:grid-cols-2 ${form.allDay ? 'hidden min-[960px]:invisible min-[960px]:grid' : 'grid'}`}>
-            <Stepper
-              id="starts-label"
-              words="Starts"
-              noun="Start"
-              time={form.startTime}
-              earlierStuck={stepStart(form, -1) === form}
-              laterStuck={stepStart(form, 1) === form}
-              onStep={(direction) => stepTimes((prev) => stepStart(prev, direction))}
-            />
-            <Stepper
-              id="ends-label"
-              words="Ends"
-              noun="End"
-              time={form.endTime}
-              earlierStuck={stepEnd(form, -1) === form}
-              laterStuck={stepEnd(form, 1) === form}
-              onStep={(direction) => stepTimes((prev) => stepEnd(prev, direction))}
-            />
-          </div>
-
-          {/* The whole row is the label, so a tap on its words flips the switch too. */}
-          <label className="flex h-14 items-center justify-between rounded-2xl bg-muted px-4 text-[17px]">
-            All day
-            {/* A 56 x 32 track inside a 72 x 48 target: the transparent border is the room a finger needs. */}
-            <button
-              type="button"
-              role="switch"
-              aria-checked={form.allDay}
-              onClick={() => change((prev) => ({ ...prev, allDay: !prev.allDay }))}
-              className="group relative -mr-2 box-content h-8 w-14 shrink-0 rounded-full border-8 border-transparent bg-accent bg-clip-padding shadow-[inset_0_0_0_1.5px_var(--input)] focus-visible:-outline-offset-6 aria-checked:bg-primary"
-            >
-              <span className="absolute top-1 left-1 size-6 rounded-full bg-muted-foreground transition-transform group-aria-checked:translate-x-6 group-aria-checked:bg-primary-foreground" />
-            </button>
-          </label>
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-[18px]">
-          <div role="group" aria-labelledby="who-label" className="flex flex-col gap-2">
-            <span id="who-label" className={caption}>
-              Who is it for?
-            </span>
-            <div className="flex flex-wrap gap-2">
-              <Button aria-pressed={nobody} onClick={() => set({ profileIds: [] })} className={`${chip} selected:bg-secondary`}>
-                <HouseDisc size={34} />
-                Everyone
-              </Button>
-              {profiles.map((profile) => (
-                <Button
-                  key={profile.id}
-                  variant="quiet"
-                  aria-pressed={form.profileIds.includes(profile.id)}
-                  onClick={() => pressPerson(profile.id)}
-                  style={personStyle(profile.color)}
-                  className={`person ${chip} bg-person-soft text-foreground selected:bg-person-soft`}
-                >
-                  <PersonDisc name={profile.name} color={profile.color} size={34} />
-                  <span className="truncate">{profile.name}</span>
+            <div role="group" aria-labelledby="repeats-label" className="flex flex-col gap-2">
+              <span id="repeats-label" className={caption}>
+                Repeats
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <Button aria-pressed={repeat === null} onClick={() => chooseEvery(null)} className={`${pill} flex-auto px-3`}>
+                  Doesn't repeat
                 </Button>
-              ))}
+                {EVERY.map((choice) => (
+                  <Button key={choice.every} aria-pressed={repeat?.every === choice.every} onClick={() => chooseEvery(choice.every)} className={`${pill} flex-auto px-3`}>
+                    {choice.label}
+                  </Button>
+                ))}
+              </div>
+              {repeat && (
+                <>
+                  <div className="flex items-center gap-3 text-[17px]">
+                    Every
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={99}
+                      aria-label="Every how many"
+                      className="h-15 w-20 px-2 text-center text-[19px]"
+                      value={repeat.interval || ''}
+                      onChange={(e) => setRepeat({ interval: Number(e.target.value) })}
+                    />
+                    {EVERY.find((choice) => choice.every === repeat.every)?.plural}
+                  </div>
+                  {repeat.every === 'week' && (
+                    <div role="group" aria-label="Repeat on" className="flex flex-wrap gap-2">
+                      {WEEKDAYS.map((day) => (
+                        <Button
+                          key={day.bit}
+                          aria-pressed={(repeat.days & (1 << day.bit)) !== 0}
+                          aria-label={day.name}
+                          onClick={() => setRepeat({ days: repeat.days ^ (1 << day.bit) })}
+                          className={`${pill} min-w-13 flex-auto px-2`}
+                        >
+                          {day.short}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  <div role="group" aria-labelledby="repeat-ends-label" className="flex flex-col gap-2">
+                    <span id="repeat-ends-label" className={caption}>
+                      Ends
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <Button aria-pressed={repeat.until === null} onClick={() => setRepeat({ until: null })} className={`${pill} flex-auto px-3`}>
+                        Never
+                      </Button>
+                      <Button
+                        aria-pressed={repeat.until !== null}
+                        onClick={() => {
+                          // As "Another day" does: the field is on the page at once and asks for its picker in this same tap.
+                          flushSync(() => setRepeat({ until: repeat.until ?? form.date }));
+                          try {
+                            untilField.current?.showPicker();
+                          } catch {
+                            untilField.current?.focus();
+                          }
+                        }}
+                        className={`${pill} flex-auto px-3`}
+                      >
+                        <Calendar aria-hidden />
+                        On a date
+                      </Button>
+                    </div>
+                    {repeat.until !== null && (
+                      <input ref={untilField} type="date" aria-label="Repeat until" className="h-13 w-full text-[17px]" value={repeat.until} onChange={(e) => setRepeat({ until: e.target.value })} required />
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
-          <label className="flex flex-col gap-2">
-            <span className={caption}>Where (optional)</span>
-            <span className="relative block h-14">
-              <input className="h-14 w-full pr-4 pl-12 text-[17px]" value={form.location} onChange={(e) => set({ location: e.target.value })} maxLength={500} placeholder="Add a place" />
-              <MapPin aria-hidden className="pointer-events-none absolute top-[18px] left-4 size-5 text-muted-foreground" />
-            </span>
-          </label>
+          <div className="flex min-w-0 flex-col gap-[18px]">
+            <div role="group" aria-labelledby="who-label" className="flex flex-col gap-2">
+              <span id="who-label" className={caption}>
+                Who is it for?
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <Button aria-pressed={nobody} onClick={() => set({ profileIds: [] })} className={`${chip} selected:bg-secondary`}>
+                  <HouseDisc size={34} />
+                  Everyone
+                </Button>
+                {profiles.map((profile) => (
+                  <Button
+                    key={profile.id}
+                    variant="quiet"
+                    aria-pressed={form.profileIds.includes(profile.id)}
+                    onClick={() => pressPerson(profile.id)}
+                    style={personStyle(profile.color)}
+                    className={`person ${chip} bg-person-soft text-foreground selected:bg-person-soft`}
+                  >
+                    <PersonDisc name={profile.name} color={profile.color} size={34} />
+                    <span className="truncate">{profile.name}</span>
+                  </Button>
+                ))}
+              </div>
+            </div>
 
-          {/* The box takes what height is left, so a tall left column (the date field is showing) does not leave a gap under it. */}
-          <label className="flex flex-1 flex-col gap-2">
-            <span className={caption}>Notes (optional)</span>
-            <textarea className="min-h-24 w-full flex-1 resize-none px-4 py-3 text-[17px]" value={form.notes} onChange={(e) => set({ notes: e.target.value })} maxLength={5000} />
-          </label>
+            <label className="flex flex-col gap-2">
+              <span className={caption}>Where (optional)</span>
+              <span className="relative block h-14">
+                <input className="h-14 w-full pr-4 pl-12 text-[17px]" value={form.location} onChange={(e) => set({ location: e.target.value })} maxLength={500} placeholder="Add a place" />
+                <MapPin aria-hidden className="pointer-events-none absolute top-[18px] left-4 size-5 text-muted-foreground" />
+              </span>
+            </label>
+
+            {/* The box takes what height is left, so a tall left column (the date field is showing) does not leave a gap under it. */}
+            <label className="flex flex-1 flex-col gap-2">
+              <span className={caption}>Notes (optional)</span>
+              <textarea className="min-h-24 w-full flex-1 resize-none px-4 py-3 text-[17px]" value={form.notes} onChange={(e) => set({ notes: e.target.value })} maxLength={5000} />
+            </label>
+          </div>
         </div>
-      </div>
-    </Sheet>
+      </Sheet>
+      {picking && <TimeSheet which={picking} time={picking === 'start' ? form.startTime : form.endTime} onDone={(time) => setTime(picking, time)} onClose={() => setPicking(null)} />}
+    </>
   );
 }
