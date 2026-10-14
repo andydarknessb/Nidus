@@ -335,6 +335,32 @@ describe('who an event line is for, at its end', () => {
     expect(/<span class="([^"]*\bml-auto\b[^"]*)">/.exec(html)?.[1]).toContain('shrink-0');
   });
 
+  it('clips the pin, the time and the title in a group of their own, so the discs at the end are never pushed out of the line', () => {
+    for (const ids of [[], ['p-ava'], ['p-ava', 'p-cory'], ['p-cory', 'p-sam', 'p-ava']]) {
+      const html = cell('2026-10-01', { occurrences: [native('Plumber coming', ids)] });
+      const open = html.indexOf('data-testid="event-words"');
+      expect(open, ids.join()).toBeGreaterThan(-1);
+      const start = html.lastIndexOf('<span', open);
+      expect(classesOf(html.slice(start, html.indexOf('>', open) + 1)), ids.join()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'overflow-hidden']));
+      // The group runs to its own closing tag (every span in it nests); the discs come after it, as its sibling.
+      let depth = 0;
+      let end = start;
+      for (const tag of html.slice(start).matchAll(/<(\/?)span\b/g)) {
+        depth += tag[1] ? -1 : 1;
+        if (depth === 0) {
+          end = start + tag.index;
+          break;
+        }
+      }
+      const words = html.slice(start, end);
+      for (const inside of ['native-mark', '9 AM', 'Plumber coming']) expect(words, ids.join()).toContain(inside);
+      expect(words, ids.join()).not.toContain('ml-auto');
+      expect(words, ids.join()).not.toContain('width:16px');
+      expect(/<span class="([^"]*\bml-auto\b[^"]*)">/.exec(html.slice(end))?.[1], ids.join()).toContain('shrink-0');
+      expect(html.slice(end), ids.join()).toContain(ids.length ? 'width:16px' : 'bg-primary');
+    }
+  });
+
   it('keeps the line 22 px tall, with the pin and the time before the title', () => {
     const html = cell('2026-10-01', { occurrences: [native('Plumber coming', ['p-ava', 'p-cory'])] });
     expect(classesOf(lineTag(html))).toContain('h-5.5');
