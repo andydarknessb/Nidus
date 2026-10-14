@@ -3,7 +3,7 @@ import { loadOccurrences, readPages, type Occurrence } from '../src/lib/calendar
 import { loadUpcomingNativeEvents, saveNativeEvent } from '../src/lib/native-events';
 import { addDays, householdDay, instantAt } from '../supabase/functions/_shared/zoned-time.ts';
 import { PROFILE_PALETTE, createProfile } from '../src/lib/profiles';
-import { arrangeCalendar, arrangeEvents } from './support/calendar';
+import { arrangeCalendar, arrangeEvents, type EventInput } from './support/calendar';
 import {
   asAnonymous,
   asDevice,
@@ -192,6 +192,163 @@ describe('calendar_occurrences', () => {
 
     const titles = (await loadOccurrences(await asHouseholdAccount(account), WINDOW.from, WINDOW.to)).map((occurrence) => occurrence.title);
     expect(titles).toEqual(['Trip', 'Late']);
+  });
+});
+
+// The same event in two Mirrored Calendars reads as one Occurrence naming everyone whose calendar holds a copy (#244).
+describe('calendar_occurrences: duplicate Synced Events', () => {
+  async function arrangeProfiles(account: HouseholdAccount, names: string[]) {
+    const phone = await asHouseholdAccount(account);
+    const profiles = [];
+    for (const [index, name] of names.entries()) {
+      profiles.push(await createProfile(phone, account.household.id, { name, color: PROFILE_PALETTE[index]!.hex, avatar_url: null }, index));
+    }
+    return { phone, profiles };
+  }
+
+  const copy = (id: string, extra: Partial<EventInput> = {}): EventInput => ({ ...lunch, google_event_id: id, ...extra });
+  const read = (client: Awaited<ReturnType<typeof asHouseholdAccount>>) => loadOccurrences(client, WINDOW.from, WINDOW.to);
+
+  it('reads one row for two Profiles’ copies, naming both and the calendars', async () => {
+    const account = await arrange();
+    const { phone, profiles } = await arrangeProfiles(account, ['Mom', 'Dad']);
+    const mom = await arrangeCalendar(account, { name: 'Mom', profileId: profiles[0]!.id });
+    const dad = await arrangeCalendar(account, { name: 'Dad', profileId: profiles[1]!.id });
+    await arrangeEvents(mom.calendarId, [copy('a', { description: 'Bring snacks', location: 'Room 4' })]);
+    await arrangeEvents(dad.calendarId, [copy('b', { description: 'Other notes', location: 'Elsewhere' })]);
+
+    const rows = await read(phone);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.profile_ids.slice().sort()).toEqual([profiles[0]!.id, profiles[1]!.id].sort());
+    expect(rows[0]!.calendar_name).toBe('Dad, Mom');
+    // Notes and location come from one copy, never joined.
+    expect(['Bring snacks', 'Other notes']).toContain(rows[0]!.description);
+    expect(['Room 4', 'Elsewhere']).toContain(rows[0]!.location);
+  });
+
+  it('takes the first non-empty notes and location when the representative has none', async () => {
+    const account = await arrange();
+    const a = await arrangeCalendar(account, { name: 'A' });
+    const b = await arrangeCalendar(account, { name: 'B' });
+    await arrangeEvents(a.calendarId, [copy('a')]);
+    await arrangeEvents(b.calendarId, [copy('b', { description: 'Notes', location: 'Hall' })]);
+    // Whichever copy is the representative, the row carries the one non-empty value.
+    expect(await read(await asHouseholdAccount(account))).toMatchObject([{ description: 'Notes', location: 'Hall' }]);
+  });
+
+  it('merges titles that differ only in case and spacing, and keeps the representative’s own title', async () => {
+    const account = await arrange();
+    const a = await arrangeCalendar(account, { name: 'A' });
+    const b = await arrangeCalendar(account, { name: 'B' });
+    await arrangeEvents(a.calendarId, [copy('a', { title: 'No   Daycare' })]);
+    await arrangeEvents(b.calendarId, [copy('b', { title: '  no daycare ' })]);
+
+    const rows = await read(await asHouseholdAccount(account));
+    expect(rows).toHaveLength(1);
+    expect(['No   Daycare', '  no daycare ']).toContain(rows[0]!.title);
+  });
+
+  it('does not merge copies that differ in start, end or all-day', async () => {
+    const account = await arrange();
+    const a = await arrangeCalendar(account, { name: 'A' });
+    const b = await arrangeCalendar(account, { name: 'B' });
+    const day = { starts_at: '2026-10-05T05:00:00Z', ends_at: '2026-10-06T05:00:00Z' };
+    await arrangeEvents(a.calendarId, [copy('base'), copy('start', { title: 'S' }), copy('end', { title: 'E' }), copy('day', { title: 'D', ...day })]);
+    await arrangeEvents(b.calendarId, [
+      copy('base'),
+      copy('start', { title: 'S', starts_at: '2026-10-05T17:30:00Z' }),
+      copy('end', { title: 'E', ends_at: '2026-10-05T18:30:00Z' }),
+      copy('day', { title: 'D', ...day, is_all_day: true }),
+    ]);
+
+    const rows = await read(await asHouseholdAccount(account));
+    expect(rows.map((row) => row.title).sort()).toEqual(['D', 'D', 'E', 'E', 'Lunch', 'S', 'S']);
+  });
+
+  it('is whole-Household (no Profiles) when any copy is on a whole-Household calendar', async () => {
+    const account = await arrange();
+    const { phone, profiles } = await arrangeProfiles(account, ['Mom']);
+    const mom = await arrangeCalendar(account, { name: 'Mom', profileId: profiles[0]!.id });
+    const family = await arrangeCalendar(account, { name: 'Family' });
+    await arrangeEvents(mom.calendarId, [copy('a')]);
+    await arrangeEvents(family.calendarId, [copy('b')]);
+
+    const rows = await read(phone);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ profile_ids: [], profile_id: null });
+  });
+
+  it('names a Profile once when two of their calendars hold the event', async () => {
+    const account = await arrange();
+    const { phone, profiles } = await arrangeProfiles(account, ['Mom']);
+    const work = await arrangeCalendar(account, { name: 'Work', profileId: profiles[0]!.id });
+    const home = await arrangeCalendar(account, { name: 'Home', profileId: profiles[0]!.id });
+    await arrangeEvents(work.calendarId, [copy('a')]);
+    await arrangeEvents(home.calendarId, [copy('b')]);
+
+    const rows = await read(phone);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.profile_ids).toEqual([profiles[0]!.id]);
+    expect(rows[0]!.profile_id).toBe(profiles[0]!.id);
+  });
+
+  it('keeps a Native Event with the same title and time separate', async () => {
+    const account = await arrange();
+    const a = await arrangeCalendar(account, { name: 'A' });
+    await arrangeEvents(a.calendarId, [copy('a')]);
+    const { error } = await asServiceRole()
+      .from('native_events')
+      .insert({ household_id: account.household.id, title: lunch.title, starts_at: lunch.starts_at, ends_at: lunch.ends_at });
+    if (error) throw error;
+
+    const rows = await read(await asHouseholdAccount(account));
+    expect(rows.map((row) => row.source).sort()).toEqual(['native', 'synced']);
+  });
+
+  it('keeps the merged id when the sync writes the copies again, and when the other copy goes', async () => {
+    const account = await arrange();
+    const phone = await asHouseholdAccount(account);
+    const a = await arrangeCalendar(account, { name: 'A' });
+    const b = await arrangeCalendar(account, { name: 'B' });
+    await arrangeEvents(a.calendarId, [copy('a')]);
+    await arrangeEvents(b.calendarId, [copy('b')]);
+    const [first] = await read(phone);
+
+    await arrangeEvents(b.calendarId, [copy('b')]);
+    await arrangeEvents(a.calendarId, [copy('a')]);
+    const [again] = await read(phone);
+    expect(again!.id).toBe(first!.id);
+
+    // The id is the representative copy's own, so it survives when the other copy goes.
+    const { data: rows } = await asServiceRole().from('synced_events').select('id, mirrored_calendar_id').eq('household_id', account.household.id);
+    const kept = rows!.find((row) => row.id === first!.id)!;
+    await arrangeEvents(kept.mirrored_calendar_id === a.calendarId ? b.calendarId : a.calendarId, []);
+    const [alone] = await read(phone);
+    expect(alone!.id).toBe(first!.id);
+  });
+
+  it('does not count a copy on a deselected calendar', async () => {
+    const account = await arrange();
+    const { phone, profiles } = await arrangeProfiles(account, ['Mom', 'Dad']);
+    const mom = await arrangeCalendar(account, { name: 'Mom', profileId: profiles[0]!.id });
+    const dad = await arrangeCalendar(account, { name: 'Dad', profileId: profiles[1]!.id, selected: false });
+    await arrangeEvents(mom.calendarId, [copy('a')]);
+    const { error } = await asServiceRole().from('synced_events').insert({ household_id: account.household.id, mirrored_calendar_id: dad.calendarId, ...copy('b') });
+    if (error) throw error;
+
+    const rows = await read(phone);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ profile_ids: [profiles[0]!.id], calendar_name: 'Mom' });
+  });
+
+  it('never merges across Households', async () => {
+    const account = await arrange();
+    const other = await arrange();
+    await arrangeEvents((await arrangeCalendar(account)).calendarId, [copy('a')]);
+    await arrangeEvents((await arrangeCalendar(other)).calendarId, [copy('b')]);
+
+    expect(await read(await asHouseholdAccount(account))).toHaveLength(1);
+    expect(await read(await asHouseholdAccount(other))).toHaveLength(1);
   });
 });
 
