@@ -28,7 +28,7 @@ export function EventFill({ people }: { people: PillPeople }) {
 // same 11 px, the floor (docs/look.md, A person). The overlap and the ring are the most of the first disc that can be covered.
 const DISCS = {
   24: { overlap: '-ml-1', ring: 'ring-2', more: 'size-6 text-sm' },
-  16: { overlap: '-ml-[3px]', ring: 'ring-1', more: 'size-4 text-[11px]' },
+  16: { overlap: '-ml-[3px]', ring: 'ring-1', more: 'size-[16px] text-[11px]' },
 } as const;
 
 export type DiscSize = keyof typeof DISCS;
