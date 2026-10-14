@@ -187,6 +187,21 @@ describe('event reminders', () => {
     expect(await deliveries(sub.id)).toEqual([push.sent[0]!.payload.tag]);
   });
 
+  it('reminds once of an event two calendars both hold', async () => {
+    const account = await arrange();
+    const sub = await subscribe(account.authUserId, { event_reminders: true });
+    const swim = event('Swim', NOW + 10 * MINUTE);
+    await arrangeSynced(account, [swim]);
+    await arrangeSynced(account, [{ ...swim, google_event_id: `${swim.google_event_id}-copy`, title: ' swim ' }]);
+    const push = fakePush();
+
+    await run(deps(account, push, NOW));
+    await run(deps(account, push, NOW + MINUTE));
+
+    expect(push.sent).toHaveLength(1);
+    expect(await deliveries(sub.id)).toHaveLength(1);
+  });
+
   it('sends nothing for an event outside the window, all-day, past, or on an unselected calendar, and sends it once it is inside', async () => {
     const account = await arrange();
     await subscribe(account.authUserId, { event_reminders: true });
