@@ -209,6 +209,13 @@ describe('calendar_occurrences: duplicate Synced Events', () => {
   const copy = (id: string, extra: Partial<EventInput> = {}): EventInput => ({ ...lunch, google_event_id: id, ...extra });
   const read = (client: Awaited<ReturnType<typeof asHouseholdAccount>>) => loadOccurrences(client, WINDOW.from, WINDOW.to);
 
+  // The client does not read colour, so these tests ask the view for it directly.
+  async function loadOccurrencesWithColors(client: Awaited<ReturnType<typeof asHouseholdAccount>>) {
+    const { data, error } = await client.from('calendar_occurrences').select('title, color, colors, profile_ids').order('starts_at').order('title');
+    if (error) throw error;
+    return data as { title: string; color: string | null; colors: string[]; profile_ids: string[] }[];
+  }
+
   it('reads one row for two Profiles’ copies, naming both and the calendars', async () => {
     const account = await arrange();
     const { phone, profiles } = await arrangeProfiles(account, ['Mom', 'Dad']);
@@ -325,6 +332,68 @@ describe('calendar_occurrences: duplicate Synced Events', () => {
     await arrangeEvents(kept.mirrored_calendar_id === a.calendarId ? b.calendarId : a.calendarId, []);
     const [alone] = await read(phone);
     expect(alone!.id).toBe(first!.id);
+  });
+
+  it('keeps the merged id when a copy with a lower id arrives later', async () => {
+    const account = await arrange();
+    const phone = await asHouseholdAccount(account);
+    const mom = await arrangeCalendar(account, { name: 'Mom' });
+    const dad = await arrangeCalendar(account, { name: 'Dad' });
+    await arrangeEvents(mom.calendarId, [copy('a')]);
+    const [first] = await read(phone);
+
+    // Dad accepts the invite later, and his copy happens to draw the lowest id there is.
+    const { error } = await asServiceRole()
+      .from('synced_events')
+      .insert({ id: '00000000-0000-0000-0000-000000000001', created_at: new Date(Date.now() + 60_000).toISOString(), household_id: account.household.id, mirrored_calendar_id: dad.calendarId, ...copy('b') });
+    if (error) throw error;
+
+    const rows = await read(phone);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.calendar_name).toBe('Dad, Mom');
+    expect(rows[0]!.id).toBe(first!.id);
+  });
+
+  it('lines the colors up with the Profiles, and has none for a whole-Household merge', async () => {
+    const account = await arrange();
+    const phone = await asHouseholdAccount(account);
+    // The lower id has the higher hex, so sorting colors on their own would put them out of step.
+    const low = { id: '00000000-0000-0000-0000-0000000000a1', color: '#ffaa00' };
+    const high = { id: 'ffffffff-0000-0000-0000-0000000000a2', color: '#00aaff' };
+    for (const [index, profile] of [low, high].entries()) {
+      const { error } = await asServiceRole().from('profiles').insert({ ...profile, household_id: account.household.id, name: `P${index}`, sort_order: index });
+      if (error) throw error;
+    }
+    const a = await arrangeCalendar(account, { name: 'A', profileId: low.id });
+    const b = await arrangeCalendar(account, { name: 'B', profileId: high.id });
+    const family = await arrangeCalendar(account, { name: 'Family' });
+    await arrangeEvents(a.calendarId, [copy('a')]);
+    await arrangeEvents(b.calendarId, [copy('b')]);
+
+    const [merged] = await loadOccurrencesWithColors(phone);
+    expect(merged!.profile_ids).toEqual([low.id, high.id]);
+    expect(merged!.colors).toEqual([low.color, high.color]);
+
+    await arrangeEvents(family.calendarId, [copy('c')]);
+    const [whole] = await loadOccurrencesWithColors(phone);
+    expect(whole).toMatchObject({ profile_ids: [], colors: [] });
+  });
+
+  it('gives a single copy the colors it always had', async () => {
+    const account = await arrange();
+    const { phone, profiles } = await arrangeProfiles(account, ['Mom']);
+    const mom = await arrangeCalendar(account, { name: 'Mom', profileId: profiles[0]!.id, color: '#123456' });
+    const family = await arrangeCalendar(account, { name: 'Family', color: '#654321' });
+    const plain = await arrangeCalendar(account, { name: 'Plain' });
+    await arrangeEvents(mom.calendarId, [copy('a', { title: 'One' })]);
+    await arrangeEvents(family.calendarId, [copy('b', { title: 'Two' })]);
+    await arrangeEvents(plain.calendarId, [copy('c', { title: 'Three' })]);
+
+    const rows = await loadOccurrencesWithColors(phone);
+    const by = (title: string) => rows.find((row) => row.title === title)!;
+    expect(by('One')).toMatchObject({ color: '#123456', colors: ['#123456'] });
+    expect(by('Two')).toMatchObject({ color: '#654321', colors: ['#654321'], profile_ids: [] });
+    expect(by('Three')).toMatchObject({ color: null, colors: [] });
   });
 
   it('does not count a copy on a deselected calendar', async () => {
