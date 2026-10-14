@@ -72,7 +72,7 @@ The rule a Native Event follows to happen again: every so many days, weeks (on c
 _Avoid_: Recurrence, series, RRULE, recurring event
 
 **Occurrence**:
-One showing of an event on the calendar: a Synced Event is one, a Native Event without a Repeat is one, and a Native Event with a Repeat is one for every day its Repeat lands on. What a person taps, is reminded of, and edits "this one" of.
+One showing of an event on the calendar: a Synced Event is one, a Native Event without a Repeat is one, and a Native Event with a Repeat is one for every day its Repeat lands on. Synced Events with the same title (ignoring case and spacing), start, end and all-day are one Occurrence, naming every Profile whose Mirrored Calendar holds a copy, or the whole Household if any copy's does. What a person taps, is reminded of, and edits "this one" of.
 _Avoid_: Instance, event (when the Native Event itself is meant)
 
 ### Tasks & lists
