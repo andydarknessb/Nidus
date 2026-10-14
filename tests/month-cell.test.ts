@@ -341,7 +341,7 @@ describe('who an event line is for, at its end', () => {
       const open = html.indexOf('data-testid="event-words"');
       expect(open, ids.join()).toBeGreaterThan(-1);
       const start = html.lastIndexOf('<span', open);
-      expect(classesOf(html.slice(start, html.indexOf('>', open) + 1)), ids.join()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'overflow-hidden']));
+      expect(classesOf(html.slice(start, html.indexOf('>', open) + 1)), ids.join()).toEqual(expect.arrayContaining(['relative', 'min-w-0', 'flex-1', 'overflow-hidden', '@max-[7rem]:gap-0.5']));
       // The group runs to its own closing tag (every span in it nests); the discs come after it, as its sibling.
       let depth = 0;
       let end = start;

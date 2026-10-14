@@ -124,8 +124,8 @@ export function DayCell({
 // began on an earlier day only continues, so it shows no time, as in the week view. The words are --foreground, on a fill that
 // holds 7:1 for them. It is one line and never wider than its cell, and the words give way to the discs: the pin, the time and the title
 // are one group (flex-1, min-w-0) that clips its own overflow, and the discs, a sibling at the end, never shrink and are never cut. In the
-// group the time gives way first, then the title (flex-1 with a basis of 0, max-w-max) down to 1.25 em, room for its ellipsis, and then the
-// group clips the title; where the line has not even that, the title may be cut to nothing, since the discs say whose it is. In a cell
+// group the title gives way first (flex-1 with a basis of 0, max-w-max) down to 1.25 em, room for its ellipsis, then the time down to
+// nothing, and then the group clips the title; where the line has not even that, the title may be cut to nothing, since the discs say whose it is. In a cell
 // under 7 rem wide (the cell is the container) the pin is hidden and the gaps close up; the end of the time is cut (an ellipsis) when it
 // must be. A cell with room is as it was. The title starts where it starts, whichever way it is written (dir="auto"), so a right-to-left
 // one is cut at its end.
