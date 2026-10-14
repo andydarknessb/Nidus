@@ -129,6 +129,13 @@ describe('who an event is for, at the right of its pill', () => {
     expect(four).toContain('+3');
   });
 
+  it('has a "+N" disc fixed at 24 px with a 14 px number, in pixels like the person disc beside it, so large text cannot grow it', () => {
+    const classes = /<span class="([^"]*)">\+2</.exec(discs(['p-cory', 'p-sam', 'p-ava']))?.[1]?.split(' ');
+    expect(classes).toEqual(expect.arrayContaining(['size-[24px]', 'text-[14px]', 'rounded-full']));
+    expect(classes).not.toContain('size-6');
+    expect(classes).not.toContain('text-sm');
+  });
+
   it('is hidden from a screen reader, the pill\'s own name says who', () => {
     expect(discs(['p-cory', 'p-sam'])).toContain('aria-hidden="true"');
   });
