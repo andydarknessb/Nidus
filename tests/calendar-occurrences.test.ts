@@ -299,6 +299,20 @@ describe('calendar_occurrences: duplicate Synced Events', () => {
     expect(rows[0]!.profile_id).toBe(profiles[0]!.id);
   });
 
+  it('keeps untitled events separate, since a missing title says nothing about being the same event', async () => {
+    const account = await arrange();
+    const { phone, profiles } = await arrangeProfiles(account, ['Mom', 'Dad']);
+    const mom = await arrangeCalendar(account, { name: 'Mom', profileId: profiles[0]!.id });
+    const dad = await arrangeCalendar(account, { name: 'Dad', profileId: profiles[1]!.id });
+    // Both providers store an event with no title as '(No title)'.
+    await arrangeEvents(mom.calendarId, [copy('a', { title: '(No title)' })]);
+    await arrangeEvents(dad.calendarId, [copy('b', { title: ' (no  title) ' })]);
+
+    const rows = await read(phone);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.profile_ids).sort()).toEqual([[profiles[0]!.id], [profiles[1]!.id]].sort());
+  });
+
   it('keeps a Native Event with the same title and time separate', async () => {
     const account = await arrange();
     const a = await arrangeCalendar(account, { name: 'A' });
