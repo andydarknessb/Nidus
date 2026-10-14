@@ -309,7 +309,7 @@ describe('who an event line is for, at its end', () => {
       expect(html, ids.join()).not.toContain('size-6');
     }
     const plus = /<span class="([^"]*)">\+2<\/span>/.exec(lineOf(['p-cory', 'p-sam', 'p-ava']))?.[1]?.split(' ') ?? [];
-    expect(plus).toEqual(expect.arrayContaining(['size-4', 'text-[11px]', 'rounded-full']));
+    expect(plus).toEqual(expect.arrayContaining(['size-[16px]', 'text-[11px]', 'rounded-full']));
   });
 
   it('comes after the title, at the end of the line, and never shrinks, where the title gives way', () => {
