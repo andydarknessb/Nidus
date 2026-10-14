@@ -1,0 +1,9 @@
+# graphify reads code only: docs cost AI tokens, so they stay out of the graph.
+*.md
+*.mdx
+tests/fixtures/
+public/
+*.yml
+*.yaml
+*.txt
+*.html

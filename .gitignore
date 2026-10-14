@@ -12,3 +12,6 @@ supabase/.branches/
 
 # Local Netlify folder
 .netlify
+
+# graphify
+graphify-out/
