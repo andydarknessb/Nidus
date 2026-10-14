@@ -27,7 +27,7 @@ export function EventFill({ people }: { people: PillPeople }) {
 // colour between them is, and the "+N" disc. The pill's discs are 24 px; the end of a Month line has 16, where the initial is the
 // same 11 px, the floor (docs/look.md, A person). The overlap and the ring are the most of the first disc that can be covered.
 const DISCS = {
-  24: { overlap: '-ml-1', ring: 'ring-2', more: 'size-6 text-sm' },
+  24: { overlap: '-ml-1', ring: 'ring-2', more: 'size-[24px] text-[14px]' },
   16: { overlap: '-ml-[3px]', ring: 'ring-1', more: 'size-[16px] text-[11px]' },
 } as const;
 
