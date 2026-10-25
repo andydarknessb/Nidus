@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { addDays } from '../../supabase/functions/_shared/zoned-time.ts';
+import { addDays } from '@shared/zoned-time.ts';
 import { pageStart, shownDate, type CalendarView } from './paged-view';
 
 // The Wall's routes and the dates they put a screen on: reading and writing the address, whether a page holds today, and the date the

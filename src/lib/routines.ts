@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { householdTime } from '../../supabase/functions/_shared/zoned-time.ts';
+import { householdTime } from '@shared/zoned-time.ts';
 import { byPosition, movedIds } from './ordering';
 
 // Routines and Routine Completions (CONTEXT.md). Every function takes the client

@@ -4,7 +4,7 @@ import { navigationRailDate, type WallNavigator, type WallRoute } from '../lib/w
 import type { CalendarView } from '../lib/paged-view';
 import { useMode } from '../lib/use-mode';
 import { Button } from './ui/button';
-import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 
 // An entry's look, shared by the entries and the link to Settings: an icon over a word, at least 64 px tall and the
 // rail's width, in the quiet voice. A word too long for one line wraps; the entry then grows taller, never wider. The

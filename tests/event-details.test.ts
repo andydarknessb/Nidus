@@ -5,7 +5,7 @@ import { EventDetails } from '../src/components/EventDetails';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
 import type { Profile } from '../src/lib/profiles';
 import { pillPeople } from '../src/lib/schedule';
-import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 
 // An event's details rendered to markup, so what is asserted is what the browser is given: who the event is for (by name, or
 // "Everyone"), where it lives and so where to change it, and the controls that follow from that.

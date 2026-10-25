@@ -1,13 +1,13 @@
 import { CalendarDays, Pin, X } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
+import { eventTime, timeWords } from '@shared/event-words.ts';
 import type { Occurrence } from '../lib/calendar-occurrences';
 import { whoWords } from '../lib/day-view';
 import { occurrenceDate, repeatWords } from '../lib/native-events';
 import type { PillPeople } from '../lib/schedule';
 import { EventDiscs, EventFill } from './EventPill';
 import { Sheet } from './Sheet';
-import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 import { Button } from './ui/button';
 
 // What the sheet says of where an event lives, and so of where to change it: a Synced Event is read-only here and is changed in

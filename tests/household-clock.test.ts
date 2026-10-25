@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, dayStartMs, householdDay, householdTime, instantAt, spanIsOn } from '../supabase/functions/_shared/zoned-time.ts';
+import { addDays, dayStartMs, householdDay, householdTime, instantAt, spanIsOn } from '@shared/zoned-time.ts';
 
 // The Household clock (spec 0008): the Household Date and the time of day on it, for the Wall,
 // the phone and every Edge Function. Pure; run with TZ set to an odd zone to see that the machine's

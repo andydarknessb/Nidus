@@ -1,4 +1,4 @@
-import { addDays, dayStartMs, householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { addDays, dayStartMs, householdDay } from '@shared/zoned-time.ts';
 
 // A page of days and where focus goes when it turns (CONTEXT.md: Household Timezone). One module serves the Wall's calendar, the phone's
 // calendar and the Meals week on both: given the view, the date the person asked for and the instant, it answers today, the days of the

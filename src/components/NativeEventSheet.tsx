@@ -36,7 +36,7 @@ import { HouseDisc, PersonDisc } from './people';
 import { Sheet } from './Sheet';
 import { TimeSheet } from './TimeSheet';
 import { Button } from './ui/button';
-import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 
 // A field's caption, above it.
 const caption = 'text-[15px] leading-5 text-muted-foreground';

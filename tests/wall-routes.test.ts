@@ -14,7 +14,7 @@ import {
   type WallRoute,
 } from '../src/lib/wall-routes';
 import { canOpenDay, monthWeeks, pagingWindowAround, type CalendarView } from '../src/lib/paged-view';
-import { addDays } from '../supabase/functions/_shared/zoned-time.ts';
+import { addDays } from '@shared/zoned-time.ts';
 
 const CHICAGO = 'America/Chicago';
 

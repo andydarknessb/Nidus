@@ -4,7 +4,7 @@ import { EventDiscs } from './components/EventPill';
 import { Card } from './components/phone';
 import { Button } from './components/ui/button';
 import { useEventSheets } from './lib/use-event-sheets';
-import { eventTime, timeWords } from '../supabase/functions/_shared/event-words.ts';
+import { eventTime, timeWords } from '@shared/event-words.ts';
 import type { Occurrence } from './lib/calendar-occurrences';
 import type { Household } from './lib/household';
 import { loadUpcomingNativeEvents } from './lib/native-events';
@@ -12,7 +12,7 @@ import { loadProfiles, type Profile } from './lib/profiles';
 import { listNames, pillPeople } from './lib/schedule';
 import { supabase } from './lib/supabase';
 import { useSyncedRead } from './lib/synced-read';
-import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 
 // What the list is read from: the view's Native Event tables (a skipped day of a Repeat among them) and the Profiles that colour it.
 export const EVENT_TABLES = ['native_events', 'native_event_profiles', 'native_event_skips', 'profiles'] as const;

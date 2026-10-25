@@ -13,7 +13,7 @@ import {
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
-import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 
 // Two principals of one Household, each with its own Realtime feed: one writes, the other
 // observes the change through its subscription (RLS decides who hears what).

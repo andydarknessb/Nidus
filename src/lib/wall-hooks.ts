@@ -8,7 +8,7 @@ import type { Profile } from './profiles';
 import { OCCURRENCE_TABLES } from './realtime';
 import { supabase } from './supabase';
 import { useSyncedRead, type ReadStateName } from './synced-read';
-import { type HouseholdDay, householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { type HouseholdDay, householdDay } from '@shared/zoned-time.ts';
 
 // What the wall's screens share: the clock, the current Household day, and the one read every
 // calendar view makes of occurrences.

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadOccurrences, readPages, type Occurrence } from '../src/lib/calendar-occurrences';
 import { loadUpcomingNativeEvents, saveNativeEvent } from '../src/lib/native-events';
-import { addDays, householdDay, instantAt } from '../supabase/functions/_shared/zoned-time.ts';
+import { addDays, householdDay, instantAt } from '@shared/zoned-time.ts';
 import { PROFILE_PALETTE, createProfile } from '../src/lib/profiles';
 import { arrangeCalendar, arrangeEvents, type EventInput } from './support/calendar';
 import {

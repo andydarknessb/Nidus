@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { expandFeed } from '../supabase/functions/_shared/ics-expand';
-import { RunBudget } from '../supabase/functions/_shared/run-budget';
+import { expandFeed } from '@shared/ics-expand';
+import { RunBudget } from '@shared/run-budget';
 
 // A fixed sample of the repeat shapes the iPhone writes (the whitelist of ics-expand.ts), each read
 // from a start long ago, in each kind of start. Every one is walked (nothing said to be cut) and takes

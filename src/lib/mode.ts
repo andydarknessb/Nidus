@@ -1,6 +1,6 @@
 import { TOKENS, type Mode } from './look';
 import type { SunDay } from './weather';
-import { addDays, householdDay, instantAt } from '../../supabase/functions/_shared/zoned-time.ts';
+import { addDays, householdDay, instantAt } from '@shared/zoned-time.ts';
 
 // The mode of a screen: light or dark, by the Household's Appearance (CONTEXT.md), the screen's own switch, the
 // clock and the sun. The document's `data-mode` is the only switch: components never branch on it for colour

@@ -7,7 +7,7 @@
     "jsx": "react-jsx",
     "types": ["vite/client"],
     "baseUrl": ".",
-    "paths": { "@/*": ["./src/*"] },
+    "paths": { "@/*": ["./src/*"], "@shared/*": ["./supabase/functions/_shared/*"] },
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,

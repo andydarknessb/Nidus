@@ -18,7 +18,7 @@ import {
   weekStart,
   type WallDay,
 } from '../src/lib/paged-view';
-import { dayStartMs, householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { dayStartMs, householdDay } from '@shared/zoned-time.ts';
 
 const CHICAGO = 'America/Chicago';
 const TOKYO = 'Asia/Tokyo';

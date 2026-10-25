@@ -1,4 +1,4 @@
-import { addDays, dayStartMs, householdDay, type HouseholdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { addDays, dayStartMs, householdDay, type HouseholdDay } from '@shared/zoned-time.ts';
 
 // "Today" on the wall is the current date in the Household Timezone, never the machine's, and it
 // changes at Household midnight with no refresh. Everything here reads the clock afresh (and takes

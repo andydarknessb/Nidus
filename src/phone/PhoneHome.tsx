@@ -8,7 +8,7 @@ import { ReadState } from '../components/ReadState';
 import { UpNext } from '../components/UpNext';
 import { DayWeather } from '../components/Weather';
 import { fiveDays } from '../lib/calendar-occurrences';
-import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
+import { dateWords } from '@shared/event-words.ts';
 import { focusElement } from '../lib/focus';
 import { ProfileFilterContext } from '../lib/profile-filter';
 import { UP_NEXT_TILES } from '../lib/routine-chart';

@@ -31,7 +31,7 @@ import { MealsScreen } from './MealsPage';
 import { PhoneWall } from './PhoneWall';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
-import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 import { useSyncedRead } from './lib/synced-read';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.

@@ -19,7 +19,7 @@ import {
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
-import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 
 // The sender (spec 0007, ticket #136) against the real local database, with a fake push service:
 // `sendPush` records what would have gone to a phone. Every run is scoped to the test's own

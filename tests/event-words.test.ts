@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { dateWords, eventTime, formatClock, timeWords, type EventDay, type EventSpan, type TimeForm } from '../supabase/functions/_shared/event-words.ts';
-import { addDays, dayStartMs, instantAt } from '../supabase/functions/_shared/zoned-time.ts';
+import { dateWords, eventTime, formatClock, timeWords, type EventDay, type EventSpan, type TimeForm } from '@shared/event-words.ts';
+import { addDays, dayStartMs, instantAt } from '@shared/zoned-time.ts';
 
 // Event words (spec 0011): the facts of an event's time on a day, and the sentence each place says of them (pill,
 // block, line, sheet), plus the date words. Every case that the formatters, the pill, the day block, the month line,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { feedCalendarName, fetchFeed, normaliseFeedUrl } from '../supabase/functions/_shared/feed';
+import { feedCalendarName, fetchFeed, normaliseFeedUrl } from '@shared/feed';
 import { fakeICloud } from './support/icloud';
 
 const ICS = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nX-WR-CALNAME:Family\r\nEND:VCALENDAR\r\n';

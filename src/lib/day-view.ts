@@ -1,4 +1,4 @@
-import { eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
+import { eventTime, timeWords } from '@shared/event-words.ts';
 import { dayOccurrences, nowHour, wallHour, type Occurrence } from './calendar-occurrences';
 import type { WallDay } from './paged-view';
 import { listNames, saysAllDay, scheduleColumns, type Pill, type PillPeople } from './schedule';

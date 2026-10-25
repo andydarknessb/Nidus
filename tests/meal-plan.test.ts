@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mealPlan, mealsPickedDay, NOTHING_PLANNED, slotRowName } from '../src/lib/meal-plan';
 import type { Meal } from '../src/lib/meals';
 import { pagedView, pagingWindowAround } from '../src/lib/paged-view';
-import { addDays, dayStartMs, householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { addDays, dayStartMs, householdDay } from '@shared/zoned-time.ts';
 
 // The Meal Plan's core (CONTEXT.md: Meal Plan): the week, the day a phone has picked, and what a cell is, as plain functions with no
 // screen and no database. The markup each screen draws from them is tests/wall-screens.test.ts and tests/phone-meals-lists.test.ts.

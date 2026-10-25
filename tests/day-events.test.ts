@@ -4,7 +4,7 @@ import { monthWeeks, type WallDay } from '../src/lib/paged-view';
 import { dayEventsOf } from '../src/lib/day-events';
 import { saveNativeEvent } from '../src/lib/native-events';
 import { PROFILE_PALETTE, createProfile, type Profile } from '../src/lib/profiles';
-import { dayStartMs, instantAt } from '../supabase/functions/_shared/zoned-time.ts';
+import { dayStartMs, instantAt } from '@shared/zoned-time.ts';
 import { arrangeCalendar, arrangeEvents, type EventInput } from './support/calendar';
 import { asHouseholdAccount, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
