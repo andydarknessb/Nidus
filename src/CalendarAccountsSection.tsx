@@ -22,7 +22,7 @@ import { supabase } from '@/lib/supabase';
 import { useStatusLine } from '@/lib/status-line';
 import { problemId, removePlace, type Said } from '@/lib/write-failure';
 import { useFormRow } from '@/lib/use-form-row';
-import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
+import { useSyncedRead } from '@/lib/synced-read';
 
 const CALENDAR_TABLES = ['calendar_accounts', 'mirrored_calendars', 'profiles'] as const;
 
@@ -265,7 +265,6 @@ export function CalendarAccountsSection() {
   const accounts = read.data?.accounts ?? null;
   const calendars = read.data?.calendars ?? NONE;
   const profiles = read.data?.profiles ?? NO_PROFILES;
-  const loadProblem = read.failed ? couldNotLoad('your calendars') : null;
   const [notice, setNotice] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -404,7 +403,7 @@ export function CalendarAccountsSection() {
 
   return (
     <>
-      <Card title="Google calendars">
+      <Card title="Google calendars" read={read} of="your calendars">
         <p className="text-base leading-6">Nidus shows your Google calendars on the Wall. It only reads them and never changes anything in Google.</p>
         <div className="flex flex-col gap-2">
           <Button id="connect-google" variant="secondary" size="phone" className="w-full" onClick={() => void connect()}>
@@ -420,12 +419,7 @@ export function CalendarAccountsSection() {
           </p>
           <Problem id={problemId(CONNECT)} problem={read.problem(CONNECT)} />
         </div>
-        {loadProblem && (
-          <p role="alert" className="text-base">
-            {loadProblem}
-          </p>
-        )}
-        {google?.length === 0 && !loadProblem && <p className="text-base">No Google account is connected yet.</p>}
+        {google?.length === 0 && !read.failed && <p className="text-base">No Google account is connected yet.</p>}
         {google?.map(block)}
       </Card>
       <Card title="iPhone calendars">

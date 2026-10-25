@@ -8,7 +8,7 @@ import { createProfile, deleteProfile, firstFreeColor, loadProfiles, reorderProf
 import { movedIds, nextSortOrder } from '@/lib/ordering';
 import { supabase } from '@/lib/supabase';
 import { problemId } from '@/lib/write-failure';
-import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
+import { useSyncedRead } from '@/lib/synced-read';
 import { useFormRow } from '@/lib/use-form-row';
 
 const PROFILE_TABLES = ['profiles'] as const;
@@ -51,7 +51,6 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   const read = useSyncedRead(() => loadProfiles(supabase), PROFILE_TABLES, 'profiles');
   const { busy, change } = read;
   const profiles = read.data;
-  const loadProblem = read.failed ? couldNotLoad('people') : null;
   const [adding, setAdding] = useState<PersonDraft | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   // The two forms' lifecycles (form-row.ts): their asks, their places and where focus goes when they close.
@@ -106,12 +105,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   const addProblem = addRow.nameProblem(adding?.name ?? '') ?? read.problem(ADD);
 
   return (
-    <Card title="People">
-      {loadProblem && (
-        <p role="alert" className="text-base">
-          {loadProblem}
-        </p>
-      )}
+    <Card title="People" read={read} of="people">
       {profiles?.length === 0 && <p className="text-base">No one yet. Add the people who live here.</p>}
       <ul className="flex flex-col gap-2">
         {profiles?.map((profile, index) => {

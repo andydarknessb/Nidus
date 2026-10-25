@@ -7,7 +7,7 @@ import { RoutineColumn, type ColumnLayout } from './components/RoutineColumn';
 import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { Shelf } from './components/Shelf';
 import { PersonDisc } from './components/people';
-import { Problem } from './components/phone';
+import { cardTitleClass, Problem } from './components/phone';
 import { Button } from './components/ui/button';
 import type { Household } from './lib/household';
 import { nextSortOrder } from './lib/ordering';
@@ -362,7 +362,7 @@ export function RoutinesPage({ household }: { household: Household }) {
             className="person flex flex-col gap-4 rounded-3xl bg-card p-4"
             style={personStyle(profile.color)}
           >
-            <h2 id={`profile-${profile.id}`} tabIndex={-1} className="flex items-center gap-3 font-display text-[22px] leading-7 outline-none">
+            <h2 id={`profile-${profile.id}`} tabIndex={-1} className={`flex items-center gap-3 ${cardTitleClass} outline-none`}>
               <PersonDisc name={profile.name} color={profile.color} size={44} />
               {profile.name}
             </h2>

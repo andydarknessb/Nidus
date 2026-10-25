@@ -30,7 +30,7 @@ import { EmptyWords } from './components/EmptyWords';
 import { ListCard } from './components/ListCard';
 import { Shelf } from './components/Shelf';
 import { EmptyRing, Tick } from './components/people';
-import { Problem } from './components/phone';
+import { cardClass, cardTitleClass, Problem } from './components/phone';
 import { ReadState } from './components/ReadState';
 import { Button } from './components/ui/button';
 import { couldNotLoad, useSyncedRead } from './lib/synced-read';
@@ -342,8 +342,6 @@ export function PinnedListCard({ onOpenLists, limit }: { onOpenLists: () => void
 
 // The phone's parts, from the drawing (v2/phone.js): a card has 16 px of padding round its parts, 16 apart, and its title in the
 // display face at 22 px. A field, a row and the big button are 56 px; the smaller actions are 48.
-const CARD = 'flex flex-col gap-4 rounded-3xl bg-card p-4';
-const CARD_TITLE = 'font-display text-[22px] leading-7';
 const ACTION = 'h-12 px-4';
 // Where a form says it was asked to save with no name: each is tied to the field it is about.
 const NEW_LIST_PROBLEM = 'new-list-problem';
@@ -468,8 +466,8 @@ export function SharedListsPage({ household }: { household: Household }) {
     <main className="mx-auto flex max-w-md flex-col gap-3 px-4 pt-2 pb-6">
       <h1 className="sr-only">Lists</h1>
 
-      <section aria-labelledby={NEW_LIST_TITLE} className={CARD}>
-        <h2 id={NEW_LIST_TITLE} tabIndex={-1} className={CARD_TITLE}>
+      <section aria-labelledby={NEW_LIST_TITLE} className={cardClass}>
+        <h2 id={NEW_LIST_TITLE} tabIndex={-1} className={cardTitleClass}>
           New list
         </h2>
         <form onSubmit={(event) => void create(event)} noValidate className="flex flex-col gap-4">
@@ -507,7 +505,7 @@ export function SharedListsPage({ household }: { household: Household }) {
       <ul className="flex flex-col gap-3">
         {lists?.map((list, index) => (
           <li key={list.id}>
-            <section aria-label={list.name} className={CARD}>
+            <section aria-label={list.name} className={cardClass}>
               {renameRow.open === list.id ? (
                 <form onSubmit={(event) => void rename(event)} noValidate className="flex flex-col gap-3">
                   <input
@@ -539,7 +537,7 @@ export function SharedListsPage({ household }: { household: Household }) {
               ) : (
                 // The arrows move the whole card, so they sit with its name.
                 <div className="flex items-center gap-2">
-                  <h2 id={titleId(list.id)} tabIndex={-1} className={`${CARD_TITLE} min-w-0 flex-1 break-words`}>
+                  <h2 id={titleId(list.id)} tabIndex={-1} className={`${cardTitleClass} min-w-0 flex-1 break-words`}>
                     {list.name}
                   </h2>
                   <Button variant="secondary" className={ICON_ACTION} aria-label={`Move ${list.name} up`} disabled={index === 0} aria-disabled={busy || undefined} onClick={() => void move(list.id, -1)}>

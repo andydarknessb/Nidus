@@ -62,7 +62,7 @@ type ViewProps = {
   listName: string | null;
   busy: boolean;
   status: NotificationsStatus;
-  loadProblem: string | null;
+  failed: boolean;
   problem: WriteProblem | null;
   onTurnOn: () => void;
   onTurnOff: () => void;
@@ -71,19 +71,14 @@ type ViewProps = {
 };
 
 // What the card draws, from what it is told: each of its states is rendered in tests/notifications-section.test.ts.
-export function NotificationsView({ support, state, listName, busy, status, loadProblem, problem, onTurnOn, onTurnOff, onTest, onChange }: ViewProps) {
+export function NotificationsView({ support, state, listName, busy, status, failed, problem, onTurnOn, onTurnOff, onTest, onChange }: ViewProps) {
   // A tap while a write is on its way does nothing; the button says so with `aria-disabled`, never `disabled`.
   const guarded = (action: () => void) => () => {
     if (!busy) action();
   };
   const change = (preferences: PushPreferences, part: Partial<PushPreferences>) => onChange({ ...preferences, ...part });
   return (
-    <Card title="Notifications on this phone">
-      {loadProblem && (
-        <p role="alert" className="text-base">
-          {loadProblem}
-        </p>
-      )}
+    <Card title="Notifications on this phone" read={{ failed }} of="notifications" words={LOAD_FAILED}>
       {support === 'unsupported' && <p className="text-base">{UNSUPPORTED_WORDS}</p>}
       {support === 'needs-home-screen' && <p className="text-base">{HOME_SCREEN_WORDS}</p>}
       {support === 'supported' && state?.kind === 'off' && (
@@ -151,7 +146,6 @@ export function NotificationsSection() {
   const state = read.data;
   const [listName, setListName] = useState<string | null>(null);
   const [status, setStatus] = useState<NotificationsStatus>('idle');
-  const loadProblem = read.failed ? LOAD_FAILED : null;
   // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
   // afterwards.
   const { busy, change } = read;
@@ -185,7 +179,7 @@ export function NotificationsSection() {
       listName={listName}
       busy={busy}
       status={status}
-      loadProblem={loadProblem}
+      failed={read.failed}
       problem={read.problem(PLACE)}
       // Asking for permission is the first thing the tap does: turnOnNotifications calls requestPermission before awaiting anything.
       onTurnOn={() =>
