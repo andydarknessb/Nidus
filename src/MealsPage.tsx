@@ -9,7 +9,7 @@ import type { WallDay } from './lib/paged-view';
 import { dayName, NOTHING_PLANNED, type MealSheetCell } from './lib/meal-plan';
 import { MEAL_SLOTS, nextMealWords, type MealSlot } from './lib/meals';
 import { WEEKDAYS } from './lib/routines';
-import { useFailureWords } from './lib/use-failure-words';
+import { useChange } from './lib/change';
 import { SLOT_PICTURES, useMealPlan, useNextMeal } from './lib/use-meal-plan';
 
 // Meals on the wall (CONTEXT.md: Meal): the Meals screen, a week by slot, and the header's button for the
@@ -171,10 +171,10 @@ function DayHeading({ day }: { day: WallDay }) {
 export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editing; save: (date: string, slot: MealSlot, title: string) => Promise<void>; onSaved: () => void; onClose: () => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(editing.meal?.title ?? '');
-  const [problem, setProblem] = useState('');
-  const [busy, setBusy] = useState(false);
-  // What a save that did not go through says: the Wall's one vocabulary for it (write-failure.ts).
-  const failureWords = useFailureWords();
+  // One change at a time, its words at the sheet's own place; a save that did not go through keeps the sheet open.
+  const card = useChange();
+  const { busy } = card;
+  const problem = card.problem('meal');
   // A stray tap on the scrim never throws away what was typed.
   const untouched = title === (editing.meal?.title ?? '');
 
@@ -185,15 +185,7 @@ export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editin
   };
 
   async function write(next: string) {
-    setProblem('');
-    setBusy(true);
-    try {
-      await save(editing.date, editing.slot, next);
-      onSaved();
-    } catch (error) {
-      setProblem(failureWords(error));
-      setBusy(false);
-    }
+    await card.change('meal', () => save(editing.date, editing.slot, next), { landed: () => onSaved() });
   }
 
   function submit(event: FormEvent) {
@@ -250,7 +242,7 @@ export function MealSheet({ editing, save, onSaved, onClose }: { editing: Editin
           <input ref={input} dir="auto" className="h-[60px] px-4 text-[19px]" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
         </label>
         <p role="alert" className="min-h-6 text-[15px] leading-5 font-medium empty:hidden">
-          {problem}
+          {problem?.words}
         </p>
       </div>
     </Sheet>

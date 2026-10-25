@@ -275,7 +275,7 @@ Settled on 2026-10-24 from an architecture review of master, two rounds of rulin
 - **One navigator.** The route module returns a navigator of named intents (`open`, `home`, `routines`, `meals`, `lists`), one prop for both rails and every phone screen; the six-slot tuple and the four callbacks go.
 - **One shelf.** The Routines chart and the Lists screen share the heading row, the sideways row, the portrait grid and the More foot.
 - **One name for the shared folder.** `@shared` aliases the Edge Functions' pure modules for the client and the tests; the functions keep their relative imports and nothing moves.
-- **No visible change.** Unlike v11, nothing the family sees changes; the suite is the safety net.
+- **No visible change on the normal path.** Unlike v11, there is no fix; a write that did not go through is said at its place (beside the field or row, or the page's line for an action with no row). The suite is the safety net.
 - **The six names live in the spec**, not in `CONTEXT.md`, which stays a glossary of household things.
 - **v8's rulings hold**: replace don't layer, plain cores with thin hooks, facts not sentences, no DOM test library, props not a context ([ADR 0004](adr/0004-the-household-facts-are-props-not-a-context.md)).
 

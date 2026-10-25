@@ -21,7 +21,8 @@ import { loadProfiles, type Profile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 import { useStatusLine } from '@/lib/status-line';
 import { problemId, removePlace, type Said } from '@/lib/write-failure';
-import { couldNotLoad, useChange, useSyncedRead } from '@/lib/synced-read';
+import { useChange } from '@/lib/change';
+import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
 
 const CALENDAR_TABLES = ['calendar_accounts', 'mirrored_calendars', 'profiles'] as const;
 

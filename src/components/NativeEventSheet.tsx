@@ -30,7 +30,7 @@ import { ProfileFilterContext } from '../lib/profile-filter';
 import type { Profile } from '../lib/profiles';
 import { useStatusLine } from '../lib/status-line';
 import { supabase } from '../lib/supabase';
-import { useChange } from '../lib/synced-read';
+import { useChange } from '../lib/change';
 import { setEnd, setStart } from '../lib/time-picker';
 import { HouseDisc, PersonDisc } from './people';
 import { Sheet } from './Sheet';

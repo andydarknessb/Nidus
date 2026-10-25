@@ -3,7 +3,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { Card, Field, Problem, fieldClass, labelClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHouseholdWeather, type Household } from '@/lib/household';
-import { useChange } from '@/lib/synced-read';
+import { useChange } from '@/lib/change';
 import { describePlaces, searchPlaces, type PlaceMatch, type TemperatureUnit, type WeatherPlace } from '@/lib/weather';
 
 const UNITS: { value: TemperatureUnit; label: string }[] = [

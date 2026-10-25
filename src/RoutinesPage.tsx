@@ -33,8 +33,8 @@ import { PictureField, RoutinePicture } from './lib/routine-pictures';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
 import { CHART_CHOICES, timeWord, type ChartColumn, type RoutineChart } from './lib/routine-chart';
+import { problemId, unnamed } from './lib/write-failure';
 import { useOverflow } from './lib/use-overflow';
-import { unnamed } from './lib/write-failure';
 import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
 // ---- The wall: the Routines chart ---------------------------------------------------------------------------------
@@ -316,9 +316,8 @@ export function RoutinesPage({ household }: { household: Household }) {
   );
   const profiles = read.data?.profiles ?? null;
   const routines = read.data?.routines ?? NO_ROUTINES;
-  // What the last change said when it failed, else that the page could not be read.
-  const [changeProblem, setProblem] = useState('');
-  const problem = changeProblem || (read.failed ? couldNotLoad('routines') : '');
+  // The read's own trouble, kept apart from what a write said at its place (change.ts).
+  const loadProblem = read.failed ? couldNotLoad('routines') : '';
   const [confirming, setConfirming] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   // Which Routine's form is open right now. A save that finishes late looks here, not at the render it began in.
@@ -326,21 +325,6 @@ export function RoutinesPage({ household }: { household: Household }) {
   // One change at a time (read.change, the card write guard): the buttons are drawn `aria-disabled` from `busy`, and focus goes where the
   // page says.
   const { busy } = read;
-
-  // Runs one change, then reads again so the screen shows what the database holds, before the next may begin. A failure is said in
-  // the status line at once; a form that says so itself, beside its Save, passes no failure. Says whether it was made, and nothing
-  // (undefined) when another change was on its way and this one did nothing. `landed` is what the page then does.
-  async function change(work: () => Promise<void>, failure = '', landed?: () => void): Promise<boolean | undefined> {
-    const outcome = await read.change(
-      null,
-      async () => {
-        await work();
-        setProblem('');
-      },
-      { failed: () => setProblem(failure), landed },
-    );
-    return outcome === 'busy' ? undefined : outcome === 'done';
-  }
 
   function startEditing(id: string) {
     editingNow.current = id;
@@ -357,9 +341,23 @@ export function RoutinesPage({ household }: { household: Household }) {
     read.focus(`edit-${id}`);
   }
 
-  // A failed save keeps the form open, with what was typed; the form says so itself.
+  // A failed save keeps the form open, with what was typed; the form says so itself, beside its Save.
   async function save(id: string, input: RoutineEdit): Promise<boolean | undefined> {
-    return change(() => updateRoutine(supabase, id, input), '', () => stopEditing(id));
+    const outcome = await read.change(`edit-${id}`, () => updateRoutine(supabase, id, input), {
+      failed: () => true,
+      landed: () => void stopEditing(id),
+    });
+    return outcome === 'busy' ? undefined : outcome === 'done';
+  }
+
+  // Adding one: a failed add keeps the form open, with what was typed, as a save does.
+  async function add(profile: Profile, own: Routine[], input: RoutineEdit): Promise<boolean | undefined> {
+    const outcome = await read.change(
+      `add-${profile.id}`,
+      () => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined),
+      { failed: () => true },
+    );
+    return outcome === 'busy' ? undefined : outcome === 'done';
   }
 
   const ofProfile = (profileId: string) => routines.filter((routine) => routine.profile_id === profileId);
@@ -369,8 +367,9 @@ export function RoutinesPage({ household }: { household: Household }) {
       <h1 className="sr-only">Routines</h1>
       {/* On the page from the first draw, so a screen reader hears a sentence when it comes, and out of the layout while it has none: the first card starts where the Lists page's does. */}
       <p role="status" className="text-base empty:sr-only">
-        {problem}
+        {loadProblem}
       </p>
+      <Problem id={problemId('reorder')} problem={read.problem('reorder')} />
       {profiles?.length === 0 && (
         <p className="text-base">
           <a href="/settings" className="underline">Add a person first</a>. Routines belong to a person.
@@ -425,7 +424,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                   if (read.isBusy()) return;
                                   setConfirming(null);
                                   read.focus(`profile-${profile.id}`);
-                                  void change(() => archiveRoutine(supabase, routine.id), 'Could not archive that routine. Try again.');
+                                  void read.change(`archive-${routine.id}`, () => archiveRoutine(supabase, routine.id));
                                 }}
                               >
                                 Archive {routine.title}
@@ -468,7 +467,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 disabled={index === 0}
                                 aria-disabled={busy || undefined}
                                 onClick={() => {
-                                  if (!read.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder routines. Try again.');
+                                  if (!read.isBusy()) void read.change('reorder', () => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)));
                                 }}
                               >
                                 <ArrowUp aria-hidden className="size-5" />
@@ -480,13 +479,14 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 disabled={index === time.routines.length - 1}
                                 aria-disabled={busy || undefined}
                                 onClick={() => {
-                                  if (!read.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder routines. Try again.');
+                                  if (!read.isBusy()) void read.change('reorder', () => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)));
                                 }}
                               >
                                 <ArrowDown aria-hidden className="size-5" />
                               </Button>
                             </div>
                           )}
+                          <Problem id={problemId(`archive-${routine.id}`)} problem={read.problem(`archive-${routine.id}`)} />
                         </>
                       )}
                     </li>
@@ -498,7 +498,7 @@ export function RoutinesPage({ household }: { household: Household }) {
               <RoutineForm
                 profile={profile}
                 busy={busy}
-                onSave={(input) => change(() => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined))}
+                onSave={(input) => add(profile, own, input)}
               />
             </div>
           </section>

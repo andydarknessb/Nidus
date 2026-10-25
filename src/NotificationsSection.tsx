@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { REMINDER_MINUTES, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
 import { loadPinnedListName } from '@/lib/shared-lists';
 import { supabase } from '@/lib/supabase';
-import { useSyncedRead, type WriteProblem } from '@/lib/synced-read';
+import { type WriteProblem } from '@/lib/change';
+import { useSyncedRead } from '@/lib/synced-read';
 
 // What the status line says: nothing, or what the last tap did.
 export type NotificationsStatus = 'idle' | 'saved' | 'test';

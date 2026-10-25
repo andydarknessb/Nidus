@@ -8,7 +8,7 @@ import { joinViewFor, joinViewOf, offersSettings, type JoinView, type Refusal } 
 import { supabase } from './lib/supabase';
 import { useDocumentTitle } from './lib/use-document-title';
 import { useSystemMode } from './lib/use-mode';
-import { useChange } from './lib/synced-read';
+import { useChange } from './lib/change';
 import { type Said } from './lib/write-failure';
 
 const JOIN_SAID = { failed: 'Could not join. Try again.', offline: 'No internet, so that did not join. Try again soon.' };

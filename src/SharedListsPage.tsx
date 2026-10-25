@@ -25,7 +25,7 @@ import { focusElement } from './lib/focus';
 import { useStatusLine } from './lib/status-line';
 import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
 import { useOverflow } from './lib/use-overflow';
-import { unnamed } from './lib/write-failure';
+import { problemId, unnamed } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
 import { ListCard } from './components/ListCard';
 import { BODY_CLEARANCE, OverflowButton } from './components/OverflowButton';
@@ -419,9 +419,8 @@ export function SharedListsPage({ household }: { household: Household }) {
   );
   const lists = read.data?.lists ?? null;
   const pinnedId = read.data?.pinnedId ?? null;
-  // What the last change said when it failed, else that the page could not be read.
-  const [changeProblem, setProblem] = useState('');
-  const problem = changeProblem || (read.failed ? couldNotLoad('lists') : '');
+  // The read's own trouble, kept apart from what a write said at its place (change.ts).
+  const loadProblem = read.failed ? couldNotLoad('lists') : '';
   const [newName, setNewName] = useState('');
   // How many times each form was asked to save with no name, which it says in its own line (a rename counts with the rename, so it
   // starts again with each).
@@ -431,22 +430,8 @@ export function SharedListsPage({ household }: { household: Household }) {
   const renameProblem = renaming ? unnamed('list', renaming.asked, renaming.name) : null;
   const [confirming, setConfirming] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  // One change at a time (read.change, the card write guard): the buttons are drawn `aria-disabled` from `busy`.
+  // One change at a time (read.change): the buttons are drawn `aria-disabled` from `busy`, and a failure is said at its place.
   const { busy } = read;
-
-  // Runs one change, then reads again so the screen shows what the database holds, before the next may begin. A failure is said
-  // at once. Says whether it was made; false too when another change was on its way and this one did nothing.
-  async function change(work: () => Promise<void>, failure: string): Promise<boolean> {
-    const outcome = await read.change(
-      null,
-      async () => {
-        await work();
-        setProblem('');
-      },
-      { failed: () => setProblem(failure) },
-    );
-    return outcome === 'done';
-  }
 
   async function create(event: FormEvent) {
     event.preventDefault();
@@ -455,11 +440,11 @@ export function SharedListsPage({ household }: { household: Household }) {
       setAskedNew((count) => count + 1);
       return;
     }
-    await change(async () => {
+    await read.change('new-list', async () => {
       await createList(supabase, household.id, newName, nextSortOrder(lists ?? []));
       setNewName('');
       setAskedNew(0);
-    }, 'Could not create that list. Try again.');
+    });
   }
 
   async function rename(event: FormEvent) {
@@ -470,17 +455,17 @@ export function SharedListsPage({ household }: { household: Household }) {
       return;
     }
     const { id, name } = renaming;
-    await change(async () => {
+    await read.change(`rename-${id}`, async () => {
       await renameList(supabase, id, name);
       setRenaming(null);
       document.getElementById(`rename-${id}`)?.focus();
-    }, 'Could not rename that list. Try again.');
+    });
   }
 
   async function move(id: string, offset: number) {
     if (read.isBusy()) return;
     const ids = movedIds((lists ?? []).map((list) => list.id), id, offset);
-    await change(() => reorderLists(supabase, ids), 'Could not reorder lists. Try again.');
+    await read.change('reorder', () => reorderLists(supabase, ids));
   }
 
   // The Delete that was pressed goes with its list: focus goes at once to the title of the list beside it, or to "New list" when it was
@@ -492,7 +477,7 @@ export function SharedListsPage({ household }: { household: Household }) {
     setConfirming(null);
     if (open === id) setOpen(null);
     focusElement(document.getElementById(beside === undefined ? NEW_LIST_TITLE : titleId(beside)));
-    if (!(await change(() => deleteList(supabase, id), 'Could not delete that list. Try again.'))) focusElement(document.getElementById(`delete-${id}`));
+    if ((await read.change(`delete-${id}`, () => deleteList(supabase, id))) !== 'done') focusElement(document.getElementById(`delete-${id}`));
   }
 
   return (
@@ -519,13 +504,19 @@ export function SharedListsPage({ household }: { household: Household }) {
             Add list
           </Button>
           <Problem id={NEW_LIST_PROBLEM} problem={newProblem} />
+          <Problem id={problemId('new-list')} problem={read.problem('new-list')} />
         </form>
       </section>
 
-      {problem && (
+      {loadProblem && (
         <p role="alert" className="px-1 text-base">
-          {problem}
+          {loadProblem}
         </p>
+      )}
+      {read.problem('reorder') && (
+        <div className="px-1">
+          <Problem id={problemId('reorder')} problem={read.problem('reorder')} />
+        </div>
       )}
       {lists?.length === 0 && <p className="px-1 text-base">No lists yet.</p>}
 
@@ -562,6 +553,7 @@ export function SharedListsPage({ household }: { household: Household }) {
                     </Button>
                   </div>
                   <Problem id={RENAME_PROBLEM} problem={renameProblem} />
+                  <Problem id={problemId(`rename-${list.id}`)} problem={read.problem(`rename-${list.id}`)} />
                 </form>
               ) : (
                 // The arrows move the whole card, so they sit with its name.
@@ -592,7 +584,7 @@ export function SharedListsPage({ household }: { household: Household }) {
                     className={ACTION}
                     aria-disabled={busy || undefined}
                     onClick={() => {
-                      if (!read.isBusy()) void change(() => setPinnedList(supabase, household.id, list.id), 'Could not pin that list. Try again.');
+                      if (!read.isBusy()) void read.change(`pin-${list.id}`, () => setPinnedList(supabase, household.id, list.id));
                     }}
                   >
                     Show on home screen
@@ -622,6 +614,9 @@ export function SharedListsPage({ household }: { household: Household }) {
                   </Button>
                 )}
               </div>
+
+              <Problem id={problemId(`pin-${list.id}`)} problem={read.problem(`pin-${list.id}`)} />
+              <Problem id={problemId(`delete-${list.id}`)} problem={read.problem(`delete-${list.id}`)} />
 
               {open === list.id && <ItemsEditor listId={list.id} listName={list.name} />}
             </section>

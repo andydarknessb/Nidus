@@ -1,6 +1,6 @@
 # Nidus v13: deeper modules, round four
 
-Tracker: GitHub issue to be filed; its six sub-issues are the tickets. Vocabulary: [CONTEXT.md](../../CONTEXT.md) (Household, Household Account, Profile, Device, Shared List, Routine, Native Event, Occurrence, Meal). Decisions: [PLAN.md](../PLAN.md) ("v13: deeper modules, round four"). [ADR 0006](../adr/0006-one-change.md) records the one decision that outlives this round. It continues [0008](0008-deeper-modules.md), [0011](0011-deeper-screens.md) and [0012](0012-deeper-modules-round-three.md): the same rulings (no visible change, replace don't layer, plain TypeScript cores with thin hooks, facts not sentences, props not a context) apply to every ticket here.
+Tracker: GitHub issue #254; its sub-issues #255 to #260 are the tickets. Vocabulary: [CONTEXT.md](../../CONTEXT.md) (Household, Household Account, Profile, Device, Shared List, Routine, Native Event, Occurrence, Meal). Decisions: [PLAN.md](../PLAN.md) ("v13: deeper modules, round four"). [ADR 0006](../adr/0006-one-change.md) records the one decision that outlives this round. It continues [0008](0008-deeper-modules.md), [0011](0011-deeper-screens.md) and [0012](0012-deeper-modules-round-three.md): the same rulings (no visible change, replace don't layer, plain TypeScript cores with thin hooks, facts not sentences, props not a context) apply to every ticket here.
 
 ## Problem Statement
 
@@ -32,7 +32,7 @@ Six modules, each with a small interface where its callers already meet. Nothing
 
 ### Rulings (settled with the owner, 2026-10-24, two rounds, every recommendation taken)
 
-- **No visible change.** Unlike v11, there is no fix this round. The existing suite is the safety net.
+- **No visible change on the normal path.** Unlike v11, there is no fix. A write that did not go through is said at its place (beside the field or row, or in the page's line for an action with no row), which is ticket 1's user story; nothing else moves. The existing suite is the safety net.
 - **Replace, don't layer**: a helper that becomes internal takes its tests with it; the old module and its tests are deleted. Every PR lists old test to new test. No case is dropped.
 - **Plain TypeScript cores, thin hooks**: as v8, v10 and v11. No DOM test library; no mocked database.
 - **Props, not a context**: [ADR 0004](../adr/0004-the-household-facts-are-props-not-a-context.md) stands. The change and the navigator are values passed down, never a context.
@@ -96,12 +96,12 @@ Six modules, each with a small interface where its callers already meet. Nothing
 
 ## Tickets
 
-1. **One change: every screen writes through the change, at a place.** `lib/change.ts` (new), `lib/card-write.ts` (deleted), `lib/synced-read.ts`, `RoutinesPage.tsx`, `SharedListsPage.tsx`, `MealsPage.tsx`, the sections and sheets that import a change type; `tests/change.test.ts` (new), `tests/synced-read.test.ts`.
-2. **A form that takes a row's place has one lifecycle.** `lib/form-row.ts`, `lib/use-form-row.ts` (new), the seven forms; `tests/form-row.test.ts` (new), `tests/phone-settings.test.ts`.
-3. **A card says when its own read failed, in one place.** `components/phone.tsx`, `DevicesSection`, `ProfilesSection`, `CalendarAccountsSection`, `EventsSection`, `NotificationsSection`, `RoutinesPage`, `SharedListsPage`; `tests/card.test.ts` (new).
-4. **The Wall navigates by a navigator's names.** `lib/wall-routes.ts`, `WallPage.tsx`, `NavigationRail.tsx`, `PhoneShell.tsx`, `PhoneWall.tsx`, `src/phone/*`; `tests/wall-routes.test.ts`, the screens' markup cases.
-5. **The chart and the Lists screen share one shelf.** `components/Shelf.tsx` (new), `RoutinesPage.tsx`, `SharedListsPage.tsx`; `tests/shelf.test.ts` (new), `tests/routines-chart.test.ts`, `tests/lists-screen.test.ts`.
-6. **The client names the shared folder once.** `tsconfig.app.json`, `vite.config.ts`, `vitest.config.ts`, every importer of the two shared modules under `src` and `tests`.
+1. **One change: every screen writes through the change, at a place.** (#255) `lib/change.ts` (new), `lib/card-write.ts` (deleted), `lib/synced-read.ts`, `RoutinesPage.tsx`, `SharedListsPage.tsx`, `MealsPage.tsx`, the sections and sheets that import a change type; `tests/change.test.ts` (new), `tests/synced-read.test.ts`.
+2. **A form that takes a row's place has one lifecycle.** (#256) `lib/form-row.ts`, `lib/use-form-row.ts` (new), the seven forms; `tests/form-row.test.ts` (new), `tests/phone-settings.test.ts`.
+3. **A card says when its own read failed, in one place.** (#258) `components/phone.tsx`, `DevicesSection`, `ProfilesSection`, `CalendarAccountsSection`, `EventsSection`, `NotificationsSection`, `RoutinesPage`, `SharedListsPage`; `tests/card.test.ts` (new).
+4. **The Wall navigates by a navigator's names.** (#259) `lib/wall-routes.ts`, `WallPage.tsx`, `NavigationRail.tsx`, `PhoneShell.tsx`, `PhoneWall.tsx`, `src/phone/*`; `tests/wall-routes.test.ts`, the screens' markup cases.
+5. **The chart and the Lists screen share one shelf.** (#257) `components/Shelf.tsx` (new), `RoutinesPage.tsx`, `SharedListsPage.tsx`; `tests/shelf.test.ts` (new), `tests/routines-chart.test.ts`, `tests/lists-screen.test.ts`.
+6. **The client names the shared folder once.** (#260) `tsconfig.app.json`, `vite.config.ts`, `vitest.config.ts`, every importer of the two shared modules under `src` and `tests`.
 
 ## Schema
 

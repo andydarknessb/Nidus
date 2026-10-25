@@ -6,7 +6,7 @@ import type { Occurrence } from '../src/lib/calendar-occurrences';
 import { createEventSheets, REFOCUS_MS, type OpenSheet } from '../src/lib/event-sheets';
 import type { WallDay } from '../src/lib/paged-view';
 import type { Pill } from '../src/lib/schedule';
-import { createChange, type ChangeState } from '../src/lib/synced-read';
+import { createChange, type ChangeState } from '../src/lib/change';
 import { NOT_SAVED, NOT_SAVED_OFFLINE } from '../src/lib/write-failure';
 
 // The event sheet host's core (spec 0012): what is open, what is remembered of the last sheet and for how long, and the one rule after
