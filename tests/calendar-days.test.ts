@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fiveDays, nowHour } from '../src/lib/calendar-occurrences';
-import { dayStartMs } from '../supabase/functions/_shared/zoned-time.ts';
+import { dayStartMs } from '@shared/zoned-time.ts';
 
 const CHICAGO = 'America/Chicago';
 const TOKYO = 'Asia/Tokyo';

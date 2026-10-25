@@ -8,7 +8,7 @@ import { supabase } from './supabase';
 import { useSyncedRead } from './synced-read';
 import { usePagedView } from './use-paged-view';
 import { useHouseholdDay, useNow } from './wall-hooks';
-import { dayStartMs, householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { dayStartMs, householdDay } from '@shared/zoned-time.ts';
 
 // The Meal Plan as a hook (meal-plan.ts has the rules), for the Wall's Meals screen and the phone's (src/MealsPage.tsx,
 // src/phone/PhoneMeals.tsx).

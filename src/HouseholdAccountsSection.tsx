@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Plus, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { dateWords } from '../supabase/functions/_shared/event-words.ts';
+import { dateWords } from '@shared/event-words.ts';
 import {
   cancelHouseholdInvite,
   createHouseholdInvite,
@@ -15,7 +15,8 @@ import {
 } from '@/lib/household-invites';
 import { supabase } from '@/lib/supabase';
 import { CANCEL_SAID, MAKE_SAID, REMOVED_WORDS, inviteViewOf, isRemoved, loadFailedWords, sharePayload, type InviteView } from '@/lib/household-accounts';
-import { useSyncedRead, type WriteProblem } from '@/lib/synced-read';
+import { type WriteProblem } from '@/lib/change';
+import { useSyncedRead } from '@/lib/synced-read';
 import { problemId, removePlace } from '@/lib/write-failure';
 
 // What the status line says: nothing, or what the last tap did.

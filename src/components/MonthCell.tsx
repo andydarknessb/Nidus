@@ -1,6 +1,6 @@
 import { cn } from 'cn';
 import { Pin } from 'lucide-react';
-import { eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
+import { eventTime, timeWords } from '@shared/event-words.ts';
 import type { Occurrence } from '../lib/calendar-occurrences';
 import { personStyle } from '../lib/look';
 import { BEYOND_RANGE, cellLines, type CellForm, type MonthCell } from '../lib/month-grid';

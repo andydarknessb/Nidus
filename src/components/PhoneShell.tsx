@@ -1,8 +1,7 @@
 import { CalendarDays, CircleCheck, House, List, Plus, Settings, Utensils, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
-import { navigationRailDate, type WallRoute } from '../lib/wall-routes';
-import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
-import type { CalendarView } from '../lib/paged-view';
+import { navigationRailDate, type WallNavigator, type WallRoute } from '../lib/wall-routes';
+import { dateWords } from '@shared/event-words.ts';
 import type { Household } from '../lib/household';
 import { useNow } from '../lib/wall-hooks';
 import type { Forecast } from '../lib/weather';
@@ -10,7 +9,7 @@ import { ConnectionBadge } from './ConnectionBadge';
 import { Button } from './ui/button';
 import { SyncBadge } from './WallHeader';
 import { WeatherNow } from './Weather';
-import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 
 // The Wall on a phone (docs/specs/0004-the-wall-on-a-phone.md; docs/look.md, "The phone"): below 768 px wide the navigation
 // rail and the landscape grid give way to a header, one column that the document scrolls (no box inside it, so the phone's own
@@ -49,19 +48,11 @@ function Tab({ icon: Icon, label, current = false, ...props }: { icon: LucideIco
 export function PhoneTabs({
   route,
   timezone,
-  onOpen,
-  onHome,
-  onRoutines,
-  onMeals,
-  onLists,
+  navigator,
 }: {
   route: WallRoute;
   timezone: string | null;
-  onOpen: (view: CalendarView, date: string) => void;
-  onHome: () => void;
-  onRoutines: () => void;
-  onMeals: () => void;
-  onLists: () => void;
+  navigator: WallNavigator;
 }) {
   const onCalendar = route.view === 'day' || route.view === 'week' || route.view === 'month';
   // At larger text the five tabs are wider than the screen and the bar scrolls sideways: the current tab is brought into view, so the bar
@@ -72,17 +63,17 @@ export function PhoneTabs({
   }, [route.view]);
   return (
     <nav ref={bar} aria-label="Wall sections" className="fixed inset-x-0 bottom-0 z-20 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-border bg-card px-1 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <Tab icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
+      <Tab icon={House} label="Home" current={route.view === 'home'} onClick={navigator.home} />
       <Tab
         icon={CalendarDays}
         label="Calendar"
         current={onCalendar}
         disabled={!timezone}
-        onClick={() => timezone && onOpen('week', navigationRailDate('week', route, householdDay(timezone).date))}
+        onClick={() => timezone && navigator.open('week', navigationRailDate('week', route, householdDay(timezone).date))}
       />
-      <Tab icon={CircleCheck} label="Routines" current={route.view === 'routines'} onClick={onRoutines} />
-      <Tab icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={onMeals} />
-      <Tab icon={List} label="Lists" current={route.view === 'lists'} onClick={onLists} />
+      <Tab icon={CircleCheck} label="Routines" current={route.view === 'routines'} onClick={navigator.routines} />
+      <Tab icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={() => navigator.meals(null)} />
+      <Tab icon={List} label="Lists" current={route.view === 'lists'} onClick={navigator.lists} />
     </nav>
   );
 }
@@ -147,11 +138,7 @@ export function PhoneShell({
   today,
   forecast,
   strip,
-  onOpen,
-  onHome,
-  onRoutines,
-  onMeals,
-  onLists,
+  navigator,
   onAdd,
   children,
 }: {
@@ -162,11 +149,7 @@ export function PhoneShell({
   forecast: Forecast | null;
   // The people strip, for the calendar screens; nothing elsewhere.
   strip: ReactNode;
-  onOpen: (view: CalendarView, date: string) => void;
-  onHome: () => void;
-  onRoutines: () => void;
-  onMeals: () => void;
-  onLists: () => void;
+  navigator: WallNavigator;
   onAdd: () => void;
   children: ReactNode;
 }) {
@@ -194,7 +177,7 @@ export function PhoneShell({
       >
         <Plus aria-hidden className="size-7" strokeWidth={2.6} />
       </Button>
-      <PhoneTabs route={route} timezone={timezone} onOpen={onOpen} onHome={onHome} onRoutines={onRoutines} onMeals={onMeals} onLists={onLists} />
+      <PhoneTabs route={route} timezone={timezone} navigator={navigator} />
     </>
   );
 }

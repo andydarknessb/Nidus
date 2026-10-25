@@ -10,7 +10,7 @@ import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass, stat
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import { timezoneOptions } from '@/lib/timezones';
-import { useChange } from '@/lib/synced-read';
+import { useChange } from '@/lib/change';
 
 type Props = { household: Household; userId: string; onSaved: (household: Household) => void; onSignOut: () => void };
 

@@ -4,7 +4,7 @@ import { statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import type { Appearance } from '@/lib/mode';
-import { useChange } from '@/lib/synced-read';
+import { useChange } from '@/lib/change';
 import { NOT_SAVED } from '@/lib/write-failure';
 
 // Light and Dark carry the icon of what they are; Auto is the Wall following the sun, which no one icon says.

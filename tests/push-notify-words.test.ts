@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
 import { wallDays } from '../src/lib/paged-view';
 import { scheduleColumns } from '../src/lib/schedule';
-import { instantAt } from '../supabase/functions/_shared/zoned-time.ts';
+import { instantAt } from '@shared/zoned-time.ts';
 import {
   cut,
   makePayload,

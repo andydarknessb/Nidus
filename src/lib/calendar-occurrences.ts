@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
-import { addDays, householdDay, offsetMs, spanIsOn } from '../../supabase/functions/_shared/zoned-time.ts';
+import { dateWords } from '@shared/event-words.ts';
+import { addDays, householdDay, offsetMs, spanIsOn } from '@shared/zoned-time.ts';
 import { wallDays, type WallDay } from './paged-view';
 
 // Occurrences on the wall (CONTEXT.md: Synced Event, Native Event). The `calendar_occurrences`

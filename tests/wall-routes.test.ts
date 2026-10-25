@@ -7,13 +7,14 @@ import {
   mealsPageDate,
   mealsPath,
   navigationRailDate,
+  navigatorFor,
   parseWallRoute,
   wallDate,
   wallPath,
   type WallRoute,
 } from '../src/lib/wall-routes';
 import { canOpenDay, monthWeeks, pagingWindowAround, type CalendarView } from '../src/lib/paged-view';
-import { addDays } from '../supabase/functions/_shared/zoned-time.ts';
+import { addDays } from '@shared/zoned-time.ts';
 
 const CHICAGO = 'America/Chicago';
 
@@ -408,5 +409,19 @@ describe('navigationRailDate', () => {
     }
     // The address names a month by its 1st, whichever date of it the page was reached with.
     expect(wallPath('month', navigationRailDate('month', page('month', '2026-12-17'), TODAY))).toBe('/month?date=2026-12-01');
+  });
+});
+
+describe('the navigator', () => {
+  it('names every screen the Wall opens, by the address it goes to', () => {
+    const went: string[] = [];
+    const navigator = navigatorFor((path) => went.push(path));
+    navigator.home();
+    navigator.open('week', '2026-10-11');
+    navigator.meals(null);
+    navigator.meals('2026-10-11');
+    navigator.routines();
+    navigator.lists();
+    expect(went).toEqual(['/', '/week?date=2026-10-11', '/meals', '/meals?date=2026-10-11', '/routines', '/lists']);
   });
 });

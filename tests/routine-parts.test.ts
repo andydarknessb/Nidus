@@ -5,7 +5,7 @@ import * as lucide from 'lucide-react';
 import { describe, expect, it } from 'vitest';
 import { PictureField, RoutinePicture } from '../src/lib/routine-pictures';
 import { partOfDay } from '../src/lib/routines';
-import { dayStartMs, instantAt } from '../supabase/functions/_shared/zoned-time.ts';
+import { dayStartMs, instantAt } from '@shared/zoned-time.ts';
 
 // The part of the day and the Routine pictures. Everything here is pure: the Household Timezone is always an argument, and no test
 // reads the machine's zone or needs the local stack. The rest of today's Routines is tests/routine-chart.test.ts.

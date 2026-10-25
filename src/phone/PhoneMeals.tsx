@@ -4,7 +4,7 @@ import { BeforeHousehold } from '../components/BeforeHousehold';
 import { ReadState } from '../components/ReadState';
 import { Button } from '../components/ui/button';
 import type { WallRoute } from '../lib/wall-routes';
-import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
+import { dateWords } from '@shared/event-words.ts';
 import { MEAL_SLOTS, type Meal } from '../lib/meals';
 import { SLOT_PICTURES, useMealPlan } from '../lib/use-meal-plan';
 import { MealSheet, type Editing } from '../MealsPage';
@@ -46,9 +46,9 @@ export function SlotRow({ label, slot, meal, heard, onOpen }: { label: string; s
   );
 }
 
-export function PhoneMeals({ route, timezone, view, openMeals }: PhoneScreenProps & { route: Extract<WallRoute, { view: 'meals' }> }) {
+export function PhoneMeals({ route, timezone, view, navigator }: PhoneScreenProps & { route: Extract<WallRoute, { view: 'meals' }> }) {
   if (!timezone) return <BeforeHousehold label="Meals" failed={view.failed} of="meals" />;
-  return <MealsWeek timezone={timezone} date={route.date} onNavigate={openMeals} />;
+  return <MealsWeek timezone={timezone} date={route.date} onNavigate={navigator.meals} />;
 }
 
 // The week the screen is on, laid out as the Meals screen lays it out: `date` is the page's anchor (null for this week), pulled into the

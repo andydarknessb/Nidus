@@ -21,7 +21,8 @@ import { loadProfiles, type Profile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 import { useStatusLine } from '@/lib/status-line';
 import { problemId, removePlace, type Said } from '@/lib/write-failure';
-import { couldNotLoad, useChange, useSyncedRead } from '@/lib/synced-read';
+import { useFormRow } from '@/lib/use-form-row';
+import { useSyncedRead } from '@/lib/synced-read';
 
 const CALENDAR_TABLES = ['calendar_accounts', 'mirrored_calendars', 'profiles'] as const;
 
@@ -264,7 +265,6 @@ export function CalendarAccountsSection() {
   const accounts = read.data?.accounts ?? null;
   const calendars = read.data?.calendars ?? NONE;
   const profiles = read.data?.profiles ?? NO_PROFILES;
-  const loadProblem = read.failed ? couldNotLoad('your calendars') : null;
   const [notice, setNotice] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -273,9 +273,9 @@ export function CalendarAccountsSection() {
   // the read's own guard is the removal's, and the addition has one of its own. The field's value now is kept apart (a press's answer
   // comes after more may have been typed).
   const removal = read;
-  const addition = useChange(read);
+  const iphoneRow = useFormRow({ place: () => ADD_IPHONE, read, opener: () => IPHONE_LINK, initially: 'iphone' });
   const removing = removal.busy;
-  const adding = addition.busy;
+  const adding = iphoneRow.busy;
   const iphoneLinkNow = useRef('');
   const say = useStatusLine();
   // For each calendar, its writes in the order they were asked, so that the last asked is the last written.
@@ -358,14 +358,14 @@ export function CalendarAccountsSection() {
   // when it refuses; any other failure is worded as every write on this page is.
   async function addIphone() {
     // No place: the answer says its own words, in `landed`, once the read has followed (so the old words stay until then).
-    await addition.change(null, () => sendLink({ link: iphoneLink, current: () => iphoneLinkNow.current, add: (url) => addIphoneCalendar(supabase, url) }), {
+    await iphoneRow.submit(null, () => sendLink({ link: iphoneLink, current: () => iphoneLinkNow.current, add: (url) => addIphoneCalendar(supabase, url) }), {
       landed: (answer) => {
         if (answer.kind === 'added') {
-          addition.clear(ADD_IPHONE);
+          iphoneRow.reset();
           if (answer.clear) changeIphoneLink('');
           say(answer.say);
-        } else if (answer.kind === 'refused') addition.say(ADD_IPHONE, answer.words);
-        else addition.fail(ADD_IPHONE, answer.error);
+        } else if (answer.kind === 'refused') read.say(ADD_IPHONE, answer.words);
+        else read.fail(ADD_IPHONE, answer.error);
       },
     });
   }
@@ -403,7 +403,7 @@ export function CalendarAccountsSection() {
 
   return (
     <>
-      <Card title="Google calendars">
+      <Card title="Google calendars" read={read} of="your calendars">
         <p className="text-base leading-6">Nidus shows your Google calendars on the Wall. It only reads them and never changes anything in Google.</p>
         <div className="flex flex-col gap-2">
           <Button id="connect-google" variant="secondary" size="phone" className="w-full" onClick={() => void connect()}>
@@ -419,16 +419,11 @@ export function CalendarAccountsSection() {
           </p>
           <Problem id={problemId(CONNECT)} problem={read.problem(CONNECT)} />
         </div>
-        {loadProblem && (
-          <p role="alert" className="text-base">
-            {loadProblem}
-          </p>
-        )}
-        {google?.length === 0 && !loadProblem && <p className="text-base">No Google account is connected yet.</p>}
+        {google?.length === 0 && !read.failed && <p className="text-base">No Google account is connected yet.</p>}
         {google?.map(block)}
       </Card>
       <Card title="iPhone calendars">
-        <IphoneCalendarForm value={iphoneLink} adding={adding} problem={addition.problem(ADD_IPHONE)} onChange={changeIphoneLink} onAdd={() => void addIphone()} />
+        <IphoneCalendarForm value={iphoneLink} adding={adding} problem={read.problem(ADD_IPHONE)} onChange={changeIphoneLink} onAdd={() => void addIphone()} />
         {iphones?.map(block)}
       </Card>
     </>

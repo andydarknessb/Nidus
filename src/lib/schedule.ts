@@ -1,4 +1,4 @@
-import { dateWords, eventTime, timeWords } from '../../supabase/functions/_shared/event-words.ts';
+import { dateWords, eventTime, timeWords } from '@shared/event-words.ts';
 import { dayOccurrences, type Occurrence } from './calendar-occurrences';
 import type { WallDay } from './paged-view';
 import type { Profile } from './profiles';

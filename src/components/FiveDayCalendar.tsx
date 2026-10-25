@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useContext, useLayoutEffect, useRef, useState } from 'react';
 import { describeMonth, fiveDays, pageWords } from '../lib/calendar-occurrences';
-import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
+import { dateWords } from '@shared/event-words.ts';
 import { aboveLabel, emptyRowWords, HOUR_REM, hoursThatFit, planDay } from '../lib/day-view';
 import { CALENDAR_LIMITS, pageStart, type CalendarView, type WallDay } from '../lib/paged-view';
 import { ProfileFilterContext } from '../lib/profile-filter';

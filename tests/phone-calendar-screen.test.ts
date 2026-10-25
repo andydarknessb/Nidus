@@ -35,6 +35,7 @@ afterAll(() => {
 
 const CHICAGO = 'America/Chicago';
 const noop = () => undefined;
+const navigator = { open: noop, home: noop, meals: noop, routines: noop, lists: noop };
 const profile = (id: string, name: string, order: number): Profile => ({ id, name, color: '#93c5fd', avatar_url: null, sort_order: order });
 const AVA = profile('a', 'Ava', 0);
 const BEN = profile('b', 'Ben', 1);
@@ -43,7 +44,7 @@ const CORY = profile('c', 'Cory', 2);
 type CalendarRoute = Extract<WallRoute, { view: CalendarView }>;
 function screen(view: CalendarView, date: string | null) {
   const route: CalendarRoute = { view, date };
-  const props = { route, timezone: CHICAGO, profiles: [AVA, BEN, CORY], openView: noop } as unknown as PhoneScreenProps;
+  const props = { route, timezone: CHICAGO, profiles: [AVA, BEN, CORY], navigator } as unknown as PhoneScreenProps;
   return renderToStaticMarkup(createElement(PhoneCalendar, { ...props, route }));
 }
 

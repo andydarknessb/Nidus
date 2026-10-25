@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { GOOGLE_TOKEN_URL } from '../supabase/functions/_shared/google-token';
+import { GOOGLE_TOKEN_URL } from '@shared/google-token';
 import { syncWindow } from '../supabase/functions/calendar-sync/adapter';
 import {
   handleCalendarSync,

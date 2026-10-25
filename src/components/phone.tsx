@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { couldNotLoad } from '@/lib/synced-read';
 import { type Said } from '@/lib/write-failure';
 import { Button } from './ui/button';
 
@@ -21,14 +22,26 @@ export function PhonePage({ title, children }: { title: string; children: ReactN
 // A card: --card on the page ground, radius 24, padding 16, its parts 16 apart. Told apart from the page by its fill and no outline.
 export const cardClass = 'flex flex-col gap-4 rounded-3xl bg-card p-4';
 
-// A card with its title in the display face, which names the region.
-export function Card({ title, children }: { title: string; children: ReactNode }) {
+// A card's title, in the display face. Also the class a page uses where its own heading names the card.
+export const cardTitleClass = 'font-display text-[22px] leading-7';
+
+// What a card knows of its read. A card that reads says what failed, and what it was reading; one that does not passes nothing.
+type CardRead = { read: { failed: boolean }; of: string; words?: string | undefined } | { read?: undefined; of?: undefined; words?: undefined };
+
+// A card with its title in the display face, which names the region. A read that failed over what was read says so here, at the top
+// of the card, in the read's words (`couldNotLoad`) or in the card's own (`words`, for a sentence that is narrower).
+export function Card({ title, read, of, words, children }: { title: string; children: ReactNode } & CardRead) {
   const id = useId();
   return (
     <section aria-labelledby={id} className={cardClass}>
-      <h2 id={id} className="font-display text-[22px] leading-7">
+      <h2 id={id} className={cardTitleClass}>
         {title}
       </h2>
+      {read?.failed && (
+        <p role="alert" className="text-base">
+          {words ?? couldNotLoad(of)}
+        </p>
+      )}
       {children}
     </section>
   );

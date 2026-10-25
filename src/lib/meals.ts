@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { householdDay, instantAt } from '../../supabase/functions/_shared/zoned-time.ts';
+import { householdDay, instantAt } from '@shared/zoned-time.ts';
 
 // Meals (CONTEXT.md): what the Household plans to eat for one slot on one Household date, as free
 // text. A Household Account (the phone) or a Device (the wall) writes them. Every function that

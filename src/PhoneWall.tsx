@@ -1,5 +1,4 @@
-import type { WallRoute } from './lib/wall-routes';
-import type { CalendarView } from './lib/paged-view';
+import type { WallNavigator, WallRoute } from './lib/wall-routes';
 import type { HouseholdView } from './lib/household';
 import type { Profile } from './lib/profiles';
 import type { RoutineChart } from './lib/routine-chart';
@@ -26,19 +25,18 @@ export type PhoneScreenProps = {
   profiles: Profile[] | null;
   // Today's Routines, read once by HomeShell.
   routines: RoutineChart;
-  openView: (view: CalendarView, date: string) => void;
-  openRoutines: () => void;
-  openLists: () => void;
-  openMeals: (date: string | null) => void;
+  // Every way the phone's chrome moves to another screen; a screen takes the same navigator.
+  navigator: WallNavigator;
 };
 
 export function PhoneWall(props: PhoneScreenProps) {
   const { route } = props;
   switch (route.view) {
     case 'home': return <PhoneHome {...props} />;
-    case 'day': return <PhoneCalendar {...props} route={route} />;
-    case 'week': return <PhoneCalendar {...props} route={route} />;
-    case 'month': return <PhoneCalendar {...props} route={route} />;
+    case 'day':
+    case 'week':
+    case 'month':
+      return <PhoneCalendar {...props} route={route} />;
     case 'routines': return <PhoneRoutines {...props} />;
     case 'meals': return <PhoneMeals {...props} route={route} />;
     case 'lists': return <PhoneLists />;

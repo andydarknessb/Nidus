@@ -1,7 +1,7 @@
 import { cn } from 'cn';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { type Occurrence } from '../lib/calendar-occurrences';
-import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
+import { dateWords } from '@shared/event-words.ts';
 import { canOpenDay, pagingWindow, type PagingWindow, type WallDay } from '../lib/paged-view';
 import { focusElement } from '../lib/focus';
 import type { Profile } from '../lib/profiles';

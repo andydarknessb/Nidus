@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FeedTooLargeError, RunBudget } from '../supabase/functions/_shared/run-budget';
+import { FeedTooLargeError, RunBudget } from '@shared/run-budget';
 
 // The run budget driven directly, with a clock of the test's own: no feed is parsed and nothing depends on how
 // fast the machine is. How the walk asks it (where each question is put) is tests/ics-expand.test.ts.

@@ -3,7 +3,7 @@
 // the token endpoint (a refresh token for the sync, an authorization code for the connect flow), the
 // calendar list, and a calendar's events endpoint (full, paged and incremental reads).
 import { GOOGLE_CALENDAR_LIST_URL } from '../../supabase/functions/calendar-connect/handler';
-import { GOOGLE_TOKEN_URL } from '../../supabase/functions/_shared/google-token';
+import { GOOGLE_TOKEN_URL } from '@shared/google-token';
 
 export type GoogleEvent = {
   id: string;

@@ -1,4 +1,4 @@
-import { dateWords } from '../../supabase/functions/_shared/event-words.ts';
+import { dateWords } from '@shared/event-words.ts';
 import type { WallDay } from '../lib/paged-view';
 import { focusElement } from '../lib/focus';
 import type { Profile } from '../lib/profiles';

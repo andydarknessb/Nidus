@@ -34,7 +34,7 @@ import {
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
-import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 import { startSyncedRead } from '../src/lib/synced-read';
 
 const red = PROFILE_PALETTE[0].hex;

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it } from 'vitest';
-import { addDays, dayStartMs, householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { addDays, dayStartMs, householdDay } from '@shared/zoned-time.ts';
 import { loadOccurrences, type Occurrence } from '../src/lib/calendar-occurrences';
 import { arrangeCalendar, arrangeEvents } from './support/calendar';
 import {

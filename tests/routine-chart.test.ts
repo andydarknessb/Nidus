@@ -18,7 +18,7 @@ import {
 } from '../src/lib/routine-chart';
 import { completeRoutine, createRoutine, loadCompletions, loadRoutines, maskOf, uncompleteRoutine, type Routine, type TimeOfDay } from '../src/lib/routines';
 import { startSyncedRead } from '../src/lib/synced-read';
-import { householdDay, instantAt } from '../supabase/functions/_shared/zoned-time.ts';
+import { householdDay, instantAt } from '@shared/zoned-time.ts';
 import { THURSDAY, chartOf, scene, type SceneOptions } from './support/routine-chart';
 import { asDevice, asHouseholdAccount, asServiceRole, createHousehold, destroyHousehold, destroyTablet, type HouseholdAccount, type Tablet } from './support/supabase';
 

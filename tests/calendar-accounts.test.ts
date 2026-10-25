@@ -8,7 +8,7 @@ import {
   verifyState,
   type ConnectDeps,
 } from '../supabase/functions/calendar-connect/handler';
-import { GOOGLE_TOKEN_URL } from '../supabase/functions/_shared/google-token';
+import { GOOGLE_TOKEN_URL } from '@shared/google-token';
 import {
   SYNC_STALE_MS,
   calendarsOfAccount,

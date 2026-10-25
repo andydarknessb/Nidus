@@ -1,4 +1,4 @@
-import { dateWords, eventCount } from '../../supabase/functions/_shared/event-words.ts';
+import { dateWords, eventCount } from '@shared/event-words.ts';
 import type { Occurrence } from './calendar-occurrences';
 import type { DayEvents } from './day-events';
 import { canOpenDay, type PagingWindow, type WallDay } from './paged-view';

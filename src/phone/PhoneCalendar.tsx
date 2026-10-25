@@ -3,7 +3,7 @@ import { BeforeHousehold } from '../components/BeforeHousehold';
 import { DayView } from '../components/FiveDayCalendar';
 import { statusLineClass } from '../components/phone';
 import { describeMonth, pageWords } from '../lib/calendar-occurrences';
-import { navigationRailDate, type WallRoute } from '../lib/wall-routes';
+import { navigationRailDate, type WallNavigator, type WallRoute } from '../lib/wall-routes';
 import { CALENDAR_LIMITS, canOpenDay, type CalendarView, type PagingWindow, type WallDay } from '../lib/paged-view';
 import { pickedDay } from '../lib/phone-calendar';
 import { ProfileFilterContext } from '../lib/profile-filter';
@@ -14,7 +14,7 @@ import type { PhoneScreenProps } from '../PhoneWall';
 import { DayEvents } from './DayEvents';
 import { DayChips, Pager, PhoneCard, Segmented } from './parts';
 import { PhoneMonth } from './PhoneMonth';
-import { householdDay } from '../../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 
 // The phone's Calendar tab (docs/specs/0004-the-wall-on-a-phone.md, Screens, Calendar): under the people strip, which the shell draws,
 // a control of three (Day, Week, Month) and a pager, then the view for one day at a time. The control changes the address as the
@@ -33,21 +33,21 @@ const VIEWS: readonly { value: CalendarView; label: string }[] = [
 // the document scrolls past it, as the phone's column does everywhere else.
 const DAY_BOX = 'h-[max(36rem,calc(100svh-26.5rem))]';
 
-export function PhoneCalendar({ route, timezone, view, profiles, openView }: PhoneScreenProps & { route: Extract<WallRoute, { view: CalendarView }> }) {
+export function PhoneCalendar({ route, timezone, view, profiles, navigator }: PhoneScreenProps & { route: Extract<WallRoute, { view: CalendarView }> }) {
   if (!timezone) return <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />;
-  return <Calendar timezone={timezone} route={route} profiles={profiles} openView={openView} />;
+  return <Calendar timezone={timezone} route={route} profiles={profiles} navigator={navigator} />;
 }
 
 function Calendar({
   timezone,
   route,
   profiles,
-  openView,
+  navigator,
 }: {
   timezone: string;
   route: Extract<WallRoute, { view: CalendarView }>;
   profiles: Profile[] | null;
-  openView: (view: CalendarView, date: string) => void;
+  navigator: WallNavigator;
 }) {
   const now = useNow(timezone);
   const { touch } = useContext(ProfileFilterContext);
@@ -67,14 +67,14 @@ function Calendar({
   return (
     // A touch anywhere in the calendar keeps the Profile filter open.
     <div className="contents" onPointerDownCapture={touch}>
-      <Segmented label="Calendar view" options={VIEWS} value={calendarView} onChange={(chosen) => openView(chosen, navigationRailDate(chosen, route, householdDay(timezone).date))} />
+      <Segmented label="Calendar view" options={VIEWS} value={calendarView} onChange={(chosen) => navigator.open(chosen, navigationRailDate(chosen, route, householdDay(timezone).date))} />
       <Pager
         words={days ? pageWords(days, today, 'phone') : describeMonth(anchor)}
         headingRef={heading}
         previousLabel={`Previous ${calendarView}`}
         nextLabel={`Next ${calendarView}`}
-        onPrevious={previous === null ? null : () => openView(calendarView, previous)}
-        onNext={next === null ? null : () => openView(calendarView, next)}
+        onPrevious={previous === null ? null : () => navigator.open(calendarView, previous)}
+        onNext={next === null ? null : () => navigator.open(calendarView, next)}
       />
       {/* Always mounted, so a screen reader announces the text when it appears. */}
       <p role="status" className={`${statusLineClass} text-muted-foreground`}>

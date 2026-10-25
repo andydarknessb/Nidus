@@ -1,9 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { occurrenceColumns, readPages, type Occurrence } from './calendar-occurrences';
-import { formatClock, dateWords } from '../../supabase/functions/_shared/event-words.ts';
+import { formatClock, dateWords } from '@shared/event-words.ts';
 import { WEEKDAYS } from './routines';
 import { minutesOf } from './time-picker';
-import { addDays, dayStartMs, householdDay, instantAt } from '../../supabase/functions/_shared/zoned-time.ts';
+import { addDays, dayStartMs, householdDay, instantAt } from '@shared/zoned-time.ts';
 
 // Native Events (CONTEXT.md): created in Nidus, living only in Nidus. A Household Account (the
 // phone) or a Device (the wall) writes them. Every function takes the client so the same code

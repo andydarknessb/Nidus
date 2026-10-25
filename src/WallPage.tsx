@@ -31,7 +31,7 @@ import { MealsScreen } from './MealsPage';
 import { PhoneWall } from './PhoneWall';
 import { RoutinesChart } from './RoutinesPage';
 import { ListsScreen } from './SharedListsPage';
-import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { householdDay } from '@shared/zoned-time.ts';
 import { useSyncedRead } from './lib/synced-read';
 
 // A revoked tablet learns of it on the next heartbeat, so this is the upper bound.
@@ -204,7 +204,7 @@ const VIEW_TITLES: Record<WallRoute['view'], string> = { home: 'Home', day: 'Day
 // Shared List; every list is on the Lists screen, opened from the navigation rail. The header carries
 // the next meal, on every screen but Meals.
 function HomeShell({ owner }: { owner: boolean }) {
-  const [route, openView, openHome, openMeals, openRoutines, openLists] = useWallRoute();
+  const [route, navigator] = useWallRoute();
   // Each view names itself in the document's title.
   useDocumentTitle(VIEW_TITLES[route.view]);
   // The Profile filter lives as long as the shell, so it survives a change of screen and is gone on reload.
@@ -288,11 +288,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           today={today}
           forecast={forecast}
           strip={strip}
-          onOpen={openView}
-          onHome={openHome}
-          onRoutines={openRoutines}
-          onMeals={() => openMeals(null)}
-          onLists={openLists}
+          navigator={navigator}
           onAdd={addEvent}
         >
           <PhoneWall
@@ -303,10 +299,7 @@ function HomeShell({ owner }: { owner: boolean }) {
             weatherOn={weatherOn}
             profiles={profiles}
             routines={routines}
-            openView={openView}
-            openRoutines={openRoutines}
-            openLists={openLists}
-            openMeals={openMeals}
+            navigator={navigator}
           />
         </PhoneShell>
         {eventSheets.sheets}
@@ -321,18 +314,14 @@ function HomeShell({ owner }: { owner: boolean }) {
           owner={owner}
           route={route}
           timezone={timezone}
-          onOpen={openView}
-          onHome={openHome}
-          onRoutines={openRoutines}
-          onMeals={() => openMeals(null)}
-          onLists={openLists}
+          navigator={navigator}
           onAdd={addEvent}
           onToggleMode={toggleMode}
         />
       }
       header={
         <>
-          <WallHeader household={view.household} today={today} forecast={forecast} onMeals={route.view === 'meals' ? null : () => openMeals(null)} />
+          <WallHeader household={view.household} today={today} forecast={forecast} onMeals={route.view === 'meals' ? null : () => navigator.meals(null)} />
         </>
       }
       strip={strip}
@@ -350,7 +339,7 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : route.view === 'meals' ? (
           // Meals is a screen of its own, not a calendar view: it takes the same slot, and before the Household is read it is an empty frame, or says it could not be read.
           timezone ? (
-            <MealsScreen timezone={timezone} date={route.date} onNavigate={openMeals} portrait={home.portrait} />
+            <MealsScreen timezone={timezone} date={route.date} onNavigate={navigator.meals} portrait={home.portrait} />
           ) : (
             <BeforeHousehold label="Meals" failed={view.failed} of="meals" />
           )
@@ -358,7 +347,7 @@ function HomeShell({ owner }: { owner: boolean }) {
           // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
           <ListsScreen portrait={home.portrait} />
         ) : route.view !== 'home' && timezone ? (
-          <PagedCalendar timezone={timezone} view={route.view} date={route.date} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} portrait={home.portrait} />
+          <PagedCalendar timezone={timezone} view={route.view} date={route.date} onNavigate={navigator.open} forecast={forecast} weatherOn={weatherOn} profiles={profiles} portrait={home.portrait} />
         ) : route.view !== 'home' ? (
           // A calendar page before the Household is read: the empty calendar alone, not the home layout
           // under a navigation rail entry that marks Day, Week or Month.
@@ -366,11 +355,11 @@ function HomeShell({ owner }: { owner: boolean }) {
         ) : (
         <div className={homeGrid(home.portrait)}>
           {timezone ? (
-            <FiveDayCalendar timezone={timezone} onNavigate={openView} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
+            <FiveDayCalendar timezone={timezone} onNavigate={navigator.open} forecast={forecast} weatherOn={weatherOn} profiles={profiles} days={home.days} />
           ) : (
             <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />
           )}
-          <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} row={home.portrait} onOpenRoutines={openRoutines} onOpenLists={openLists} />
+          <HomeRail routines={routines} failed={view.failed} tiles={home.tiles} row={home.portrait} onOpenRoutines={navigator.routines} onOpenLists={navigator.lists} />
         </div>
         )}
         {eventSheets.sheets}

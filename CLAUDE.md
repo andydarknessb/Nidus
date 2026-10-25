@@ -20,6 +20,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0011-deeper-screens.md` is the v10 spec: deeper screens (the Shared List card, the Meal Plan, event words, the Wall's routes, the read state, the lib client), continuing v8 one layer up, with one visible fix.
 - `docs/specs/0012-deeper-modules-round-three.md` is the v11 spec: deeper modules, round three (the run budget, the Routine Chart, the event sheet host, the card change, the Month Cells, the client's reads), continuing v8 and v10, with one visible fix. `docs/adr/0004` records the one refactor it rejected.
 - `docs/specs/0013-time-and-repeats.md` is the v12 spec: a time sheet of our own for Starts and Ends, and Repeats on Native Events, expanded by the database as they are read. `docs/adr/0005` records the reversal of "a repeating event belongs in Google".
+- `docs/specs/0014-deeper-modules-round-four.md` is the v13 spec: deeper modules, round four (one change, one form row, one card read, one navigator, one shelf, one name for the shared folder), continuing v8, v10 and v11; `docs/adr/0006` records the one decision that outlives it.
 
 ## Conventions
 

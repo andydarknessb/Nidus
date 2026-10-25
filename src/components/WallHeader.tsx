@@ -1,7 +1,7 @@
 import { RefreshCwOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { loadSyncFreshness, staleSyncBadge, staleSyncShort, type SyncFreshness } from '../lib/calendar-accounts';
-import { formatClock, dateWords } from '../../supabase/functions/_shared/event-words.ts';
+import { formatClock, dateWords } from '@shared/event-words.ts';
 import { useChangeTick } from '../lib/change-feed';
 import type { Household } from '../lib/household';
 import { supabase } from '../lib/supabase';

@@ -4,15 +4,15 @@ import { EventDiscs } from './components/EventPill';
 import { Card } from './components/phone';
 import { Button } from './components/ui/button';
 import { useEventSheets } from './lib/use-event-sheets';
-import { eventTime, timeWords } from '../supabase/functions/_shared/event-words.ts';
+import { eventTime, timeWords } from '@shared/event-words.ts';
 import type { Occurrence } from './lib/calendar-occurrences';
 import type { Household } from './lib/household';
 import { loadUpcomingNativeEvents } from './lib/native-events';
 import { loadProfiles, type Profile } from './lib/profiles';
 import { listNames, pillPeople } from './lib/schedule';
 import { supabase } from './lib/supabase';
-import { couldNotLoad, useSyncedRead } from './lib/synced-read';
-import { householdDay } from '../supabase/functions/_shared/zoned-time.ts';
+import { useSyncedRead } from './lib/synced-read';
+import { householdDay } from '@shared/zoned-time.ts';
 
 // What the list is read from: the view's Native Event tables (a skipped day of a Repeat among them) and the Profiles that colour it.
 export const EVENT_TABLES = ['native_events', 'native_event_profiles', 'native_event_skips', 'profiles'] as const;
@@ -64,17 +64,12 @@ export function EventsSection({ household }: { household: Household }) {
   });
 
   return (
-    <Card title="Events added in Nidus">
+    <Card title="Events added in Nidus" read={read} of="events">
       <p className="text-base leading-6">Events added here and on the Wall live only in Nidus. They are not in Google Calendar.</p>
       <Button ref={addButton} variant="secondary" size="phone" className="w-full" onClick={() => add(householdDay(household.timezone).date)}>
         <Plus aria-hidden />
         Add event
       </Button>
-      {read.failed && (
-        <p role="alert" className="text-base">
-          {couldNotLoad('events')}
-        </p>
-      )}
       {events?.length === 0 && <p className="text-base">Nothing coming up.</p>}
       <ul className="flex flex-col gap-2">
         {events?.map((event) => (

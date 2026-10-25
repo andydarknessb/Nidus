@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AccountBlock as AccountBlockType, AccountSummary as AccountSummaryType, CalendarRow as CalendarRowType, IphoneCalendarForm as IphoneCalendarFormType } from '../src/CalendarAccountsSection';
 import type { CalendarsPage as CalendarsPageType } from '../src/CalendarsPage';
 import type { EVENT_TABLES as EventTablesType, EventRow as EventRowType } from '../src/EventsSection';
-import type { RoutineForm as RoutineFormType, RoutinesPage as RoutinesPageType } from '../src/RoutinesPage';
+import type { RoutineForm as RoutineFormType, RoutineRead, RoutinesPage as RoutinesPageType } from '../src/RoutinesPage';
 import type { SettingsPage as SettingsPageType } from '../src/SettingsPage';
 import type { SharedListsPage as SharedListsPageType } from '../src/SharedListsPage';
 import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '../src/components/PersonEditor';
@@ -817,7 +817,16 @@ describe('the phone forms that ask for a name', () => {
   });
 
   const ava = { id: 'p-ava', name: 'Ava', color: hex(2), avatar_url: null, sort_order: 0 };
-  const routineForm = () => renderToStaticMarkup(createElement(RoutineForm, { profile: ava, onSave: async () => true }));
+  // The form's change, as a form that is only ever drawn needs it: nothing is submitted here.
+  const routineRead: RoutineRead = {
+    change: async (_place, work) => (await work(), 'done'),
+    focus: () => undefined,
+    busy: false,
+    isBusy: () => false,
+    problem: () => null,
+  };
+  const routineForm = () =>
+    renderToStaticMarkup(createElement(RoutineForm, { profile: ava, read: routineRead, place: 'edit-ava', opener: 'edit-ava', onSave: async () => true }));
   const household: Household = { id: 'h1', name: 'The Andersons', timezone: 'America/Chicago', weather_place: null, latitude: null, longitude: null, temperature_unit: 'fahrenheit', appearance: 'auto' };
   const listsPage = () => renderToStaticMarkup(createElement(SharedListsPage, { household }));
 

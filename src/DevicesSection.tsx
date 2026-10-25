@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { claimPairingCode, isInvalidCode, isTooManyAttempts, listDevices, revokeDevice } from '@/lib/device';
 import { seenWords } from '@/lib/device-format';
 import { supabase } from '@/lib/supabase';
-import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
+import { useSyncedRead } from '@/lib/synced-read';
+import { useFormRow } from '@/lib/use-form-row';
 import { problemId } from '@/lib/write-failure';
 
 const DEVICE_TABLES = ['devices'] as const;
@@ -42,17 +43,19 @@ export function DevicesSection() {
   const { busy, change } = read;
   const devices = read.data?.devices ?? null;
   const now = read.data?.now ?? new Date();
-  const loadProblem = read.failed ? couldNotLoad('tablets') : null;
   const [pairing, setPairing] = useState<{ code: string; name: string } | null>(null);
   const [pairStatus, setPairStatus] = useState<PairStatus>('idle');
+  // The pairing form's lifecycle (form-row.ts): no name to check, its place is the card's line, and closing it returns focus to the
+  // Pair a tablet button.
+  const pairRow = useFormRow({ place: () => PAIR, read, opener: () => PAIR_ID });
   // The tablet whose row is open, and whether it is being asked to be sure.
   const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
 
   async function pair(event: FormEvent) {
     event.preventDefault();
     if (!pairing) return;
-    await change(
-      PAIR,
+    await pairRow.submit(
+      null,
       async () => {
         setPairStatus('pairing');
         await claimPairingCode(supabase, pairing.code, pairing.name);
@@ -67,9 +70,9 @@ export function DevicesSection() {
           return true;
         },
         landed: () => {
+          pairRow.close();
           setPairing(null);
           setPairStatus('paired');
-          return PAIR_ID;
         },
       },
     );
@@ -87,12 +90,7 @@ export function DevicesSection() {
   const pairProblem = read.problem(PAIR);
 
   return (
-    <Card title="Wall tablets">
-      {loadProblem && (
-        <p role="alert" className="text-base">
-          {loadProblem}
-        </p>
-      )}
+    <Card title="Wall tablets" read={read} of="tablets">
       {devices?.length === 0 && <p className="text-base">No tablet is paired yet.</p>}
       <ul className="flex flex-col gap-2">
         {devices?.map((device) => {
@@ -181,9 +179,9 @@ export function DevicesSection() {
                 onClick={() => {
                   if (busy) return;
                   read.clear();
+                  pairRow.close();
                   setPairing(null);
                   setPairStatus('idle');
-                  read.focus(PAIR_ID);
                 }}
               >
                 Cancel
@@ -202,6 +200,7 @@ export function DevicesSection() {
             className="w-full"
             onClick={() => {
               read.clear();
+              pairRow.start('pair');
               setPairing({ code: '', name: '' });
               setPairStatus('idle');
             }}

@@ -4,9 +4,10 @@ import { Fragment, useEffect, useId, useRef, useState, type FormEvent } from 're
 import { EmptyWords } from './components/EmptyWords';
 import { ReadState } from './components/ReadState';
 import { RoutineColumn, type ColumnLayout } from './components/RoutineColumn';
-import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
+import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
+import { Shelf } from './components/Shelf';
 import { PersonDisc } from './components/people';
-import { Problem } from './components/phone';
+import { cardTitleClass, Problem } from './components/phone';
 import { Button } from './components/ui/button';
 import type { Household } from './lib/household';
 import { nextSortOrder } from './lib/ordering';
@@ -33,8 +34,9 @@ import { PictureField, RoutinePicture } from './lib/routine-pictures';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
 import { CHART_CHOICES, timeWord, type ChartColumn, type RoutineChart } from './lib/routine-chart';
+import { problemId } from './lib/write-failure';
+import { useFormRow, type FormRowRead } from './lib/use-form-row';
 import { useOverflow } from './lib/use-overflow';
-import { unnamed } from './lib/write-failure';
 import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
 // ---- The wall: the Routines chart ---------------------------------------------------------------------------------
@@ -82,9 +84,6 @@ function Column({ column, tap, portrait }: { column: ChartColumn; tap: RoutineCh
 // sit in a grid, each its natural height, and the chart scrolls as one column with the shared "More" foot; there is no sideways "More".
 export function RoutinesChart({ routines, portrait = false }: { routines: RoutineChart; portrait?: boolean }) {
   const { columns, part: shown, pickPart: pick, tap } = routines;
-  // The row of columns, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row;
-  // in portrait the box is the chart's column and the button is its foot.
-  const row = useOverflow(portrait ? 'y' : 'x', portrait ? 'over' : undefined);
   // Focus goes to the page's title on arrival, as on the calendar pages, rather than staying on the navigation rail.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
@@ -93,14 +92,15 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
 
   return (
     <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-4">
-      {/* The heading row is 48 px, as on every screen, and the first card is 16 px under it. */}
-      <div className="flex min-h-12 flex-none flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
-          Routines
-        </h2>
-        <div className="flex max-w-full flex-none flex-wrap items-center gap-x-4 gap-y-2">
-          {/* The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways: the control is as tall as one of them. At larger text
-              the heading row and the control wrap rather than run past the edge of the screen. */}
+      <Shelf
+        title={
+          <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
+            Routines
+          </h2>
+        }
+        // The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways: the control is as tall as one of them. At larger text
+        // the heading row and the control wrap rather than run past the edge of the screen.
+        controls={
           <div role="group" aria-label="Part of the day" className="flex min-h-12 max-w-full flex-none flex-wrap gap-2 rounded-[18px] bg-card">
             {CHART_CHOICES.map(({ part, label, icon: Icon }) => (
               <Button
@@ -115,27 +115,18 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
               </Button>
             ))}
           </div>
-          {/* More columns than fit is not a screen with fewer people on it: this says there are more, and moves on to them. */}
-          {!portrait && <OverflowButton control={row} of="people" className="h-12" />}
-        </div>
-      </div>
-      {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
-      <ReadState of="routines" read={routines}>
-        {columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
-      </ReadState>
-      {portrait ? (
-        // The columns are a grid of columns at least 17 rem, as many to a row as fit, each its row-mates' width (and with fewer columns than fit, the columns share the row), 12 apart across and 16 under one
-        // another, each its natural height; the chart scrolls as one column, and its foot is the shared button. A tile or field that takes the focus is scrolled clear of the foot.
-        <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
-          <div className={cn('grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-x-3 gap-y-4', BODY_CLEARANCE)}>{people}</div>
-          <OverflowButton control={row} of="the routines" />
-        </div>
-      ) : (
-        <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
-          {/* The same wrapper as portrait's, so turning the tablet keeps each column (and its read) instead of mounting it again. */}
-          <div className="contents">{people}</div>
-        </div>
-      )}
+        }
+        // Once Routines have been read, a lost connection keeps them on screen and the header says so.
+        between={
+          <ReadState of="routines" read={routines}>
+            {columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
+          </ReadState>
+        }
+        of="people"
+        footOf="the routines"
+        portrait={portrait}
+        items={people}
+      />
     </section>
   );
 }
@@ -170,6 +161,9 @@ const weekOrder = [...WEEKDAYS.slice(1), WEEKDAYS[0]];
 // The Time of day choices as the select lists them: Any time, the default, first.
 const timeOfDayChoices = [...TIME_OF_DAY_GROUPS.slice(-1), ...TIME_OF_DAY_GROUPS.slice(0, -1)];
 
+// The page's read as the form takes it: the change it writes through (form-row.ts).
+export type RoutineRead = FormRowRead<{ profiles: Profile[]; routines: Routine[] }>;
+
 // One form for adding a Routine and for editing one: a title, the days, a time of day and a picture.
 // Given a Routine it starts from that Routine and offers Cancel; without one it starts blank
 // and, once the Routine is added, blank again. A save asked for with no title says so in the form's own line
@@ -177,29 +171,30 @@ const timeOfDayChoices = [...TIME_OF_DAY_GROUPS.slice(-1), ...TIME_OF_DAY_GROUPS
 export function RoutineForm({
   profile,
   routine,
-  busy = false,
+  read,
+  place,
+  opener,
   onSave,
   onCancel,
 }: {
   profile: Profile;
   routine?: Routine;
-  // Whether the page is making a change: Save does nothing and is drawn `aria-disabled`.
-  busy?: boolean;
-  // Whether the Routine was saved; undefined when the page was busy and did nothing, which is not a failure.
-  onSave: (input: RoutineEdit) => Promise<boolean | undefined>;
+  // The page's read, whose change is the form's to use (form-row.ts).
+  read: RoutineRead;
+  // Where a write's failure is said, and where focus goes when the form closes.
+  place: string;
+  opener: string;
+  // The write itself; the form wraps it in the change.
+  onSave: (input: RoutineEdit) => Promise<unknown>;
   onCancel?: () => void;
 }) {
   const [title, setTitle] = useState(routine?.title ?? '');
   const [mask, setMask] = useState(routine?.days_of_week ?? allDays);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay | null>(routine?.time_of_day ?? null);
   const [picture, setPicture] = useState<string | null>(routine?.picture ?? null);
-  // Saving is true while a save is in flight, so a second tap cannot send it twice. Failed says the
-  // last one did not go through: the form stays open with what was typed, and says so beside Save.
-  const [saving, setSaving] = useState(false);
-  const [failed, setFailed] = useState(false);
-  // How many times a save was asked for with no title, and what that says while there is still none.
-  const [asked, setAsked] = useState(0);
-  const unnamedWords = unnamed('routine', asked, title);
+  // The form's lifecycle (form-row.ts): the title it asks for, its place, its busy guard, and where focus goes when it closes.
+  const form = useFormRow({ what: 'routine', place: () => place, read, opener: () => opener, initially: 'form' });
+  const titleProblem = form.nameProblem(title);
   const nameProblem = useId();
   // How many Routines this form has added. The picture grid keeps its own open state, so it is keyed by this and starts closed
   // again with the rest of the form.
@@ -209,25 +204,28 @@ export function RoutineForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (mask === 0 || saving || busy) return;
-    if (!title.trim()) {
-      setAsked((count) => count + 1);
-      return;
-    }
-    setSaving(true);
-    const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture });
-    setSaving(false);
-    // Nothing was done (the page was busy): what the form said of the last save stands.
-    if (saved === undefined) return;
-    setFailed(!saved);
-    if (saved && !routine) {
-      setTitle('');
-      setAsked(0);
-      setMask(allDays);
-      setTimeOfDay(null);
-      setPicture(null);
-      setAdded((count) => count + 1);
-    }
+    if (mask === 0 || form.isBusy()) return;
+    await form.submit(title, () => onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture }), {
+      words: {
+        said: {
+          failed: `Could not ${routine ? 'save' : 'add'} that routine. Check the name and days, then try again.`,
+          offline: 'No internet, so that did not save. Try again soon.',
+        },
+      },
+      landed: () => {
+        if (routine) {
+          form.close();
+          onCancel?.();
+          return;
+        }
+        setTitle('');
+        form.reset();
+        setMask(allDays);
+        setTimeOfDay(null);
+        setPicture(null);
+        setAdded((count) => count + 1);
+      },
+    });
   }
 
   return (
@@ -240,8 +238,8 @@ export function RoutineForm({
           onChange={(e) => setTitle(e.target.value)}
           maxLength={100}
           required
-          aria-invalid={unnamedWords ? true : undefined}
-          aria-describedby={unnamedWords ? nameProblem : undefined}
+          aria-invalid={titleProblem ? true : undefined}
+          aria-describedby={titleProblem ? nameProblem : undefined}
           autoFocus={routine !== undefined}
         />
       </label>
@@ -282,7 +280,7 @@ export function RoutineForm({
       <PictureField key={added} about={about} picture={picture} onChange={setPicture} />
       <div className="flex gap-3">
         {/* A page of forms has one primary: the Save of the Routine being edited. Adding is secondary. */}
-        <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" aria-disabled={mask === 0 || saving || busy || undefined}>
+        <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" aria-disabled={mask === 0 || form.busy || undefined}>
           {routine ? 'Save' : 'Add routine'}
         </Button>
         {onCancel && (
@@ -291,12 +289,8 @@ export function RoutineForm({
           </Button>
         )}
       </div>
-      <Problem id={nameProblem} problem={unnamedWords} />
-      {failed && (
-        <p role="alert" className="text-base">
-          Could not {routine ? 'save' : 'add'} that routine. Check the name and days, then try again.
-        </p>
-      )}
+      <Problem id={nameProblem} problem={titleProblem} />
+      <Problem id={problemId(place)} problem={read.problem(place)} />
       {mask === 0 && <p className="text-base">Pick at least one day.</p>}
     </form>
   );
@@ -316,9 +310,8 @@ export function RoutinesPage({ household }: { household: Household }) {
   );
   const profiles = read.data?.profiles ?? null;
   const routines = read.data?.routines ?? NO_ROUTINES;
-  // What the last change said when it failed, else that the page could not be read.
-  const [changeProblem, setProblem] = useState('');
-  const problem = changeProblem || (read.failed ? couldNotLoad('routines') : '');
+  // The read's own trouble, kept apart from what a write said at its place (change.ts).
+  const loadProblem = read.failed ? couldNotLoad('routines') : '';
   const [confirming, setConfirming] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   // Which Routine's form is open right now. A save that finishes late looks here, not at the render it began in.
@@ -326,21 +319,6 @@ export function RoutinesPage({ household }: { household: Household }) {
   // One change at a time (read.change, the card write guard): the buttons are drawn `aria-disabled` from `busy`, and focus goes where the
   // page says.
   const { busy } = read;
-
-  // Runs one change, then reads again so the screen shows what the database holds, before the next may begin. A failure is said in
-  // the status line at once; a form that says so itself, beside its Save, passes no failure. Says whether it was made, and nothing
-  // (undefined) when another change was on its way and this one did nothing. `landed` is what the page then does.
-  async function change(work: () => Promise<void>, failure = '', landed?: () => void): Promise<boolean | undefined> {
-    const outcome = await read.change(
-      null,
-      async () => {
-        await work();
-        setProblem('');
-      },
-      { failed: () => setProblem(failure), landed },
-    );
-    return outcome === 'busy' ? undefined : outcome === 'done';
-  }
 
   function startEditing(id: string) {
     editingNow.current = id;
@@ -354,12 +332,6 @@ export function RoutinesPage({ household }: { household: Household }) {
     if (editingNow.current !== id) return;
     editingNow.current = null;
     setEditing(null);
-    read.focus(`edit-${id}`);
-  }
-
-  // A failed save keeps the form open, with what was typed; the form says so itself.
-  async function save(id: string, input: RoutineEdit): Promise<boolean | undefined> {
-    return change(() => updateRoutine(supabase, id, input), '', () => stopEditing(id));
   }
 
   const ofProfile = (profileId: string) => routines.filter((routine) => routine.profile_id === profileId);
@@ -369,8 +341,9 @@ export function RoutinesPage({ household }: { household: Household }) {
       <h1 className="sr-only">Routines</h1>
       {/* On the page from the first draw, so a screen reader hears a sentence when it comes, and out of the layout while it has none: the first card starts where the Lists page's does. */}
       <p role="status" className="text-base empty:sr-only">
-        {problem}
+        {loadProblem}
       </p>
+      <Problem id={problemId('reorder')} problem={read.problem('reorder')} />
       {profiles?.length === 0 && (
         <p className="text-base">
           <a href="/settings" className="underline">Add a person first</a>. Routines belong to a person.
@@ -389,7 +362,7 @@ export function RoutinesPage({ household }: { household: Household }) {
             className="person flex flex-col gap-4 rounded-3xl bg-card p-4"
             style={personStyle(profile.color)}
           >
-            <h2 id={`profile-${profile.id}`} tabIndex={-1} className="flex items-center gap-3 font-display text-[22px] leading-7 outline-none">
+            <h2 id={`profile-${profile.id}`} tabIndex={-1} className={`flex items-center gap-3 ${cardTitleClass} outline-none`}>
               <PersonDisc name={profile.name} color={profile.color} size={44} />
               {profile.name}
             </h2>
@@ -401,7 +374,15 @@ export function RoutinesPage({ household }: { household: Household }) {
                   {time.routines.map((routine, index) => (
                     <li key={routine.id} className={cn('flex flex-col gap-2', editing !== routine.id && 'rounded-[14px] bg-muted p-3')}>
                       {editing === routine.id ? (
-                        <RoutineForm profile={profile} routine={routine} busy={busy} onSave={(input) => save(routine.id, input)} onCancel={() => stopEditing(routine.id)} />
+                        <RoutineForm
+                          profile={profile}
+                          routine={routine}
+                          read={read}
+                          place={`edit-${routine.id}`}
+                          opener={`edit-${routine.id}`}
+                          onSave={(input) => updateRoutine(supabase, routine.id, input)}
+                          onCancel={() => stopEditing(routine.id)}
+                        />
                       ) : (
                         <>
                           <div className="flex items-center gap-3">
@@ -425,7 +406,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                   if (read.isBusy()) return;
                                   setConfirming(null);
                                   read.focus(`profile-${profile.id}`);
-                                  void change(() => archiveRoutine(supabase, routine.id), 'Could not archive that routine. Try again.');
+                                  void read.change(`archive-${routine.id}`, () => archiveRoutine(supabase, routine.id));
                                 }}
                               >
                                 Archive {routine.title}
@@ -468,7 +449,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 disabled={index === 0}
                                 aria-disabled={busy || undefined}
                                 onClick={() => {
-                                  if (!read.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)), 'Could not reorder routines. Try again.');
+                                  if (!read.isBusy()) void read.change('reorder', () => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, -1)));
                                 }}
                               >
                                 <ArrowUp aria-hidden className="size-5" />
@@ -480,13 +461,14 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 disabled={index === time.routines.length - 1}
                                 aria-disabled={busy || undefined}
                                 onClick={() => {
-                                  if (!read.isBusy()) void change(() => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)), 'Could not reorder routines. Try again.');
+                                  if (!read.isBusy()) void read.change('reorder', () => reorderRoutines(supabase, movedIdsInGroup(own, routine.id, 1)));
                                 }}
                               >
                                 <ArrowDown aria-hidden className="size-5" />
                               </Button>
                             </div>
                           )}
+                          <Problem id={problemId(`archive-${routine.id}`)} problem={read.problem(`archive-${routine.id}`)} />
                         </>
                       )}
                     </li>
@@ -497,8 +479,10 @@ export function RoutinesPage({ household }: { household: Household }) {
             <div className={own.length > 0 ? 'border-t border-border pt-4' : undefined}>
               <RoutineForm
                 profile={profile}
-                busy={busy}
-                onSave={(input) => change(() => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined))}
+                read={read}
+                place={`add-${profile.id}`}
+                opener={`profile-${profile.id}`}
+                onSave={(input) => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined)}
               />
             </div>
           </section>

@@ -9,6 +9,9 @@ export default defineConfig({
   // origin allow-list and docs/google-sign-in.md use this host.
   server: { host: '127.0.0.1' },
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@shared': fileURLToPath(new URL('./supabase/functions/_shared', import.meta.url)),
+    },
   },
 });

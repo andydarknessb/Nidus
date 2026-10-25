@@ -1,7 +1,7 @@
 import ICAL from 'ical.js';
 import { describe, expect, it, vi } from 'vitest';
-import { expandFeed, FeedParseError } from '../supabase/functions/_shared/ics-expand';
-import { FeedTooLargeError, RunBudget } from '../supabase/functions/_shared/run-budget';
+import { expandFeed, FeedParseError } from '@shared/ics-expand';
+import { FeedTooLargeError, RunBudget } from '@shared/run-budget';
 
 // Pure: feed text in, rows out. The fixtures are iCloud-style feeds (CRLF line endings,
 // VTIMEZONE blocks, X-WR-CALNAME, folded lines), not objects built to suit the code. Run once

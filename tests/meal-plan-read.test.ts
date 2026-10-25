@@ -32,8 +32,11 @@ afterAll(() => {
 });
 
 const wall = (date: string | null) => renderToStaticMarkup(createElement(MealsScreen, { timezone, date, onNavigate: () => undefined }));
+const navigator = { open: () => undefined, home: () => undefined, meals: () => undefined, routines: () => undefined, lists: () => undefined };
 const phone = (date: string | null) =>
-  renderToStaticMarkup(createElement(PhoneMeals, { route: { view: 'meals', date }, timezone, view: { failed: false } } as unknown as Parameters<typeof PhoneMeals>[0]));
+  renderToStaticMarkup(
+    createElement(PhoneMeals, { route: { view: 'meals', date }, timezone, view: { failed: false }, navigator } as unknown as Parameters<typeof PhoneMeals>[0]),
+  );
 const screens = { Wall: wall, phone };
 
 describe.each(Object.entries(screens))('the %s, on the first commit of another week', (_name, screen) => {

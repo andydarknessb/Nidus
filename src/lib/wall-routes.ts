@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { addDays } from '../../supabase/functions/_shared/zoned-time.ts';
+import { addDays } from '@shared/zoned-time.ts';
 import { pageStart, shownDate, type CalendarView } from './paged-view';
 
 // The Wall's routes and the dates they put a screen on: reading and writing the address, whether a page holds today, and the date the
@@ -88,9 +88,30 @@ export function navigationRailDate(view: CalendarView, route: WallRoute, today: 
   return pageStart(view, shownDate(wallDate(route, today), today));
 }
 
+// Every way the Wall moves to another screen, named: the rail, the phone's tabs and a screen's own links all take one of these, so no
+// screen builds an address by hand (spec 0014).
+export type WallNavigator = {
+  open: (view: CalendarView, date: string) => void;
+  home: () => void;
+  meals: (date: string | null) => void;
+  routines: () => void;
+  lists: () => void;
+};
+
+// The navigator a `go(path)` makes: each way names the address it goes to.
+export function navigatorFor(go: (path: string) => void): WallNavigator {
+  return {
+    open: (view, date) => go(wallPath(view, date)),
+    home: () => go('/'),
+    meals: (date) => go(mealsPath(date)),
+    routines: () => go('/routines'),
+    lists: () => go('/lists'),
+  };
+}
+
 // Which screen the address names. The wall pages with pushState rather than reloading, so a tap
 // never drops the session or the Routines read, and Back returns to the previous page.
-export function useWallRoute(): [WallRoute, (view: CalendarView, date: string) => void, () => void, (date: string | null) => void, () => void, () => void] {
+export function useWallRoute(): [WallRoute, WallNavigator] {
   const read = () => parseWallRoute(window.location.pathname, window.location.search);
   const [route, setRoute] = useState<WallRoute>(read);
   useEffect(() => {
@@ -103,5 +124,5 @@ export function useWallRoute(): [WallRoute, (view: CalendarView, date: string) =
     if (path !== window.location.pathname + window.location.search) window.history.pushState(null, '', path);
     setRoute(read());
   };
-  return [route, (view, date) => go(wallPath(view, date)), () => go('/'), (date) => go(mealsPath(date)), () => go('/routines'), () => go('/lists')];
+  return [route, navigatorFor(go)];
 }
