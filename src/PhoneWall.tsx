@@ -26,7 +26,7 @@ export type PhoneScreenProps = {
   // Today's Routines, read once by HomeShell.
   routines: RoutineChart;
   // Every way the phone's chrome moves to another screen; a screen takes the same navigator.
-  navigate: WallNavigator;
+  navigator: WallNavigator;
 };
 
 export function PhoneWall(props: PhoneScreenProps) {

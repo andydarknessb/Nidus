@@ -48,11 +48,11 @@ function Tab({ icon: Icon, label, current = false, ...props }: { icon: LucideIco
 export function PhoneTabs({
   route,
   timezone,
-  navigate,
+  navigator,
 }: {
   route: WallRoute;
   timezone: string | null;
-  navigate: WallNavigator;
+  navigator: WallNavigator;
 }) {
   const onCalendar = route.view === 'day' || route.view === 'week' || route.view === 'month';
   // At larger text the five tabs are wider than the screen and the bar scrolls sideways: the current tab is brought into view, so the bar
@@ -63,17 +63,17 @@ export function PhoneTabs({
   }, [route.view]);
   return (
     <nav ref={bar} aria-label="Wall sections" className="fixed inset-x-0 bottom-0 z-20 flex gap-1 overflow-x-auto overscroll-x-contain border-t border-border bg-card px-1 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <Tab icon={House} label="Home" current={route.view === 'home'} onClick={navigate.home} />
+      <Tab icon={House} label="Home" current={route.view === 'home'} onClick={navigator.home} />
       <Tab
         icon={CalendarDays}
         label="Calendar"
         current={onCalendar}
         disabled={!timezone}
-        onClick={() => timezone && navigate.view('week', navigationRailDate('week', route, householdDay(timezone).date))}
+        onClick={() => timezone && navigator.open('week', navigationRailDate('week', route, householdDay(timezone).date))}
       />
-      <Tab icon={CircleCheck} label="Routines" current={route.view === 'routines'} onClick={navigate.routines} />
-      <Tab icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={() => navigate.meals(null)} />
-      <Tab icon={List} label="Lists" current={route.view === 'lists'} onClick={navigate.lists} />
+      <Tab icon={CircleCheck} label="Routines" current={route.view === 'routines'} onClick={navigator.routines} />
+      <Tab icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={() => navigator.meals(null)} />
+      <Tab icon={List} label="Lists" current={route.view === 'lists'} onClick={navigator.lists} />
     </nav>
   );
 }
@@ -138,7 +138,7 @@ export function PhoneShell({
   today,
   forecast,
   strip,
-  navigate,
+  navigator,
   onAdd,
   children,
 }: {
@@ -149,7 +149,7 @@ export function PhoneShell({
   forecast: Forecast | null;
   // The people strip, for the calendar screens; nothing elsewhere.
   strip: ReactNode;
-  navigate: WallNavigator;
+  navigator: WallNavigator;
   onAdd: () => void;
   children: ReactNode;
 }) {
@@ -177,7 +177,7 @@ export function PhoneShell({
       >
         <Plus aria-hidden className="size-7" strokeWidth={2.6} />
       </Button>
-      <PhoneTabs route={route} timezone={timezone} navigate={navigate} />
+      <PhoneTabs route={route} timezone={timezone} navigator={navigator} />
     </>
   );
 }

@@ -33,21 +33,21 @@ const VIEWS: readonly { value: CalendarView; label: string }[] = [
 // the document scrolls past it, as the phone's column does everywhere else.
 const DAY_BOX = 'h-[max(36rem,calc(100svh-26.5rem))]';
 
-export function PhoneCalendar({ route, timezone, view, profiles, navigate }: PhoneScreenProps & { route: Extract<WallRoute, { view: CalendarView }> }) {
+export function PhoneCalendar({ route, timezone, view, profiles, navigator }: PhoneScreenProps & { route: Extract<WallRoute, { view: CalendarView }> }) {
   if (!timezone) return <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />;
-  return <Calendar timezone={timezone} route={route} profiles={profiles} navigate={navigate} />;
+  return <Calendar timezone={timezone} route={route} profiles={profiles} navigator={navigator} />;
 }
 
 function Calendar({
   timezone,
   route,
   profiles,
-  navigate,
+  navigator,
 }: {
   timezone: string;
   route: Extract<WallRoute, { view: CalendarView }>;
   profiles: Profile[] | null;
-  navigate: WallNavigator;
+  navigator: WallNavigator;
 }) {
   const now = useNow(timezone);
   const { touch } = useContext(ProfileFilterContext);
@@ -67,14 +67,14 @@ function Calendar({
   return (
     // A touch anywhere in the calendar keeps the Profile filter open.
     <div className="contents" onPointerDownCapture={touch}>
-      <Segmented label="Calendar view" options={VIEWS} value={calendarView} onChange={(chosen) => navigate.view(chosen, navigationRailDate(chosen, route, householdDay(timezone).date))} />
+      <Segmented label="Calendar view" options={VIEWS} value={calendarView} onChange={(chosen) => navigator.open(chosen, navigationRailDate(chosen, route, householdDay(timezone).date))} />
       <Pager
         words={days ? pageWords(days, today, 'phone') : describeMonth(anchor)}
         headingRef={heading}
         previousLabel={`Previous ${calendarView}`}
         nextLabel={`Next ${calendarView}`}
-        onPrevious={previous === null ? null : () => navigate.view(calendarView, previous)}
-        onNext={next === null ? null : () => navigate.view(calendarView, next)}
+        onPrevious={previous === null ? null : () => navigator.open(calendarView, previous)}
+        onNext={next === null ? null : () => navigator.open(calendarView, next)}
       />
       {/* Always mounted, so a screen reader announces the text when it appears. */}
       <p role="status" className={`${statusLineClass} text-muted-foreground`}>

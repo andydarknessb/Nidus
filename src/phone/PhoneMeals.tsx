@@ -46,9 +46,9 @@ export function SlotRow({ label, slot, meal, heard, onOpen }: { label: string; s
   );
 }
 
-export function PhoneMeals({ route, timezone, view, navigate }: PhoneScreenProps & { route: Extract<WallRoute, { view: 'meals' }> }) {
+export function PhoneMeals({ route, timezone, view, navigator }: PhoneScreenProps & { route: Extract<WallRoute, { view: 'meals' }> }) {
   if (!timezone) return <BeforeHousehold label="Meals" failed={view.failed} of="meals" />;
-  return <MealsWeek timezone={timezone} date={route.date} onNavigate={navigate.meals} />;
+  return <MealsWeek timezone={timezone} date={route.date} onNavigate={navigator.meals} />;
 }
 
 // The week the screen is on, laid out as the Meals screen lays it out: `date` is the page's anchor (null for this week), pulled into the

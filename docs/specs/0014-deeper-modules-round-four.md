@@ -48,20 +48,16 @@ Six modules, each with a small interface where its callers already meet. Nothing
 - **Every action names a place.** A page keeps no page-wide failure string. An action with no row of its own names the page's line as its place, and the line carries the alert role.
   - The Lists page: `new-list`, `rename-<id>`, `delete-<id>`, `pin-<id>`, `reorder`.
   - The Routines page: `add-<profile id>`, `edit-<id>`, `archive-<id>`, `reorder`.
-  - The Meal sheet: `meal`; the sheet takes `busy`, `problem('meal')`, `change('meal', work)` and `clear('meal')` from `useChange()` in place of its own `busy` and `problem` state.
+  - The Meal sheet: `meal`; the sheet takes `busy`, `problem('meal')` and `change('meal', work)` from `useChange()` in place of its own `busy` and `problem` state (it is mounted per cell, so it has nothing to clear).
   - The existing places (the Settings cards, the event form's `event`) stay as they are.
 - The two `change(work, failure)` wrappers and the `changeProblem` state go; the pages call `read.change(place, …)` and `read.isBusy()` directly. The page's line for a failed *read* is not the change's and stays (`couldNotLoad`), as ADR 0006 says.
 - Tests: the change's cases move from `tests/synced-read.test.ts` to `tests/change.test.ts`, with two new cases: two places' problems are independent and one clears without the other, and a `reorder` says at the page's line while a field's failure stays at its field.
 
 ### 2. The form row
 
-- `src/lib/form-row.ts` is the plain core. `createFormRow({ what, opener })` holds the row's state and answers the one decision a form makes before it writes:
-  - `state()`: `{ id: string | null; asked: number }`, null when the row is closed.
-  - `start(id)`: opens the row (or the always-on form's own id) and resets `asked`.
-  - `close()`: closes it and returns the focus id of the control that opened it.
-  - `ask(name)`: counts an ask and returns `{ problem: Said }` while the name is empty (`unnamed`, so the words are the ones the page already uses), else `'go'`.
-- `src/lib/use-form-row.ts` is the thin hook: `useFormRow({ what, place, read, opener })` returns `open`, `start`, `close`, `nameProblem`, `submit(name, work, then)`, and the read's change members. `submit` asks first and, on `'go'`, calls `read.change(place(id), work, then)`. A null `name` skips the ask (a form that asks for no name).
-- A form that stays open simply does not call `close()`: an add form that clears its fields and stays, as the New list card and the Routine add form do. `then.landed` keeps returning a focus id, as it does today; it does not widen.
+- `src/lib/form-row.ts` is the plain core, as pure transitions over a row: `FormRowState` (`{ id: string | null; asked: number }`, `CLOSED_ROW` when closed), `startRow(id)` (opens the row, or the always-on form's own id, and resets `asked`), `askRow(row)` (counts an ask), `rowProblem(row, what, name)` (the `unnamed` words while the name is empty, else nothing) and `nameGiven(name)` (the one decision a form makes before it writes).
+- `src/lib/use-form-row.ts` is the thin hook: `useFormRow({ what, place, read, opener, initially })` returns `open`, `start`, `close`, `reset`, `nameProblem`, `submit(name, work, then)`, and the read's change members. `submit` asks first and, on a name, calls `read.change(place(id), work, then)`; a null `name` skips the ask (a form that asks for no name). `close` focuses `opener(id)`.
+- A form that stays open simply does not call `close()`: an add form that clears its fields and stays, as the New list card and the Routine add form do (`reset` puts the same row back with `asked` 0). Focus returns through `close`, not through `landed`, so a `landed` callback no longer returns an id.
 - Seven forms: New list and Rename list (`SharedListsPage.tsx`), Add person and Edit person (`ProfilesSection.tsx`), Pair a tablet (`DevicesSection.tsx`), the iPhone calendar link (`CalendarAccountsSection.tsx`), and Routine add and edit (`RoutinesPage.tsx`). The Household name and time zone form, the Meal sheet and the Add event sheet are out: their outcome is a status line or a sheet, not a row that swaps back.
 - Tests: `tests/form-row.test.ts` drives the core (an ask with no name, an ask after a name, close and its focus, the always-on form that never closes) and the hook's `submit` against a recorded change. The forms' markup cases stay in `tests/phone-settings.test.ts`.
 
@@ -69,7 +65,7 @@ Six modules, each with a small interface where its callers already meet. Nothing
 
 - `Card` in `src/components/phone.tsx` gains `read?: { failed: boolean }`, `of: string` and `words?: string`, and draws the lost-connection line at the top of the card, with `role="alert"`. It uses `couldNotLoad(of)`, or `words` when a card's sentence is its own. A card with no read draws nothing.
 - The five sections drop `loadProblem` and their own alert: `DevicesSection`, `ProfilesSection`, `CalendarAccountsSection`, `EventsSection`, `NotificationsSection`. Notifications passes `words={LOAD_FAILED}`.
-- `SharedListsPage` and `RoutinesPage` use `cardClass` and `Card`'s title from the card module instead of their own `CARD` and `CARD_TITLE` strings. A section whose label is a list's or a person's name keeps its `aria-label` shape and takes the look from `cardClass`.
+- `SharedListsPage` uses `cardClass` and `cardTitleClass`, and `RoutinesPage` uses `cardTitleClass`, instead of their own strings; the Routines per-person section keeps the person fill. A section whose label is a list's or a person's name keeps its `aria-label` shape and takes the look from `cardClass`.
 - Tests: a new `tests/card.test.ts` renders a card that is loading, failed and ready, with and without its own words. The sections' markup cases stay where they are.
 
 ### 4. The navigator
@@ -78,13 +74,13 @@ Six modules, each with a small interface where its callers already meet. Nothing
 - `NavigationRail` takes `navigator` in place of `onOpen`, `onHome`, `onRoutines`, `onMeals` and `onLists`, and keeps `route`, `timezone`, `owner`, `onAdd` and `onToggleMode`.
 - `PhoneTabs` and `PhoneShell` take `navigator` in place of the same five; `PhoneScreenProps` carries `navigator` in place of `openView`, `openRoutines`, `openLists` and `openMeals`. Every phone screen uses the navigator.
 - `PhoneWall` draws `PhoneCalendar` once for `day`, `week` and `month` in one branch (`PhoneCalendar` already narrows `route`).
-- Tests: `tests/wall-routes.test.ts` gains the navigator's cases (each method writes the path `wallPath`, `mealsPath`, `/`, `/routines` and `/lists` write, and no path is written when it is already the address). The screens' markup cases pass the navigator.
+- Tests: `tests/wall-routes.test.ts` gains the navigator's cases (each method names the path `wallPath`, `mealsPath`, `/`, `/routines` and `/lists` write); `useWallRoute`'s `go` still writes nothing when the path is already the address. The screens' markup cases pass the navigator.
 
 ### 5. The shelf
 
-- `src/components/Shelf.tsx` is the shelf. Its interface: `Shelf({ title, controls, of, portrait, items })`. `title` is the screen's own heading element (its id, its ref and its focus-on-arrival stay the screen's); `controls` is the heading row's controls (the part-of-day group, or nothing); `of` is the noun the More words count (`people`, `lists`); `portrait` is the Wall's one read of the window; `items` are the columns or cards.
+- `src/components/Shelf.tsx` is the shelf. Its interface: `Shelf({ title, controls, between, of, footOf = of, portrait, items, rowClassName, gridClassName })`. `title` is the screen's own heading element (its id, its ref and its focus-on-arrival stay the screen's); `controls` is the heading row's controls (the part-of-day group, or nothing); `between` is what a screen puts between the heading row and the shelf (the read's ladder and its empty words, where it had them before); `of` is the noun the More words count (`people`, `lists`); `footOf` is the noun the portrait foot counts when it differs (`the routines`, `the lists`); `portrait` is the Wall's one read of the window; `items` are the columns or cards; `rowClassName` and `gridClassName` are the screens' own row classes (a card's width and snap) and the portrait grid's gap.
 - The shelf owns the `useOverflow` for the row, the heading row's More button (not in portrait), the sideways row with the `contents` wrapper, the portrait grid, the shared More foot, and the scroller ref. The screens keep their own `useOverflow` for a column's foot (the chart's `Column`).
-- `RoutinesChart` and `ListsScreen` supply title, controls, `of`, `portrait` and items, and drop their own wrapper markup. Nothing else uses the shelf: the Sheet's body and a list card's foot use the same button but are not shelves.
+- `RoutinesChart` and `ListsScreen` supply title, controls, between, `of`, `footOf`, `portrait` and items, and drop their own wrapper markup. Nothing else uses the shelf: the Sheet's body and a list card's foot use the same button but are not shelves.
 - Tests: a new `tests/shelf.test.ts` renders both layouts and pins the heading row, the `contents` wrapper, the portrait grid and the foot; `tests/routines-chart.test.ts` and `tests/lists-screen.test.ts` keep their cases.
 
 ### 6. The shared folder's name

@@ -40,31 +40,31 @@ function NavigationRailEntry({ icon: Icon, label, current = false, ...props }: {
 export function NavigationRail({
   route,
   timezone,
-  navigate,
+  navigator,
   onAdd,
   onToggleMode,
   owner,
 }: {
   route: WallRoute;
   timezone: string | null;
-  navigate: WallNavigator;
+  navigator: WallNavigator;
   onAdd: () => void;
   onToggleMode: () => void;
   owner: boolean;
 }) {
   const mode = useMode();
   const open = (view: CalendarView) => {
-    if (timezone) navigate.view(view, navigationRailDate(view, route, householdDay(timezone).date));
+    if (timezone) navigator.open(view, navigationRailDate(view, route, householdDay(timezone).date));
   };
   return (
     <nav aria-label="Wall sections" className="row-span-2 flex flex-col gap-[8px] rounded-3xl bg-card p-[8px]">
-      <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={navigate.home} />
+      <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={navigator.home} />
       <NavigationRailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
       <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
       <NavigationRailEntry icon={CalendarDays} label="Month" current={route.view === 'month'} disabled={!timezone} onClick={() => open('month')} />
-      <NavigationRailEntry icon={CircleCheck} label="Routines" current={route.view === 'routines'} onClick={navigate.routines} />
-      <NavigationRailEntry icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={() => navigate.meals(null)} />
-      <NavigationRailEntry icon={List} label="Lists" current={route.view === 'lists'} onClick={navigate.lists} />
+      <NavigationRailEntry icon={CircleCheck} label="Routines" current={route.view === 'routines'} onClick={navigator.routines} />
+      <NavigationRailEntry icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={() => navigator.meals(null)} />
+      <NavigationRailEntry icon={List} label="Lists" current={route.view === 'lists'} onClick={navigator.lists} />
       <div className="mt-auto flex flex-col gap-[10px]">
         <Button
           aria-label={mode === 'dark' ? 'Switch to light' : 'Switch to dark'}

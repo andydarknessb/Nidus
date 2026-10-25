@@ -28,7 +28,7 @@ afterAll(() => {
 });
 
 const noop = () => undefined;
-const navigate = { view: noop, home: noop, meals: noop, routines: noop, lists: noop };
+const navigator = { open: noop, home: noop, meals: noop, routines: noop, lists: noop };
 const oatmeal: Meal = { id: 'm1', meal_date: '2026-10-01', slot: 'breakfast', title: 'Oatmeal' };
 
 describe('leftToGet', () => {
@@ -154,7 +154,7 @@ describe('the Meals tab, drawn', () => {
     vi.useRealTimers();
   });
   const screen = (date: string | null) =>
-    renderToStaticMarkup(createElement(PhoneMeals, { route: { view: 'meals', date }, timezone: 'America/Chicago', view: { failed: false }, navigate } as unknown as PhoneScreenProps & { route: { view: 'meals'; date: string | null } }));
+    renderToStaticMarkup(createElement(PhoneMeals, { route: { view: 'meals', date }, timezone: 'America/Chicago', view: { failed: false }, navigator } as unknown as PhoneScreenProps & { route: { view: 'meals'; date: string | null } }));
 
   it('says the week as the Calendar does, with no year in the current year and the year in another', () => {
     expect(screen(null)).toMatch(/<h2[^>]*>Oct 4 to Oct 10<\/h2>/);

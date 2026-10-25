@@ -22,7 +22,7 @@ afterAll(() => {
 });
 
 const noop = () => undefined;
-const navigate = { view: noop, home: noop, meals: noop, routines: noop, lists: noop };
+const navigator = { open: noop, home: noop, meals: noop, routines: noop, lists: noop };
 const classesOf = (tag: string) => (/class="([^"]*)"/.exec(tag)?.[1] ?? '').replaceAll('&amp;', '&').replaceAll('&gt;', '>').split(' ');
 
 const routines = chartOf({ profiles: [], routines: [] });
@@ -37,7 +37,7 @@ const home = (timezone: string | null) =>
       weatherOn: false,
       profiles: [],
       routines,
-      navigate,
+      navigator,
     }),
   );
 

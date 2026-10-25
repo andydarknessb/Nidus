@@ -91,7 +91,7 @@ export function navigationRailDate(view: CalendarView, route: WallRoute, today: 
 // Every way the Wall moves to another screen, named: the rail, the phone's tabs and a screen's own links all take one of these, so no
 // screen builds an address by hand (spec 0014).
 export type WallNavigator = {
-  view: (view: CalendarView, date: string) => void;
+  open: (view: CalendarView, date: string) => void;
   home: () => void;
   meals: (date: string | null) => void;
   routines: () => void;
@@ -101,7 +101,7 @@ export type WallNavigator = {
 // The navigator a `go(path)` makes: each way names the address it goes to.
 export function navigatorFor(go: (path: string) => void): WallNavigator {
   return {
-    view: (view, date) => go(wallPath(view, date)),
+    open: (view, date) => go(wallPath(view, date)),
     home: () => go('/'),
     meals: (date) => go(mealsPath(date)),
     routines: () => go('/routines'),
