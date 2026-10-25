@@ -262,3 +262,23 @@ Settled on 2026-10-13, one round of rulings, every recommendation taken. The spe
 
 - `native_events` gains `repeat_every`, `repeat_interval`, `repeat_days`, `repeat_until`.
 - `native_event_skips`: the days a Repeat leaves out.
+
+## v13: deeper modules, round four
+
+Settled on 2026-10-24 from an architecture review of master, two rounds of rulings, every recommendation taken. The spec is [0014](specs/0014-deeper-modules-round-four.md). It continues v8, v10 and v11.
+
+### Decisions
+
+- **One change.** Every screen writes through one interface, `change(place, work, then)`: the guard, the write, the read-back, the places and the words behind it. A page keeps no page-wide string for a write; an action with no row of its own names the page's line as its place (`reorder`). The Meal sheet's own busy and problem flags go. [ADR 0006](adr/0006-one-change.md).
+- **One form row.** A form that takes a row's place (add or edit a list, a person, a tablet, an iPhone calendar, a Routine) has one lifecycle: the asked-for-name count and its words, the busy guard, the problem's place and the focus return. A row that stays open does not close.
+- **One card read.** `Card` takes the read and its noun and draws the lost-connection line; a card whose sentence is narrower (notifications) passes its words.
+- **One navigator.** The route module returns a navigator of named intents (`open`, `home`, `routines`, `meals`, `lists`), one prop for both rails and every phone screen; the six-slot tuple and the four callbacks go.
+- **One shelf.** The Routines chart and the Lists screen share the heading row, the sideways row, the portrait grid and the More foot.
+- **One name for the shared folder.** `@shared` aliases the Edge Functions' pure modules for the client and the tests; the functions keep their relative imports and nothing moves.
+- **No visible change.** Unlike v11, nothing the family sees changes; the suite is the safety net.
+- **The six names live in the spec**, not in `CONTEXT.md`, which stays a glossary of household things.
+- **v8's rulings hold**: replace don't layer, plain cores with thin hooks, facts not sentences, no DOM test library, props not a context ([ADR 0004](adr/0004-the-household-facts-are-props-not-a-context.md)).
+
+### Tables
+
+No migration.
