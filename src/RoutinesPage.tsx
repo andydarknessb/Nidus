@@ -33,7 +33,8 @@ import { PictureField, RoutinePicture } from './lib/routine-pictures';
 import { personStyle } from './lib/look';
 import { supabase } from './lib/supabase';
 import { CHART_CHOICES, timeWord, type ChartColumn, type RoutineChart } from './lib/routine-chart';
-import { problemId, unnamed } from './lib/write-failure';
+import { problemId } from './lib/write-failure';
+import { useFormRow, type FormRowRead } from './lib/use-form-row';
 import { useOverflow } from './lib/use-overflow';
 import { couldNotLoad, useSyncedRead } from './lib/synced-read';
 
@@ -170,6 +171,9 @@ const weekOrder = [...WEEKDAYS.slice(1), WEEKDAYS[0]];
 // The Time of day choices as the select lists them: Any time, the default, first.
 const timeOfDayChoices = [...TIME_OF_DAY_GROUPS.slice(-1), ...TIME_OF_DAY_GROUPS.slice(0, -1)];
 
+// The page's read as the form takes it: the change it writes through (form-row.ts).
+export type RoutineRead = FormRowRead<{ profiles: Profile[]; routines: Routine[] }>;
+
 // One form for adding a Routine and for editing one: a title, the days, a time of day and a picture.
 // Given a Routine it starts from that Routine and offers Cancel; without one it starts blank
 // and, once the Routine is added, blank again. A save asked for with no title says so in the form's own line
@@ -177,29 +181,30 @@ const timeOfDayChoices = [...TIME_OF_DAY_GROUPS.slice(-1), ...TIME_OF_DAY_GROUPS
 export function RoutineForm({
   profile,
   routine,
-  busy = false,
+  read,
+  place,
+  opener,
   onSave,
   onCancel,
 }: {
   profile: Profile;
   routine?: Routine;
-  // Whether the page is making a change: Save does nothing and is drawn `aria-disabled`.
-  busy?: boolean;
-  // Whether the Routine was saved; undefined when the page was busy and did nothing, which is not a failure.
-  onSave: (input: RoutineEdit) => Promise<boolean | undefined>;
+  // The page's read, whose change is the form's to use (form-row.ts).
+  read: RoutineRead;
+  // Where a write's failure is said, and where focus goes when the form closes.
+  place: string;
+  opener: string;
+  // The write itself; the form wraps it in the change.
+  onSave: (input: RoutineEdit) => Promise<unknown>;
   onCancel?: () => void;
 }) {
   const [title, setTitle] = useState(routine?.title ?? '');
   const [mask, setMask] = useState(routine?.days_of_week ?? allDays);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay | null>(routine?.time_of_day ?? null);
   const [picture, setPicture] = useState<string | null>(routine?.picture ?? null);
-  // Saving is true while a save is in flight, so a second tap cannot send it twice. Failed says the
-  // last one did not go through: the form stays open with what was typed, and says so beside Save.
-  const [saving, setSaving] = useState(false);
-  const [failed, setFailed] = useState(false);
-  // How many times a save was asked for with no title, and what that says while there is still none.
-  const [asked, setAsked] = useState(0);
-  const unnamedWords = unnamed('routine', asked, title);
+  // The form's lifecycle (form-row.ts): the title it asks for, its place, its busy guard, and where focus goes when it closes.
+  const form = useFormRow({ what: 'routine', place: () => place, read, opener: () => opener, initially: 'form' });
+  const titleProblem = form.nameProblem(title);
   const nameProblem = useId();
   // How many Routines this form has added. The picture grid keeps its own open state, so it is keyed by this and starts closed
   // again with the rest of the form.
@@ -209,25 +214,28 @@ export function RoutineForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (mask === 0 || saving || busy) return;
-    if (!title.trim()) {
-      setAsked((count) => count + 1);
-      return;
-    }
-    setSaving(true);
-    const saved = await onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture });
-    setSaving(false);
-    // Nothing was done (the page was busy): what the form said of the last save stands.
-    if (saved === undefined) return;
-    setFailed(!saved);
-    if (saved && !routine) {
-      setTitle('');
-      setAsked(0);
-      setMask(allDays);
-      setTimeOfDay(null);
-      setPicture(null);
-      setAdded((count) => count + 1);
-    }
+    if (mask === 0 || form.isBusy()) return;
+    await form.submit(title, () => onSave({ title, days_of_week: mask, time_of_day: timeOfDay, picture }), {
+      words: {
+        said: {
+          failed: `Could not ${routine ? 'save' : 'add'} that routine. Check the name and days, then try again.`,
+          offline: 'No internet, so that did not save. Try again soon.',
+        },
+      },
+      landed: () => {
+        if (routine) {
+          form.close();
+          onCancel?.();
+          return;
+        }
+        setTitle('');
+        form.reset();
+        setMask(allDays);
+        setTimeOfDay(null);
+        setPicture(null);
+        setAdded((count) => count + 1);
+      },
+    });
   }
 
   return (
@@ -240,8 +248,8 @@ export function RoutineForm({
           onChange={(e) => setTitle(e.target.value)}
           maxLength={100}
           required
-          aria-invalid={unnamedWords ? true : undefined}
-          aria-describedby={unnamedWords ? nameProblem : undefined}
+          aria-invalid={titleProblem ? true : undefined}
+          aria-describedby={titleProblem ? nameProblem : undefined}
           autoFocus={routine !== undefined}
         />
       </label>
@@ -282,7 +290,7 @@ export function RoutineForm({
       <PictureField key={added} about={about} picture={picture} onChange={setPicture} />
       <div className="flex gap-3">
         {/* A page of forms has one primary: the Save of the Routine being edited. Adding is secondary. */}
-        <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" aria-disabled={mask === 0 || saving || busy || undefined}>
+        <Button type="submit" size="phone" variant={routine ? 'primary' : 'secondary'} className="flex-1" aria-disabled={mask === 0 || form.busy || undefined}>
           {routine ? 'Save' : 'Add routine'}
         </Button>
         {onCancel && (
@@ -291,12 +299,8 @@ export function RoutineForm({
           </Button>
         )}
       </div>
-      <Problem id={nameProblem} problem={unnamedWords} />
-      {failed && (
-        <p role="alert" className="text-base">
-          Could not {routine ? 'save' : 'add'} that routine. Check the name and days, then try again.
-        </p>
-      )}
+      <Problem id={nameProblem} problem={titleProblem} />
+      <Problem id={problemId(place)} problem={read.problem(place)} />
       {mask === 0 && <p className="text-base">Pick at least one day.</p>}
     </form>
   );
@@ -338,26 +342,6 @@ export function RoutinesPage({ household }: { household: Household }) {
     if (editingNow.current !== id) return;
     editingNow.current = null;
     setEditing(null);
-    read.focus(`edit-${id}`);
-  }
-
-  // A failed save keeps the form open, with what was typed; the form says so itself, beside its Save.
-  async function save(id: string, input: RoutineEdit): Promise<boolean | undefined> {
-    const outcome = await read.change(`edit-${id}`, () => updateRoutine(supabase, id, input), {
-      failed: () => true,
-      landed: () => void stopEditing(id),
-    });
-    return outcome === 'busy' ? undefined : outcome === 'done';
-  }
-
-  // Adding one: a failed add keeps the form open, with what was typed, as a save does.
-  async function add(profile: Profile, own: Routine[], input: RoutineEdit): Promise<boolean | undefined> {
-    const outcome = await read.change(
-      `add-${profile.id}`,
-      () => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined),
-      { failed: () => true },
-    );
-    return outcome === 'busy' ? undefined : outcome === 'done';
   }
 
   const ofProfile = (profileId: string) => routines.filter((routine) => routine.profile_id === profileId);
@@ -400,7 +384,15 @@ export function RoutinesPage({ household }: { household: Household }) {
                   {time.routines.map((routine, index) => (
                     <li key={routine.id} className={cn('flex flex-col gap-2', editing !== routine.id && 'rounded-[14px] bg-muted p-3')}>
                       {editing === routine.id ? (
-                        <RoutineForm profile={profile} routine={routine} busy={busy} onSave={(input) => save(routine.id, input)} onCancel={() => stopEditing(routine.id)} />
+                        <RoutineForm
+                          profile={profile}
+                          routine={routine}
+                          read={read}
+                          place={`edit-${routine.id}`}
+                          opener={`edit-${routine.id}`}
+                          onSave={(input) => updateRoutine(supabase, routine.id, input)}
+                          onCancel={() => stopEditing(routine.id)}
+                        />
                       ) : (
                         <>
                           <div className="flex items-center gap-3">
@@ -497,8 +489,10 @@ export function RoutinesPage({ household }: { household: Household }) {
             <div className={own.length > 0 ? 'border-t border-border pt-4' : undefined}>
               <RoutineForm
                 profile={profile}
-                busy={busy}
-                onSave={(input) => add(profile, own, input)}
+                read={read}
+                place={`add-${profile.id}`}
+                opener={`profile-${profile.id}`}
+                onSave={(input) => createRoutine(supabase, household.id, profile.id, input, nextSortOrder(own)).then(() => undefined)}
               />
             </div>
           </section>

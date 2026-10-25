@@ -21,7 +21,7 @@ import { loadProfiles, type Profile } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 import { useStatusLine } from '@/lib/status-line';
 import { problemId, removePlace, type Said } from '@/lib/write-failure';
-import { useChange } from '@/lib/change';
+import { useFormRow } from '@/lib/use-form-row';
 import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
 
 const CALENDAR_TABLES = ['calendar_accounts', 'mirrored_calendars', 'profiles'] as const;
@@ -274,9 +274,9 @@ export function CalendarAccountsSection() {
   // the read's own guard is the removal's, and the addition has one of its own. The field's value now is kept apart (a press's answer
   // comes after more may have been typed).
   const removal = read;
-  const addition = useChange(read);
+  const iphoneRow = useFormRow({ place: () => ADD_IPHONE, read, opener: () => IPHONE_LINK, initially: 'iphone' });
   const removing = removal.busy;
-  const adding = addition.busy;
+  const adding = iphoneRow.busy;
   const iphoneLinkNow = useRef('');
   const say = useStatusLine();
   // For each calendar, its writes in the order they were asked, so that the last asked is the last written.
@@ -359,14 +359,14 @@ export function CalendarAccountsSection() {
   // when it refuses; any other failure is worded as every write on this page is.
   async function addIphone() {
     // No place: the answer says its own words, in `landed`, once the read has followed (so the old words stay until then).
-    await addition.change(null, () => sendLink({ link: iphoneLink, current: () => iphoneLinkNow.current, add: (url) => addIphoneCalendar(supabase, url) }), {
+    await iphoneRow.submit(null, () => sendLink({ link: iphoneLink, current: () => iphoneLinkNow.current, add: (url) => addIphoneCalendar(supabase, url) }), {
       landed: (answer) => {
         if (answer.kind === 'added') {
-          addition.clear(ADD_IPHONE);
+          iphoneRow.reset();
           if (answer.clear) changeIphoneLink('');
           say(answer.say);
-        } else if (answer.kind === 'refused') addition.say(ADD_IPHONE, answer.words);
-        else addition.fail(ADD_IPHONE, answer.error);
+        } else if (answer.kind === 'refused') read.say(ADD_IPHONE, answer.words);
+        else read.fail(ADD_IPHONE, answer.error);
       },
     });
   }
@@ -429,7 +429,7 @@ export function CalendarAccountsSection() {
         {google?.map(block)}
       </Card>
       <Card title="iPhone calendars">
-        <IphoneCalendarForm value={iphoneLink} adding={adding} problem={addition.problem(ADD_IPHONE)} onChange={changeIphoneLink} onAdd={() => void addIphone()} />
+        <IphoneCalendarForm value={iphoneLink} adding={adding} problem={read.problem(ADD_IPHONE)} onChange={changeIphoneLink} onAdd={() => void addIphone()} />
         {iphones?.map(block)}
       </Card>
     </>

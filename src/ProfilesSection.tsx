@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { createProfile, deleteProfile, firstFreeColor, loadProfiles, reorderProfiles, updateProfile } from '@/lib/profiles';
 import { movedIds, nextSortOrder } from '@/lib/ordering';
 import { supabase } from '@/lib/supabase';
-import { giveName, problemId } from '@/lib/write-failure';
+import { problemId } from '@/lib/write-failure';
 import { couldNotLoad, useSyncedRead } from '@/lib/synced-read';
+import { useFormRow } from '@/lib/use-form-row';
 
 const PROFILE_TABLES = ['profiles'] as const;
 
@@ -53,19 +54,18 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   const loadProblem = read.failed ? couldNotLoad('people') : null;
   const [adding, setAdding] = useState<PersonDraft | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
+  // The two forms' lifecycles (form-row.ts): their asks, their places and where focus goes when they close.
+  const addRow = useFormRow({ what: 'person', place: () => ADD, read, opener: () => ADD_ID });
+  const editRow = useFormRow({ what: 'person', place: (id) => editPlace(id), read, opener: (id) => controlId(id, 'edit') });
 
   async function add(event: FormEvent) {
     event.preventDefault();
     if (!adding) return;
-    if (!adding.name.trim()) {
-      read.say(ADD, giveName('person'), true);
-      return;
-    }
-    await change(ADD, () => createProfile(supabase, householdId, adding, nextSortOrder(profiles ?? [])), {
+    await addRow.submit(adding.name, () => createProfile(supabase, householdId, adding, nextSortOrder(profiles ?? [])), {
       words: { refusal: 'Could not add the person. Check the name and try again.' },
       landed: () => {
+        addRow.close();
         setAdding(null);
-        return ADD_ID;
       },
     });
   }
@@ -74,15 +74,11 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
     event.preventDefault();
     if (!editing) return;
     const { id, draft } = editing;
-    if (!draft.name.trim()) {
-      read.say(editPlace(id), giveName('person'), true);
-      return;
-    }
-    await change(editPlace(id), () => updateProfile(supabase, id, draft), {
+    await editRow.submit(draft.name, () => updateProfile(supabase, id, draft), {
       words: { refusal: 'Could not save the person. Check the name and try again.' },
       landed: () => {
+        editRow.close();
         setEditing(null);
-        return controlId(id, 'edit');
       },
     });
   }
@@ -106,12 +102,8 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   const closeForms = () => read.clear();
   // While a write is on its way nothing that changes what is open does anything either: its answer would land on the wrong form.
   const off = busy || undefined;
-  // What a form's place says, except "Give the person a name." once the name is given: a refusal for want of a name is not said over one.
-  const saidAt = (place: string, name: string) => {
-    const problem = read.problem(place);
-    return problem?.words === giveName('person') && name.trim() !== '' ? null : problem;
-  };
-  const addProblem = saidAt(ADD, adding?.name ?? '');
+  // What the add form says: the name it wants (form-row.ts), else what its write said.
+  const addProblem = addRow.nameProblem(adding?.name ?? '') ?? read.problem(ADD);
 
   return (
     <Card title="People">
@@ -123,7 +115,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
       {profiles?.length === 0 && <p className="text-base">No one yet. Add the people who live here.</p>}
       <ul className="flex flex-col gap-2">
         {profiles?.map((profile, index) => {
-          const editProblem = saidAt(editPlace(profile.id), editing?.id === profile.id ? editing.draft.name : '');
+          const editProblem = editing?.id === profile.id ? (editRow.nameProblem(editing.draft.name) ?? read.problem(editPlace(profile.id))) : null;
           return (
             <li key={profile.id}>
               {editing?.id === profile.id ? (
@@ -147,7 +139,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                         <PersonFields
                           draft={editing.draft}
                           profiles={profiles}
-                          problem={editProblem ? { id: problemId(editPlace(profile.id)), refused: editProblem.refused } : undefined}
+                          problem={editProblem ? { id: problemId(editPlace(profile.id)), refused: !('refused' in editProblem) || editProblem.refused === true } : undefined}
                           onChange={(draft) => setEditing({ ...editing, draft })}
                         />
                         <div className={buttonRow}>
@@ -159,8 +151,8 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                             onClick={() => {
                               if (busy) return;
                               closeForms();
+                              editRow.close();
                               setEditing(null);
-                              read.focus(controlId(profile.id, 'edit'));
                             }}
                           >
                             Cancel
@@ -232,6 +224,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                     onClick={() => {
                       if (busy) return;
                       closeForms();
+                      editRow.start(profile.id);
                       setEditing({ id: profile.id, draft: { name: profile.name, color: profile.color }, deleting: false });
                     }}
                   >
@@ -250,7 +243,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
           <PersonFields
             draft={adding}
             profiles={profiles ?? []}
-            problem={addProblem ? { id: problemId(ADD), refused: addProblem.refused } : undefined}
+            problem={addProblem ? { id: problemId(ADD), refused: !('refused' in addProblem) || addProblem.refused === true } : undefined}
             onChange={setAdding}
           />
           <div className={buttonRow}>
@@ -262,8 +255,8 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
               onClick={() => {
                 if (busy) return;
                 closeForms();
+                addRow.close();
                 setAdding(null);
-                read.focus(ADD_ID);
               }}
             >
               Cancel
@@ -284,6 +277,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
           onClick={() => {
             if (profiles === null || busy) return;
             closeForms();
+            addRow.start('add');
             setAdding({ name: '', color: firstFreeColor(profiles) });
           }}
         >

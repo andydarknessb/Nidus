@@ -24,8 +24,9 @@ import type { Household } from './lib/household';
 import { focusElement } from './lib/focus';
 import { useStatusLine } from './lib/status-line';
 import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
+import { useFormRow } from './lib/use-form-row';
 import { useOverflow } from './lib/use-overflow';
-import { problemId, unnamed } from './lib/write-failure';
+import { problemId } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
 import { ListCard } from './components/ListCard';
 import { BODY_CLEARANCE, OverflowButton } from './components/OverflowButton';
@@ -422,12 +423,13 @@ export function SharedListsPage({ household }: { household: Household }) {
   // The read's own trouble, kept apart from what a write said at its place (change.ts).
   const loadProblem = read.failed ? couldNotLoad('lists') : '';
   const [newName, setNewName] = useState('');
-  // How many times each form was asked to save with no name, which it says in its own line (a rename counts with the rename, so it
-  // starts again with each).
-  const [askedNew, setAskedNew] = useState(0);
-  const [renaming, setRenaming] = useState<{ id: string; name: string; asked: number } | null>(null);
-  const newProblem = unnamed('list', askedNew, newName);
-  const renameProblem = renaming ? unnamed('list', renaming.asked, renaming.name) : null;
+  // The two forms' lifecycles (form-row.ts): the New list form is always on the page; the Rename form takes a row's place, and
+  // closing it puts focus back on the Rename button.
+  const newRow = useFormRow({ what: 'list', place: () => 'new-list', read, opener: () => NEW_LIST_TITLE, initially: 'new' });
+  const renameRow = useFormRow({ what: 'list', place: (id) => `rename-${id}`, read, opener: (id) => `rename-${id}` });
+  const [renameName, setRenameName] = useState('');
+  const newProblem = newRow.nameProblem(newName);
+  const renameProblem = renameRow.nameProblem(renameName);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   // One change at a time (read.change): the buttons are drawn `aria-disabled` from `busy`, and a failure is said at its place.
@@ -436,30 +438,19 @@ export function SharedListsPage({ household }: { household: Household }) {
   async function create(event: FormEvent) {
     event.preventDefault();
     if (read.isBusy()) return;
-    if (!newName.trim()) {
-      setAskedNew((count) => count + 1);
-      return;
-    }
-    await read.change('new-list', async () => {
-      await createList(supabase, household.id, newName, nextSortOrder(lists ?? []));
+    const outcome = await newRow.submit(newName, () => createList(supabase, household.id, newName, nextSortOrder(lists ?? [])));
+    if (outcome === 'done') {
       setNewName('');
-      setAskedNew(0);
-    });
+      newRow.reset();
+    }
   }
 
   async function rename(event: FormEvent) {
     event.preventDefault();
-    if (!renaming || read.isBusy()) return;
-    if (!renaming.name.trim()) {
-      setRenaming({ ...renaming, asked: renaming.asked + 1 });
-      return;
-    }
-    const { id, name } = renaming;
-    await read.change(`rename-${id}`, async () => {
-      await renameList(supabase, id, name);
-      setRenaming(null);
-      document.getElementById(`rename-${id}`)?.focus();
-    });
+    const id = renameRow.open;
+    if (id === null || read.isBusy()) return;
+    const outcome = await renameRow.submit(renameName, () => renameList(supabase, id, renameName));
+    if (outcome === 'done') renameRow.close();
   }
 
   async function move(id: string, offset: number) {
@@ -524,13 +515,13 @@ export function SharedListsPage({ household }: { household: Household }) {
         {lists?.map((list, index) => (
           <li key={list.id}>
             <section aria-label={list.name} className={CARD}>
-              {renaming?.id === list.id ? (
+              {renameRow.open === list.id ? (
                 <form onSubmit={(event) => void rename(event)} noValidate className="flex flex-col gap-3">
                   <input
                     id={titleId(list.id)}
                     className="h-14 text-[17px]"
-                    value={renaming.name}
-                    onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
+                    value={renameName}
+                    onChange={(e) => setRenameName(e.target.value)}
                     maxLength={100}
                     aria-label={`Name for ${list.name}`}
                     aria-invalid={renameProblem ? true : undefined}
@@ -544,10 +535,7 @@ export function SharedListsPage({ household }: { household: Household }) {
                     <Button
                       variant="quiet"
                       className={ACTION}
-                      onClick={() => {
-                        setRenaming(null);
-                        document.getElementById(`rename-${list.id}`)?.focus();
-                      }}
+                      onClick={() => renameRow.close()}
                     >
                       Cancel
                     </Button>
@@ -575,7 +563,15 @@ export function SharedListsPage({ household }: { household: Household }) {
                 <Button variant="secondary" className={ACTION} aria-expanded={open === list.id} onClick={() => setOpen(open === list.id ? null : list.id)}>
                   {open === list.id ? 'Hide items' : 'Items'}
                 </Button>
-                <Button id={`rename-${list.id}`} variant="secondary" className={ACTION} onClick={() => setRenaming({ id: list.id, name: list.name, asked: 0 })}>
+                <Button
+                  id={`rename-${list.id}`}
+                  variant="secondary"
+                  className={ACTION}
+                  onClick={() => {
+                    renameRow.start(list.id);
+                    setRenameName(list.name);
+                  }}
+                >
                   Rename
                 </Button>
                 {list.id !== pinnedId && (
