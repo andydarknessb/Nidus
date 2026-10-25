@@ -26,6 +26,7 @@ afterAll(() => {
 });
 
 const noop = () => undefined;
+const navigate = { view: noop, home: noop, meals: noop, routines: noop, lists: noop };
 const CHICAGO = 'America/Chicago';
 const words = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 const classesOf = (tag: string) => (/class="([^"]*)"/.exec(tag)?.[1] ?? '').replaceAll('&amp;', '&').replaceAll('&gt;', '>').split(' ');
@@ -36,7 +37,7 @@ function buttons(html: string): { tag: string; words: string }[] {
 }
 
 const tabs = (route: WallRoute, timezone: string | null = CHICAGO) =>
-  renderToStaticMarkup(createElement(PhoneTabs, { route, timezone, onOpen: noop, onHome: noop, onRoutines: noop, onMeals: noop, onLists: noop }));
+  renderToStaticMarkup(createElement(PhoneTabs, { route, timezone, navigate }));
 // The words of the tabs that say they are current.
 const current = (html: string) => buttons(html).filter((tab) => tab.tag.includes('aria-current="page"')).map((tab) => tab.words);
 
@@ -163,7 +164,7 @@ describe('the phone header', () => {
 
   it('is 16 under the top of the screen, and the column starts 12 under it', () => {
     expect(classesOf(header(true).slice(0, header(true).indexOf('>') + 1))).toContain('mt-4');
-    const html = renderToStaticMarkup(createElement(PhoneShell, { owner: false, route: { view: 'home' }, household: HOUSEHOLD, today: '2026-10-01', forecast: null, strip: null, onOpen: noop, onHome: noop, onRoutines: noop, onMeals: noop, onLists: noop, onAdd: noop, children: null }));
+    const html = renderToStaticMarkup(createElement(PhoneShell, { owner: false, route: { view: 'home' }, household: HOUSEHOLD, today: '2026-10-01', forecast: null, strip: null, navigate, onAdd: noop, children: null }));
     expect(classesOf(/<main[^>]*>/.exec(html)![0])).toEqual(expect.arrayContaining(['pt-3', 'px-4', '[[data-phone=side]_&]:pr-22']));
   });
 
@@ -232,11 +233,7 @@ describe('Add event', () => {
           today: timezone ? '2026-10-01' : null,
           forecast: null,
           strip: createElement('p', null, 'the strip'),
-          onOpen: noop,
-          onHome: noop,
-          onRoutines: noop,
-          onMeals: noop,
-          onLists: noop,
+          navigate,
           onAdd: noop,
           children: createElement('p', null, 'the screen'),
         }),
@@ -270,7 +267,7 @@ describe('sheets and the tab bar', () => {
   // A sheet's footer (Edit, Close) and the last rows of a list must never sit under the bar or the Add event button.
   it('stacks every sheet scrim at least as high as the bar and Add event, and the status line above them all', async () => {
     const html = renderToStaticMarkup(
-      createElement(PhoneShell, { owner: false, route: { view: 'home' }, household: HOUSEHOLD, today: '2026-10-01', forecast: null, strip: null, onOpen: noop, onHome: noop, onRoutines: noop, onMeals: noop, onLists: noop, onAdd: noop, children: null }),
+      createElement(PhoneShell, { owner: false, route: { view: 'home' }, household: HOUSEHOLD, today: '2026-10-01', forecast: null, strip: null, navigate, onAdd: noop, children: null }),
     );
     const bar = zOf(/<nav[^>]*>/.exec(html)![0]);
     const add = zOf(/<button[^>]*aria-label="Add event"[^>]*>/.exec(html)![0]);

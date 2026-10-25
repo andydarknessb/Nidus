@@ -79,7 +79,7 @@ function TodayCard({ timezone, forecast, weatherOn, profiles }: Pick<PhoneScreen
   );
 }
 
-export function PhoneHome({ timezone, view, forecast, weatherOn, profiles, routines, openRoutines, openLists }: PhoneScreenProps) {
+export function PhoneHome({ timezone, view, forecast, weatherOn, profiles, routines, navigate }: PhoneScreenProps) {
   return (
     <>
       {timezone ? (
@@ -88,8 +88,8 @@ export function PhoneHome({ timezone, view, forecast, weatherOn, profiles, routi
         <BeforeHousehold label="Calendar" failed={view.failed} of="the calendar" />
       )}
       {/* Three tiles, whatever the phone's height: the column scrolls, so there is no card under it for them to leave without a row. */}
-      <UpNext routines={routines} failed={view.failed} onOpenRoutines={openRoutines} tiles={UP_NEXT_TILES} />
-      <PinnedListCard onOpenLists={openLists} limit={PHONE_LIST_ROWS} />
+      <UpNext routines={routines} failed={view.failed} onOpenRoutines={navigate.routines} tiles={UP_NEXT_TILES} />
+      <PinnedListCard onOpenLists={navigate.lists} limit={PHONE_LIST_ROWS} />
     </>
   );
 }

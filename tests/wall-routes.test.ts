@@ -7,6 +7,7 @@ import {
   mealsPageDate,
   mealsPath,
   navigationRailDate,
+  navigatorFor,
   parseWallRoute,
   wallDate,
   wallPath,
@@ -408,5 +409,19 @@ describe('navigationRailDate', () => {
     }
     // The address names a month by its 1st, whichever date of it the page was reached with.
     expect(wallPath('month', navigationRailDate('month', page('month', '2026-12-17'), TODAY))).toBe('/month?date=2026-12-01');
+  });
+});
+
+describe('the navigator', () => {
+  it('names every screen the Wall opens, by the address it goes to', () => {
+    const went: string[] = [];
+    const navigate = navigatorFor((path) => went.push(path));
+    navigate.home();
+    navigate.view('week', '2026-10-11');
+    navigate.meals(null);
+    navigate.meals('2026-10-11');
+    navigate.routines();
+    navigate.lists();
+    expect(went).toEqual(['/', '/week?date=2026-10-11', '/meals', '/meals?date=2026-10-11', '/routines', '/lists']);
   });
 });

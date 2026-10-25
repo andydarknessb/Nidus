@@ -1,6 +1,6 @@
 import { Calendar1, CalendarDays, CalendarRange, CircleCheck, House, List, Moon, Plus, Settings, Sun, Utensils, type LucideIcon } from 'lucide-react';
 import type { ComponentProps } from 'react';
-import { navigationRailDate, type WallRoute } from '../lib/wall-routes';
+import { navigationRailDate, type WallNavigator, type WallRoute } from '../lib/wall-routes';
 import type { CalendarView } from '../lib/paged-view';
 import { useMode } from '../lib/use-mode';
 import { Button } from './ui/button';
@@ -40,39 +40,31 @@ function NavigationRailEntry({ icon: Icon, label, current = false, ...props }: {
 export function NavigationRail({
   route,
   timezone,
-  onOpen,
-  onHome,
-  onRoutines,
-  onMeals,
-  onLists,
+  navigate,
   onAdd,
   onToggleMode,
   owner,
 }: {
   route: WallRoute;
   timezone: string | null;
-  onOpen: (view: CalendarView, date: string) => void;
-  onHome: () => void;
-  onRoutines: () => void;
-  onMeals: () => void;
-  onLists: () => void;
+  navigate: WallNavigator;
   onAdd: () => void;
   onToggleMode: () => void;
   owner: boolean;
 }) {
   const mode = useMode();
   const open = (view: CalendarView) => {
-    if (timezone) onOpen(view, navigationRailDate(view, route, householdDay(timezone).date));
+    if (timezone) navigate.view(view, navigationRailDate(view, route, householdDay(timezone).date));
   };
   return (
     <nav aria-label="Wall sections" className="row-span-2 flex flex-col gap-[8px] rounded-3xl bg-card p-[8px]">
-      <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={onHome} />
+      <NavigationRailEntry icon={House} label="Home" current={route.view === 'home'} onClick={navigate.home} />
       <NavigationRailEntry icon={Calendar1} label="Day" current={route.view === 'day'} disabled={!timezone} onClick={() => open('day')} />
       <NavigationRailEntry icon={CalendarRange} label="Week" current={route.view === 'week'} disabled={!timezone} onClick={() => open('week')} />
       <NavigationRailEntry icon={CalendarDays} label="Month" current={route.view === 'month'} disabled={!timezone} onClick={() => open('month')} />
-      <NavigationRailEntry icon={CircleCheck} label="Routines" current={route.view === 'routines'} onClick={onRoutines} />
-      <NavigationRailEntry icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={onMeals} />
-      <NavigationRailEntry icon={List} label="Lists" current={route.view === 'lists'} onClick={onLists} />
+      <NavigationRailEntry icon={CircleCheck} label="Routines" current={route.view === 'routines'} onClick={navigate.routines} />
+      <NavigationRailEntry icon={Utensils} label="Meals" current={route.view === 'meals'} onClick={() => navigate.meals(null)} />
+      <NavigationRailEntry icon={List} label="Lists" current={route.view === 'lists'} onClick={navigate.lists} />
       <div className="mt-auto flex flex-col gap-[10px]">
         <Button
           aria-label={mode === 'dark' ? 'Switch to light' : 'Switch to dark'}
