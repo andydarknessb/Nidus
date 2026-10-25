@@ -25,11 +25,10 @@ import { focusElement } from './lib/focus';
 import { useStatusLine } from './lib/status-line';
 import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
 import { useFormRow } from './lib/use-form-row';
-import { useOverflow } from './lib/use-overflow';
 import { problemId } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
 import { ListCard } from './components/ListCard';
-import { BODY_CLEARANCE, OverflowButton } from './components/OverflowButton';
+import { Shelf } from './components/Shelf';
 import { EmptyRing, Tick } from './components/people';
 import { Problem } from './components/phone';
 import { ReadState } from './components/ReadState';
@@ -136,9 +135,6 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
   const lists = useLists();
   const { read } = lists;
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
-  // The row of cards, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row;
-  // in portrait the box is the screen's column and the button is its foot.
-  const row = useOverflow(portrait ? 'y' : 'x', portrait ? 'over' : undefined);
   // Focus goes to the screen's title on arrival, as on the Routines chart and the calendar pages, rather than falling to the page when
   // the link that opened this (Home's list card) goes with the screen it was on.
   const heading = useRef<HTMLHeadingElement>(null);
@@ -153,29 +149,26 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <h2 ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
-          Lists
-        </h2>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <p className="text-[15px] text-muted-foreground">The owner adds lists in Settings.</p>
-          {/* The heading row is 48 px, and the button is the row's height. */}
-          {!portrait && <OverflowButton control={row} of="lists" className="h-12" />}
-        </div>
-      </div>
-      <ReadState of="lists" read={lists} say="failed" alert="text-xl" />
-      {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
-      {portrait ? (
-        <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
-          <div className={`grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-4 ${BODY_CLEARANCE}`}>{shown}</div>
-          <OverflowButton control={row} of="the lists" />
-        </div>
-      ) : (
-        <div ref={row.scroller} className={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cardSize}`}>
-          {/* The same wrapper as portrait's, so turning the tablet keeps each card (and its read) instead of mounting it again. */}
-          <div className="contents">{shown}</div>
-        </div>
-      )}
+      <Shelf
+        title={
+          <h2 ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
+            Lists
+          </h2>
+        }
+        controls={<p className="text-[15px] text-muted-foreground">The owner adds lists in Settings.</p>}
+        between={
+          <>
+            <ReadState of="lists" read={lists} say="failed" alert="text-xl" />
+            {read?.lists.length === 0 && <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords>}
+          </>
+        }
+        of="lists"
+        footOf="the lists"
+        portrait={portrait}
+        items={shown}
+        rowClassName={`flex min-h-0 flex-1 snap-x snap-mandatory items-start gap-4 overflow-x-auto ${cardSize}`}
+        gridClassName="gap-4"
+      />
     </div>
   );
 }

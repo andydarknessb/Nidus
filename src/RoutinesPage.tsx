@@ -4,7 +4,8 @@ import { Fragment, useEffect, useId, useRef, useState, type FormEvent } from 're
 import { EmptyWords } from './components/EmptyWords';
 import { ReadState } from './components/ReadState';
 import { RoutineColumn, type ColumnLayout } from './components/RoutineColumn';
-import { BODY_CLEARANCE, FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
+import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
+import { Shelf } from './components/Shelf';
 import { PersonDisc } from './components/people';
 import { Problem } from './components/phone';
 import { Button } from './components/ui/button';
@@ -83,9 +84,6 @@ function Column({ column, tap, portrait }: { column: ChartColumn; tap: RoutineCh
 // sit in a grid, each its natural height, and the chart scrolls as one column with the shared "More" foot; there is no sideways "More".
 export function RoutinesChart({ routines, portrait = false }: { routines: RoutineChart; portrait?: boolean }) {
   const { columns, part: shown, pickPart: pick, tap } = routines;
-  // The row of columns, and whether it holds more than it shows. The button is in the heading row, so it takes nothing from the row;
-  // in portrait the box is the chart's column and the button is its foot.
-  const row = useOverflow(portrait ? 'y' : 'x', portrait ? 'over' : undefined);
   // Focus goes to the page's title on arrival, as on the calendar pages, rather than staying on the navigation rail.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
@@ -94,14 +92,15 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
 
   return (
     <section aria-labelledby="routines-chart-title" className="flex min-h-0 flex-col gap-4">
-      {/* The heading row is 48 px, as on every screen, and the first card is 16 px under it. */}
-      <div className="flex min-h-12 flex-none flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
-          Routines
-        </h2>
-        <div className="flex max-w-full flex-none flex-wrap items-center gap-x-4 gap-y-2">
-          {/* The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways: the control is as tall as one of them. At larger text
-              the heading row and the control wrap rather than run past the edge of the screen. */}
+      <Shelf
+        title={
+          <h2 id="routines-chart-title" ref={heading} tabIndex={-1} className="font-display text-[28px] leading-[34px] outline-none">
+            Routines
+          </h2>
+        }
+        // The choices are 8 px apart (docs/look.md, Touch), each at least 48 px both ways: the control is as tall as one of them. At larger text
+        // the heading row and the control wrap rather than run past the edge of the screen.
+        controls={
           <div role="group" aria-label="Part of the day" className="flex min-h-12 max-w-full flex-none flex-wrap gap-2 rounded-[18px] bg-card">
             {CHART_CHOICES.map(({ part, label, icon: Icon }) => (
               <Button
@@ -116,27 +115,18 @@ export function RoutinesChart({ routines, portrait = false }: { routines: Routin
               </Button>
             ))}
           </div>
-          {/* More columns than fit is not a screen with fewer people on it: this says there are more, and moves on to them. */}
-          {!portrait && <OverflowButton control={row} of="people" className="h-12" />}
-        </div>
-      </div>
-      {/* Once Routines have been read, a lost connection keeps them on screen and the header says so. */}
-      <ReadState of="routines" read={routines}>
-        {columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
-      </ReadState>
-      {portrait ? (
-        // The columns are a grid of columns at least 17 rem, as many to a row as fit, each its row-mates' width (and with fewer columns than fit, the columns share the row), 12 apart across and 16 under one
-        // another, each its natural height; the chart scrolls as one column, and its foot is the shared button. A tile or field that takes the focus is scrolled clear of the foot.
-        <div ref={row.scroller} className="min-h-0 flex-1 overflow-y-auto">
-          <div className={cn('grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-x-3 gap-y-4', BODY_CLEARANCE)}>{people}</div>
-          <OverflowButton control={row} of="the routines" />
-        </div>
-      ) : (
-        <div ref={row.scroller} className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto">
-          {/* The same wrapper as portrait's, so turning the tablet keeps each column (and its read) instead of mounting it again. */}
-          <div className="contents">{people}</div>
-        </div>
-      )}
+        }
+        // Once Routines have been read, a lost connection keeps them on screen and the header says so.
+        between={
+          <ReadState of="routines" read={routines}>
+            {columns.length === 0 && <EmptyWords>No routines yet. The owner adds them in Settings.</EmptyWords>}
+          </ReadState>
+        }
+        of="people"
+        footOf="the routines"
+        portrait={portrait}
+        items={people}
+      />
     </section>
   );
 }
