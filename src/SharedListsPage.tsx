@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { ArrowDown, ArrowUp, ChevronRight, Pin, Plus } from 'lucide-react';
 import { movedIds, nextSortOrder } from './lib/ordering';
@@ -6,7 +6,6 @@ import { supabase } from './lib/supabase';
 import {
   createList,
   deleteList,
-  HOME_HOLD_MS,
   homeRows,
   homeWindow,
   loadLists,
@@ -22,6 +21,8 @@ import {
 import { rootFontSize } from './lib/home-layout';
 import type { Household } from './lib/household';
 import { focusElement } from './lib/focus';
+import type { Holds } from './lib/hold';
+import { useFocusToLink, useHoldClock } from './lib/use-hold';
 import { useStatusLine } from './lib/status-line';
 import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
 import { useFormRow } from './lib/use-form-row';
@@ -183,7 +184,7 @@ const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-car
 // The Pinned List's card, under Up next in Home's right column: it is as tall as that column leaves it. A heading row holds the list's
 // name and a link to the Lists screen that says how many items still to get the card has no room for ("3 more"), or "All lists" when it
 // shows them all. Then the field that adds an item, and the rows that fit under it (rowsThatFit): the items still to get, and any
-// crossed off on this card in the last HOME_HOLD_MS (homeRows), which stay where they are, ticked, so another tap can put them back.
+// crossed off on this card in the last four seconds (homeRows, hold.ts), which stay where they are, ticked, so another tap can put them back.
 // An item added here is said on the status line, since it may not be one of the rows that fit.
 //
 // `limit` is for the phone's column, which the document scrolls and which gives the card no height to measure: the card shows up to that
@@ -192,34 +193,17 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
   const say = useStatusLine();
   const { items, loaded, problem, add, toggle } = useItems(list.id);
   // What was crossed off on this card and when, and the time the card last looked at. Both go with the card, when Home is left.
-  const [crossedHere, setCrossedHere] = useState<ReadonlyMap<string, number>>(() => new Map());
-  const [now, setNow] = useState(() => Date.now());
-  // One timer, for the row next to leave: it looks again then, and is cleared when another row is crossed off or put back, and
-  // with the card.
-  useEffect(() => {
-    const leaving = [...crossedHere.values()].map((at) => at + HOME_HOLD_MS).filter((time) => time > now);
-    if (leaving.length === 0) return;
-    const timer = setTimeout(() => setNow(Date.now()), Math.min(...leaving) - Date.now());
-    return () => clearTimeout(timer);
-  }, [crossedHere, now]);
+  const [crossedHere, setCrossedHere] = useState<Holds>(() => new Map());
+  const now = useHoldClock(crossedHere);
   const rows = homeRows(items, crossedHere, now);
   const left = withoutCrossed(items).length;
   const region = useRef<HTMLDivElement>(null);
   const room = useHeight(region);
   // A row that goes while it has the keyboard's focus (one crossed off here leaves after its four seconds) would leave the keyboard
-  // nowhere: as Up next does, the focus goes to the link in the card's heading. A row's ref is called with null as it goes, while its
-  // button is still on the page and still has the focus, so what is noted there is read once the page has changed.
+  // nowhere: the focus goes to the link in the card's heading, as on Up next.
   const card = useRef<HTMLElement>(null);
   const link = useRef<HTMLAnchorElement>(null);
-  const focusLost = useRef(false);
-  const watchRow = useCallback((row: HTMLButtonElement | null) => {
-    if (row === null && card.current?.contains(document.activeElement)) focusLost.current = true;
-  }, []);
-  useEffect(() => {
-    if (!focusLost.current) return;
-    focusLost.current = false;
-    if (!document.activeElement || document.activeElement === document.body) link.current?.focus();
-  });
+  const watchRow = useFocusToLink(card, link);
   // "Nothing left to get" waits until the last row has gone (`rows` holds a row crossed off here for its four seconds), so it never
   // pushes a row that was just crossed off down from under the finger.
   const nothing = loaded && rows.length === 0;
@@ -231,7 +215,6 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
   function tap(item: ListItem) {
     if (isPending(item)) return;
     const at = Date.now();
-    setNow(at);
     setCrossedHere((before) => {
       const next = new Map(before);
       if (item.crossed_at === null) next.set(item.id, at);

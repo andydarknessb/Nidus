@@ -1,9 +1,10 @@
 import { ChevronRight } from 'lucide-react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import type { Profile } from '../lib/profiles';
 import { UP_NEXT_TILES, type RoutineChart } from '../lib/routine-chart';
 import type { Routine } from '../lib/routines';
 import { useStatusLine } from '../lib/status-line';
+import { useFocusToLink } from '../lib/use-hold';
 import { Confetti, RoutineTile } from './RoutineColumn';
 import { EmptyWords } from './EmptyWords';
 import { ReadState } from './ReadState';
@@ -12,7 +13,7 @@ import { Button } from './ui/button';
 // Up next, at the top of Home's right rail (docs/look.md, spec 0003): a tile for each of the first three people (two on a
 // screen under 760 px tall, so the Pinned List keeps a row; home-layout.ts) with
 // something left to do now, each showing that person's first Routine left among the part of the day's, what is left
-// from earlier, and Any time. A tap ticks it, and the tile stays where it is, in the done look, for HOME_HOLD_MS: a double tap
+// from earlier, and Any time. A tap ticks it, and the tile stays where it is, in the done look, for four seconds (hold.ts): a double tap
 // cannot tick the Routine that comes next, and a tap inside that time takes the tick back. Then the tile gives way to what that
 // person has next, or goes when nothing is left. At the right of the heading, a link to the Routines chart that reads "All
 // routines", or how many of today's Routines left the tiles do not show. When nobody has anything left it says so, and
@@ -35,18 +36,8 @@ export function UpNext({ routines, failed, onOpenRoutines, tiles: limit = UP_NEX
   // What was ticked here and when is the chart's to keep in place (its holds), and it draws the card again when a hold ends.
   const { tiles, link: words, scheduled } = routines.upNext(limit);
 
-  // A tile that goes while it has focus would leave the keyboard nowhere. A tile's ref is called with null as it goes, while
-  // its button is still on the page and still has the focus, so what is noted there is read once the page has changed: if
-  // the focus is now nowhere, it goes to the link in the heading.
-  const focusLost = useRef(false);
-  const watchTile = useCallback((tile: HTMLButtonElement | null) => {
-    if (tile === null && card.current?.contains(document.activeElement)) focusLost.current = true;
-  }, []);
-  useEffect(() => {
-    if (!focusLost.current) return;
-    focusLost.current = false;
-    if (!document.activeElement || document.activeElement === document.body) link.current?.focus();
-  });
+  // A tile that goes while it has focus would leave the keyboard nowhere: the focus goes to the link in the heading.
+  const watchTile = useFocusToLink(card, link);
 
   function tap(profile: Profile, routine: Routine, button: HTMLElement) {
     // The same decision as a Profile's column makes, and the burst starts where it says (src/lib/routine-chart.ts).

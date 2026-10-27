@@ -25,6 +25,8 @@ export type SceneOptions = {
   date?: string | null;
   weekday?: number;
   clock?: TimeOfDay;
+  // The time Up next last looked at (epoch ms), 0 unless said: a tap in the world (at `time`) is later than it, so it stays held.
+  now?: number;
   // Nothing read yet, or a read made for another day (just after Household midnight), or the read failing.
   unread?: boolean;
   unsettled?: boolean;
@@ -43,6 +45,7 @@ export function scene(options: SceneOptions) {
     date,
     weekday: options.weekday ?? 4,
     clock: options.clock ?? 'evening',
+    now: options.now ?? 0,
     profiles: options.profiles,
     read,
     readState: options.readState ?? (read === null ? 'loading' : 'ready'),

@@ -2,8 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PROFILE_PALETTE, createProfile, type Profile } from '../src/lib/profiles';
 import {
   CHART_CHOICES,
-  HOME_HOLD_MS,
-  holdEndsAt,
   routineChart,
   seePart,
   startChart,
@@ -14,8 +12,8 @@ import {
   type Frame,
   type Measured,
   type RoutineChart,
-  type TickedHere,
 } from '../src/lib/routine-chart';
+import { HOME_HOLD_MS, type Holds } from '../src/lib/hold';
 import { completeRoutine, createRoutine, loadCompletions, loadRoutines, maskOf, uncompleteRoutine, type Routine, type TimeOfDay } from '../src/lib/routines';
 import { startSyncedRead } from '../src/lib/synced-read';
 import { householdDay, instantAt } from '@shared/zoned-time.ts';
@@ -779,11 +777,10 @@ describe('a tap on a Routine', () => {
     const s = withAva();
     s.time = 5_000;
     await s.chart().tap(brush, press);
-    expect(s.state).toMatchObject({ ticked: { 'r-1': 5_000 }, now: 5_000 });
+    expect([...s.state.ticked]).toEqual([['r-1', 5_000]]);
     s.time = 6_000;
     await s.chart().tap(brush, press);
-    expect(s.state.ticked).toEqual({});
-    expect(s.state.now).toBe(6_000);
+    expect([...s.state.ticked]).toEqual([]);
   });
 
   it('says whether it saved, and takes the tick back when it did not', async () => {
@@ -1259,9 +1256,9 @@ describe('Up next', () => {
   const ben = profile('ben', 3, 'Ben');
   type Group = ReturnType<typeof group>;
   // Up next for these people's Routines, `done` ticked, at `part` of the day; `ticked` is what was ticked on it and `now` the time.
-  const upNextOf = (groups: Group[], done: Iterable<string>, part: TimeOfDay, limit?: number, ticked: TickedHere = {}, now = 0) => {
-    const s = scene({ profiles: groups.map((each) => each.profile), routines: groups.flatMap((each) => each.routines), done, clock: part });
-    s.state = { ...s.state, ticked, now };
+  const upNextOf = (groups: Group[], done: Iterable<string>, part: TimeOfDay, limit?: number, ticked: Holds = new Map(), now = 0) => {
+    const s = scene({ profiles: groups.map((each) => each.profile), routines: groups.flatMap((each) => each.routines), done, clock: part, now });
+    s.state = { ...s.state, ticked };
     return s.chart().upNext(limit);
   };
   const shown = (result: ReturnType<typeof upNextOf>) => result.tiles.map((tile) => [tile.profile.id, tile.routine.id]);
@@ -1366,13 +1363,9 @@ describe('Up next', () => {
   describe('a Routine ticked on it', () => {
     const t0 = 1_000_000;
     const two = [group(sam, [routine('stretch', 'x', 'evening'), routine('plants', 'x', null, 1)])];
-    const tick = (id: string, when = t0): TickedHere => ({ [id]: when });
+    const tick = (id: string, when = t0): Holds => new Map([[id, when]]);
     const tiles = (result: ReturnType<typeof upNextOf>) => result.tiles.map((tile) => [tile.profile.id, tile.routine.id, tile.done]);
-    const held = (groups: Group[], done: string[], ticked: TickedHere, now: number) => upNextOf(groups, done, 'evening', undefined, ticked, now);
-
-    it('is held for four seconds', () => {
-      expect(HOME_HOLD_MS).toBe(4_000);
-    });
+    const held = (groups: Group[], done: string[], ticked: Holds, now: number) => upNextOf(groups, done, 'evening', undefined, ticked, now);
 
     it('stays where it is, in the done look, for the four seconds', () => {
       for (const later of [0, 1, 1_500, HOME_HOLD_MS - 1]) {
@@ -1390,7 +1383,7 @@ describe('Up next', () => {
     });
 
     it("is taken back by a second tap: not ticked, it is that person's first Routine left again, even if it is still remembered", () => {
-      expect(tiles(held(two, [], {}, t0 + 1_000))).toEqual([['sam', 'stretch', false]]);
+      expect(tiles(held(two, [], new Map(), t0 + 1_000))).toEqual([['sam', 'stretch', false]]);
       expect(tiles(held(two, [], tick('stretch'), t0 + 1_000))).toEqual([['sam', 'stretch', false]]);
     });
 
@@ -1407,12 +1400,12 @@ describe('Up next', () => {
     });
 
     it('holds only what was ticked here: one ticked somewhere else gives way at once', () => {
-      expect(tiles(held(two, ['stretch'], {}, t0 + 1))).toEqual([['sam', 'plants', false]]);
+      expect(tiles(held(two, ['stretch'], new Map(), t0 + 1))).toEqual([['sam', 'plants', false]]);
     });
 
     it('holds one for each person, each for its own four seconds', () => {
       const rows = [group(cory, [routine('a', 'x', 'evening'), routine('a2', 'x', 'evening', 1)]), group(sam, [routine('b', 'x', 'evening'), routine('b2', 'x', 'evening', 1)])];
-      const both: TickedHere = { a: t0, b: t0 + 2_000 };
+      const both: Holds = new Map([['a', t0], ['b', t0 + 2_000]]);
       expect(tiles(held(rows, ['a', 'b'], both, t0 + 3_000))).toEqual([['cory', 'a', true], ['sam', 'b', true]]);
       expect(tiles(held(rows, ['a', 'b'], both, t0 + 4_500))).toEqual([['cory', 'a2', false], ['sam', 'b', true]]);
       expect(tiles(held(rows, ['a', 'b'], both, t0 + 6_000))).toEqual([['cory', 'a2', false], ['sam', 'b2', false]]);
@@ -1420,7 +1413,7 @@ describe('Up next', () => {
 
     it('holds the latest when one person has two ticked here that are both still inside their four seconds', () => {
       const rows = [group(sam, [routine('x', 'x', 'evening'), routine('y', 'x', 'evening', 1), routine('z', 'x', 'evening', 2)])];
-      expect(tiles(held(rows, ['x', 'y'], { x: t0, y: t0 + 1_000 }, t0 + 2_000))).toEqual([['sam', 'y', true]]);
+      expect(tiles(held(rows, ['x', 'y'], new Map([['x', t0], ['y', t0 + 1_000]]), t0 + 2_000))).toEqual([['sam', 'y', true]]);
     });
 
     it("holds a Routine of the part before, or Any time, as well as the part's own", () => {
@@ -1430,24 +1423,9 @@ describe('Up next', () => {
     });
 
     it('never changes the ticks it is given', () => {
-      const ticked = Object.freeze({ stretch: t0 });
-      expect(() => held(two, ['stretch'], ticked, t0 + 10)).not.toThrow();
-      expect(ticked).toEqual({ stretch: t0 });
-    });
-  });
-
-  describe('when a hold ends', () => {
-    const t0 = 1_000_000;
-
-    it('is when the earliest of the holds ends', () => {
-      expect(holdEndsAt({ a: t0, b: t0 + 1_000 }, t0 + 10)).toBe(t0 + HOME_HOLD_MS);
-      expect(holdEndsAt({ a: t0 + 500 }, t0)).toBe(t0 + 500 + HOME_HOLD_MS);
-    });
-
-    it('leaves out the holds that have ended, and is nothing when none is left', () => {
-      expect(holdEndsAt({ a: t0, b: t0 + 3_000 }, t0 + HOME_HOLD_MS)).toBe(t0 + 3_000 + HOME_HOLD_MS);
-      expect(holdEndsAt({ a: t0 }, t0 + HOME_HOLD_MS)).toBeNull();
-      expect(holdEndsAt({}, t0)).toBeNull();
+      const ticked = tick('stretch');
+      held(two, ['stretch'], ticked, t0 + 10);
+      expect([...ticked]).toEqual([['stretch', t0]]);
     });
   });
 });
@@ -1542,7 +1520,7 @@ describe('the chart over the real read', () => {
           state = update(state);
         },
       };
-      const chart = () => routineChart({ date: today.date, weekday: today.weekday, clock: 'morning', profiles: [mom], read: shown, readState: 'ready', failed: false }, state, effects);
+      const chart = () => routineChart({ date: today.date, weekday: today.weekday, clock: 'morning', now: 0, profiles: [mom], read: shown, readState: 'ready', failed: false }, state, effects);
 
       expect(chart().columnFor(mom.id)).toMatchObject({ progress: { done: 0, total: 1 }, finished: false });
       const tapped = await chart().tap(walk, { button: button(340), frame: frame(100, 4) });

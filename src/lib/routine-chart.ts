@@ -1,4 +1,5 @@
 import { Moon, Sun, Sunrise, type LucideIcon } from 'lucide-react';
+import { isHeld, type Holds } from './hold';
 import { byPosition } from './ordering';
 import type { Profile } from './profiles';
 import { TIME_OF_DAY_GROUPS, isScheduledOn, partOfDay, routineProgress, type Routine, type RoutineProgress, type TimeOfDay } from './routines';
@@ -156,19 +157,11 @@ function routinesState(settled: boolean, read: { state: ReadStateName; failed: b
 // Up next on Home shows a tile for this many people at most, unless the screen is too short for that many (home-layout.ts).
 export const UP_NEXT_TILES = 3;
 
-// How long Up next keeps a Routine that was ticked on it where it is, in the done look, before it gives way to what that
-// person has next: long enough for a second tap to take the tick back, so a double tap never ticks the one that follows, and
-// for the celebration to play where the tile was.
-export const HOME_HOLD_MS = 4_000;
-
-// What was ticked and when (epoch milliseconds), by Routine id.
-export type TickedHere = Readonly<Record<string, number>>;
-
 // `done` says the tile is in the done look: a Routine ticked a moment ago, held where it is.
 type UpNextTile = { profile: Profile; routine: Routine; done: boolean };
 
 // `tiles`: one for each of the first Profiles in order that have a tile to show, each showing the Routine of theirs that was
-// ticked less than HOME_HOLD_MS ago and still is (the latest, held in the done look), else their first Routine not
+// ticked and held (hold.ts) and still is (the latest, held in the done look), else their first Routine not
 // ticked among the part's own, what is left from earlier, and Any time. So a person's last Routine goes only once its hold
 // has ended, and keeps its place among the tiles until then. `more`: today's Routines not ticked that no tile shows, which
 // include a later part's. `groups` are the Profiles' Routines today; `ticked` is what was ticked and when, and `now`
@@ -177,16 +170,15 @@ function upNextTiles(
   groups: readonly ProfileRoutines[],
   done: ReadonlySet<string>,
   part: TimeOfDay,
-  ticked: TickedHere,
+  ticked: Holds,
   now: number,
   limit: number,
 ): { tiles: UpNextTile[]; more: number } {
   const tiles = groups
     .flatMap(({ profile, routines }): UpNextTile[] => {
       const held = routines.reduce<Routine | undefined>((latest, candidate) => {
-        const at = ticked[candidate.id];
-        if (at === undefined || now - at >= HOME_HOLD_MS || !done.has(candidate.id)) return latest;
-        return latest === undefined || at > (ticked[latest.id] ?? 0) ? candidate : latest;
+        if (!isHeld(ticked, candidate.id, now) || !done.has(candidate.id)) return latest;
+        return latest === undefined || (ticked.get(candidate.id) ?? 0) > (ticked.get(latest.id) ?? 0) ? candidate : latest;
       }, undefined);
       const next = partView(routines, done, part).visible.find((candidate) => !done.has(candidate.id));
       const routine = held ?? next;
@@ -197,12 +189,12 @@ function upNextTiles(
   return { tiles, more: left - tiles.filter((tile) => !tile.done).length };
 }
 
-// When the first of the holds that have not ended ends, or nothing when none is left: when Up next has to look again.
-export function holdEndsAt(ticked: TickedHere, now: number): number | null {
-  const ends = Object.values(ticked)
-    .map((at) => at + HOME_HOLD_MS)
-    .filter((end) => end > now);
-  return ends.length === 0 ? null : Math.min(...ends);
+// The holds with a Routine held from `at`, or, with null (its tick was taken back), let go.
+function tickHeld(ticked: Holds, routineId: string, at: number | null): Holds {
+  const next = new Map(ticked);
+  if (at === null) next.delete(routineId);
+  else next.set(routineId, at);
+  return next;
 }
 
 // The link in Up next's heading to the chart: "All routines", or, when the tiles do not show all that is left today, how many
@@ -328,12 +320,14 @@ export function tickedRead(read: ChartRead, routineId: string, checking: boolean
 }
 
 // What the chart is told by the world: the Household day (null until the Household Timezone is known, when nothing is read) and its
-// weekday, the part of the day the clock is in, the Profiles (null until read), the Routines read (null until a read lands, and then for
-// the day it was made on, which is not the current one just after Household midnight) and the synced read's own state.
+// weekday, the part of the day the clock is in, the time Up next last looked at (`now`, epoch ms: the hold clock's, renewed when a hold
+// ends), the Profiles (null until read), the Routines read (null until a read lands, and then for the day it was made on, which is not
+// the current one just after Household midnight) and the synced read's own state.
 export type ChartFacts = {
   date: string | null;
   weekday: number;
   clock: TimeOfDay;
+  now: number;
   profiles: Profile[] | null;
   read: ChartRead | null;
   readState: ReadStateName;
@@ -341,18 +335,17 @@ export type ChartFacts = {
 };
 
 // What the chart keeps between renders, which a screen that is left starts again: the part shown (and what it holds in place), the bursts
-// playing, the person the phone shows, and what was ticked and when for Up next's holds (`now` is when it last looked). The lines for
-// ticks that did not save are the Household's, not a screen's: they stay while the day does.
+// playing, the person the phone shows, and what was ticked and when for Up next's holds. The lines for ticks that did not save are the
+// Household's, not a screen's: they stay while the day does.
 export type ChartState = {
   chart: Chart;
   celebration: Celebration;
   problems: TickProblems;
   picked: string | null;
-  ticked: TickedHere;
-  now: number;
+  ticked: Holds;
 };
 
-export const startChart = (clock: TimeOfDay): ChartState => ({ chart: openChart(clock), celebration: noCelebration, problems: noTickProblems, picked: null, ticked: {}, now: 0 });
+export const startChart = (clock: TimeOfDay): ChartState => ({ chart: openChart(clock), celebration: noCelebration, problems: noTickProblems, picked: null, ticked: new Map() });
 
 // What the chart does in the world: the Routine Completion write (rejecting when it did not save), a change to what it keeps, whether the
 // screen is offline (read when a tick fails, which decides what that tick says), whether someone asked for less motion (no burst) and the time.
@@ -496,8 +489,7 @@ export function routineChart(facts: ChartFacts, state: ChartState, effects: Char
       effects.change((was) => ({
         ...was,
         celebration: burst === null ? was.celebration : celebrate(was.celebration, { type: 'finished', profileId: routine.profile_id, day: date, at: burst }),
-        ticked: checking ? { ...was.ticked, [routine.id]: at } : Object.fromEntries(Object.entries(was.ticked).filter(([id]) => id !== routine.id)),
-        now: at,
+        ticked: tickHeld(was.ticked, routine.id, checking ? at : null),
       }));
       return save(routine, checking, date, finishes);
     },
@@ -510,7 +502,7 @@ export function routineChart(facts: ChartFacts, state: ChartState, effects: Char
       })),
     upNext(limit = UP_NEXT_TILES) {
       const groups = days.filter(({ routines }) => routines.length > 0);
-      const { tiles, more } = upNextTiles(groups, done, clock, state.ticked, state.now, limit);
+      const { tiles, more } = upNextTiles(groups, done, clock, state.ticked, facts.now, limit);
       return { tiles: tiles.map((tile) => ({ ...tile, problem: says[tile.profile.id] })), more, link: upNextLink(more), scheduled: groups.length > 0 };
     },
     kept,
