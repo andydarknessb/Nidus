@@ -8,7 +8,7 @@ import { BODY_CLEARANCE } from '../src/components/OverflowButton';
 import { PHONE_FRAME, PHONE_SCRIM, Sheet, SheetBody } from '../src/components/Sheet';
 import { dismissOnScrim } from '../src/lib/dialog';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
-import { blankEventForm, isUntouched } from '../src/lib/native-events';
+import { openDraft, setField, untouched } from '../src/lib/event-draft';
 import type { Profile } from '../src/lib/profiles';
 import { pillPeople } from '../src/lib/schedule';
 import type { OverflowControl } from '../src/lib/use-overflow';
@@ -308,16 +308,16 @@ describe('a tap on the scrim', () => {
   });
 
   it('closes a form nothing has been typed in, and not one that has been edited', () => {
-    const opened = blankEventForm('2026-10-02');
-    expect(tap(scrim, () => isUntouched(opened, opened))).toBe(1);
-    expect(tap(scrim, () => isUntouched({ ...opened, title: 'Plumber' }, opened))).toBe(0);
+    const opened = openDraft({ date: '2026-10-02' }, 'America/Chicago');
+    expect(tap(scrim, () => untouched(opened))).toBe(1);
+    expect(tap(scrim, () => untouched(setField(opened, { title: 'Plumber' })))).toBe(0);
     // Put back as it was, it is as untouched as before.
-    expect(tap(scrim, () => isUntouched({ ...opened, title: '' }, opened))).toBe(1);
+    expect(tap(scrim, () => untouched(setField(setField(opened, { title: 'Plumber' }), { title: '' })))).toBe(1);
   });
 
   it('is asked of the form at the tap: the Add event sheet and the meal sheet pass their untouched rules to the one frame', () => {
     const source = (file: string) => readFileSync(new URL('../src/' + file, import.meta.url), 'utf8');
-    expect(source('components/NativeEventSheet.tsx')).toContain('canDismiss={() => isUntouched(form, opened)}');
+    expect(source('components/NativeEventSheet.tsx')).toContain('canDismiss={() => untouched(events.draft)}');
     expect(source('MealsPage.tsx')).toContain('canDismiss={() => untouched}');
   });
 });

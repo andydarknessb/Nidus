@@ -1,4 +1,4 @@
-import type { EventForm } from './native-events';
+import { formatClock } from '@shared/event-words.ts';
 
 // The time sheet's core (docs/specs/0013, The time sheet): no DOM, so the sheet is a thin skin over rules tested on their own.
 // Times are 'HH:MM' on the Household's wall clock, as the Add event form holds them. An event ends on its own day, so the last
@@ -14,6 +14,11 @@ export const NO_LATER_END = 'The event must end after it starts.';
 export function minutesOf(time: string): number | null {
   const found = /^(\d{2}):(\d{2})$/.exec(time);
   return found ? Number(found[1]) * 60 + Number(found[2]) : null;
+}
+
+// The value of a time input, 'HH:MM', as the time field shows it: "2:00 PM". (An event's own time is said by event words.)
+export function timeInputWords(time: string): string {
+  return formatClock(Date.UTC(1970, 0, 1, 0, minutesOf(time) ?? 0), 'UTC');
 }
 
 export const timeOf = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
@@ -54,24 +59,4 @@ export function drumOf(time: string): Drum {
 
 export function timeOfDrum({ hour, minute, meridiem }: Drum): string {
   return timeOf(((hour % 12) + (meridiem === 'PM' ? 12 : 0)) * 60 + minute);
-}
-
-// Starts moved to `time`, and Ends with it, so the event keeps its length (an hour when it had none), as far as the day lets it: the
-// end stops at 23:59, and a start is held at 23:58 so that there is always an end after it.
-export function setStart(form: EventForm, time: string): EventForm {
-  const start = minutesOf(form.startTime);
-  const end = minutesOf(form.endTime);
-  const next = minutesOf(time);
-  if (start === null || end === null || next === null) return form;
-  const first = Math.min(next, LAST_MINUTE - 1);
-  const length = end > start ? end - start : 60;
-  return { ...form, startTime: timeOf(first), endTime: timeOf(Math.min(first + length, LAST_MINUTE)) };
-}
-
-// Ends moved to `time` on its own, or the words that say why not: it must be after Starts.
-export function setEnd(form: EventForm, time: string): EventForm | { problem: string } {
-  const start = minutesOf(form.startTime);
-  const end = minutesOf(time);
-  if (start === null || end === null) return form;
-  return end <= start ? { problem: NO_LATER_END } : { ...form, endTime: time };
 }

@@ -1,24 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadOccurrences, type Occurrence } from '../src/lib/calendar-occurrences';
-import {
-  blankEventForm,
-  deleteNativeEvent,
-  deletedOnSentence,
-  eventFormFromOccurrence,
-  eventFormToInput,
-  eventIdOf,
-  moveToDay,
-  repeatWords,
-  saveEveryOne,
-  saveNativeEvent,
-  saveThisOne,
-  savedSentence,
-  skipNativeOccurrence,
-  weekdayBit,
-  type EventForm,
-  type NativeEventInput,
-  type Repeat,
-} from '../src/lib/native-events';
+import { blankEventForm, eventFormToInput, openDraft, pickDate, type Plan } from '../src/lib/event-draft';
+import { repeatWords, runPlan, saveNativeEvent, type EventForm, type NativeEventInput, type Repeat } from '../src/lib/native-events';
 import { PROFILE_PALETTE, createProfile, deleteProfile, type Profile } from '../src/lib/profiles';
 import { arrangeCalendar, arrangeEvents } from './support/calendar';
 import {
@@ -32,6 +15,10 @@ import {
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
+
+const CHICAGO = 'America/Chicago';
+// The Native Event an Occurrence is of: an Occurrence of a Repeat has an id of its own (ADR 0005).
+const eventIdOf = (occurrence: Occurrence) => occurrence.event_id ?? occurrence.id;
 
 let households: HouseholdAccount[] = [];
 let tablets: Tablet[] = [];
@@ -103,7 +90,7 @@ describe('native events', () => {
     [occurrence] = edited;
     expect(occurrence).toMatchObject({ id, title: 'Plumber, moved', location: null, starts_at: '2026-10-09T15:00:00+00:00' });
 
-    await deleteNativeEvent(device.client, id);
+    await runPlan(device.client, { kind: 'delete', occurrence: occurrence! }, CHICAGO);
     expect(await loadOccurrences(device.client, WINDOW.from, WINDOW.to)).toEqual([]);
   });
 
@@ -115,9 +102,10 @@ describe('native events', () => {
     expect(await loadOccurrences(phone, WINDOW.from, WINDOW.to)).toMatchObject([{ source: 'native', id, is_all_day: true }]);
 
     await saveNativeEvent(phone, { ...plumber, title: 'Renamed' }, id);
-    expect((await loadOccurrences(phone, WINDOW.from, WINDOW.to))[0]?.title).toBe('Renamed');
+    const [renamed] = await loadOccurrences(phone, WINDOW.from, WINDOW.to);
+    expect(renamed?.title).toBe('Renamed');
 
-    await deleteNativeEvent(phone, id);
+    await runPlan(phone, { kind: 'delete', occurrence: renamed! }, CHICAGO);
     expect(await loadOccurrences(phone, WINDOW.from, WINDOW.to)).toEqual([]);
   });
 
@@ -183,7 +171,7 @@ describe('synced events stay untouchable', () => {
 
     // The Synced Event's id is not a Native Event's: saving over it finds no row, and nothing is created.
     await expect(saveNativeEvent(device.client, { ...plumber, title: 'Overwritten' }, lunch!.id)).rejects.toBeTruthy();
-    await deleteNativeEvent(device.client, lunch!.id).catch(() => undefined);
+    await runPlan(device.client, { kind: 'delete', occurrence: lunch! }, CHICAGO).catch(() => undefined);
     await device.client.from('synced_events').update({ title: 'Overwritten' }).eq('id', lunch!.id);
     await device.client.from('synced_events').delete().eq('id', lunch!.id);
     expect((await device.client.from('synced_events').insert({ household_id: account.household.id, mirrored_calendar_id: calendarId, google_event_id: 'x', title: 'x', starts_at: plumber.starts_at, ends_at: plumber.ends_at })).error).not.toBeNull();
@@ -261,7 +249,8 @@ describe('calendar_occurrences attribution of Native Events', () => {
     const device = await arrangeDevice(account);
     const id = await saveNativeEvent(device.client, { ...plumber, profile_ids: [ada!.id] });
 
-    await deleteNativeEvent(device.client, id);
+    const [row] = await loadOccurrences(device.client, WINDOW.from, WINDOW.to);
+    await runPlan(device.client, { kind: 'delete', occurrence: row! }, CHICAGO);
     const { data } = await asServiceRole().from('native_event_profiles').select('profile_id').eq('native_event_id', id);
     expect(data).toEqual([]);
   });
@@ -279,120 +268,6 @@ describe('calendar_occurrences attribution of Native Events', () => {
       ['native', 'Plumber'],
     ]);
     expect(rows[0]).toMatchObject({ calendar_id: calendarId, profile_ids: [] });
-  });
-});
-
-// The sheet's form, in the Household Timezone and never the machine's.
-describe('the Native Event form', () => {
-  const CHICAGO = 'America/Chicago';
-  const form = { ...blankEventForm('2026-10-08'), title: ' Plumber ', startTime: '14:00', endTime: '15:30' };
-
-  it('turns wall-clock times into instants in the Household Timezone', () => {
-    expect(eventFormToInput(form, CHICAGO)).toEqual({
-      title: 'Plumber',
-      location: null,
-      notes: null,
-      starts_at: '2026-10-08T19:00:00.000Z',
-      ends_at: '2026-10-08T20:30:00.000Z',
-      is_all_day: false,
-      profile_ids: [],
-      repeat_every: null,
-      repeat_interval: 1,
-      repeat_days: null,
-      repeat_until: null,
-    });
-    // The same wall time in another zone is another instant: nothing reads the machine's zone.
-    expect(eventFormToInput(form, 'Pacific/Auckland')).toMatchObject({ starts_at: '2026-10-08T01:00:00.000Z' });
-  });
-
-  it('keeps the wall clock across a daylight saving change', () => {
-    // Chicago went back from CDT to CST on 2026-11-01.
-    const input = eventFormToInput({ ...form, ...{ date: '2026-11-02' } }, CHICAGO);
-    expect(input).toMatchObject({ starts_at: '2026-11-02T20:00:00.000Z' });
-  });
-
-  it('is right on the day of a daylight saving change itself', () => {
-    const at = (date: string, time: string, zone = CHICAGO) => (eventFormToInput({ ...form, date, startTime: time, endTime: '23:00' }, zone) as NativeEventInput).starts_at;
-    // Spring forward (Chicago, 2027-03-14): 02:30 does not exist, and moves on to 03:30 CDT, never back.
-    expect(at('2027-03-14', '01:30')).toBe('2027-03-14T07:30:00.000Z');
-    expect(at('2027-03-14', '02:30')).toBe('2027-03-14T08:30:00.000Z');
-    expect(at('2027-03-14', '03:30')).toBe('2027-03-14T08:30:00.000Z');
-    // The same in a zone east of UTC (Berlin, 2027-03-28).
-    expect(at('2027-03-28', '02:30', 'Europe/Berlin')).toBe('2027-03-28T01:30:00.000Z');
-    // Fall back (Chicago, 2026-11-01): 01:30 happens twice, and the first is meant.
-    expect(at('2026-11-01', '01:30')).toBe('2026-11-01T06:30:00.000Z');
-    expect(at('2026-11-01', '02:30')).toBe('2026-11-01T08:30:00.000Z');
-  });
-
-  it('makes an all-day event the Household day, ending at the next midnight', () => {
-    expect(eventFormToInput({ ...form, allDay: true }, CHICAGO)).toMatchObject({
-      starts_at: '2026-10-08T05:00:00.000Z',
-      ends_at: '2026-10-09T05:00:00.000Z',
-      is_all_day: true,
-    });
-    // On a 25 hour day the next midnight is 25 hours on.
-    expect(eventFormToInput({ ...blankEventForm('2026-11-01'), title: 'Clocks', allDay: true }, CHICAGO)).toMatchObject({
-      starts_at: '2026-11-01T05:00:00.000Z',
-      ends_at: '2026-11-02T06:00:00.000Z',
-    });
-  });
-
-  it('keeps blank optional fields as none and trims the rest', () => {
-    expect(eventFormToInput({ ...form, location: '  ', notes: ' Key under the pot ', profileIds: ['a', 'b'] }, CHICAGO)).toMatchObject({
-      location: null,
-      notes: 'Key under the pot',
-      profile_ids: ['a', 'b'],
-    });
-  });
-
-  it('says what is wrong instead of saving', () => {
-    expect(eventFormToInput({ ...form, title: '  ' }, CHICAGO)).toEqual({ problem: 'Give the event a title.' });
-    expect(eventFormToInput({ ...form, date: '' }, CHICAGO)).toEqual({ problem: 'Pick a date.' });
-    expect(eventFormToInput({ ...form, startTime: '' }, CHICAGO)).toEqual({ problem: 'Pick a start and end time, or choose all day.' });
-    expect(eventFormToInput({ ...form, endTime: '13:00' }, CHICAGO)).toEqual({ problem: 'The event must end after it starts.' });
-    // All day needs no times.
-    expect(eventFormToInput({ ...form, allDay: true, startTime: '', endTime: '' }, CHICAGO)).toHaveProperty('is_all_day', true);
-  });
-
-  it('fills the form from an occurrence, as the Household sees it', () => {
-    const occurrence = {
-      source: 'native',
-      id: 'n1',
-      calendar_id: null,
-      calendar_name: 'Nidus',
-      title: 'Plumber',
-      description: 'Key under the pot',
-      location: '12 Elm St',
-      starts_at: '2026-10-08T19:00:00+00:00',
-      ends_at: '2026-10-08T20:30:00+00:00',
-      is_all_day: false,
-      profile_id: 'a',
-      profile_ids: ['a', 'b'],
-      household_id: 'household-1', event_id: 'n1', repeat_every: null, repeat_interval: 1, repeat_days: null, repeat_until: null,
-    } satisfies Occurrence;
-    const filled = eventFormFromOccurrence(occurrence, CHICAGO);
-    expect(filled).toEqual({
-      title: 'Plumber',
-      date: '2026-10-08',
-      allDay: false,
-      startTime: '14:00',
-      endTime: '15:30',
-      location: '12 Elm St',
-      notes: 'Key under the pot',
-      profileIds: ['a', 'b'],
-      repeat: null,
-    });
-    // Saving it unchanged writes the same instants back.
-    expect(eventFormToInput(filled, CHICAGO)).toMatchObject({ starts_at: '2026-10-08T19:00:00.000Z', ends_at: '2026-10-08T20:30:00.000Z' });
-  });
-
-  it('fills an all-day event with no times', () => {
-    const filled = eventFormFromOccurrence(
-      { ...({} as Occurrence), title: 'Trip', description: null, location: null, starts_at: '2026-10-08T05:00:00Z', ends_at: '2026-10-09T05:00:00Z', is_all_day: true, profile_ids: [] },
-      CHICAGO,
-    );
-    expect(filled).toMatchObject({ date: '2026-10-08', allDay: true });
-    expect(eventFormToInput(filled, CHICAGO)).toMatchObject({ starts_at: '2026-10-08T05:00:00.000Z', ends_at: '2026-10-09T05:00:00.000Z' });
   });
 });
 
@@ -435,47 +310,96 @@ describe('the words of a Repeat', () => {
   });
 });
 
-describe('the Repeats of the form', () => {
-  const CHICAGO = 'America/Chicago';
-  // Tuesday, Oct 6.
-  const soccer: EventForm = { ...blankEventForm('2026-10-06'), title: 'Soccer', startTime: '15:00', endTime: '16:00' };
-  const weekly = (changes: Partial<Repeat> = {}): Repeat => ({ every: 'week', interval: 1, days: weekdayBit('2026-10-06'), until: null, ...changes });
-  const input = (repeat: Repeat) => eventFormToInput({ ...soccer, repeat }, CHICAGO);
+// What the status line says once a plan is written (docs/specs/0015, the plan runner): the event's own day and time, in the Household
+// Timezone and never the machine's. The event is written, so these run against the local stack.
+describe('what the status line says after an event is added', () => {
+  const form = (startTime: string, endTime: string): EventForm => ({ ...blankEventForm('2026-10-02'), startTime, endTime });
+  const input = (value: EventForm) => eventFormToInput({ ...value, title: ' Plumber coming ' }, CHICAGO) as NativeEventInput;
+  // The sentence of an add, on a Household of its own.
+  const saying = async () => {
+    const phone = await asHouseholdAccount(await arrange());
+    return (value: EventForm, timezone = CHICAGO) => runPlan(phone, { kind: 'add', input: input(value) }, timezone);
+  };
 
-  it('writes none for an event that does not repeat', () => {
-    expect(eventFormToInput(soccer, CHICAGO)).toMatchObject({ repeat_every: null, repeat_interval: 1, repeat_days: null, repeat_until: null });
+  it('names the event, the day and the time, in the Household Timezone', async () => {
+    const added = await saying();
+    const plumber = form('14:00', '15:00');
+    expect(await added(plumber)).toBe('Added Plumber coming: Fri, Oct 2, 2:00 PM');
+    // The same instant is another day and time on a clock elsewhere: nothing here reads the machine's zone.
+    expect(await added(plumber, 'Pacific/Auckland')).toBe('Added Plumber coming: Sat, Oct 3, 8:00 AM');
   });
 
-  it('writes the Repeat, its days only for a week', () => {
-    expect(input(weekly({ interval: 2, until: '2026-12-01' }))).toMatchObject({ repeat_every: 'week', repeat_interval: 2, repeat_days: 4, repeat_until: '2026-12-01' });
-    expect(input({ every: 'month', interval: 1, days: 4, until: null })).toMatchObject({ repeat_every: 'month', repeat_days: null });
-    // The day it ends on is a day it may land on.
-    expect(input(weekly({ until: '2026-10-06' }))).not.toHaveProperty('problem');
+  it('says all day for an all-day event, on the Household day it starts', async () => {
+    const added = await saying();
+    expect(await added({ ...form('14:00', '15:00'), allDay: true })).toBe('Added Plumber coming: Fri, Oct 2, all day');
+    // The day clocks go back: a 25 hour day still starts on its own date.
+    expect(await added({ ...blankEventForm('2026-11-01'), allDay: true })).toBe('Added Plumber coming: Sun, Nov 1, all day');
   });
 
-  it('refuses a week with no days, an end before the first day, and a number outside 1 to 99', () => {
-    expect(input(weekly({ days: 0 }))).toEqual({ problem: 'Pick at least one day.' });
-    expect(input(weekly({ until: '2026-10-05' }))).toEqual({ problem: 'The repeat ends before it starts.' });
-    for (const interval of [0, 100, -1, 1.5, Number.NaN]) expect(input(weekly({ interval }))).toEqual({ problem: 'Repeat every 1 to 99.' });
-    expect(input(weekly({ interval: 99 }))).not.toHaveProperty('problem');
-    expect(input(weekly({ until: '' }))).toHaveProperty('problem');
-    // A day Repeat has no days to pick.
-    expect(input({ every: 'day', interval: 1, days: 0, until: null })).not.toHaveProperty('problem');
+  it('keeps midnight and noon straight', async () => {
+    const added = await saying();
+    expect(await added(form('00:00', '00:15'))).toBe('Added Plumber coming: Fri, Oct 2, 12:00 AM');
+    expect(await added(form('12:00', '12:15'))).toBe('Added Plumber coming: Fri, Oct 2, 12:00 PM');
   });
 
-  it("moves a week Repeat's one day with the date, and leaves any other choice of days where it is", () => {
-    const only = { ...soccer, repeat: weekly() };
-    expect(moveToDay(only, '2026-10-08', true, CHICAGO).repeat).toEqual(weekly({ days: weekdayBit('2026-10-08') }));
-    const two = { ...soccer, repeat: weekly({ days: 4 | 16 }) };
-    expect(moveToDay(two, '2026-10-08', true, CHICAGO).repeat).toEqual(weekly({ days: 4 | 16 }));
-    const month = { ...soccer, repeat: { every: 'month' as const, interval: 1, days: 4, until: null } };
-    expect(moveToDay(month, '2026-10-08', true, CHICAGO).repeat).toEqual(month.repeat);
-    expect(moveToDay(soccer, '2026-10-08', true, CHICAGO).repeat).toBeNull();
+  it('writes the event it names', async () => {
+    const phone = await asHouseholdAccount(await arrange());
+    await runPlan(phone, { kind: 'add', input: input(form('14:00', '15:00')) }, CHICAGO);
+    expect(await loadOccurrences(phone, WINDOW.from, WINDOW.to)).toMatchObject([{ source: 'native', title: 'Plumber coming', starts_at: '2026-10-02T19:00:00+00:00' }]);
   });
 });
 
-describe('Repeats written from the form', () => {
-  const CHICAGO = 'America/Chicago';
+// An edit that moves an event to another day takes it off the week on screen: the line says when the event is now, in the words of the
+// one an added event says, and not only that it was saved.
+describe('what the status line says after an event is saved', () => {
+  const form = (startTime: string, endTime: string): EventForm => ({ ...blankEventForm('2026-10-02'), startTime, endTime });
+  const input = (value: EventForm) => eventFormToInput({ ...value, title: ' Plumber coming ' }, CHICAGO) as NativeEventInput;
+  // The sentences of an add and of a save over an event already there, on a Household of its own.
+  const saying = async () => {
+    const phone = await asHouseholdAccount(await arrange());
+    const id = await saveNativeEvent(phone, plumber);
+    const [occurrence] = (await loadOccurrences(phone, WINDOW.from, WINDOW.to)).filter((row) => eventIdOf(row) === id);
+    return {
+      saved: (value: EventForm, timezone = CHICAGO) => runPlan(phone, { kind: 'save', input: input(value), occurrence: occurrence! }, timezone),
+      added: (value: EventForm) => runPlan(phone, { kind: 'add', input: input(value) }, CHICAGO),
+      phone,
+    };
+  };
+
+  it('names the event, and the day and the time it is on now, in the Household Timezone', async () => {
+    const { saved } = await saying();
+    const moved = { ...blankEventForm('2026-10-14'), startTime: '14:00', endTime: '15:00' };
+    expect(await saved(moved)).toBe('Saved Plumber coming: Wed, Oct 14, 2:00 PM');
+    expect(await saved(moved, 'Pacific/Auckland')).toBe('Saved Plumber coming: Thu, Oct 15, 8:00 AM');
+  });
+
+  it('says all day for an all-day event, and keeps midnight and noon straight', async () => {
+    const { saved } = await saying();
+    expect(await saved({ ...form('14:00', '15:00'), allDay: true })).toBe('Saved Plumber coming: Fri, Oct 2, all day');
+    expect(await saved(form('00:00', '00:15'))).toBe('Saved Plumber coming: Fri, Oct 2, 12:00 AM');
+    expect(await saved(form('12:00', '12:15'))).toBe('Saved Plumber coming: Fri, Oct 2, 12:00 PM');
+  });
+
+  it('is the added sentence with its own first word: one helper builds both', async () => {
+    const { saved, added } = await saying();
+    for (const value of [form('14:00', '15:00'), { ...form('09:00', '10:00'), allDay: true }, form('23:30', '23:45')]) {
+      expect(await saved(value)).toBe((await added(value)).replace(/^Added /, 'Saved '));
+    }
+  });
+
+  it('uses no dash of any length', async () => {
+    const { saved } = await saying();
+    expect(await saved(form('14:00', '15:00'))).not.toMatch(/[–—]/);
+  });
+
+  it('writes the event over the one there, not beside it', async () => {
+    const { saved, phone } = await saying();
+    await saved(form('14:00', '15:00'));
+    expect(await loadOccurrences(phone, WINDOW.from, WINDOW.to)).toMatchObject([{ title: 'Plumber coming', starts_at: '2026-10-02T19:00:00+00:00' }]);
+  });
+});
+
+describe('Repeats written by a plan', () => {
   const OCTOBER = { from: new Date('2026-10-01T00:00:00Z'), to: new Date('2026-11-01T00:00:00Z') };
   const asInput = (form: EventForm) => {
     const input = eventFormToInput(form, CHICAGO);
@@ -494,7 +418,7 @@ describe('Repeats written from the form', () => {
     expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-06T20:00:00+00:00', '2026-10-13T20:00:00+00:00', '2026-10-20T20:00:00+00:00']);
     expect(rows.every((row) => eventIdOf(row) === id && row.household_id === account.household.id)).toBe(true);
     // Opened from the second Tuesday, the form is on that day with the Repeat the event has.
-    expect(eventFormFromOccurrence(rows[1]!, CHICAGO)).toEqual({ ...soccer, date: '2026-10-13', repeat: { every: 'week', interval: 1, days: 4, until: '2026-10-20' } });
+    expect(openDraft({ occurrence: rows[1]! }, CHICAGO).form).toEqual({ ...soccer, date: '2026-10-13', repeat: { every: 'week', interval: 1, days: 4, until: '2026-10-20' } });
   });
 
   it('writes "this one" as an event of its own and leaves its day out of the Repeat, in one write', async () => {
@@ -504,11 +428,10 @@ describe('Repeats written from the form', () => {
     const second = (await loadOccurrences(phone, OCTOBER.from, OCTOBER.to))[1]!;
 
     // A new title and time, and a Repeat changed in the same breath, which "this one" drops.
-    const form = { ...eventFormFromOccurrence(second, CHICAGO), title: 'Soccer, late', startTime: '16:00', endTime: '17:00', repeat: { every: 'day' as const, interval: 1, days: 0, until: null } };
-    const written = await saveThisOne(phone, form, second, CHICAGO);
+    const form = { ...openDraft({ occurrence: second }, CHICAGO).form, title: 'Soccer, late', startTime: '16:00', endTime: '17:00', repeat: { every: 'day' as const, interval: 1, days: 0, until: null } };
+    const said = await runPlan(phone, { kind: 'save-one', form, occurrence: second }, CHICAGO);
 
-    expect(written).toMatchObject({ title: 'Soccer, late', repeat_every: null, repeat_interval: 1, repeat_days: null, repeat_until: null, skip: { event: id, on: '2026-10-13' } });
-    expect(savedSentence(written, CHICAGO)).toBe('Saved Soccer, late: Tue, Oct 13, 4:00 PM');
+    expect(said).toBe('Saved Soccer, late: Tue, Oct 13, 4:00 PM');
     const rows = await loadOccurrences(phone, OCTOBER.from, OCTOBER.to);
     expect(rows.map((row) => [row.title, row.starts_at, row.repeat_every])).toEqual([
       ['Soccer', '2026-10-06T20:00:00+00:00', 'week'],
@@ -526,7 +449,8 @@ describe('Repeats written from the form', () => {
     const phone = await asHouseholdAccount(account);
     await saveNativeEvent(phone, asInput(soccer));
     const second = (await loadOccurrences(phone, OCTOBER.from, OCTOBER.to))[1]!;
-    await expect(saveThisOne(phone, { ...eventFormFromOccurrence(second, CHICAGO), title: '   ' }, second, CHICAGO)).rejects.toThrow('Give the event a title.');
+    const form = { ...openDraft({ occurrence: second }, CHICAGO).form, title: '   ' };
+    await expect(runPlan(phone, { kind: 'save-one', form, occurrence: second }, CHICAGO)).rejects.toThrow('Give the event a title.');
     expect(await loadOccurrences(phone, OCTOBER.from, OCTOBER.to)).toHaveLength(4);
   });
 
@@ -537,9 +461,9 @@ describe('Repeats written from the form', () => {
     const rows = await loadOccurrences(device.client, OCTOBER.from, OCTOBER.to);
     expect(rows).toHaveLength(4);
 
-    await skipNativeOccurrence(device.client, rows[1]!, CHICAGO);
+    const said = await runPlan(device.client, { kind: 'skip', occurrence: rows[1]! }, CHICAGO);
 
-    expect(deletedOnSentence(rows[1]!, CHICAGO)).toBe('Deleted Soccer on Tue, Oct 13');
+    expect(said).toBe('Deleted Soccer on Tue, Oct 13');
     const left = await loadOccurrences(device.client, OCTOBER.from, OCTOBER.to);
     expect(left.map((row) => row.starts_at.slice(0, 10))).toEqual(['2026-10-06', '2026-10-20', '2026-10-27']);
   });
@@ -552,11 +476,11 @@ describe('Repeats written from the form', () => {
     expect(third.starts_at).toBe('2026-10-20T20:00:00+00:00');
 
     // Opened on Oct 20 and moved to Wednesday, Oct 21: the series starts on Wednesday, Oct 7, an hour later.
-    const moved = moveToDay(eventFormFromOccurrence(third, CHICAGO), '2026-10-21', true, CHICAGO);
+    const moved = pickDate(openDraft({ occurrence: third }, CHICAGO), '2026-10-21').form;
     expect(moved.repeat).toMatchObject({ days: 8 });
-    const written = await saveEveryOne(phone, { ...moved, title: 'Soccer, Wednesdays', startTime: '16:00', endTime: '17:00' }, third, CHICAGO);
+    const said = await runPlan(phone, { kind: 'save-every', form: { ...moved, title: 'Soccer, Wednesdays', startTime: '16:00', endTime: '17:00' }, occurrence: third }, CHICAGO);
 
-    expect(savedSentence(written, CHICAGO)).toBe('Saved Soccer, Wednesdays: Wed, Oct 7, 4:00 PM');
+    expect(said).toBe('Saved Soccer, Wednesdays: Wed, Oct 7, 4:00 PM');
     const rows = await loadOccurrences(phone, OCTOBER.from, OCTOBER.to);
     expect(rows.map((row) => row.starts_at)).toEqual(['2026-10-07T21:00:00+00:00', '2026-10-14T21:00:00+00:00', '2026-10-21T21:00:00+00:00', '2026-10-28T21:00:00+00:00']);
     expect(rows.every((row) => eventIdOf(row) === id && row.title === 'Soccer, Wednesdays' && row.repeat_every === 'week' && row.repeat_days === 8)).toBe(true);
@@ -567,15 +491,17 @@ describe('Repeats written from the form', () => {
     const device = await arrangeDevice(account);
     await saveNativeEvent(device.client, asInput(soccer));
     const third = (await loadOccurrences(device.client, OCTOBER.from, OCTOBER.to))[2]!;
+    const write = (form: EventForm) => runPlan(device.client, { kind: 'save-every', form, occurrence: third } satisfies Plan, CHICAGO);
 
-    // Opened on Tuesday, Oct 20 and given Thursday, Oct 22 by a caller that is not the sheet: Tuesday goes to Thursday with it.
-    const written = await saveEveryOne(device.client, { ...eventFormFromOccurrence(third, CHICAGO), date: '2026-10-22' }, third, CHICAGO);
+    // Opened on Tuesday, Oct 20 and given Thursday, Oct 22 by a form that is not the draft's: Tuesday goes to Thursday with it.
+    await write({ ...openDraft({ occurrence: third }, CHICAGO).form, date: '2026-10-22' });
 
-    expect(written).toMatchObject({ repeat_every: 'week', repeat_days: weekdayBit('2026-10-22') });
-    expect((await loadOccurrences(device.client, OCTOBER.from, OCTOBER.to)).map((row) => row.starts_at.slice(0, 10))).toEqual(['2026-10-08', '2026-10-15', '2026-10-22', '2026-10-29']);
+    const moved = await loadOccurrences(device.client, OCTOBER.from, OCTOBER.to);
+    expect(moved.map((row) => row.starts_at.slice(0, 10))).toEqual(['2026-10-08', '2026-10-15', '2026-10-22', '2026-10-29']);
+    expect(moved.every((row) => row.repeat_every === 'week' && row.repeat_days === 16)).toBe(true);
     // Two days pressed stay as they are.
-    const both = await saveEveryOne(device.client, { ...eventFormFromOccurrence(third, CHICAGO), date: '2026-10-21', repeat: { every: 'week', interval: 1, days: 4 | 16, until: null } }, third, CHICAGO);
-    expect(both).toMatchObject({ repeat_days: 4 | 16 });
+    await write({ ...openDraft({ occurrence: third }, CHICAGO).form, date: '2026-10-21', repeat: { every: 'week', interval: 1, days: 4 | 16, until: null } });
+    expect((await loadOccurrences(device.client, OCTOBER.from, OCTOBER.to)).every((row) => row.repeat_days === (4 | 16))).toBe(true);
   });
 
   it('keeps the first day when the form did not move', async () => {
@@ -584,9 +510,9 @@ describe('Repeats written from the form', () => {
     await saveNativeEvent(phone, asInput(soccer));
     const third = (await loadOccurrences(phone, OCTOBER.from, OCTOBER.to))[2]!;
 
-    const written = await saveEveryOne(phone, { ...eventFormFromOccurrence(third, CHICAGO), title: 'Soccer cup' }, third, CHICAGO);
+    const said = await runPlan(phone, { kind: 'save-every', form: { ...openDraft({ occurrence: third }, CHICAGO).form, title: 'Soccer cup' }, occurrence: third }, CHICAGO);
 
-    expect(savedSentence(written, CHICAGO)).toBe('Saved Soccer cup: Tue, Oct 6, 3:00 PM');
+    expect(said).toBe('Saved Soccer cup: Tue, Oct 6, 3:00 PM');
     expect((await loadOccurrences(phone, OCTOBER.from, OCTOBER.to)).map((row) => row.starts_at.slice(0, 10))).toEqual(['2026-10-06', '2026-10-13', '2026-10-20', '2026-10-27']);
   });
 
@@ -595,10 +521,11 @@ describe('Repeats written from the form', () => {
     const phone = await asHouseholdAccount(account);
     await saveNativeEvent(phone, asInput(soccer));
     const rows = await loadOccurrences(phone, OCTOBER.from, OCTOBER.to);
-    await skipNativeOccurrence(phone, rows[1]!, CHICAGO);
+    await runPlan(phone, { kind: 'skip', occurrence: rows[1]! }, CHICAGO);
 
-    await deleteNativeEvent(phone, eventIdOf(rows[2]!));
+    const said = await runPlan(phone, { kind: 'delete', occurrence: rows[2]! }, CHICAGO);
 
+    expect(said).toBe('Deleted Soccer');
     expect(await loadOccurrences(phone, OCTOBER.from, OCTOBER.to)).toEqual([]);
     const { data } = await asServiceRole().from('native_event_skips').select('skipped_on').eq('household_id', account.household.id);
     expect(data).toEqual([]);
