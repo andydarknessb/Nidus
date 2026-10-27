@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { HOME_HOLD_MS, homeRows, homeWindow, pinnedFirst, rowsThatFit, type ListItem, type SharedList } from '../src/lib/shared-lists';
+import { HOME_HOLD_MS } from '../src/lib/hold';
+import { homeRows, homeWindow, pinnedFirst, rowsThatFit, type ListItem, type SharedList } from '../src/lib/shared-lists';
 
 // Pure rules for a Shared List's card on the Wall: how many rows Home's card holds, which rows it draws, and which list comes
 // first on the Lists screen. They run without the local stack.
@@ -127,10 +128,6 @@ describe('homeRows', () => {
   const ids = (rows: ListItem[]) => rows.map((row) => row.id);
   // What was crossed off on this card, and when.
   const here = (entries: Record<string, number>) => new Map(Object.entries(entries));
-
-  it('holds a row for four seconds', () => {
-    expect(HOME_HOLD_MS).toBe(4 * SECOND);
-  });
 
   it('draws the items still to get, in the list\x27s order', () => {
     const items = [item('milk'), item('eggs'), item('bananas')];

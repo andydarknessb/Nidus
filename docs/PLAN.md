@@ -282,3 +282,20 @@ Settled on 2026-10-24 from an architecture review of master, two rounds of rulin
 ### Tables
 
 No migration.
+
+## v14: deeper modules, round five
+
+Settled on 2026-10-27 from an architecture review of master after v13, two rounds of rulings, every recommendation taken. The spec is [0015](specs/0015-deeper-modules-round-five.md) (tracker #262). It continues v8, v10, v11 and v13.
+
+### Decisions
+
+- **One event draft.** The Native Event form's rules (opening times, the day, the Repeat's shape, Everyone, untouched, the time sheet's Done, whether Save asks "this one, or every one?") live in a plain core of pure transitions; submit and answer give a plan (`add`, `save`, `save-one`, `save-every`, `skip`, `delete`), and one runner with the Native Event module's database half writes it and gives the sentence. A thin hook keeps the current draft; the sheet keeps markup, focus and wiring. This reopens v8's out-of-scope ruling, made before Repeats.
+- **One hold.** Up next and the Pinned List card keep a tapped row for four seconds through one rule, one clock and one focus hand-off to the heading link; `now` leaves the Routine Chart's state.
+- **Dropped**: one rule for the Routines left on a Household Date shared with the push (one line, and the Profile orders differ), and one description per Calendar Account provider on the client (the branches choose contents, not words).
+- **No visible change.** What removing a Google account and an iPhone calendar say is its own issue (#265).
+- **The new names live in the spec**, not in `CONTEXT.md`.
+- **v8's rulings hold**: replace don't layer, plain cores with thin hooks, no DOM test library, props not a context ([ADR 0004](adr/0004-the-household-facts-are-props-not-a-context.md)), one change at a place ([ADR 0006](adr/0006-one-change.md)).
+
+### Tables
+
+No migration.

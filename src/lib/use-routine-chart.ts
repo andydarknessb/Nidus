@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useConnection } from './change-feed';
 import { watchMinute } from './household-day';
 import type { Profile } from './profiles';
-import { holdEndsAt, routineChart, seePart, startChart, tickedRead, type ChartEffects, type ChartRead, type ChartState, type PartSeen, type RoutineChart } from './routine-chart';
+import { routineChart, seePart, startChart, tickedRead, type ChartEffects, type ChartRead, type ChartState, type PartSeen, type RoutineChart } from './routine-chart';
 import { WALL_ROUTINE_TABLES, completeRoutine, loadCompletions, loadRoutines, partOfDay, uncompleteRoutine, type TimeOfDay } from './routines';
 import { supabase } from './supabase';
+import { useHoldClock } from './use-hold';
 import { useSyncedRead } from './synced-read';
 import { useHouseholdDay } from './wall-hooks';
 
@@ -67,21 +68,14 @@ export function useRoutineChart({ timezone, profiles, screen }: { timezone: stri
     calm: () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     now: () => Date.now(),
   };
+  // Up next looks again when the first of its holds ends, and not before (use-hold.ts).
+  const now = useHoldClock(state.ticked);
   const chart = routineChart(
-    { date: timezone === null ? null : day.date, weekday: day.weekday, clock, profiles, read: read.data, readState: read.state, failed: read.failed },
+    { date: timezone === null ? null : day.date, weekday: day.weekday, clock, now, profiles, read: read.data, readState: read.state, failed: read.failed },
     state,
     effects,
   );
   if (chart.kept !== held.state || held.screen !== screen) setHeld({ screen, state: chart.kept });
-
-  // Up next looks again when the first of its holds ends, and not before.
-  const { ticked, now } = held.state;
-  useEffect(() => {
-    const ends = holdEndsAt(ticked, now);
-    if (ends === null) return;
-    const timer = setTimeout(() => setHeld((was) => ({ ...was, state: { ...was.state, now: Date.now() } })), Math.max(ends - Date.now(), 0));
-    return () => clearTimeout(timer);
-  }, [ticked, now]);
 
   return chart;
 }

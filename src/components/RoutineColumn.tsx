@@ -72,7 +72,7 @@ export function Confetti({ at, onDone }: { at: number; onDone: () => void }) {
 // the words on up to two lines and a 44 px ring. To do, the ring is the person's strong colour; done, the tile is filled
 // with their base colour and shows a tick, and its words stay as they are, not struck through. On the chart it is a card
 // on the person's column and says whether it is ticked. In Up next, which names the person under the words (`who`), it is
-// a tile on a card; a Routine ticked there stays in the done look for a moment (HOME_HOLD_MS), and tapped then it is unticked. The
+// a tile on a card; a Routine ticked there stays in the done look for a moment (the hold, src/lib/hold.ts), and tapped then it is unticked. The
 // name line carries the person's initial, so a child tells their tile from a sibling's by more than its colour and picture. When their
 // tick did not save (`problem`, Up next only) the sentence takes the place of the name line, inside the tile: a line of its own under
 // it would push the tiles below down from under the finger.
