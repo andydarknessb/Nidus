@@ -313,7 +313,7 @@ export function NativeEventSheet({
                   onClick={() => {
                     // The field is on the page at once and asked for its picker in this same tap, which is the only moment a
                     // browser lets it open. Where it cannot (it throws, or there is no showPicker), the field takes the focus.
-                    flushSync(() => move(chooseAnotherDay));
+                    flushSync(() => events.move(chooseAnotherDay));
                     try {
                       dateField.current?.showPicker();
                     } catch {
