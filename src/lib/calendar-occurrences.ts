@@ -14,7 +14,7 @@ import { wallDays, type WallDay } from './paged-view';
 export type Occurrence = {
   source: 'synced' | 'native';
   id: string;
-  // The Household it belongs to: what a skipped day of a Repeat is written under (skipNativeOccurrence).
+  // The Household it belongs to: what a skipped day of a Repeat is written under (the plan runner's skip).
   household_id: string;
   // The Mirrored Calendar a Synced Event came from; null for a Native Event, which has none.
   calendar_id: string | null;

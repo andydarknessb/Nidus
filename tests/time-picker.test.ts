@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { drumOf, parseTypedTime, timeOf, timeOfDrum } from '../src/lib/time-picker';
 
 // The time sheet's core (docs/specs/0013, The time sheet): the typed forms and the drums. All of it is pure, so none of it needs the local
-// stack or a DOM. What Starts and Ends do to each other (setStart and setEnd) is the event draft's now: tests/event-draft.test.ts.
+// stack or a DOM. What Starts and Ends do to each other is the event draft's now (setTime): tests/event-draft.test.ts.
 
 describe('a time typed', () => {
   it('reads every plain way of typing one', () => {
