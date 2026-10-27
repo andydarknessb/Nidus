@@ -342,7 +342,7 @@ export function CalendarAccountsSection() {
       async () => {
         await removeCalendarAccount(supabase, account.id);
         if (account.provider === 'icloud') say('iPhone calendar removed.');
-        else setNotice('Account removed.');
+        else say('Google account removed.');
       },
       {
         // The account is gone and with it the button that asked: focus goes to the first control of its card.
