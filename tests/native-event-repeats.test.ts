@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterEach, describe, expect, it } from 'vitest';
-import { addDays, dayStartMs, householdDay } from '@shared/zoned-time.ts';
+import { addDays, dayStartMs, householdDay, instantAt } from '@shared/zoned-time.ts';
 import { loadOccurrences, type Occurrence } from '../src/lib/calendar-occurrences';
 import { arrangeCalendar, arrangeEvents } from './support/calendar';
 import {
@@ -95,6 +95,20 @@ const ends = (rows: Occurrence[]) => rows.map((row) => instant(row.ends_at));
 const SUN = 1;
 const TUE = 4;
 const THU = 16;
+
+const MS_DAY = 86_400_000;
+const dayNumber = (date: string) => Date.parse(`${date}T00:00:00Z`) / MS_DAY;
+const dateOfNumber = (n: number) => new Date(n * MS_DAY).toISOString().slice(0, 10);
+const weekdayOf = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay();
+// Every day in [from, to] on which a Repeat lands, by the rule its first day sets.
+function daysWhere(from: string, to: string, lands: (day: string) => boolean): string[] {
+  const days: string[] = [];
+  for (let n = dayNumber(from); n <= dayNumber(to); n += 1) {
+    const day = dateOfNumber(n);
+    if (lands(day)) days.push(day);
+  }
+  return days;
+}
 
 // Tuesday 2026-10-06, 3:00 to 4:00 PM in Chicago (CDT).
 const TUESDAY: Event = { starts_at: '2026-10-06T20:00:00Z', ends_at: '2026-10-06T21:00:00Z' };
@@ -292,6 +306,73 @@ describe.each(PRINCIPALS)('Repeats, as $name', ({ client: principal }) => {
     expect(onLastDay).toHaveLength(1);
     expect(afterIt).toEqual([]);
     expect(yesterday).toHaveLength(1);
+  });
+
+  it('expands a daily Repeat from a mistyped year only two years back, and reads a week in under a second', async () => {
+    const account = await arrange();
+    const client = await principal(account);
+    const timezone = account.household.timezone;
+    const today = householdDay(timezone).date;
+    const dayStart = (date: string) => new Date(dayStartMs(date, timezone)).toISOString();
+    const at = (date: string) => new Date(instantAt(date, '15:00', timezone)).toISOString();
+    // 3:00 PM on Oct 6 in the year 202: a typo for 2026, and about 670,000 days of expansion
+    // before the floor.
+    await save(client, { starts_at: at('0202-10-06'), ends_at: new Date(instantAt('0202-10-06', '16:00', timezone)).toISOString() }, { every: 'day' });
+
+    expect(starts(await read(client, dayStart(today), dayStart(addDays(today, 2))))).toEqual([at(today), at(addDays(today, 1))]);
+    // More than two years back there is nothing, however old the Repeat is.
+    expect(await read(client, dayStart(addDays(today, -800)), dayStart(addDays(today, -740)))).toEqual([]);
+
+    const week = [dayStart(today), dayStart(addDays(today, 7))] as const;
+    await read(client, ...week);
+    const startedAt = performance.now();
+    expect(await read(client, ...week)).toHaveLength(7);
+    expect(performance.now() - startedAt).toBeLessThan(1000);
+  });
+
+  it('keeps an every-3-days and an every-other-week Repeat on the days counted from a 2019 first day', async () => {
+    const account = await arrange();
+    const client = await principal(account);
+    const timezone = account.household.timezone;
+    const today = householdDay(timezone).date;
+    const from = addDays(today, -14);
+    const to = addDays(today, 13);
+    const week = [new Date(dayStartMs(from, timezone)).toISOString(), new Date(dayStartMs(addDays(to, 1), timezone)).toISOString()] as const;
+    const at = (day: string) => new Date(instantAt(day, '15:00', timezone)).toISOString();
+    const first = '2019-01-01';
+    const endsAtOneHourOn = new Date(instantAt(first, '16:00', timezone)).toISOString();
+
+    await save(client, { title: 'Every three days', starts_at: at(first), ends_at: endsAtOneHourOn }, { every: 'day', interval: 3 });
+    await save(client, { title: 'Every other week', starts_at: at(first), ends_at: endsAtOneHourOn }, { every: 'week', interval: 2, days: TUE | THU });
+
+    const rows = await read(client, ...week);
+    const byTitle = (title: string) => rows.filter((row) => row.title === title).map((row) => instant(row.starts_at));
+    const sunday = (date: string) => addDays(date, -weekdayOf(date));
+
+    expect(byTitle('Every three days')).toEqual(daysWhere(from, to, (day) => (dayNumber(day) - dayNumber(first)) % 3 === 0).map(at));
+    expect(byTitle('Every other week')).toEqual(
+      daysWhere(from, to, (day) => (((TUE | THU) >> weekdayOf(day)) & 1) === 1 && (dayNumber(sunday(day)) - dayNumber(sunday(first))) / 7 % 2 === 0).map(at),
+    );
+  });
+
+  it('shows a yearly Repeat from 1958 this year, and reads monthly Repeats as before', async () => {
+    const account = await arrange();
+    const client = await principal(account);
+    const timezone = account.household.timezone;
+    const today = householdDay(timezone).date;
+    const thisYear = today.slice(0, 4);
+    const at = (date: string, time = '15:00') => new Date(instantAt(date, time, timezone)).toISOString();
+    const dayStart = (date: string) => new Date(dayStartMs(date, timezone)).toISOString();
+
+    // The birthday this year, or next year's once this year's has passed.
+    const birthday = `${today > `${thisYear}-11-15` ? Number(thisYear) + 1 : Number(thisYear)}-11-15`;
+    await save(client, { title: 'Birthday', starts_at: at('1958-11-15'), ends_at: at('1958-11-15', '16:00') }, { every: 'year' });
+    expect(starts(await read(client, dayStart(birthday), dayStart(addDays(birthday, 1))))).toEqual([at(birthday)]);
+
+    // A monthly Repeat from 2019 still lands on the 3rd, this year too.
+    const monthly = `${thisYear}-04-03`;
+    await save(client, { title: 'Rent', starts_at: at('2019-03-03'), ends_at: at('2019-03-03', '16:00') }, { every: 'month' });
+    expect(starts(await read(client, dayStart(monthly), dayStart(addDays(monthly, 31))))).toEqual([at(monthly), at(`${thisYear}-05-03`)]);
   });
 
   it('writes a skip and a standalone event in one transaction, and rolls the skip back with a refused write', async () => {
