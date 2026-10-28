@@ -22,6 +22,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0013-time-and-repeats.md` is the v12 spec: a time sheet of our own for Starts and Ends, and Repeats on Native Events, expanded by the database as they are read. `docs/adr/0005` records the reversal of "a repeating event belongs in Google".
 - `docs/specs/0014-deeper-modules-round-four.md` is the v13 spec: deeper modules, round four (one change, one form row, one card read, one navigator, one shelf, one name for the shared folder), continuing v8, v10 and v11; `docs/adr/0006` records the one decision that outlives it.
 - `docs/specs/0015-deeper-modules-round-five.md` is the v14 spec: deeper modules, round five (one event draft for the Native Event form, one hold for the Home cards), continuing v8, v10, v11 and v13.
+- `docs/specs/0016-four-fixes.md` is the v15 spec: four fixes from the 2026-10-27 audit (a time zone change keeps Native Events on their date and clock time, a Google calendar that is gone leaves, day and week Repeats expand from at most two years back, the list notification names every recent item).
 
 ## Conventions
 

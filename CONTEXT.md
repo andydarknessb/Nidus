@@ -35,7 +35,7 @@ One browser on one phone, signed in as a Household Account, that has turned on n
 _Avoid_: device (a Device is a tablet or a screen's PC), token, registration
 
 **Household Timezone**:
-The one timezone stored on the Household. All display, rollover and reset logic uses it; source calendar timezones are converted on ingest.
+The one timezone stored on the Household. All display, rollover and reset logic uses it; source calendar timezones are converted on ingest. Changing it keeps every Native Event on the Household Date and clock time it was entered with; Synced Events follow their source.
 
 **Household Date**:
 A calendar date on the Household Timezone's clock. It begins at Household midnight, whatever zone the screen or the server is in. A time on a Household Date that the clocks skip moves forward by the skipped gap; a time that happens twice is the first one.
@@ -52,7 +52,7 @@ An external calendar source belonging to the Household, from which events are mi
 _Avoid_: Integration, connection, OAuth account
 
 **Mirrored Calendar**:
-One selected calendar within a Calendar Account that Nidus mirrors. Carries the Profile (or whole-Household) attribution that its Synced Events inherit.
+One calendar within a Calendar Account that Nidus can mirror. Only a selected one has Synced Events; it carries the Profile (or whole-Household) attribution they inherit.
 _Avoid_: Sub-calendar, feed, source
 
 **Synced Event**:

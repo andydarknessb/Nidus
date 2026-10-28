@@ -299,3 +299,21 @@ Settled on 2026-10-27 from an architecture review of master after v13, two round
 ### Tables
 
 No migration.
+
+## v15: four fixes
+
+Settled on 2026-10-27 from an audit of master and the grilling that followed, every recommendation taken. The spec is [0016](specs/0016-four-fixes.md) (tracker #270).
+
+### Decisions
+
+- **A time zone change keeps Native Events where the family put them.** Every Native Event, one-off and Repeat, all-day and timed, past and future, keeps the Household Date and clock time it was entered with: a trigger on the Household rewrites them in the same transaction, for every writer. Skipped days and a Repeat's end are dates and stay.
+- **Synced Events follow their source.** The trigger never writes them (ADR 0002); it clears each Mirrored Calendar's last full read, so the next run reads in full in the new zone.
+- **A Google calendar Google cannot find (404) leaves Nidus**, with its Synced Events, silently; the account counts as synced. 403 and 429 stay passing failures. Reconnecting lists it again if it comes back.
+- **Day and week Repeats expand from at most two years back**, as they stop two years ahead. Month and year Repeats and the event form are unchanged.
+- **The list notification names every recent item** someone else added and nobody crossed off, sent only when something new was claimed; its tag still replaces the last one.
+- **Dropped**: leaving unchanged Synced Events unwritten on a full read.
+- **Four tickets, no spec blockers**, each its own pull request into `master`.
+
+### Tables
+
+Two migrations: the time zone trigger on `households`, and the expansion function of Native Event Repeats replaced with the two-year floor. No table changes.
