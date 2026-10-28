@@ -26,7 +26,7 @@ export function ListChip({ name, left, pinned, picked, onPick }: { name: string;
           {pinned && <Pin className="size-4 shrink-0" />}
           <span className="truncate text-[17px] leading-6">{name}</span>
         </span>
-        {left !== null && <span className="text-[13px] leading-4 font-medium text-muted-foreground">{left} to get</span>}
+        {left !== null && <span className="text-[14px] leading-5 font-medium text-muted-foreground">{left} to get</span>}
       </span>
     </Button>
   );
