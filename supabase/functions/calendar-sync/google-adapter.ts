@@ -158,7 +158,7 @@ async function applyChanges(deps: SyncDeps, calendarId: string, changes: Changes
 
 
 // Syncs one selected calendar and returns how many events it wrote. Throws (a SyncFailure or a
-// network error) with the calendar exactly as it was.
+// network error) with the calendar exactly as it was, or CalendarGone on a 404, after which the caller deletes it.
 async function syncCalendar(deps: SyncDeps, accessToken: string, calendar: Calendar, window: Window, timezone: string, nowMs: number): Promise<number> {
   if (canReadIncrementally(calendar, nowMs)) {
     const changes = await fetchChanges(deps, accessToken, calendar.google_calendar_id, calendar.sync_token, window, timezone);
