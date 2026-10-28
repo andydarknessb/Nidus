@@ -11,6 +11,8 @@ export type PushPreferences = {
   morningSummary: boolean;
   routinesNudge: boolean;
   listAdditions: boolean;
+  // Whose events this phone gets, as Profile ids; empty is Everyone (spec 0018).
+  people: string[];
 };
 export type PushState = { kind: 'off' } | { kind: 'denied' } | { kind: 'on'; id: string; preferences: PushPreferences };
 
@@ -20,7 +22,10 @@ export class PushGoneError extends Error {}
 export const REMINDER_MINUTES = [5, 10, 15, 30, 60] as const;
 
 // What a phone gets before it chooses: everything on, the reminder 15 minutes ahead (the database's own defaults).
-export const DEFAULT_PREFERENCES: PushPreferences = { eventReminders: true, reminderMinutes: 15, morningSummary: true, routinesNudge: true, listAdditions: true };
+export const DEFAULT_PREFERENCES: PushPreferences = { eventReminders: true, reminderMinutes: 15, morningSummary: true, routinesNudge: true, listAdditions: true, people: [] };
+
+// Pressing a person adds or removes them; removing the last one leaves none, which is Everyone.
+export const pressPerson = (people: string[], id: string): string[] => (people.includes(id) ? people.filter((one) => one !== id) : [...people, id]);
 
 // Whether this browser can show notifications from Nidus. Pure over what it is given. An iPhone or iPad (iPadOS says it is a Mac,
 // with a touch screen) shows them only to a Home Screen app; in a Safari tab it has no PushManager at all, so that is told first.
@@ -31,9 +36,9 @@ export function pushSupport(nav: Navigator = navigator, win: Window = window): P
   return 'serviceWorker' in nav && 'PushManager' in win && 'Notification' in win ? 'supported' : 'unsupported';
 }
 
-const columns = 'id, endpoint, event_reminders, reminder_minutes, morning_summary, routines_nudge, list_additions';
+const columns = 'id, endpoint, event_reminders, reminder_minutes, morning_summary, routines_nudge, list_additions, profile_ids';
 
-type Row = { id: string; endpoint: string; event_reminders: boolean; reminder_minutes: number; morning_summary: boolean; routines_nudge: boolean; list_additions: boolean };
+type Row = { id: string; endpoint: string; event_reminders: boolean; reminder_minutes: number; morning_summary: boolean; routines_nudge: boolean; list_additions: boolean; profile_ids: string[] };
 
 const stateOf = (row: Row): PushState => ({
   kind: 'on',
@@ -44,6 +49,7 @@ const stateOf = (row: Row): PushState => ({
     morningSummary: row.morning_summary,
     routinesNudge: row.routines_nudge,
     listAdditions: row.list_additions,
+    people: row.profile_ids,
   },
 });
 
@@ -152,6 +158,7 @@ export async function savePushPreferences(client: SupabaseClient, id: string, pr
       morning_summary: preferences.morningSummary,
       routines_nudge: preferences.routinesNudge,
       list_additions: preferences.listAdditions,
+      profile_ids: preferences.people,
     })
     .eq('id', id)
     .select('id');

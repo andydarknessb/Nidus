@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { EmptyRing, Tick } from '@/components/people';
+import { EmptyRing, HouseDisc, PersonDisc, Tick } from '@/components/people';
+import { personStyle } from '@/lib/look';
+import { loadProfiles, type Profile } from '@/lib/profiles';
 import { Card, Field, Problem, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
-import { REMINDER_MINUTES, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
+import { REMINDER_MINUTES, pressPerson, pushSupport, readPushState, savePushPreferences, sendTestNotification, turnOffNotifications, turnOnNotifications, type PushPreferences, type PushState, type PushSupport } from '@/lib/push';
 import { loadPinnedListName } from '@/lib/shared-lists';
 import { supabase } from '@/lib/supabase';
 import { type WriteProblem } from '@/lib/change';
@@ -54,10 +56,16 @@ function Switch({ id, label, checked, busy, onChange }: { id?: string; label: st
   );
 }
 
+// A chip of "Whose events?": the Add event sheet's "Who is it for?" chip (52 tall, round, a ring when pressed). A person keeps their
+// soft colour when pressed, so only the ring answers.
+const chip = 'h-13 max-w-full gap-2 rounded-full pr-4 pl-2 font-medium selected:ring-[2.5px]';
+
 type ViewProps = {
   support: PushSupport;
   // null until the first read lands.
   state: PushState | null;
+  // The Household's Profiles in sort order, or null until they are read. None, and no group is drawn.
+  profiles?: Profile[] | null;
   // The pinned list's name, or null when there is none.
   listName: string | null;
   busy: boolean;
@@ -71,12 +79,14 @@ type ViewProps = {
 };
 
 // What the card draws, from what it is told: each of its states is rendered in tests/notifications-section.test.ts.
-export function NotificationsView({ support, state, listName, busy, status, failed, problem, onTurnOn, onTurnOff, onTest, onChange }: ViewProps) {
+export function NotificationsView({ support, state, profiles = null, listName, busy, status, failed, problem, onTurnOn, onTurnOff, onTest, onChange }: ViewProps) {
   // A tap while a write is on its way does nothing; the button says so with `aria-disabled`, never `disabled`.
   const guarded = (action: () => void) => () => {
     if (!busy) action();
   };
-  const change = (preferences: PushPreferences, part: Partial<PushPreferences>) => onChange({ ...preferences, ...part });
+  // A chosen id that is no longer a Profile is not drawn and is dropped by the next save. Until the Profiles are read nothing is dropped.
+  const chosenOf = (preferences: PushPreferences) => (profiles ? preferences.people.filter((id) => profiles.some((profile) => profile.id === id)) : preferences.people);
+  const change = (preferences: PushPreferences, part: Partial<PushPreferences>) => onChange({ ...preferences, people: chosenOf(preferences), ...part });
   return (
     <Card title="Notifications on this phone" read={{ failed }} of="notifications" words={LOAD_FAILED}>
       {support === 'unsupported' && <p className="text-base">{UNSUPPORTED_WORDS}</p>}
@@ -116,6 +126,34 @@ export function NotificationsView({ support, state, listName, busy, status, fail
             </Field>
           </div>
           <Switch label="Morning summary at 7 AM" checked={state.preferences.morningSummary} busy={busy} onChange={(morningSummary) => change(state.preferences, { morningSummary })} />
+          {profiles && profiles.length > 0 && (
+            <div role="group" aria-labelledby="whose-label" className="flex flex-col gap-2">
+              <span id="whose-label" className="text-[15px] leading-5 text-muted-foreground">
+                Whose events?
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <Button aria-pressed={chosenOf(state.preferences).length === 0} aria-disabled={busy || undefined} onClick={guarded(() => change(state.preferences, { people: [] }))} className={`${chip} selected:bg-secondary`}>
+                  <HouseDisc size={34} />
+                  Everyone
+                </Button>
+                {profiles.map((profile) => (
+                  <Button
+                    key={profile.id}
+                    variant="quiet"
+                    aria-pressed={chosenOf(state.preferences).includes(profile.id)}
+                    aria-disabled={busy || undefined}
+                    onClick={guarded(() => change(state.preferences, { people: pressPerson(chosenOf(state.preferences), profile.id) }))}
+                    style={personStyle(profile.color)}
+                    className={`person ${chip} bg-person-soft text-foreground selected:bg-person-soft`}
+                  >
+                    <PersonDisc name={profile.name} color={profile.color} size={34} />
+                    <span className="truncate">{profile.name}</span>
+                  </Button>
+                ))}
+              </div>
+              <p className={helpClass}>Events for everyone come to every phone.</p>
+            </div>
+          )}
           <Switch label="Routines not done at 7 PM" checked={state.preferences.routinesNudge} busy={busy} onChange={(routinesNudge) => change(state.preferences, { routinesNudge })} />
           <Switch label={`Added to ${listName ?? 'the shopping list'}`} checked={state.preferences.listAdditions} busy={busy} onChange={(listAdditions) => change(state.preferences, { listAdditions })} />
           <p className={helpClass}>{LOCK_SCREEN_WORDS}</p>
@@ -145,6 +183,7 @@ export function NotificationsSection() {
   const read = useSyncedRead<PushState>(() => readPushState(supabase), NO_TABLES, support === 'supported' ? 'push' : null);
   const state = read.data;
   const [listName, setListName] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [status, setStatus] = useState<NotificationsStatus>('idle');
   // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
   // afterwards.
@@ -163,6 +202,11 @@ export function NotificationsSection() {
       (name) => live && setListName(name),
       () => undefined,
     );
+    // Likewise the people: without them the card draws no "Whose events?" and drops nothing from the saved choice.
+    loadProfiles(supabase).then(
+      (found) => live && setProfiles(found),
+      () => undefined,
+    );
     return () => {
       live = false;
       document.removeEventListener('visibilitychange', again);
@@ -176,6 +220,7 @@ export function NotificationsSection() {
     <NotificationsView
       support={support}
       state={state}
+      profiles={profiles}
       listName={listName}
       busy={busy}
       status={status}

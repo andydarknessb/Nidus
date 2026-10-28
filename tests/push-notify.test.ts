@@ -103,7 +103,7 @@ async function addAccount(account: HouseholdAccount): Promise<string> {
   return data.user.id;
 }
 
-type Switches = { event_reminders?: boolean; reminder_minutes?: number; morning_summary?: boolean; routines_nudge?: boolean; list_additions?: boolean };
+type Switches = { event_reminders?: boolean; reminder_minutes?: number; morning_summary?: boolean; routines_nudge?: boolean; list_additions?: boolean; profile_ids?: string[] };
 type Sub = { id: string; endpoint: string };
 let endpoints = 0;
 
@@ -894,5 +894,182 @@ describe('POST /test', () => {
 
     expect(response.status).toBe(410);
     expect(await subscriptionExists(mine.id)).toBe(false);
+  });
+});
+
+// ---- whose events a phone gets (spec 0018, ticket #287) -----------------------------------------
+
+describe('whose events a phone gets', () => {
+  // 3:00 PM in Chicago (CDT) for the reminders; 7:00 AM the same day for the summary.
+  const NOW = Date.parse('2026-10-06T20:00:00Z');
+  const SEVEN_AM = Date.parse('2026-10-06T12:00:00Z');
+
+  async function arrangeProfile(account: HouseholdAccount, name: string): Promise<string> {
+    const { data, error } = await asServiceRole()
+      .from('profiles')
+      .insert({ household_id: account.household.id, name, color: '#ffffff' })
+      .select('id')
+      .single<{ id: string }>();
+    if (error || !data) throw error ?? new Error('profile insert returned nothing');
+    return data.id;
+  }
+
+  // A Mirrored Calendar assigned to `profileId` (or to nobody) holding `events`.
+  async function arrangeFor(account: HouseholdAccount, profileId: string | null, events: EventInput[]): Promise<void> {
+    const calendar = await arrangeCalendar(account, { profileId });
+    await arrangeEvents(calendar.calendarId, events);
+  }
+
+  async function saveNative(account: HouseholdAccount, title: string, startsAt: number, profileIds: string[]): Promise<void> {
+    const client = await asHouseholdAccount(account);
+    const { error } = await client.rpc('save_native_event', {
+      p_id: null,
+      p_title: title,
+      p_location: null,
+      p_notes: null,
+      p_starts_at: at(startsAt),
+      p_ends_at: at(startsAt + 30 * MINUTE),
+      p_is_all_day: false,
+      p_profile_ids: profileIds,
+    });
+    if (error) throw error;
+  }
+
+  async function arrangeMeal(account: HouseholdAccount): Promise<void> {
+    const { error } = await asServiceRole().from('meals').insert({ household_id: account.household.id, meal_date: '2026-10-06', slot: 'dinner', title: 'Tacos' });
+    if (error) throw error;
+  }
+
+  const titles = (push: ReturnType<typeof fakePush>, sub: Sub) => push.to(sub.endpoint).map((one) => one.payload.title).sort();
+
+  it('sends a phone that chose Cory no reminder for an event on a calendar assigned to Sam', async () => {
+    const account = await arrange();
+    const cory = await arrangeProfile(account, 'Cory');
+    const sam = await arrangeProfile(account, 'Sam');
+    const phone = await subscribe(account.authUserId, { event_reminders: true, profile_ids: [cory] });
+    await arrangeFor(account, sam, [event('Sam swim', NOW + 10 * MINUTE)]);
+    const push = fakePush();
+
+    await run(deps(account, push, NOW));
+
+    expect(push.sent).toEqual([]);
+    expect(await deliveries(phone.id)).toEqual([]);
+  });
+
+  it("sends that phone Cory's event and an event on a calendar assigned to nobody, and not Sam's", async () => {
+    const account = await arrange();
+    const cory = await arrangeProfile(account, 'Cory');
+    const sam = await arrangeProfile(account, 'Sam');
+    const phone = await subscribe(account.authUserId, { event_reminders: true, profile_ids: [cory] });
+    await arrangeFor(account, cory, [event('Cory run', NOW + 5 * MINUTE)]);
+    await arrangeFor(account, sam, [event('Sam swim', NOW + 6 * MINUTE)]);
+    await arrangeFor(account, null, [event('Dinner out', NOW + 7 * MINUTE)]);
+    const push = fakePush();
+
+    await run(deps(account, push, NOW));
+
+    expect(titles(push, phone)).toEqual(['Cory run', 'Dinner out']);
+  });
+
+  it('sends a Native Event for Sam and Mia to a phone that chose Mia, and a Native Event with nobody picked to every phone', async () => {
+    const account = await arrange();
+    const cory = await arrangeProfile(account, 'Cory');
+    const sam = await arrangeProfile(account, 'Sam');
+    const mia = await arrangeProfile(account, 'Mia');
+    const miaPhone = await subscribe(account.authUserId, { event_reminders: true, profile_ids: [mia] });
+    const coryPhone = await subscribe(account.authUserId, { event_reminders: true, profile_ids: [cory] });
+    await saveNative(account, 'Recital', NOW + 10 * MINUTE, [sam, mia]);
+    await saveNative(account, 'Family dinner', NOW + 11 * MINUTE, []);
+    const push = fakePush();
+
+    await run(deps(account, push, NOW));
+
+    expect(titles(push, miaPhone)).toEqual(['Family dinner', 'Recital']);
+    expect(titles(push, coryPhone)).toEqual(['Family dinner']);
+  });
+
+  it("sends an event merged from Cory's and Sam's calendars to a phone that chose Cory and one that chose Sam, once each", async () => {
+    const account = await arrange();
+    const cory = await arrangeProfile(account, 'Cory');
+    const sam = await arrangeProfile(account, 'Sam');
+    const coryPhone = await subscribe(account.authUserId, { event_reminders: true, profile_ids: [cory] });
+    const samPhone = await subscribe(account.authUserId, { event_reminders: true, profile_ids: [sam] });
+    const swim = event('Swim', NOW + 10 * MINUTE);
+    await arrangeFor(account, cory, [swim]);
+    await arrangeFor(account, sam, [{ ...swim, google_event_id: `${swim.google_event_id}-copy` }]);
+    const push = fakePush();
+
+    await run(deps(account, push, NOW));
+    await run(deps(account, push, NOW + MINUTE));
+
+    expect(titles(push, coryPhone)).toEqual(['Swim']);
+    expect(titles(push, samPhone)).toEqual(['Swim']);
+  });
+
+  it('sends a phone on Everyone every event', async () => {
+    const account = await arrange();
+    const cory = await arrangeProfile(account, 'Cory');
+    const sam = await arrangeProfile(account, 'Sam');
+    const phone = await subscribe(account.authUserId, { event_reminders: true });
+    await arrangeFor(account, cory, [event('Cory run', NOW + 5 * MINUTE)]);
+    await arrangeFor(account, sam, [event('Sam swim', NOW + 6 * MINUTE)]);
+    const push = fakePush();
+
+    await run(deps(account, push, NOW));
+
+    expect(titles(push, phone)).toEqual(['Cory run', 'Sam swim']);
+  });
+
+  it('sends a phone whose only chosen Profile was deleted every event', async () => {
+    const account = await arrange();
+    const gone = await arrangeProfile(account, 'Gone');
+    const sam = await arrangeProfile(account, 'Sam');
+    const phone = await subscribe(account.authUserId, { event_reminders: true, profile_ids: [gone] });
+    await arrangeFor(account, sam, [event('Sam swim', NOW + 6 * MINUTE)]);
+    const { error } = await asServiceRole().from('profiles').delete().eq('id', gone);
+    if (error) throw error;
+    const push = fakePush();
+
+    await run(deps(account, push, NOW));
+
+    expect(titles(push, phone)).toEqual(['Sam swim']);
+  });
+
+  it("lists in the morning summary only the phone's events and every meal, and two phones get different bodies", async () => {
+    const account = await arrange();
+    const cory = await arrangeProfile(account, 'Cory');
+    const sam = await arrangeProfile(account, 'Sam');
+    const coryPhone = await subscribe(account.authUserId, { morning_summary: true, profile_ids: [cory] });
+    const samPhone = await subscribe(account.authUserId, { morning_summary: true, profile_ids: [sam] });
+    const everyonePhone = await subscribe(account.authUserId, { morning_summary: true });
+    await arrangeFor(account, cory, [event('Cory run', Date.parse('2026-10-06T13:00:00Z'))]);
+    await arrangeFor(account, sam, [event('Sam swim', Date.parse('2026-10-06T14:00:00Z'))]);
+    await arrangeFor(account, null, [event('Dinner out', Date.parse('2026-10-06T15:00:00Z'))]);
+    await arrangeMeal(account);
+    const push = fakePush();
+
+    await run(deps(account, push, SEVEN_AM));
+
+    const body = (sub: Sub) => push.to(sub.endpoint)[0]!.payload.body;
+    expect(body(coryPhone)).toBe('8:00 AM Cory run\n10:00 AM Dinner out\nDinner: Tacos');
+    expect(body(samPhone)).toBe('9:00 AM Sam swim\n10:00 AM Dinner out\nDinner: Tacos');
+    expect(body(everyonePhone)).toBe('8:00 AM Cory run\n9:00 AM Sam swim\n10:00 AM Dinner out\nDinner: Tacos');
+    // The key and tag do not change: one summary a day per phone.
+    expect(push.to(coryPhone.endpoint)[0]!.payload.tag).toBe('morning:2026-10-06');
+    expect(await deliveries(coryPhone.id)).toEqual([`morning:${account.household.id}:2026-10-06`]);
+  });
+
+  it('says "Nothing on the calendar today." when none of the day\'s events are the phone\'s, and still lists the meals', async () => {
+    const account = await arrange();
+    const cory = await arrangeProfile(account, 'Cory');
+    const sam = await arrangeProfile(account, 'Sam');
+    const phone = await subscribe(account.authUserId, { morning_summary: true, profile_ids: [cory] });
+    await arrangeFor(account, sam, [event('Sam swim', Date.parse('2026-10-06T14:00:00Z'))]);
+    await arrangeMeal(account);
+    const push = fakePush();
+
+    await run(deps(account, push, SEVEN_AM));
+
+    expect(push.to(phone.endpoint)[0]!.payload.body).toBe('Nothing on the calendar today.\nDinner: Tacos');
   });
 });
