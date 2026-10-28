@@ -139,6 +139,17 @@ describe('a list chip', () => {
     expect(chip()).toContain('>4 to get<');
   });
 
+  it('draws the count at 14 px on a 20 px line, the look\'s floor for a caption', () => {
+    expect(chip()).toMatch(/<span class="text-\[14px\] leading-5[^"]*">4 to get<\/span>/);
+    expect(chip()).not.toContain('text-[13px]');
+  });
+
+  it('keeps the count\'s weight and colour, and says no count when it does not know one', () => {
+    expect(chip()).toContain('font-medium');
+    expect(chip()).toContain('text-muted-foreground');
+    expect(chip({ left: null })).not.toContain('to get');
+  });
+
   it('has no em-dash', () => {
     expect(chip({ pinned: true })).not.toContain('\u2014');
   });
