@@ -2,8 +2,8 @@
 // (public.invoke_push_notify); for every Push Subscription whose account is still a Household
 // Account the run works out what is due (event reminders, the morning summary, Routines not
 // done, additions to the Pinned List), claims each notification's key in push_deliveries and sends
-// it only when the claim made a row. A claimed key is never sent again, even when the send fails:
-// at most once, no retries.
+// it only when the claim made a row. A claimed key never triggers another send, even when the send
+// fails: no retries. (A list item's text can still be named again in a later list notification.)
 //
 // A plain request handler with no Deno globals and no ambient network: the tests drive it under
 // Node with a fake `sendPush` and a real service role client against the local stack. index.ts
