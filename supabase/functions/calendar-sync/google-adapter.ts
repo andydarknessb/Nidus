@@ -5,7 +5,8 @@
 // token has expired (410). In between it is read incrementally: only what changed since the token,
 // applied in one transaction (apply_synced_event_changes). A full read replaces the calendar in one
 // transaction too (replace_synced_events), so a failure never leaves half a mirror and the wall never
-// shows a partly emptied calendar. One calendar failing never stops the others; an account Google no
+// shows a partly emptied calendar. A calendar Google answers 404 for (deleted, or no longer shared) is
+// deleted with its events and is no failure. One calendar failing never stops the others; an account Google no
 // longer honours is needs_reauth. Token minting is shared with calendar-connect's code exchange
 // (_shared/google-token.ts).
 import { type EventRow, MAX_DESCRIPTION, MAX_LOCATION, MAX_TITLE } from '../_shared/event-row.ts';
@@ -26,6 +27,9 @@ type GoogleEvent = {
 };
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+// Google answered 404 for a calendar's events: it is gone, and so is its mirror.
+class CalendarGone extends Error {}
 
 // One Google event as a row in the Household Timezone, or null when it is cancelled or has no
 // usable time. All-day events (`date`, the end exclusive) become Household midnights.
@@ -78,6 +82,8 @@ async function fetchPages(
     if (pageToken) url.searchParams.set('pageToken', pageToken);
     const response = await deps.fetch(url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
     if (response.status === 410 && params['syncToken']) return null;
+    // 404 is deleted or no longer shared with the account; Google does not say which. 403 and 429 are quota: retry later.
+    if (response.status === 404) throw new CalendarGone();
     if (!response.ok) throw new SyncFailure(`Google returned ${response.status}`);
     const body = (await response.json()) as Page;
     items.push(...(body.items ?? []));
@@ -152,7 +158,7 @@ async function applyChanges(deps: SyncDeps, calendarId: string, changes: Changes
 
 
 // Syncs one selected calendar and returns how many events it wrote. Throws (a SyncFailure or a
-// network error) with the calendar exactly as it was.
+// network error) with the calendar exactly as it was, or CalendarGone on a 404, after which the caller deletes it.
 async function syncCalendar(deps: SyncDeps, accessToken: string, calendar: Calendar, window: Window, timezone: string, nowMs: number): Promise<number> {
   if (canReadIncrementally(calendar, nowMs)) {
     const changes = await fetchChanges(deps, accessToken, calendar.google_calendar_id, calendar.sync_token, window, timezone);
@@ -202,6 +208,12 @@ export function googleAdapter(deps: SyncDeps): ProviderAdapter {
           read.events += await syncCalendar(deps, minted.token, calendar, window, timezone, nowMs);
           read.calendars += 1;
         } catch (error) {
+          if (error instanceof CalendarGone) {
+            // Its Synced Events go with it by cascade. Not a problem for the account, and nothing tells the family.
+            const { error: deleteError } = await deps.admin.from('mirrored_calendars').delete().eq('id', calendar.id);
+            if (deleteError) problems.push(`${calendar.name}: could not remove a calendar Google no longer has`);
+            continue;
+          }
           // The calendar keeps its previous events; the others carry on.
           problems.push(`${calendar.name}: ${error instanceof SyncFailure ? error.message : 'could not reach Google'}`);
         }
