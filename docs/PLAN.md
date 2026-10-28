@@ -317,3 +317,18 @@ Settled on 2026-10-27 from an audit of master and the grilling that followed, ev
 ### Tables
 
 Two migrations: the time zone trigger on `households`, and the expansion function of Native Event Repeats replaced with the two-year floor. No table changes.
+
+## v16: two fixes
+
+Settled on 2026-10-28 from a technical audit of the screens and the grilling that followed, every recommendation taken. The spec is [0017](specs/0017-two-fixes.md) (tracker #280).
+
+### Decisions
+
+- **A sheet's More foot is the Wall's at any width.** The phone layout's rule hides it, no longer a width of 960 px, so a portrait P12 (about 920 px wide) and the Elo upright at 125 percent (864) show it. 960 px stays only the Add event sheet's one column or two.
+- **The list chip's count is 14 px**, the type floor, on a 20 px line; the chip stays 56 tall.
+- **Dropped**: splitting the Settings bundle, about 4 percent of the source.
+- **Two tickets, no blockers**, each its own pull request into `master`.
+
+### Tables
+
+None.
