@@ -142,12 +142,13 @@ export function Sheet({
 // sheet has measured of the box (useOverflow). The padding is room for a focus ring at the edge of the box, taken back by the
 // margin; it is on the wrapper the content is in, so the foot sticks flush with the box's end and its button lines up with the
 // content, and the wrapper is what the clearance is on (BODY_CLEARANCE), so what takes the keyboard's focus is scrolled clear of the
-// foot. Below 960 px a sheet is one column on a phone, which scrolls by touch, and the foot is not drawn.
+// foot. The Wall's sheet has the foot at any width; a sheet in the phone layout scrolls by touch and has none (the phone's variant,
+// under 768 px wide or 544 px tall, never a width of its own: a Wall below 960 px wide is still the Wall).
 export function SheetBody({ title, control, children }: { title: string; control: OverflowControl; children: ReactNode }) {
   return (
     <div ref={control.scroller} className="-m-1 min-h-0 flex-1 overflow-y-auto">
       <div className={cn('p-1', BODY_CLEARANCE)}>{children}</div>
-      <OverflowButton control={control} of={title} className="px-1 max-[959px]:hidden" />
+      <OverflowButton control={control} of={title} className="px-1 phone:hidden" />
     </div>
   );
 }
