@@ -647,6 +647,72 @@ describe('when Google says no', () => {
   });
 });
 
+describe('when Google cannot find a calendar (404)', () => {
+  // Two selected calendars under one account, `gone` and `kept`, each with an event already stored.
+  async function arrangePair(account: HouseholdAccount, incremental: boolean) {
+    const gone = await arrangeCalendar(account, { googleCalendarId: 'gone', name: 'Gone' });
+    const kept = await arrangeCalendar(account, { googleCalendarId: 'kept', name: 'Kept', accountId: gone.accountId });
+    const read = (syncToken: string) => (incremental ? { syncToken, fullSyncAt: EARLIER_TODAY } : {});
+    await arrangeEvents(gone.calendarId, [stored('a', 'A')], read('tok-gone'));
+    await arrangeEvents(kept.calendarId, [stored('b', 'B')], read('tok-kept'));
+    return { gone, kept };
+  }
+
+  async function calendarExists(calendarId: string): Promise<boolean> {
+    const { data, error } = await asServiceRole().from('mirrored_calendars').select('id').eq('id', calendarId);
+    if (error) throw error;
+    return data.length > 0;
+  }
+
+  it('deletes the calendar and its events on a full read, and the account reads synced', async () => {
+    const account = await arrange();
+    const { gone, kept } = await arrangePair(account, false);
+
+    const summary = await syncOk(deps(account, fakeGoogle({ events: { kept: [standup] } })));
+
+    expect(await calendarExists(gone.calendarId)).toBe(false);
+    expect(await rowsOf(gone.calendarId)).toEqual([]);
+    expect((await rowsOf(kept.calendarId)).map((row) => row.google_event_id)).toEqual(['standup']);
+    expect(summary).toMatchObject({ calendars: 1, errors: [] });
+    const synced = await accountOf(gone.accountId);
+    expect(synced.last_error).toBeNull();
+    expect(new Date(synced.last_synced_at!).getTime()).toBe(NOW);
+  });
+
+  it('does the same on a read with a sync token', async () => {
+    const account = await arrange();
+    const { gone, kept } = await arrangePair(account, true);
+    const google = fakeGoogle({ events: {}, incremental: { 'tok-gone': 404, 'tok-kept': { items: [], nextSyncToken: 'tok-kept-2' } } });
+
+    const summary = await syncOk(deps(account, google));
+
+    expect(await calendarExists(gone.calendarId)).toBe(false);
+    expect((await rowsOf(kept.calendarId)).map((row) => row.google_event_id)).toEqual(['b']);
+    expect((await calendarState(kept.calendarId)).sync_token).toBe('tok-kept-2');
+    expect(summary).toMatchObject({ calendars: 1, errors: [] });
+    const synced = await accountOf(gone.accountId);
+    expect(synced.last_error).toBeNull();
+    expect(new Date(synced.last_synced_at!).getTime()).toBe(NOW);
+  });
+
+  it.each([
+    ['a 403 rateLimitExceeded', 403],
+    ['a 429', 429],
+  ])('keeps the calendar and its events on %s, and marks the account failed', async (_name, status) => {
+    const account = await arrange();
+    const { gone, kept } = await arrangePair(account, false);
+
+    const summary = await syncOk(deps(account, fakeGoogle({ events: { gone: status, kept: [standup] } })));
+
+    expect(await calendarExists(gone.calendarId)).toBe(true);
+    expect((await rowsOf(gone.calendarId)).map((row) => row.google_event_id)).toEqual(['a']);
+    expect(summary.errors).toHaveLength(1);
+    const failed = await accountOf(kept.accountId);
+    expect(failed.last_error).toMatch(new RegExp(String(status)));
+    expect(failed.last_synced_at).toBeNull();
+  });
+});
+
 describe('the window', () => {
   it('runs from one month back to six months ahead', () => {
     expect(syncWindow(NOW)).toEqual({ timeMin: '2026-08-30T12:00:00.000Z', timeMax: '2027-03-30T12:00:00.000Z' });

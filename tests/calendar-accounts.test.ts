@@ -8,6 +8,7 @@ import {
   verifyState,
   type ConnectDeps,
 } from '../supabase/functions/calendar-connect/handler';
+import { handleCalendarSync } from '../supabase/functions/calendar-sync/handler';
 import { GOOGLE_TOKEN_URL } from '@shared/google-token';
 import {
   SYNC_STALE_MS,
@@ -221,6 +222,27 @@ describe('calendar-connect callback', () => {
     const admin = asServiceRole();
     const { data: row } = await admin.from('calendar_accounts').select('vault_secret_id').eq('id', id).single();
     expect((await admin.rpc('read_calendar_secret', { p_secret_id: row!.vault_secret_id })).data).toBe('second-token');
+  });
+
+  it('lists a calendar the sync deleted as gone again, unselected, when the account is connected again', async () => {
+    const account = await arrange();
+    const id = await connect(account, 'parent@example.com');
+    const admin = asServiceRole();
+    const familyOf = async () => (await admin.from('mirrored_calendars').select('selected').eq('calendar_account_id', id).eq('google_calendar_id', 'family@group.calendar.google.com')).data;
+    await admin.from('mirrored_calendars').update({ selected: true }).eq('calendar_account_id', id).eq('google_calendar_id', 'family@group.calendar.google.com');
+
+    // Google no longer finds it (fakeGoogle answers 404 for a calendar with no events entry), so the sync deletes it.
+    const google = fakeGoogle({ email: 'parent@example.com' });
+    const sync = await handleCalendarSync(
+      new Request('https://nidus.test/functions/v1/calendar-sync', { method: 'POST', headers: { 'x-sync-secret': 'sync-secret' } }),
+      { env: { syncSecret: 'sync-secret', googleClientId: 'id', googleClientSecret: 'secret' }, admin, fetch: google.fetch, householdId: account.household.id },
+    );
+    expect(sync.status).toBe(200);
+    expect(await familyOf()).toEqual([]);
+
+    await connect(account, 'parent@example.com');
+
+    expect(await familyOf()).toEqual([{ selected: false }]);
   });
 
   it('refuses a forged, tampered or expired state and stores nothing', async () => {

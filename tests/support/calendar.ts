@@ -6,6 +6,8 @@ import { asServiceRole, type HouseholdAccount } from './supabase';
 export type ArrangedCalendar = { accountId: string; calendarId: string };
 
 export type CalendarOptions = {
+  // Puts the calendar under this existing Calendar Account instead of making a new one.
+  accountId?: string;
   email?: string;
   refreshToken?: string;
   googleCalendarId?: string;
@@ -21,12 +23,16 @@ let counter = 0;
 export async function arrangeCalendar(account: HouseholdAccount, options: CalendarOptions = {}): Promise<ArrangedCalendar> {
   const admin = asServiceRole();
   counter += 1;
-  const { data: accountId, error: accountError } = await admin.rpc('store_calendar_account', {
-    p_household_id: account.household.id,
-    p_google_email: options.email ?? `parent-${Date.now().toString(36)}-${counter}@example.test`,
-    p_refresh_token: options.refreshToken ?? 'refresh-token-1',
-  });
-  if (accountError || typeof accountId !== 'string') throw accountError ?? new Error('store_calendar_account returned nothing');
+  let accountId = options.accountId;
+  if (!accountId) {
+    const { data, error: accountError } = await admin.rpc('store_calendar_account', {
+      p_household_id: account.household.id,
+      p_google_email: options.email ?? `parent-${Date.now().toString(36)}-${counter}@example.test`,
+      p_refresh_token: options.refreshToken ?? 'refresh-token-1',
+    });
+    if (accountError || typeof data !== 'string') throw accountError ?? new Error('store_calendar_account returned nothing');
+    accountId = data;
+  }
 
   const { data: calendar, error } = await admin
     .from('mirrored_calendars')
