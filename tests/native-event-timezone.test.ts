@@ -139,6 +139,17 @@ describe('a time zone change re-anchors Native Events', () => {
     ]);
   });
 
+  it('never ends an event before it starts, when only its start falls in the skipped hour', async () => {
+    const account = await arrange('UTC');
+    const phone = await asHouseholdAccount(account);
+    await save(phone, account.household.id, { starts_at: '2026-03-08T02:45:00Z', ends_at: '2026-03-08T03:15:00Z' });
+
+    await setZone(account, LOS_ANGELES);
+
+    // The start moves forward to 3:45 AM PDT; the end is already past it, so the event shrinks to nothing.
+    expect(await instants(account)).toEqual(['2026-03-08T10:45:00.000Z 2026-03-08T10:45:00.000Z']);
+  });
+
   it('makes the next sync run read every Mirrored Calendar of the Household in full, and writes no Synced Event', async () => {
     const account = await arrange(NEW_YORK);
     const other = await arrange(NEW_YORK);

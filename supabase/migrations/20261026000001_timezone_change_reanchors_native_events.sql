@@ -38,7 +38,11 @@ as $$
 begin
   update public.native_events as n
   set starts_at = public.reanchor_instant(n.starts_at, old.timezone, new.timezone),
-      ends_at = public.reanchor_instant(n.ends_at, old.timezone, new.timezone)
+      -- greatest(): a start moved forward out of a skipped hour must not pass its end (native_events' ends_at >= starts_at).
+      ends_at = greatest(
+        public.reanchor_instant(n.ends_at, old.timezone, new.timezone),
+        public.reanchor_instant(n.starts_at, old.timezone, new.timezone)
+      )
   where n.household_id = new.id;
 
   update public.mirrored_calendars as c set last_full_sync_at = null where c.household_id = new.id;
