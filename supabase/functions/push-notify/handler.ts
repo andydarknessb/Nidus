@@ -116,6 +116,14 @@ export function morningBody(events: DayEvent[], meals: DayMeal[], dayStart: numb
   return lines.join('\n');
 }
 
+// The one rule for whose events a phone gets, shared by the reminders and the summary (spec 0018). `chosen` is the phone's
+// profile_ids, `current` the Household's Profile ids, `people` the event's. A chosen id that is no longer in the Household counts
+// for nothing, so a phone whose every chosen person is gone is back on Everyone; an event with no people is everyone's.
+export function phoneGetsEvent(chosen: readonly string[], current: ReadonlySet<string>, people: readonly string[]): boolean {
+  const mine = chosen.filter((id) => current.has(id));
+  return mine.length === 0 || people.length === 0 || people.some((id) => mine.includes(id));
+}
+
 // "Sam: 2 left. Mia: 1 left."
 export function routinesBody(left: { name: string; count: number }[]): string {
   return left.map(({ name, count }) => `${name}: ${count} left.`).join(' ');
@@ -134,9 +142,13 @@ type Subscription = {
   morning_summary: boolean;
   routines_nudge: boolean;
   list_additions: boolean;
+  // Whose events this phone gets; empty is Everyone.
+  profile_ids: string[];
 };
 type HouseholdRow = { id: string; timezone: string; pinned_list_id: string | null };
-type Occurrence = { source: string; id: string; title: string; location: string | null; starts_at: string; ends_at: string; is_all_day: boolean };
+type Occurrence = { source: string; id: string; title: string; location: string | null; starts_at: string; ends_at: string; is_all_day: boolean; profile_ids: string[] };
+// Today's data for the morning summary: its body is made per phone, from the events that phone gets.
+type Morning = { key: string; date: string; events: (DayEvent & { profile_ids: string[] })[]; meals: DayMeal[]; dayStart: number; dayEnd: number };
 type Item = { id: string; text: string; added_by: string | null };
 type Kind = 'event' | 'morning' | 'routines' | 'list';
 // One notification, due for every subscription that has its kind on. `keys` are what the claim
@@ -169,28 +181,27 @@ async function loadList(deps: PushDeps, household: HouseholdRow, now: number): P
   return { name: list.name, items };
 }
 
-async function morning(deps: PushDeps, household: HouseholdRow, today: HouseholdTime): Promise<Notification> {
+async function morning(deps: PushDeps, household: HouseholdRow, today: HouseholdTime): Promise<Morning> {
   const timezone = household.timezone;
   const dayStart = dayStartMs(today.date, timezone);
   const dayEnd = dayStartMs(addDays(today.date, 1), timezone);
   const occurrences = check(
     await deps.admin
       .from('calendar_occurrences')
-      .select('title, starts_at, ends_at, is_all_day')
+      .select('title, starts_at, ends_at, is_all_day, profile_ids')
       .eq('household_id', household.id)
       .lt('starts_at', iso(dayEnd))
       .gte('ends_at', iso(dayStart)),
     'calendar_occurrences',
-  ) as DayEvent[];
+  ) as Morning['events'];
   // The Wall's rule: an event that ends the instant the day begins belongs to yesterday (all-day ends are exclusive).
   const events = occurrences.filter((event) => spanIsOn(Date.parse(event.starts_at), Date.parse(event.ends_at), { startMs: dayStart, endMs: dayEnd }));
   const meals = check(
     await deps.admin.from('meals').select('slot, title').eq('household_id', household.id).eq('meal_date', today.date),
     'meals',
   ) as DayMeal[];
-  const body = morningBody(events, meals, dayStart, dayEnd, timezone);
   // The key carries the Household, so a phone that moves to another Household is not held back by its old claims.
-  return { kind: 'morning', keys: [`morning:${household.id}:${today.date}`], urgency: 'low', payload: () => makePayload('Today', body, '/', `morning:${today.date}`) };
+  return { key: `morning:${household.id}:${today.date}`, date: today.date, events, meals, dayStart, dayEnd };
 }
 
 async function routines(deps: PushDeps, household: HouseholdRow, today: HouseholdTime): Promise<Notification | null> {
@@ -244,7 +255,7 @@ async function dueFor(deps: PushDeps, household: HouseholdRow, subs: Subscriptio
       ...(check(
         await deps.admin
           .from('calendar_occurrences')
-          .select('source, id, title, location, starts_at, ends_at, is_all_day')
+          .select('source, id, title, location, starts_at, ends_at, is_all_day, profile_ids')
           .eq('household_id', household.id)
           .eq('is_all_day', false)
           .gt('starts_at', iso(now))
@@ -254,12 +265,17 @@ async function dueFor(deps: PushDeps, household: HouseholdRow, subs: Subscriptio
       ) as Occurrence[]),
     );
   }
-  const morningNotification =
-    subs.some((sub) => sub.morning_summary) && today.minutes >= MORNING_FROM && today.minutes < MORNING_UNTIL ? await morning(deps, household, today) : null;
+  const morningToday = subs.some((sub) => sub.morning_summary) && today.minutes >= MORNING_FROM && today.minutes < MORNING_UNTIL ? await morning(deps, household, today) : null;
+  // The Household's current Profiles, for the rule of whose events a phone gets: read only when some phone will be sent events.
+  const people = new Set<string>();
+  if (events.length > 0 || morningToday) {
+    const rows = check(await deps.admin.from('profiles').select('id').eq('household_id', household.id), 'profiles') as { id: string }[];
+    for (const row of rows) people.add(row.id);
+  }
   const routinesNotification =
     subs.some((sub) => sub.routines_nudge) && today.minutes >= ROUTINES_FROM && today.minutes < ROUTINES_UNTIL ? await routines(deps, household, today) : null;
   const list = subs.some((sub) => sub.list_additions) ? await loadList(deps, household, now) : null;
-  return { today, events, morningNotification, routinesNotification, list };
+  return { today, events, people, morningToday, routinesNotification, list };
 }
 
 type Due = Awaited<ReturnType<typeof dueFor>>;
@@ -269,7 +285,7 @@ function notificationsFor(sub: Subscription, due: Due, timezone: string, now: nu
   if (sub.event_reminders) {
     for (const event of due.events) {
       const startsAt = Date.parse(event.starts_at);
-      if (startsAt - now > sub.reminder_minutes * 60_000) continue;
+      if (startsAt - now > sub.reminder_minutes * 60_000 || !phoneGetsEvent(sub.profile_ids, due.people, event.profile_ids)) continue;
       const key = `event:${event.source}:${event.id}:${startsAt}`;
       out.push({
         kind: 'event',
@@ -279,7 +295,12 @@ function notificationsFor(sub: Subscription, due: Due, timezone: string, now: nu
       });
     }
   }
-  if (sub.morning_summary && due.morningNotification) out.push(due.morningNotification);
+  if (sub.morning_summary && due.morningToday) {
+    const { key, date, events, meals, dayStart, dayEnd } = due.morningToday;
+    const mine = events.filter((event) => phoneGetsEvent(sub.profile_ids, due.people, event.profile_ids));
+    const body = morningBody(mine, meals, dayStart, dayEnd, timezone);
+    out.push({ kind: 'morning', keys: [key], urgency: 'low', payload: () => makePayload('Today', body, '/', `morning:${date}`) });
+  }
   if (sub.routines_nudge && due.routinesNotification) out.push(due.routinesNotification);
   if (sub.list_additions && due.list) {
     // Not your own: the adder's own phone hears nothing. A Device's additions (and old rows) have
@@ -350,7 +371,7 @@ async function runAll(deps: PushDeps): Promise<PushSummary> {
 
   let subsQuery = deps.admin
     .from('push_subscriptions')
-    .select('id, auth_user_id, endpoint, p256dh, auth, event_reminders, reminder_minutes, morning_summary, routines_nudge, list_additions');
+    .select('id, auth_user_id, endpoint, p256dh, auth, event_reminders, reminder_minutes, morning_summary, routines_nudge, list_additions, profile_ids');
   if (deps.householdId) subsQuery = subsQuery.in('auth_user_id', [...householdOf.keys()]);
   const all = (check(await subsQuery, 'push_subscriptions') as Subscription[]).filter((sub) => householdOf.has(sub.auth_user_id));
   summary.subscriptions = all.length;

@@ -123,8 +123,8 @@ describe('readPushState', () => {
 describe('readPushState after the push service rotated the endpoint', () => {
   const OLD = 'https://push.example/old';
   const NEW = 'https://push.example/new';
-  const oldRow = { id: 'old-id', endpoint: OLD, event_reminders: false, reminder_minutes: 30, morning_summary: false, routines_nudge: true, list_additions: false };
-  const defaults = { event_reminders: true, reminder_minutes: 15, morning_summary: true, routines_nudge: true, list_additions: true };
+  const oldRow = { id: 'old-id', endpoint: OLD, event_reminders: false, reminder_minutes: 30, morning_summary: false, routines_nudge: true, list_additions: false, profile_ids: ['person-1'] };
+  const defaults = { event_reminders: true, reminder_minutes: 15, morning_summary: true, routines_nudge: true, list_additions: true, profile_ids: [] };
 
   function rotated({ rows, marker = { old: OLD, new: NEW }, refuseSave = false, failPreferencesOnce = false }: { rows: Record<string, unknown>[]; marker?: { old: string; new: string } | null; refuseSave?: boolean; failPreferencesOnce?: boolean }) {
     let remembered = marker;
@@ -179,9 +179,9 @@ describe('readPushState after the push service rotated the endpoint', () => {
     expect(await push.readPushState(client)).toEqual({
       kind: 'on',
       id: 'new-id',
-      preferences: { eventReminders: false, reminderMinutes: 30, morningSummary: false, routinesNudge: true, listAdditions: false },
+      preferences: { eventReminders: false, reminderMinutes: 30, morningSummary: false, routinesNudge: true, listAdditions: false, people: ['person-1'] },
     });
-    expect(rows).toEqual([{ id: 'new-id', endpoint: NEW, event_reminders: false, reminder_minutes: 30, morning_summary: false, routines_nudge: true, list_additions: false }]);
+    expect(rows).toEqual([{ id: 'new-id', endpoint: NEW, event_reminders: false, reminder_minutes: 30, morning_summary: false, routines_nudge: true, list_additions: false, profile_ids: ['person-1'] }]);
     expect(cleared).toHaveBeenCalledOnce();
     expect(subscription.unsubscribe).not.toHaveBeenCalled();
   });
@@ -199,7 +199,7 @@ describe('readPushState after the push service rotated the endpoint', () => {
     expect(rows.map((row) => row['endpoint'])).toEqual([OLD, NEW]);
 
     expect(await push.readPushState(client)).toMatchObject({ kind: 'on', id: 'new-id', preferences: { eventReminders: false, reminderMinutes: 30, listAdditions: false } });
-    expect(rows).toEqual([{ id: 'new-id', endpoint: NEW, event_reminders: false, reminder_minutes: 30, morning_summary: false, routines_nudge: true, list_additions: false }]);
+    expect(rows).toEqual([{ id: 'new-id', endpoint: NEW, event_reminders: false, reminder_minutes: 30, morning_summary: false, routines_nudge: true, list_additions: false, profile_ids: ['person-1'] }]);
     expect(cleared).toHaveBeenCalledOnce();
     expect(subscription.unsubscribe).not.toHaveBeenCalled();
   });

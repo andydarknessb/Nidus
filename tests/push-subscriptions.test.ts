@@ -392,6 +392,77 @@ describe('push subscriptions', () => {
     });
   });
 
+  describe('whose events a phone gets (profile_ids, spec 0018)', () => {
+    const PEOPLE = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'];
+    const mine = async (client: SupabaseClient, id: string) => (await client.from('push_subscriptions').select('profile_ids').eq('id', id)).data;
+
+    it('a new row is on Everyone, and the same account subscribing again keeps its people', async () => {
+      const { phone } = await household();
+      const url = endpoint();
+      const id = await saved(phone, url);
+      expect(await mine(phone, id)).toEqual([{ profile_ids: [] }]);
+
+      const chose = await phone.from('push_subscriptions').update({ profile_ids: PEOPLE }).eq('id', id);
+      expect(chose.error).toBeNull();
+      await save(phone, url, { p256dh: 'new-p256dh', auth: 'new-auth' });
+
+      expect(await mine(phone, id)).toEqual([{ profile_ids: PEOPLE }]);
+    });
+
+    it('a Household Account reads and updates its own, and clears them back to Everyone', async () => {
+      const { phone } = await household();
+      const id = await saved(phone);
+
+      const chose = await phone.from('push_subscriptions').update({ profile_ids: PEOPLE }).eq('id', id).select('profile_ids').single();
+      expect(chose.error).toBeNull();
+      expect(chose.data).toEqual({ profile_ids: PEOPLE });
+      const cleared = await phone.from('push_subscriptions').update({ profile_ids: [] }).eq('id', id);
+      expect(cleared.error).toBeNull();
+      expect(await mine(phone, id)).toEqual([{ profile_ids: [] }]);
+    });
+
+    it('another Household Account, a Device and an anonymous session cannot read or change them', async () => {
+      const { arranged, phone } = await household();
+      const other = await household();
+      const wall = await device(arranged);
+      const id = await saved(phone);
+      await phone.from('push_subscriptions').update({ profile_ids: PEOPLE }).eq('id', id);
+
+      for (const client of [other.phone, wall.client]) {
+        expect(await mine(client, id)).toEqual([]);
+        const changed = await client.from('push_subscriptions').update({ profile_ids: [] }).eq('id', id).select('id');
+        expect(changed.error).toBeNull();
+        expect(changed.data).toEqual([]);
+      }
+      const visitor = asAnonymous();
+      expect((await visitor.from('push_subscriptions').select('profile_ids')).error?.code).toBe(REFUSED);
+      expect((await visitor.from('push_subscriptions').update({ profile_ids: [] }).eq('id', id)).error?.code).toBe(REFUSED);
+      expect(await mine(phone, id)).toEqual([{ profile_ids: PEOPLE }]);
+    });
+
+    it('takes 100 ids and refuses more', async () => {
+      const { phone } = await household();
+      const id = await saved(phone);
+      const ids = (count: number) => Array.from({ length: count }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+
+      expect((await phone.from('push_subscriptions').update({ profile_ids: ids(100) }).eq('id', id)).error).toBeNull();
+      expect((await phone.from('push_subscriptions').update({ profile_ids: ids(101) }).eq('id', id)).error?.code).toBe(CHECK_VIOLATION);
+      expect(await mine(phone, id)).toEqual([{ profile_ids: ids(100) }]);
+    });
+
+    it('a phone moved to another Household Account starts on Everyone', async () => {
+      const { phone } = await household();
+      const other = await household();
+      const url = endpoint();
+      const oldId = await saved(phone, url);
+      await phone.from('push_subscriptions').update({ profile_ids: PEOPLE }).eq('id', oldId);
+
+      const moved = await saved(other.phone, url);
+
+      expect(await mine(other.phone, moved)).toEqual([{ profile_ids: [] }]);
+    });
+  });
+
   describe('removal', () => {
     it('removing a Household Account deletes its subscriptions and their deliveries, and no one else\'s', async () => {
       const { arranged, phone } = await household();

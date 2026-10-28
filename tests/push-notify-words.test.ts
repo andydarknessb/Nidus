@@ -9,6 +9,7 @@ import {
   MAX_BODY,
   MAX_TITLE,
   morningBody,
+  phoneGetsEvent,
   reminderBody,
   routinesBody,
 } from '../supabase/functions/push-notify/handler';
@@ -189,5 +190,31 @@ describe('the time a reminder and a morning line say', () => {
       const pills = scheduleColumns([event('Lunch', iso(startsAt), iso(startsAt + 3_600_000))], [day!], new Date(startsAt))[0]!.pills;
       expect(reminderBody(startsAt, startsAt - 15 * 60_000, zone, null)).toBe(`At ${pills[0]!.time}, in 15 minutes`);
     }
+  });
+});
+
+describe('phoneGetsEvent (whose events a phone gets, spec 0018)', () => {
+  const household = new Set(['cory', 'sam', 'mia']);
+
+  it('gives a phone on Everyone every event', () => {
+    expect(phoneGetsEvent([], household, ['sam'])).toBe(true);
+  });
+
+  it('gives every phone an event with no people', () => {
+    expect(phoneGetsEvent(['cory'], household, [])).toBe(true);
+  });
+
+  it('gives a phone an event that shares one of its people', () => {
+    expect(phoneGetsEvent(['cory', 'mia'], household, ['sam', 'mia'])).toBe(true);
+  });
+
+  it('keeps an event that shares none of its people from the phone', () => {
+    expect(phoneGetsEvent(['cory'], household, ['sam', 'mia'])).toBe(false);
+  });
+
+  it('ignores chosen ids that are no longer Profiles, so a phone with none left is on Everyone', () => {
+    expect(phoneGetsEvent(['gone'], household, ['sam'])).toBe(true);
+    expect(phoneGetsEvent(['gone', 'cory'], household, ['sam'])).toBe(false);
+    expect(phoneGetsEvent(['gone'], household, ['gone'])).toBe(true);
   });
 });

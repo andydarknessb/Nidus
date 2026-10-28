@@ -2,23 +2,30 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { NotificationsView as NotificationsViewType } from '../src/NotificationsSection';
-import type { PushPreferences } from '../src/lib/push';
+import type { PushPreferences, pressPerson as pressPersonType } from '../src/lib/push';
+import type { Profile } from '../src/lib/profiles';
 
 // The Notifications card (spec 0007, The phone), rendered in each state from what it is told: nothing here reads the browser or
 // the database.
 
 let NotificationsView: typeof NotificationsViewType;
+let pressPerson: typeof pressPersonType;
 beforeAll(async () => {
   vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
   ({ NotificationsView } = await import('../src/NotificationsSection'));
+  ({ pressPerson } = await import('../src/lib/push'));
 });
 afterAll(() => {
   vi.unstubAllEnvs();
 });
 
 type Props = Parameters<typeof NotificationsViewType>[0];
-const preferences: PushPreferences = { eventReminders: true, reminderMinutes: 30, morningSummary: true, routinesNudge: false, listAdditions: true };
+const preferences: PushPreferences = { eventReminders: true, reminderMinutes: 30, morningSummary: true, routinesNudge: false, listAdditions: true, people: [] };
+const people: Profile[] = [
+  { id: 'p-cory', name: 'Cory', color: '#fca5a5', avatar_url: null, sort_order: 1 },
+  { id: 'p-sam', name: 'Sam', color: '#6ee7b7', avatar_url: null, sort_order: 2 },
+];
 const none = () => undefined;
 const render = (props: Partial<Props> = {}) =>
   renderToStaticMarkup(
@@ -123,6 +130,63 @@ describe('the Notifications card', () => {
       expect(busy.match(/aria-disabled="true"/g)).toHaveLength(2 + 4 + 1);
       for (const markup of [busy, on(), render()]) expect(markup).not.toMatch(/\sdisabled(=|\s|>)/);
       expect(on()).not.toContain('aria-disabled=');
+    });
+  });
+
+  describe('Whose events? (spec 0018)', () => {
+    const whose = (markup: string) => /<div role="group" aria-labelledby="whose-label"[\s\S]*?<\/p><\/div>/.exec(markup)?.[0] ?? '';
+    const chips = (markup: string) => buttons(whose(markup));
+    const pressed = (attributes: string) => /aria-pressed="true"/.test(attributes);
+
+    it('is a group after the morning summary: Everyone with the house disc, then a chip per person, each pressed or not', () => {
+      const markup = on({ profiles: people });
+      expect(whose(markup)).toMatch(/aria-labelledby="whose-label"/);
+      expect(markup).toMatch(/<span id="whose-label"[^>]*>Whose events\?<\/span>/);
+      expect(chips(markup).map(({ name }) => name)).toEqual(['Everyone', 'C Cory', 'S Sam']);
+      const shown = words(markup);
+      expect(shown.indexOf('Morning summary at 7 AM')).toBeLessThan(shown.indexOf('Whose events?'));
+      expect(shown.indexOf('Whose events?')).toBeLessThan(shown.indexOf('Routines not done at 7 PM'));
+      for (const { attributes } of chips(markup)) expect(attributes).toMatch(/aria-pressed="(true|false)"/);
+      // Everyone has the house disc and each person a disc with their initial.
+      expect(chips(markup)[0]?.attributes).not.toMatch(/--person/);
+      expect(whose(markup)).toMatch(/>C</);
+    });
+
+    it('presses Everyone by default and the chosen people otherwise, and draws every chip 48 px tall at least', () => {
+      expect(chips(on({ profiles: people })).map(({ attributes }) => pressed(attributes))).toEqual([true, false, false]);
+      const chose = on({ state: { kind: 'on', id: 's1', preferences: { ...preferences, people: ['p-sam'] } }, profiles: people });
+      expect(chips(chose).map(({ attributes }) => pressed(attributes))).toEqual([false, false, true]);
+      for (const { attributes } of chips(chose)) expect(attributes).toMatch(/\bh-13\b/);
+    });
+
+    it('says under the chips that events for everyone come to every phone', () => {
+      const shown = words(on({ profiles: people }));
+      expect(shown).toContain('Events for everyone come to every phone.');
+      expect(shown.indexOf('Sam Events for everyone')).toBeGreaterThan(-1);
+    });
+
+    it('does not draw a chosen id that is no longer a Profile, and presses Everyone when none is left', () => {
+      const gone = on({ state: { kind: 'on', id: 's1', preferences: { ...preferences, people: ['p-gone'] } }, profiles: people });
+      expect(chips(gone).map(({ name }) => name)).toEqual(['Everyone', 'C Cory', 'S Sam']);
+      expect(chips(gone).map(({ attributes }) => pressed(attributes))).toEqual([true, false, false]);
+    });
+
+    it('draws no group while the Household has no Profiles or they are not yet read', () => {
+      for (const markup of [on({ profiles: [] }), on({ profiles: null }), on()]) {
+        expect(markup).not.toContain('whose-label');
+        expect(words(markup)).not.toContain('Events for everyone');
+      }
+    });
+
+    it('is aria-disabled while a write is on its way', () => {
+      expect(chips(on({ profiles: people, busy: true })).every(({ attributes }) => attributes.includes('aria-disabled="true"'))).toBe(true);
+    });
+
+    it('presses a person to add or remove them, and removing the last one is Everyone', () => {
+      expect(pressPerson([], 'p-cory')).toEqual(['p-cory']);
+      expect(pressPerson(['p-cory'], 'p-sam')).toEqual(['p-cory', 'p-sam']);
+      expect(pressPerson(['p-cory', 'p-sam'], 'p-cory')).toEqual(['p-sam']);
+      expect(pressPerson(['p-sam'], 'p-sam')).toEqual([]);
     });
   });
 
