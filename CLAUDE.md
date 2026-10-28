@@ -24,6 +24,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0015-deeper-modules-round-five.md` is the v14 spec: deeper modules, round five (one event draft for the Native Event form, one hold for the Home cards), continuing v8, v10, v11 and v13.
 - `docs/specs/0016-four-fixes.md` is the v15 spec: four fixes from the 2026-10-27 audit (a time zone change keeps Native Events on their date and clock time, a Google calendar that is gone leaves, day and week Repeats expand from at most two years back, the list notification names every recent item).
 - `docs/specs/0017-two-fixes.md` is the v16 spec: two fixes from the 2026-10-28 audit of the screens (a sheet's More foot on the Wall at any width, the list chip's count at 14 px).
+- `docs/specs/0018-whose-events-a-phone-gets.md` is the v17 spec: each phone chooses whose events it gets (Everyone, or chosen people) for its reminders and 7 AM summary, replacing v7's "no per-person filter".
 
 ## Conventions
 

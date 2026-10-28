@@ -31,7 +31,7 @@ The single-use link a Household Account makes so another grown-up can sign in wi
 _Avoid_: Pairing Code, share code, membership
 
 **Push Subscription**:
-One browser on one phone, signed in as a Household Account, that has turned on notifications. It holds the browser's Web Push endpoint and which of the four kinds that phone gets (event reminders, morning summary, Routines not done, added to the list). It belongs to its Household Account and goes when that account is removed. A Device never has one.
+One browser on one phone, signed in as a Household Account, that has turned on notifications. It holds the browser's Web Push endpoint, which of the four kinds that phone gets (event reminders, morning summary, Routines not done, added to the list), and whose events it gets: everyone, or the Profiles it chose. It belongs to its Household Account and goes when that account is removed. A Device never has one.
 _Avoid_: device (a Device is a tablet or a screen's PC), token, registration
 
 **Household Timezone**:
