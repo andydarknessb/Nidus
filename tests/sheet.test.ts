@@ -59,8 +59,10 @@ describe("a sheet's body", () => {
     expect(box(html)).not.toMatch(/^<div[^>]*class="[^"]*\bscroll-p/);
   });
 
-  it('keeps its foot for the Wall: below 960 px a sheet is one column on a phone, which scrolls by touch', () => {
-    expect(draw(says(true))).toMatch(/class="[^"]*\bsticky\b[^"]*\bmax-\[959px\]:hidden\b/);
+  it('has its foot on the Wall at any width, and no width rule hides it: the phone layout alone does, since it scrolls by touch', () => {
+    const foot = /class="([^"]*\bsticky\b[^"]*)"/.exec(draw(says(true)))?.[1] ?? '';
+    expect(foot).toMatch(/(^|\s)phone:hidden(\s|$)/);
+    expect(foot).not.toMatch(/\b(?:max|min)-\[/);
   });
 });
 
@@ -163,6 +165,10 @@ describe('the Add event sheet, as it is first drawn', () => {
     expect(html).toContain('Sam');
     expect(draw()).not.toContain('Cory');
     expect(draw()).toContain('Everyone');
+  });
+
+  it('is one column below 960 px wide and two from it: 960 is that line and nothing else', () => {
+    expect(draw()).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\bmin-\[960px\]:grid-cols-2\b/);
   });
 
   it('keeps its title row above the box that scrolls and its footer below it, with its fields, whoever they are for, between', () => {
