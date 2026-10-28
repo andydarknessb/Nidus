@@ -639,12 +639,13 @@ describe('added to the list', () => {
     expect(push.to(theirs.endpoint)[0]!.payload.body).toBe('eggs, bread');
   });
 
-  it('sends each item once: a later run carries only what has since become eligible', async () => {
+  it('names every recent item, not only the new ones: a later run carries what an earlier one sent, with the same tag', async () => {
     const account = await arrange();
+    const other = await addAccount(account);
     const sub = await subscribe(account.authUserId, { list_additions: true });
     const list = await pinned(account);
-    await addItem(list.id, 'milk', NOW - 2 * MINUTE);
-    await addItem(list.id, 'butter', NOW - 30_000);
+    await addItem(list.id, 'milk', NOW - 2 * MINUTE, { added_by: other });
+    await addItem(list.id, 'eggs', NOW - 30_000, { added_by: other });
     const push = fakePush();
 
     await run(deps(account, push, NOW));
@@ -652,8 +653,29 @@ describe('added to the list', () => {
     expect(push.sent.map((one) => one.payload.body)).toEqual(['milk']);
 
     await run(deps(account, push, NOW + MINUTE));
-    expect(push.sent.map((one) => one.payload.body)).toEqual(['milk', 'butter']);
+    expect(push.sent.map((one) => one.payload.body)).toEqual(['milk', 'milk, eggs']);
+    expect(push.sent[1]!.payload.tag).toBe(push.sent[0]!.payload.tag);
     expect(await deliveries(sub.id)).toHaveLength(2);
+
+    await run(deps(account, push, NOW + MINUTE));
+    expect(push.sent).toHaveLength(2);
+  });
+
+  it('leaves out an item crossed off between runs', async () => {
+    const account = await arrange();
+    const other = await addAccount(account);
+    await subscribe(account.authUserId, { list_additions: true });
+    const list = await pinned(account);
+    await addItem(list.id, 'milk', NOW - 2 * MINUTE, { added_by: other });
+    await addItem(list.id, 'eggs', NOW - 30_000, { added_by: other });
+    const push = fakePush();
+
+    await run(deps(account, push, NOW));
+    const { error } = await asServiceRole().from('list_items').update({ crossed_at: at(NOW) }).eq('list_id', list.id).eq('text', 'milk');
+    if (error) throw error;
+    await run(deps(account, push, NOW + MINUTE));
+
+    expect(push.sent.map((one) => one.payload.body)).toEqual(['milk', 'eggs']);
   });
 
   it('sends nothing when the switch is off', async () => {

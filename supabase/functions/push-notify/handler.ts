@@ -140,8 +140,8 @@ type Occurrence = { source: string; id: string; title: string; location: string 
 type Item = { id: string; text: string; added_by: string | null };
 type Kind = 'event' | 'morning' | 'routines' | 'list';
 // One notification, due for every subscription that has its kind on. `keys` are what the claim
-// takes; `payload` is built from the keys that were actually claimed (a list sends only new items).
-type Notification = { kind: Kind; keys: string[]; urgency: PushUrgency; payload: (claimed: string[]) => PushPayload };
+// takes; the notification is sent only when the claim made at least one new key.
+type Notification = { kind: Kind; keys: string[]; urgency: PushUrgency; payload: () => PushPayload };
 
 function check<T>(result: { data: T | null; error: { message: string } | null }, what: string): T {
   if (result.error) throw new Error(`${what}: ${result.error.message}`);
@@ -291,13 +291,9 @@ function notificationsFor(sub: Subscription, due: Due, timezone: string, now: nu
         kind: 'list',
         keys: items.map((item) => `item:${item.id}`),
         urgency: 'low',
-        payload: (claimed) =>
-          makePayload(
-            `Added to ${name}`,
-            items.filter((item) => claimed.includes(`item:${item.id}`)).map((item) => item.text).join(', '),
-            '/lists',
-            `list:${due.today.date}`,
-          ),
+        // Every due item, not only the ones this run claimed: the tag replaces the earlier
+        // notification, so a later one must still name what the first one said.
+        payload: () => makePayload(`Added to ${name}`, items.map((item) => item.text).join(', '), '/lists', `list:${due.today.date}`),
       });
     }
   }
@@ -327,7 +323,7 @@ async function deliver(deps: PushDeps, sub: Subscription, notifications: Notific
     if (claimed.length === 0) continue;
     let result: 'sent' | 'gone' | 'failed';
     try {
-      result = await deps.sendPush(target, notification.payload(claimed), notification.urgency);
+      result = await deps.sendPush(target, notification.payload(), notification.urgency);
     } catch {
       result = 'failed';
     }
