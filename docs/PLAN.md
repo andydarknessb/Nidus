@@ -332,3 +332,20 @@ Settled on 2026-10-28 from a technical audit of the screens and the grilling tha
 ### Tables
 
 None.
+
+## v17: whose events a phone gets
+
+Settled on 2026-10-28 from the owner's report that a phone gets reminders for events the Wall draws under another person's disc, diagnosed and then decided with every recommendation taken. The spec is [0018](specs/0018-whose-events-a-phone-gets.md) (tracker #286). It replaces v7's "there is no per-person filter".
+
+### Decisions
+
+- **Per phone**: each Push Subscription chooses Everyone (the default, as before) or one or more Profiles. No link from a Household Account to a Profile.
+- **An event's people are the Wall's**: `calendar_occurrences.profile_ids`, empty meaning everyone. A phone gets an event when it chose Everyone, the event is for everyone, or the two share a person.
+- **The 7 AM summary follows the same rule**; meals, the Routines nudge and list additions do not change.
+- **One ticket** (#287), one pull request into `master`. Deploy: the migration, then `push-notify`, then merge.
+
+### Tables
+
+```
+push_subscriptions    + profile_ids (uuid[], default '{}', at most 100; empty is Everyone)
+```
