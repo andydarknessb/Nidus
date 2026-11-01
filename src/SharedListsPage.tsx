@@ -184,6 +184,9 @@ export function ListsScreen({ portrait = false, timezone = null }: { portrait?: 
 // On a phone (below 768 px, spec 0004) the card is 22 round, like every card of its column.
 const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3 phone:rounded-[22px]';
 
+// "2 suggestions waiting", and "1 suggestion waiting" for one (spec 0019).
+const waitingWords = (count: number) => (count === 1 ? '1 suggestion waiting' : `${count} suggestions waiting`);
+
 // The Pinned List's card, under Up next in Home's right column: it is as tall as that column leaves it. A heading row holds the list's
 // name and a link to the Lists screen that says how many items still to get the card has no room for ("3 more"), or "All lists" when it
 // shows them all. Then the field that adds an item, and the rows that fit under it (rowsThatFit): the items still to get, and any
@@ -192,9 +195,6 @@ const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-car
 //
 // `limit` is for the phone's column, which the document scrolls and which gives the card no height to measure: the card shows up to that
 // many rows and says how many more ("3 more") as it does when it has no room for them, and measures nothing.
-// "2 suggestions waiting", and "1 suggestion waiting" for one (spec 0019).
-const waitingWords = (count: number) => (count === 1 ? '1 suggestion waiting' : `${count} suggestions waiting`);
-
 function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists: () => void; limit?: number | undefined }) {
   const say = useStatusLine();
   const { items, loaded, problem, add, toggle, gotItems, gotProblem, clearSends, busy } = useItems(list.id);
