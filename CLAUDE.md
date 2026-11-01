@@ -25,12 +25,13 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0016-four-fixes.md` is the v15 spec: four fixes from the 2026-10-27 audit (a time zone change keeps Native Events on their date and clock time, a Google calendar that is gone leaves, day and week Repeats expand from at most two years back, the list notification names every recent item).
 - `docs/specs/0017-two-fixes.md` is the v16 spec: two fixes from the 2026-10-28 audit of the screens (a sheet's More foot on the Wall at any width, the list chip's count at 14 px).
 - `docs/specs/0018-whose-events-a-phone-gets.md` is the v17 spec: each phone chooses whose events it gets (Everyone, or chosen people) for its reminders and 7 AM summary, replacing v7's "no per-person filter".
+- `docs/specs/0019-the-shopper.md` is the v18 spec: the shopper (Claude suggests groceries from the Meals, waiting on the list; a phone sends the list to Target's app in ChatGPT; Got it crosses off what came; Usuals). `docs/adr/0007` records why Nidus never touches Target's cart.
 
 ## Conventions
 
 - pnpm, TypeScript strict, Vitest. Supabase CLI with the local Docker stack; every schema change is a committed migration under `supabase/migrations/`.
-- Tests run through one seam: the Supabase JS client against the local stack, acting as a real principal (Household Account, Device, anonymous). The outside HTTP the Edge Functions make (Google's API, an iCloud calendar's feed, the Web Push service) is the only fake, injected into the function. Never mock the database.
-- Row-level security on every table; `current_household_id()` is the one helper policies use. A Device may write only Native Events, Routine Completions, list items, Meals and its own heartbeat.
+- Tests run through one seam: the Supabase JS client against the local stack, acting as a real principal (Household Account, Device, anonymous). The outside HTTP the Edge Functions make (Google's API, an iCloud calendar's feed, the Web Push service, Anthropic's API) is the only fake, injected into the function. Never mock the database.
+- Row-level security on every table; `current_household_id()` is the one helper policies use. A Device may write only Native Events, Routine Completions, list items (their sent mark included), Meals and its own heartbeat, and dismiss List Suggestions.
 - All date logic uses the Household Timezone. Never use the machine's local zone.
 - Two modes, light and dark, from one set of tokens (`docs/look.md`). The mode is the document's `data-mode`; no component branches on it for colour. WCAG AAA contrast in both, 48 px minimum touch targets, 16:10 on the Wall in landscape or portrait (`docs/look.md` "Portrait"), and a phone layout below 768 px wide or 544 px tall (`docs/specs/0004-the-wall-on-a-phone.md`, `docs/look.md` "The phone"; the `phone:` variant, never a width media query).
 - The chrome is neutral and colour belongs to people. Nothing is told by colour alone: a person is a disc with their initial.

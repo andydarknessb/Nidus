@@ -349,3 +349,29 @@ Settled on 2026-10-28 from the owner's report that a phone gets reminders for ev
 ```
 push_subscriptions    + profile_ids (uuid[], default '{}', at most 100; empty is Everyone)
 ```
+
+## v18: the shopper
+
+Settled on 2026-11-01 when the owner asked for an AI personal shopper for Target, in one session of research and rulings. Two choices were the owner's over the recommendation: suggestions that wait on the list rather than a review sheet, and Claude Haiku 5.5 at effort `max` rather than Opus 5.5. The spec is [0019](specs/0019-the-shopper.md); the load-bearing decision is [ADR 0007](adr/0007-claude-suggests-the-assistant-shops.md). It takes AI off the v1 and v2 drop lists for one job: groceries from Meals.
+
+### Decisions
+
+- **Target's app in ChatGPT fills the cart.** A phone hands it the list (Open in ChatGPT, Share or Copy); Nidus never touches Target. Target documents fresh food and Drive Up there only.
+- **Claude suggests groceries from the next seven days of Meals**: `claude-haiku-5-5` at effort `max`, from the Edge Function `shopper`, at most 10 runs per Household per Household Date.
+- **Suggestions wait on the list** as List Suggestions on every screen, until added, dismissed, replaced by the next run, or a week old.
+- **Got it** crosses off what was sent and leaves on the list what did not come. No order is read back.
+- **Usuals** are typed in the phone's Settings and sent with the list.
+- **Phone and Wall**: Suggest from meals, the suggestions and Got it on both; Send to Target in the phone layout only.
+- **A Device may also** dismiss a List Suggestion and set or clear an item's sent mark. This widens the Principals decision above by exactly that.
+- **What leaves the Household**: a run sends Anthropic the Meals' titles with their weekday and slot for seven days, the list's items to get, the Usuals and the number of Profiles; never a person's name, an event, a Routine or the Household's name. ChatGPT gets only the message a person sends from a phone.
+- **Dropped**: a cart Nidus fills itself (Target admits only its approved agents), Instacart's shopping-list API, OpenAI's API, a ChatGPT connector, catalog scrapers, and reading a pasted order.
+- **Four tickets**, each its own pull request into `master`. Deploy order as v2; ticket 3 sets `ANTHROPIC_API_KEY` and deploys `shopper` between its migration and its merge.
+
+### Tables
+
+```
+list_items            + sent_at (null = not waiting for Got it)
+list_suggestions      id, list_id, text, for_meals, sort_order, created_at
+shopper_runs          id, household_id, ran_at
+usuals                id, household_id, name (unique per Household, ignoring case and spaces), product, target_link, created_at
+```
