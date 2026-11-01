@@ -451,6 +451,7 @@ describe('list ordering and optimistic helpers', () => {
     list_id: 'l',
     text: id,
     crossed_at,
+    sent_at: null,
     sort_order,
   });
 
