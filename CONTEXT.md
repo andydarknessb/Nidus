@@ -90,12 +90,20 @@ The Household's Routines for one Household Date: one column per Profile with a R
 _Avoid_: Routines today, routines screen, habit tracker
 
 **Shared List**:
-A named household-wide list of text items (e.g. Groceries) anyone can add to or cross off. Crossed items remain visible until cleared.
+A named household-wide list of text items (e.g. Groceries) anyone can add to or cross off. Crossed items remain visible until cleared. An item sent to Target from a phone is marked sent until Got it crosses it off, or leaves it on the list when it did not come.
 _Avoid_: Todo list, checklist
 
 **Pinned List**:
 The one Shared List a Household shows on the home screen's rail (`households.pinned_list_id`). A new Household starts with Groceries pinned; only the Household Account changes it. Every list, the Pinned List first, is on the Wall's Lists screen.
 _Avoid_: Favourite list, default list
+
+**List Suggestion**:
+An item the shopper suggests for a Shared List from the Household's Meals of the next seven days. It shows on the list, outlined, but is not an item: it is not counted, notified, sent or cleared. Adding it makes a list item; dismissing it deletes it; the list's next suggestions replace it; it is gone after seven days.
+_Avoid_: Draft item, pending item, recommendation
+
+**Usual**:
+The product the Household buys for an item, by the item's name ("milk" is a gallon of Good & Gather 2%), with a Target link when there is one. It goes with the list to Target. A Household Account writes it; a Device reads it.
+_Avoid_: Favourite, preference, default product, brand
 
 ### Meals
 
