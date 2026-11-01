@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react';
+import { useContext, useRef, useState } from 'react';
+import { ChangeFeedContext } from './change-feed';
+import type { CardWriteOutcome } from './change';
 import { byPosition, movedIds, nextSortOrder } from './ordering';
 import { supabase } from './supabase';
 import {
@@ -116,12 +118,23 @@ const NO_SUGGESTIONS: ListSuggestion[] = [];
 
 export function useSuggestions(listId: string) {
   const read = useSyncedRead(() => loadSuggestions(supabase, listId), SUGGESTION_TABLES, listId);
+  const feed = useContext(ChangeFeedContext);
+  // The button that was pressed goes once the change lands, so focus goes to the card's title, as "Clear" does (preventScroll).
+  const settle = (outcome: CardWriteOutcome) => {
+    if (outcome === 'done') focusTitle(listId);
+    return outcome;
+  };
   return {
     suggestions: read.data ?? NO_SUGGESTIONS,
     problem: read.problem(SUGGESTIONS_PLACE)?.words ?? (read.state === 'failed' ? couldNotLoad('the suggestions') : ''),
     busy: read.busy,
-    add: (ids: string[]) => read.change(SUGGESTIONS_PLACE, () => addSuggestions(supabase, ids)),
-    dismiss: (ids: string[]) => read.change(SUGGESTIONS_PLACE, () => dismissSuggestions(supabase, ids)),
+    // An added suggestion is an item: the items read is told at once, not when Realtime or its 30 s poll gets to it.
+    add: (ids: string[]) =>
+      read.change(SUGGESTIONS_PLACE, async () => {
+        await addSuggestions(supabase, ids);
+        feed?.notify(['list_items']);
+      }).then(settle),
+    dismiss: (ids: string[]) => read.change(SUGGESTIONS_PLACE, () => dismissSuggestions(supabase, ids)).then(settle),
   };
 }
 

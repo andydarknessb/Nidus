@@ -174,9 +174,15 @@ export function ListCard({
       {(items.length > 0 || waiting) && (wall ? scrollBox : listed)}
       {/* What did not save is said at the card's foot, where "Clear crossed off" sits, and never above the rows: a line over them would
           push the row that was just tapped down from under the finger. */}
-      {(problem || suggested.problem) && (
+      {/* Each has its own alert, so a stale item failure never hides a new suggestion one. */}
+      {problem && (
         <p role="alert" className={wall ? 'shrink-0 text-[15px] leading-5' : 'px-1 text-base'}>
-          {problem || suggested.problem}
+          {problem}
+        </p>
+      )}
+      {suggested.problem && (
+        <p role="alert" className={wall ? 'shrink-0 text-[15px] leading-5' : 'px-1 text-base'}>
+          {suggested.problem}
         </p>
       )}
       {crossed > 0 && (

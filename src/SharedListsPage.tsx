@@ -266,9 +266,14 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
       )}
       {/* What did not save is said at the card's foot, under the rows that fit (they take what room is left): a line over them would
           push the row that was just tapped down from under the finger. */}
-      {(problem || suggested.problem) && (
+      {problem && (
         <p role="alert" className="shrink-0 px-1 text-[15px] leading-5">
-          {problem || suggested.problem}
+          {problem}
+        </p>
+      )}
+      {suggested.problem && (
+        <p role="alert" className="shrink-0 px-1 text-[15px] leading-5">
+          {suggested.problem}
         </p>
       )}
     </section>

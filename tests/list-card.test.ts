@@ -167,8 +167,18 @@ describe.each(['card', 'phone'] as const)('the suggestions the shopper left, %s 
     expect(card(withItems)).not.toContain('Suggested from meals');
   });
 
-  it('says a suggestion write that did not go through at the foot, in the alert', () => {
+  it('says a suggestion write that did not go through at the foot, in its own alert', () => {
     const html = card(withItems, { suggestions: { suggestions: [ground], problem: 'Could not add. Check your connection.', busy: false } });
+    expect(html).toMatch(/<p role="alert"[^>]*>Could not add\. Check your connection\.<\/p>/);
+  });
+
+  // A stale item failure must not hide a new suggestion failure: each is its own alert, so the new one is heard.
+  it('says a failed item write and a failed suggestion write each in its own alert', () => {
+    const html = card(
+      { items, loaded: true, problem: 'Could not save. Check your connection.' },
+      { suggestions: { suggestions: [ground], problem: 'Could not add. Check your connection.', busy: false } },
+    );
+    expect(html).toMatch(/<p role="alert"[^>]*>Could not save\. Check your connection\.<\/p>/);
     expect(html).toMatch(/<p role="alert"[^>]*>Could not add\. Check your connection\.<\/p>/);
   });
 });

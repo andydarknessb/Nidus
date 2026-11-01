@@ -63,6 +63,8 @@ as $$
     select t.list_id, t.text, row_number() over (partition by t.list_id order by t.sort_order, t.created_at, t.id) as position
     from taken as t
   ),
+  -- shortcut: two adds of different suggestions to one list at the same instant can read the same last position and share a sort_order (as
+  -- addItem can), so they tie on created_at; lock shared_lists for update before reading the position to close it.
   next_position as (
     select p.list_id, coalesce(max(i.sort_order) + 1, 0) as first
     from (select distinct list_id from taken) as p
