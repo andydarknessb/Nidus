@@ -1,6 +1,6 @@
 # Nidus v18: the shopper
 
-Tracker: opened from this spec once the owner approves it, one sub-issue per ticket ([docs/agents/issue-tracker.md](../agents/issue-tracker.md)). Vocabulary: [CONTEXT.md](../../CONTEXT.md) (Household, Household Account, Device, Profile, Shared List, Pinned List, List Suggestion, Usual, Meal, Household Date). Decisions: [PLAN.md](../PLAN.md) ("v18: the shopper"); the load-bearing one is [ADR 0007](../adr/0007-claude-suggests-the-assistant-shops.md). The look: [look.md](../look.md) ("The parts", "A sheet", "Overflow", "The phone").
+Tracker: GitHub issue #291; its sub-issues #292 to #295 are the four tickets, in order. Vocabulary: [CONTEXT.md](../../CONTEXT.md) (Household, Household Account, Device, Profile, Shared List, Pinned List, List Suggestion, Usual, Meal, Household Date). Decisions: [PLAN.md](../PLAN.md) ("v18: the shopper"); the load-bearing one is [ADR 0007](../adr/0007-claude-suggests-the-assistant-shops.md). The look: [look.md](../look.md) ("The parts", "A sheet", "Overflow", "The phone").
 
 ## Problem Statement
 
@@ -141,10 +141,10 @@ One additive migration per ticket, each pushed to the hosted project before the 
 
 ### Tickets (each its own pull request into `master`, in this order)
 
-1. **Send to Target and Got it.** The sent-mark migration, the Send to Target sheet, the sent line and Got it on the list card and Home, and the message as a pure core. No AI. The owner's check comes before it.
-2. **List Suggestions.** The suggestions migration (table, `add_list_suggestions`, Realtime, prune), the suggestions on the list card, and Home's line.
-3. **Suggest from meals.** The runs migration (`shopper_runs`, `replace_list_suggestions`, prune), the `shopper` function, `principalOf`, and the button with its words. Blocked by 2.
-4. **Usuals.** The usuals migration, the Settings card, and the Usuals in the message (ticket 1) and in the instructions (ticket 3). Blocked by 1 and 3.
+1. **Send to Target and Got it** (#292). The sent-mark migration, the Send to Target sheet, the sent line and Got it on the list card and Home, and the message as a pure core. No AI. The owner's check comes before it.
+2. **List Suggestions** (#293). The suggestions migration (table, `add_list_suggestions`, Realtime, prune), the suggestions on the list card, and Home's line.
+3. **Suggest from meals** (#294). The runs migration (`shopper_runs`, `replace_list_suggestions`, prune), the `shopper` function, `principalOf`, and the button with its words. Blocked by #293.
+4. **Usuals** (#295). The usuals migration, the Settings card, and the Usuals in the message (#292) and in the instructions (#294). Blocked by #292 and #294.
 
 ### Deploy
 
