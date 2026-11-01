@@ -46,26 +46,27 @@ function CountReader({ listId, onCount }: { listId: string; onCount: (listId: st
 
 // The tab's own heading, for a screen reader (the chips and the card say the rest): the page's h1 is the Household's name, so without it
 // the headings would jump from that to the picked list's h3. Not drawn: the row of chips is what the eye starts at.
-export function PhoneLists() {
+// `timezone` is the Household Timezone (null until read), for when the picked list's sent items went to Target.
+export function PhoneLists({ timezone }: { timezone: string | null }) {
   return (
     <>
       <h2 className="sr-only">Lists</h2>
-      <Lists />
+      <Lists timezone={timezone} />
     </>
   );
 }
 
-function Lists() {
+function Lists({ timezone }: { timezone: string | null }) {
   const lists = useLists();
   const { read } = lists;
   return (
     <ReadState of="lists" read={lists}>
-      {read && (read.lists.length === 0 ? <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords> : <ListsBody lists={read.lists} pinnedId={read.pinnedId} />)}
+      {read && (read.lists.length === 0 ? <EmptyWords>No lists yet. The owner adds lists in Settings.</EmptyWords> : <ListsBody lists={read.lists} pinnedId={read.pinnedId} timezone={timezone} />)}
     </ReadState>
   );
 }
 
-function ListsBody({ lists, pinnedId }: { lists: SharedList[]; pinnedId: string | null }) {
+function ListsBody({ lists, pinnedId, timezone }: { lists: SharedList[]; pinnedId: string | null; timezone: string | null }) {
   const [choice, setChoice] = useState<string | null>(null);
   const [counts, setCounts] = useState<Counts>({});
   const pickedId = pickedList(lists, pinnedId, choice)!;
@@ -86,7 +87,7 @@ function ListsBody({ lists, pinnedId }: { lists: SharedList[]; pinnedId: string 
           <CountReader key={entry.id} listId={entry.id} onCount={count} />
         ))}
       {/* Keyed on the list, so what one list's card holds (its items, its failed write, the words typed in its field) never reaches another's. */}
-      <ListCard key={pickedId} list={list} size="phone" pinned={list.id === pinnedId} onCount={count} />
+      <ListCard key={pickedId} list={list} size="phone" pinned={list.id === pinnedId} timezone={timezone} onCount={count} />
     </div>
   );
 }

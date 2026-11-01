@@ -146,3 +146,40 @@ describe('the phone size', () => {
     expect(html()).toContain('h-14');
   });
 });
+
+describe('Sent to Target on the card', () => {
+  const sentItem = (id: string, text: string, sent_at: string | null, crossed_at: string | null = null) => ({ id, list_id: 'l-1', text, crossed_at, sent_at, sort_order: 0 });
+  const renderWith = (size: 'card' | 'phone', rows: unknown[], timezone: string | null) => {
+    hook.items = { items: rows, loaded: true, problem: '' };
+    try {
+      return renderToStaticMarkup(createElement(ListCard, { list, size, pinned: false, timezone }));
+    } finally {
+      hook.items = null;
+    }
+  };
+  // 22:02 UTC on 9 October 2026 is 5:02 PM in Chicago, where the Household is.
+  const waiting = [sentItem('i-1', 'Milk', '2026-10-09T22:02:00Z'), sentItem('i-2', 'Eggs', '2026-10-09T21:00:00Z')];
+
+  it.each(['card', 'phone'] as const)('says when the waiting items went, in the Household Timezone, and offers Got it (%s)', (size) => {
+    const html = renderWith(size, waiting, 'America/Chicago');
+    expect(words(html)).toContain('Sent to Target at 5:02 PM: 2 items');
+    expect(words(html)).toContain('Got it');
+  });
+
+  it('says the count without a time while the Household is not read, and says "1 item" for one', () => {
+    expect(words(renderWith('card', waiting, null))).toContain('Sent to Target: 2 items');
+    expect(words(renderWith('card', [waiting[0]!], 'America/Chicago'))).toContain('Sent to Target at 5:02 PM: 1 item');
+  });
+
+  it('draws no sent line and no Got it when nothing is waiting', () => {
+    const html = renderWith('card', [sentItem('i-3', 'Bread', null)], 'America/Chicago');
+    expect(html).not.toContain('Sent to Target');
+    expect(html).not.toContain('Got it');
+  });
+
+  it('offers Send to Target on the phone only, and only while an item is still to get', () => {
+    expect(words(renderWith('phone', [sentItem('i-3', 'Bread', null)], 'America/Chicago'))).toContain('Send to Target');
+    expect(renderWith('card', [sentItem('i-3', 'Bread', null)], 'America/Chicago')).not.toContain('Send to Target');
+    expect(renderWith('phone', [sentItem('i-4', 'Milk', '2026-10-09T22:02:00Z', '2026-10-09T23:00:00Z')], 'America/Chicago')).not.toContain('Send to Target');
+  });
+});

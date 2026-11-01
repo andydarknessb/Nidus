@@ -33,8 +33,8 @@ const oatmeal: Meal = { id: 'm1', meal_date: '2026-10-01', slot: 'breakfast', ti
 
 describe('leftToGet', () => {
   const items = [
-    { id: '1', list_id: 'l', text: 'Milk', crossed_at: null, sort_order: 0 },
-    { id: '2', list_id: 'l', text: 'Eggs', crossed_at: '2026-10-01T00:00:00Z', sort_order: 1 },
+    { id: '1', list_id: 'l', text: 'Milk', crossed_at: null, sent_at: null, sort_order: 0 },
+    { id: '2', list_id: 'l', text: 'Eggs', crossed_at: '2026-10-01T00:00:00Z', sent_at: null, sort_order: 1 },
   ];
 
   it('counts what is not crossed off once the items are read', () => {

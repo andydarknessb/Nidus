@@ -39,6 +39,6 @@ export function PhoneWall(props: PhoneScreenProps) {
       return <PhoneCalendar {...props} route={route} />;
     case 'routines': return <PhoneRoutines {...props} />;
     case 'meals': return <PhoneMeals {...props} route={route} />;
-    case 'lists': return <PhoneLists />;
+    case 'lists': return <PhoneLists timezone={props.timezone} />;
   }
 }

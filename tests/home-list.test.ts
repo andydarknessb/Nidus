@@ -83,7 +83,7 @@ describe('rowsThatFit', () => {
 
 describe('homeWindow', () => {
   const items = (count: number, crossed = 0): ListItem[] =>
-    Array.from({ length: count }, (_, index) => ({ id: `i${index}`, list_id: 'l', text: `Item ${index}`, crossed_at: index < crossed ? '2026-10-01T12:00:00Z' : null, sort_order: index }));
+    Array.from({ length: count }, (_, index) => ({ id: `i${index}`, list_id: 'l', text: `Item ${index}`, crossed_at: index < crossed ? '2026-10-01T12:00:00Z' : null, sent_at: null, sort_order: index }));
 
   it('on a phone shows up to the limit and counts the rest still to get: 9 items with a limit of 6 is 6 shown and 3 more', () => {
     expect(homeWindow({ rows: items(9), limit: 6, room: null })).toEqual({ shown: 6, hidden: 3 });
@@ -123,6 +123,7 @@ describe('homeRows', () => {
     list_id: 'groceries',
     text: id,
     crossed_at: crossedAt === null ? null : new Date(crossedAt).toISOString(),
+    sent_at: null,
     sort_order: 0,
   });
   const ids = (rows: ListItem[]) => rows.map((row) => row.id);
