@@ -272,7 +272,7 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
         </p>
       )}
       {suggested.problem && (
-        <p role="alert" className="shrink-0 px-1 text-[15px] leading-5">
+        <p key={suggested.problemKey} role="alert" className="shrink-0 px-1 text-[15px] leading-5">
           {suggested.problem}
         </p>
       )}

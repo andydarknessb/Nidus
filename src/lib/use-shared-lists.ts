@@ -119,22 +119,34 @@ const NO_SUGGESTIONS: ListSuggestion[] = [];
 export function useSuggestions(listId: string) {
   const read = useSyncedRead(() => loadSuggestions(supabase, listId), SUGGESTION_TABLES, listId);
   const feed = useContext(ChangeFeedContext);
-  // The button that was pressed goes once the change lands, so focus goes to the card's title, as "Clear" does (preventScroll).
-  const settle = (outcome: CardWriteOutcome) => {
-    if (outcome === 'done') focusTitle(listId);
+  // Focus goes to the card's title once the change lands, as "Clear" does (preventScroll), but only where the person left it: on the
+  // pressed control, or nowhere once that control has gone. Focus they moved elsewhere while the write was out stays there.
+  const settle = (pressed: Element | null) => (outcome: CardWriteOutcome) => {
+    const now = document.activeElement;
+    if (outcome === 'done' && (now === null || now === document.body || now === pressed)) focusTitle(listId);
     return outcome;
   };
+  const said = read.problem(SUGGESTIONS_PLACE);
   return {
     suggestions: read.data ?? NO_SUGGESTIONS,
-    problem: read.problem(SUGGESTIONS_PLACE)?.words ?? (read.state === 'failed' ? couldNotLoad('the suggestions') : ''),
+    problem: said?.words ?? (read.state === 'failed' ? couldNotLoad('the suggestions') : ''),
+    // Changes each time a failure is said again, so the alert is heard again when it repeats (change.ts).
+    problemKey: said?.n ?? 0,
     busy: read.busy,
     // An added suggestion is an item: the items read is told at once, not when Realtime or its 30 s poll gets to it.
-    add: (ids: string[]) =>
-      read.change(SUGGESTIONS_PLACE, async () => {
-        await addSuggestions(supabase, ids);
-        feed?.notify(['list_items']);
-      }).then(settle),
-    dismiss: (ids: string[]) => read.change(SUGGESTIONS_PLACE, () => dismissSuggestions(supabase, ids)).then(settle),
+    add: (ids: string[]) => {
+      const pressed = document.activeElement;
+      return read
+        .change(SUGGESTIONS_PLACE, async () => {
+          await addSuggestions(supabase, ids);
+          feed?.notify(['list_items']);
+        })
+        .then(settle(pressed));
+    },
+    dismiss: (ids: string[]) => {
+      const pressed = document.activeElement;
+      return read.change(SUGGESTIONS_PLACE, () => dismissSuggestions(supabase, ids)).then(settle(pressed));
+    },
   };
 }
 

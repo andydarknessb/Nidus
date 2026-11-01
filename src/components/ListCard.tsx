@@ -181,7 +181,7 @@ export function ListCard({
         </p>
       )}
       {suggested.problem && (
-        <p role="alert" className={wall ? 'shrink-0 text-[15px] leading-5' : 'px-1 text-base'}>
+        <p key={suggested.problemKey} role="alert" className={wall ? 'shrink-0 text-[15px] leading-5' : 'px-1 text-base'}>
           {suggested.problem}
         </p>
       )}
