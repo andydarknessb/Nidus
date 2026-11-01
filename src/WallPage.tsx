@@ -344,8 +344,8 @@ function HomeShell({ owner }: { owner: boolean }) {
             <BeforeHousehold label="Meals" failed={view.failed} of="meals" />
           )
         ) : route.view === 'lists' ? (
-          // Lists is a screen of its own and reads no date, so it needs no Household Timezone to open.
-          <ListsScreen portrait={home.portrait} />
+          // Lists opens before the Household is read; its sent items say when they went once the timezone is known.
+          <ListsScreen portrait={home.portrait} timezone={timezone} />
         ) : route.view !== 'home' && timezone ? (
           <PagedCalendar timezone={timezone} view={route.view} date={route.date} onNavigate={navigator.open} forecast={forecast} weatherOn={weatherOn} profiles={profiles} portrait={home.portrait} />
         ) : route.view !== 'home' ? (

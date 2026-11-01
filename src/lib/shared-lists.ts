@@ -7,10 +7,11 @@ import { isHeld, type Holds } from './hold';
 
 export type SharedList = { id: string; name: string; sort_order: number };
 
-export type ListItem = { id: string; list_id: string; text: string; crossed_at: string | null; sort_order: number };
+// `sent_at` is set while the item waits for Got it (sent to Target and neither crossed off nor left on the list).
+export type ListItem = { id: string; list_id: string; text: string; crossed_at: string | null; sent_at: string | null; sort_order: number };
 
 const listColumns = 'id, name, sort_order';
-const itemColumns = 'id, list_id, text, crossed_at, sort_order';
+const itemColumns = 'id, list_id, text, crossed_at, sent_at, sort_order';
 
 // ---- Pure helpers -------------------------------------------------------------
 
@@ -21,6 +22,30 @@ export function withCrossed(items: ListItem[], id: string, crossed: boolean, now
 
 export function withoutCrossed(items: ListItem[]): ListItem[] {
   return items.filter((item) => item.crossed_at === null);
+}
+
+// Sent to Target and still waiting for Got it: sent, and neither crossed off nor left on the list by Got it.
+export function waitingItems(items: ListItem[]): ListItem[] {
+  return items.filter((item) => item.sent_at !== null && item.crossed_at === null);
+}
+
+// The latest time a waiting item was sent, in ms; null when none is waiting.
+export function lastSentMs(waiting: ListItem[]): number | null {
+  const sent = waiting.flatMap((item) => (item.sent_at === null ? [] : [Date.parse(item.sent_at)]));
+  return sent.length > 0 ? Math.max(...sent) : null;
+}
+
+// What the rows show once Send to Target has marked the items to get: each is waiting, sent at `now` (mark_list_sent).
+export function withSent(items: ListItem[], now: Date): ListItem[] {
+  return items.map((item) => (item.crossed_at === null ? { ...item, sent_at: now.toISOString() } : item));
+}
+
+// What the rows show after Got it: a waiting item named in `came` is crossed off, the others stop waiting (got_list_items).
+export function withGot(items: ListItem[], came: string[], now: Date): ListItem[] {
+  return items.map((item) => {
+    if (item.sent_at === null || item.crossed_at !== null) return item;
+    return came.includes(item.id) ? { ...item, crossed_at: now.toISOString() } : { ...item, sent_at: null };
+  });
 }
 
 // The Lists screen puts the Pinned List first and keeps the others in their order. A list that is no longer
@@ -145,6 +170,20 @@ export async function setCrossed(client: SupabaseClient, id: string, crossed: bo
   if (error) throw error;
 }
 
+// Marks the items to get as sent to Target; returns how many (mark_list_sent).
+export async function markListSent(client: SupabaseClient, listId: string): Promise<number> {
+  const { data, error } = await client.rpc('mark_list_sent', { p_list_id: listId });
+  if (error) throw error;
+  return data as number;
+}
+
+// Got it: crosses off the waiting items in `came` and stops the others waiting; returns how many were crossed off (got_list_items).
+export async function gotListItems(client: SupabaseClient, listId: string, came: string[]): Promise<number> {
+  const { data, error } = await client.rpc('got_list_items', { p_list_id: listId, p_came: came });
+  if (error) throw error;
+  return data as number;
+}
+
 // "Clear completed": deletes the crossed items of one list, leaves the open ones.
 export async function clearCompleted(client: SupabaseClient, listId: string): Promise<void> {
   const { error } = await client.from('list_items').delete().eq('list_id', listId).not('crossed_at', 'is', null);
@@ -172,4 +211,10 @@ export function listChipName(name: string, left: number | null): string {
 // and whenever the last read or write failed (a list that could not be read holds nothing the chip may call "0 to get").
 export function leftToGet(loaded: boolean, problem: string, items: ListItem[]): number | null {
   return loaded && !problem ? withoutCrossed(items).length : null;
+}
+
+// The ids Cross off sends on the Got it sheet: every waiting item not unticked there (an item that starts waiting while the sheet is open
+// is ticked; one that stops waiting is not in `items` at all).
+export function gotIds(items: ListItem[], unticked: ReadonlySet<string>): string[] {
+  return items.filter((item) => !unticked.has(item.id)).map((item) => item.id);
 }

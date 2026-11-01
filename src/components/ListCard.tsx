@@ -1,14 +1,17 @@
 import { List, Plus, X } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { formatClock } from '@shared/event-words.ts';
 import type { ListSuggestion } from '../lib/list-suggestions';
-import { leftToGet, listChipName, withoutCrossed, type ListItem, type SharedList } from '../lib/shared-lists';
+import { lastSentMs, leftToGet, listChipName, waitingItems, withoutCrossed, type ListItem, type SharedList } from '../lib/shared-lists';
 import { focusTitle, titleId, useItems, useSuggestions } from '../lib/use-shared-lists';
 import { useOverflow } from '../lib/use-overflow';
 import { PhoneCard } from '../phone/parts';
 import { AddRow, ItemRow, PinnedMark } from '../SharedListsPage';
 import { EmptyWords } from './EmptyWords';
 import { FOOT_CLEARANCE, OverflowButton } from './OverflowButton';
+import { GotItSheet } from './GotItSheet';
+import { SendToTargetSheet } from './SendToTargetSheet';
 import { Button } from './ui/button';
 
 // One suggestion: its words, what Meals it is for, and Add and Dismiss, each 48 px. It has a 1.5 px dashed ring in --input and no fill.
@@ -51,24 +54,34 @@ function SuggestionRow({
 // foot of its own: the screen scrolls, and its title wraps (up to three lines cost nothing) where a landscape card's is cut with an ellipsis.
 // On the phone it is a PhoneCard and its items are all drawn.
 //
+// Sent to Target (docs/specs/0019): on the phone, "Send to Target" opens the sheet that makes the message from the items to get. Items
+// sent and not yet crossed off wait for Got it, on the Wall and the phone alike: the card says when they were sent (in the Household
+// Timezone, so `timezone` is needed for the time; null until the Household is read) and offers Got it.
+//
 // `onCount` hears the count whenever it changes, for the phone's chip (a list that is not open has its count read by the chips' own reader).
 export function ListCard({
   list,
   size,
   pinned,
   portrait = false,
+  timezone = null,
   onCount,
 }: {
   list: SharedList;
   size: 'card' | 'phone';
   pinned: boolean;
   portrait?: boolean;
+  timezone?: string | null;
   onCount?: (listId: string, left: number | null) => void;
 }) {
-  const { items, loaded, problem, add, toggle, clear } = useItems(list.id);
+  const { items, loaded, problem, add, toggle, clear, markSent, gotItems, sentProblem, gotProblem, clearSends, busy } = useItems(list.id);
   const suggested = useSuggestions(list.id);
   const left = leftToGet(loaded, problem, items);
   const crossed = items.length - withoutCrossed(items).length;
+  const waiting = waitingItems(items);
+  const sentAt = lastSentMs(waiting);
+  const [sending, setSending] = useState(false);
+  const [gettingIt, setGettingIt] = useState(false);
   const rows = useRef<HTMLUListElement>(null);
   // Whether the items hold more than the card shows. The button is the items' last child, stuck to their foot.
   const more = useOverflow('y', 'over');
@@ -89,7 +102,7 @@ export function ListCard({
   // What the shopper left, under the items (spec 0019). They are not items: the count, the notification and "Clear" never read them, and
   // a suggestion is drawn as an outline, never a row with a fill, so it is not taken for an item.
   const ids = suggested.suggestions.map((suggestion) => suggestion.id);
-  const waiting = suggested.suggestions.length > 0 && (
+  const suggestionGroup = suggested.suggestions.length > 0 && (
     <div role="group" aria-label="Suggested from meals" className="flex flex-col gap-2 pt-2">
       <h4 className="px-1 text-[15px] text-muted-foreground">Suggested from meals</h4>
       <ul className="flex flex-col gap-2">
@@ -118,7 +131,7 @@ export function ListCard({
   const listed = (
     <>
       {items.length > 0 && rowList}
-      {waiting}
+      {suggestionGroup}
     </>
   );
   // At rest an item may sit partly under the "More" button at their foot; one that takes the focus, or is added, is scrolled clear of it.
@@ -171,7 +184,7 @@ export function ListCard({
         }}
       />
       {loaded && items.length === 0 && !problem && <EmptyWords className={wall ? 'shrink-0' : 'px-1'}>Nothing on this list.</EmptyWords>}
-      {(items.length > 0 || waiting) && (wall ? scrollBox : listed)}
+      {(items.length > 0 || suggestionGroup) && (wall ? scrollBox : listed)}
       {/* What did not save is said at the card's foot, where "Clear crossed off" sits, and never above the rows: a line over them would
           push the row that was just tapped down from under the finger. */}
       {/* Each has its own alert, so a stale item failure never hides a new suggestion one. */}
@@ -184,6 +197,35 @@ export function ListCard({
         <p key={suggested.problemKey} role="alert" className={wall ? 'shrink-0 text-[15px] leading-5' : 'px-1 text-base'}>
           {suggested.problem}
         </p>
+      )}
+      {waiting.length > 0 && (
+        <div className={wall ? 'flex shrink-0 flex-col gap-2' : 'flex flex-col gap-2 px-1'}>
+          <p className="text-[15px] leading-5 text-muted-foreground">
+            {sentAt !== null && timezone
+              ? `Sent to Target at ${formatClock(sentAt, timezone)}: ${waiting.length} ${waiting.length === 1 ? 'item' : 'items'}`
+              : `Sent to Target: ${waiting.length} ${waiting.length === 1 ? 'item' : 'items'}`}
+          </p>
+          <Button variant="secondary" size={wall ? undefined : 'phone'} className={wall ? 'h-12 w-full rounded-[14px]' : 'w-full'} onClick={() => {
+              clearSends();
+              setGettingIt(true);
+            }}>
+            Got it
+          </Button>
+        </div>
+      )}
+      {!wall && withoutCrossed(items).length > 0 && (
+        <Button variant="secondary" size="phone" className="w-full" onClick={() => {
+            clearSends();
+            setSending(true);
+          }}>
+          Send to Target
+        </Button>
+      )}
+      {gettingIt && (
+        <GotItSheet items={waiting} busy={busy} problem={gotProblem} onCross={gotItems} onClose={() => setGettingIt(false)} />
+      )}
+      {sending && (
+        <SendToTargetSheet items={withoutCrossed(items)} busy={busy} problem={sentProblem} onMarkSent={markSent} onClose={() => setSending(false)} />
       )}
       {crossed > 0 && (
         <Button

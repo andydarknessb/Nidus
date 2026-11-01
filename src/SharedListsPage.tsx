@@ -14,6 +14,7 @@ import {
   renameList,
   reorderLists,
   setPinnedList,
+  waitingItems,
   withoutCrossed,
   type ListItem,
   type SharedList,
@@ -28,6 +29,7 @@ import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists, useSug
 import { useFormRow } from './lib/use-form-row';
 import { problemId } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
+import { GotItSheet } from './components/GotItSheet';
 import { ListCard } from './components/ListCard';
 import { Shelf } from './components/Shelf';
 import { EmptyRing, Tick } from './components/people';
@@ -132,7 +134,8 @@ export function PinnedMark() {
 // under 17 rem, as at larger text, so the title of a list is not left with 75 px of a 227 px card. The cards then sit in a grid, as many to a row
 // as fit at 17 rem, each its row-mates' width (and with fewer cards than fit, the cards share the row), 16 apart and each its natural height, and the screen scrolls as one column with the shared "More"
 // foot; there is no sideways "More".
-export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
+// `timezone` is the Household Timezone (null until read): it says when a list's sent items went to Target.
+export function ListsScreen({ portrait = false, timezone = null }: { portrait?: boolean; timezone?: string | null }) {
   const lists = useLists();
   const { read } = lists;
   const cards = read ? pinnedFirst(read.lists, read.pinnedId) : [];
@@ -146,7 +149,7 @@ export function ListsScreen({ portrait = false }: { portrait?: boolean }) {
     cards.length > 3
       ? '[--card-w:max(calc((100%_-_3rem)/3.2),min(17rem,100%,calc((1rem_-_16px)*1000)))]'
       : '[--card-w:max(calc((100%_-_2rem)/3),min(17rem,100%,calc((1rem_-_16px)*1000)))]';
-  const shown = cards.map((list) => <ListCard key={list.id} list={list} size="card" pinned={list.id === read?.pinnedId} portrait={portrait} />);
+  const shown = cards.map((list) => <ListCard key={list.id} list={list} size="card" pinned={list.id === read?.pinnedId} portrait={portrait} timezone={timezone} />);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -194,8 +197,11 @@ const waitingWords = (count: number) => (count === 1 ? '1 suggestion waiting' : 
 
 function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists: () => void; limit?: number | undefined }) {
   const say = useStatusLine();
-  const { items, loaded, problem, add, toggle } = useItems(list.id);
+  const { items, loaded, problem, add, toggle, gotItems, gotProblem, clearSends, busy } = useItems(list.id);
   const suggested = useSuggestions(list.id);
+  // Items sent to Target and waiting for Got it: the card says how many, and Got it opens the sheet that crosses them off.
+  const waiting = waitingItems(items);
+  const [gettingIt, setGettingIt] = useState(false);
   // What was crossed off on this card and when, and the time the card last looked at. Both go with the card, when Home is left.
   const [crossedHere, setCrossedHere] = useState<Holds>(() => new Map());
   const now = useHoldClock(crossedHere);
@@ -264,6 +270,17 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
           />
         </div>
       )}
+      {waiting.length > 0 && (
+        <div className="flex h-12 shrink-0 items-center justify-between gap-2">
+          <p className="min-w-0 px-1 text-[15px] leading-5 text-muted-foreground">Sent to Target: {waiting.length}</p>
+          <Button variant="secondary" className="h-12 shrink-0 rounded-[14px] px-4 text-[15px]" onClick={() => {
+              clearSends();
+              setGettingIt(true);
+            }}>
+            Got it
+          </Button>
+        </div>
+      )}
       {/* What did not save is said at the card's foot, under the rows that fit (they take what room is left): a line over them would
           push the row that was just tapped down from under the finger. */}
       {problem && (
@@ -276,6 +293,7 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
           {suggested.problem}
         </p>
       )}
+      {gettingIt && <GotItSheet items={waiting} busy={busy} problem={gotProblem} onCross={gotItems} onClose={() => setGettingIt(false)} />}
     </section>
   );
 }

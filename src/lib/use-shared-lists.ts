@@ -6,13 +6,17 @@ import { supabase } from './supabase';
 import {
   addItem,
   clearCompleted,
+  gotListItems,
   loadItems,
   loadLists,
   loadPinnedListId,
+  markListSent,
   reorderItems,
   setCrossed,
   withCrossed,
+  withGot,
   withoutCrossed,
+  withSent,
   type ListItem,
   type SharedList,
 } from './shared-lists';
@@ -54,7 +58,7 @@ export function useItems(listId: string) {
   // when the server has answered. If it cannot be added the row goes and the card says so. Returns the item as stored, or null when
   // it could not be.
   async function add(text: string): Promise<ListItem | null> {
-    const pending: ListItem = { id: `${PENDING}${(pendings.current += 1)}`, list_id: listId, text: text.trim(), crossed_at: null, sort_order: nextSortOrder(items) };
+    const pending: ListItem = { id: `${PENDING}${(pendings.current += 1)}`, list_id: listId, text: text.trim(), crossed_at: null, sent_at: null, sort_order: nextSortOrder(items) };
     try {
       const created = await read.write(
         () => addItem(supabase, listId, text, pending.sort_order),
@@ -89,6 +93,32 @@ export function useItems(listId: string) {
     }
   }
 
+  // Send to Target and Got it are changes (ADR 0006): each names a place on this list, where a failure is said, and the change's guard
+  // makes a press while one is on its way do nothing. What the rows show after the write is the change's `meanwhile`, until the read
+  // that follows lands.
+  const sentPlace = `sent-${listId}`;
+  const gotPlace = `got-${listId}`;
+
+  // The items to get are sent, once the sheet's Open, Share or Copy has gone through.
+  function markSent(): Promise<CardWriteOutcome> {
+    const now = new Date();
+    return read.change(sentPlace, () => markListSent(supabase, listId), { meanwhile: () => (rows) => withSent(rows, now) });
+  }
+
+  // Got it: the waiting items in `came` are crossed off and the rest stop waiting.
+  function gotItems(came: string[]): Promise<CardWriteOutcome> {
+    const now = new Date();
+    return read.change(gotPlace, () => gotListItems(supabase, listId, came), { meanwhile: () => (rows) => withGot(rows, came, now) });
+  }
+
+  // The sheets' own words for a write that did not save, and how to forget them when a sheet opens.
+  const sentProblem = read.problem(sentPlace)?.words ?? '';
+  const gotProblem = read.problem(gotPlace)?.words ?? '';
+  const clearSends = () => {
+    read.clear(sentPlace);
+    read.clear(gotPlace);
+  };
+
   async function move(id: string, offset: number) {
     if (items.some(isPending)) return;
     const ids = movedIds(items.map((item) => item.id), id, offset);
@@ -107,7 +137,7 @@ export function useItems(listId: string) {
   }
 
   // Loaded once a read has landed, or the first one failed (the card then says so).
-  return { items, loaded: read.state !== 'loading', problem, add, toggle, clear, move };
+  return { items, loaded: read.state !== 'loading', problem, add, toggle, clear, move, markSent, gotItems, sentProblem, gotProblem, clearSends, busy: read.busy };
 }
 
 // A list's suggestions (spec 0019), read again when they change. Adding and dismissing go through the synced read's change, one at a
