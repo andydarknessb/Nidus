@@ -81,11 +81,10 @@ export function SendToTargetSheet({ items, onMarkSent, onClose }: { items: ListI
           Copy
         </Button>
       </div>
-      {copied && !problem && (
-        <p role="status" className="text-base">
-          Copied
-        </p>
-      )}
+      {/* Always drawn, so a screen reader announces "Copied" as it arrives rather than a region that was already filled. */}
+      <p role="status" className="text-base">
+        {copied && !problem ? 'Copied' : ''}
+      </p>
       {problem && (
         <p role="alert" className="text-base">
           {problem}

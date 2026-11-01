@@ -7,14 +7,16 @@ import { Button } from './ui/button';
 
 // Got it, on the Wall and a phone (docs/specs/0019, "The Got it sheet"): the items sent to Target and still waiting, in the list's order,
 // every one ticked at first. Cross off crosses off the ticked ones and leaves the rest on the list; Close changes nothing. `onCross` gets
-// the ticked ids and returns what did not save ('' when it did); the sheet closes only when it did.
+// the ticked ids and returns what did not save ('' when it did); the sheet closes only when it did. The untick set is what the person
+// changed: an item that starts waiting while the sheet is open comes in ticked, and one that stops waiting goes out of the count.
 export function GotItSheet({ items, onCross, onClose }: { items: ListItem[]; onCross: (came: string[]) => Promise<string>; onClose: () => void }) {
-  const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set(items.map((item) => item.id)));
+  const [unticked, setUnticked] = useState<ReadonlySet<string>>(() => new Set());
+  const ticked = items.filter((item) => !unticked.has(item.id));
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
 
   function toggle(id: string) {
-    setTicked((before) => {
+    setUnticked((before) => {
       const next = new Set(before);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -25,7 +27,7 @@ export function GotItSheet({ items, onCross, onClose }: { items: ListItem[]; onC
   async function crossOff() {
     if (busy) return;
     setBusy(true);
-    const failed = await onCross(items.filter((item) => ticked.has(item.id)).map((item) => item.id));
+    const failed = await onCross(ticked.map((item) => item.id));
     setBusy(false);
     if (failed) setProblem(failed);
     else onClose();
@@ -54,14 +56,14 @@ export function GotItSheet({ items, onCross, onClose }: { items: ListItem[]; onC
             </p>
           )}
           <Button variant="primary" size="phone" className="w-full" aria-disabled={busy || undefined} onClick={() => void crossOff()}>
-            Cross off {ticked.size}
+            Cross off {ticked.length}
           </Button>
         </div>
       }
     >
       <ul className="flex flex-col gap-2">
         {items.map((item) => {
-          const on = ticked.has(item.id);
+          const on = !unticked.has(item.id);
           return (
             <li key={item.id}>
               <button
