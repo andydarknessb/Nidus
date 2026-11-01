@@ -7,6 +7,7 @@ import { addItem, createList } from '../src/lib/shared-lists';
 import {
   asDevice,
   asHouseholdAccount,
+  asServiceRole,
   createHousehold,
   destroyHousehold,
   destroyTablet,
@@ -135,6 +136,18 @@ describe('Realtime change feed', () => {
     const kitchenSees = changed(kitchenFeed, 'list_items');
     await addItem(phone, list.id, 'Milk', 0);
     await kitchenSees;
+  });
+
+  // The shopper leaves suggestions on a list (service role, ticket 3); a Device's list card hears it and reads them again.
+  it('reaches a Device when a List Suggestion is left on a list', async () => {
+    const { account, phone, kitchen } = await setUp();
+    const list = await createList(phone, account.household.id, 'Weekly', 0);
+    const feed = await openFeed(kitchen.client);
+
+    const seen = changed(feed, 'list_suggestions');
+    const { error } = await asServiceRole().from('list_suggestions').insert({ list_id: list.id, text: 'Milk' });
+    expect(error).toBeNull();
+    await seen;
   });
 
   it.each<[WatchedTable, string]>([

@@ -678,6 +678,33 @@ describe('added to the list', () => {
     expect(push.sent.map((one) => one.payload.body)).toEqual(['milk', 'eggs']);
   });
 
+  it('never names a List Suggestion waiting on the list, and names it once it is added, to the other phones', async () => {
+    const account = await arrange();
+    const other = await addAccount(account);
+    const mine = await subscribe(account.authUserId, { list_additions: true });
+    const theirs = await subscribe(other, { list_additions: true });
+    const list = await pinned(account);
+    const admin = asServiceRole();
+    const { data: suggestion, error } = await admin.from('list_suggestions').insert({ list_id: list.id, text: 'tortillas' }).select('id').single<{ id: string }>();
+    if (error || !suggestion) throw error ?? new Error('suggestion insert returned nothing');
+    const push = fakePush();
+
+    await run(deps(account, push, NOW));
+    expect(push.sent).toEqual([]);
+
+    // The phone adds it: the database makes the item, added by that phone. Its time is set a few minutes back, as an item from earlier.
+    const phone = await asHouseholdAccount(account);
+    const { error: addError } = await phone.rpc('add_list_suggestions', { p_ids: [suggestion.id] });
+    if (addError) throw addError;
+    const { error: timeError } = await admin.from('list_items').update({ created_at: at(NOW - 2 * MINUTE) }).eq('list_id', list.id).eq('text', 'tortillas');
+    if (timeError) throw timeError;
+
+    await run(deps(account, push, NOW));
+    expect(push.to(mine.endpoint)).toEqual([]);
+    expect(push.to(theirs.endpoint)).toHaveLength(1);
+    expect(push.to(theirs.endpoint)[0]!.payload.body).toBe('tortillas');
+  });
+
   it('sends nothing when the switch is off', async () => {
     const account = await arrange();
     await subscribe(account.authUserId, { list_additions: false });
