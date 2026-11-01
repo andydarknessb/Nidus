@@ -352,7 +352,7 @@ push_subscriptions    + profile_ids (uuid[], default '{}', at most 100; empty is
 
 ## v18: the shopper
 
-Settled on 2026-11-01 when the owner asked for an AI personal shopper for Target, in one session of research and rulings. Two choices were the owner's over the recommendation: suggestions that wait on the list rather than a review sheet, and Claude Haiku 5.5 at effort `max` rather than Opus 5.5. The spec is [0019](specs/0019-the-shopper.md); the load-bearing decision is [ADR 0007](adr/0007-claude-suggests-the-assistant-shops.md). It takes AI off the v1 and v2 drop lists for one job: groceries from Meals.
+Settled on 2026-11-01 when the owner asked for an AI personal shopper for Target, in one session of research and rulings. Two choices were the owner's over the recommendation: suggestions that wait on the list rather than a review sheet, and Claude Haiku 5.5 at effort `max` rather than Opus 5.5. The spec is [0019](specs/0019-the-shopper.md) (tracker #291, tickets #292 to #295); the load-bearing decision is [ADR 0007](adr/0007-claude-suggests-the-assistant-shops.md). It takes AI off the v1 and v2 drop lists for one job: groceries from Meals.
 
 ### Decisions
 
