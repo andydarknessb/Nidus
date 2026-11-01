@@ -212,3 +212,9 @@ export function listChipName(name: string, left: number | null): string {
 export function leftToGet(loaded: boolean, problem: string, items: ListItem[]): number | null {
   return loaded && !problem ? withoutCrossed(items).length : null;
 }
+
+// The ids Cross off sends on the Got it sheet: every waiting item not unticked there (an item that starts waiting while the sheet is open
+// is ticked; one that stops waiting is not in `items` at all).
+export function gotIds(items: ListItem[], unticked: ReadonlySet<string>): string[] {
+  return items.filter((item) => !unticked.has(item.id)).map((item) => item.id);
+}

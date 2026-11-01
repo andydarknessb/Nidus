@@ -31,3 +31,11 @@ export function chatGptLink(message: string): string | null {
   const link = `https://chatgpt.com/?q=${encodeURIComponent(message)}`;
   return link.length <= CHATGPT_LINK_LIMIT ? link : null;
 }
+
+// What a Share that ended means (the sheet calls it with the error, or undefined when the share resolved): a resolved share marks the
+// list sent; a share sheet the person closed marks nothing and says nothing; any other failure marks nothing and says so.
+export function shareEnd(error: unknown): { marks: boolean; said: string } {
+  if (error === undefined) return { marks: true, said: '' };
+  const name = typeof error === 'object' && error !== null && 'name' in error ? error.name : '';
+  return name === 'AbortError' ? { marks: false, said: '' } : { marks: false, said: "Couldn't share. Try Copy." };
+}

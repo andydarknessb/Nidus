@@ -16,7 +16,7 @@ vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
   return {
     ...original,
     useLists: () => state.lists ?? original.useLists(),
-    useItems: (listId: string) => (state.items ? { ...state.items, add: noop, toggle: noop, clear: noop, move: noop, markSent: noop, gotItems: noop } : original.useItems(listId)),
+    useItems: (listId: string) => (state.items ? { ...state.items, add: noop, toggle: noop, clear: noop, move: noop, markSent: noop, gotItems: noop, clearSends: noop } : original.useItems(listId)),
   };
 });
 

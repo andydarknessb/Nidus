@@ -18,6 +18,7 @@ import {
   type ListItem,
   type SharedList,
 } from './shared-lists';
+import type { CardWriteOutcome } from './change';
 import { couldNotLoad, useSyncedRead, type ReadStateName } from './synced-read';
 import { useFailureWords } from './use-failure-words';
 
@@ -90,34 +91,31 @@ export function useItems(listId: string) {
     }
   }
 
-  // Send to Target: the items to get are sent, once the sheet's Open, Share or Copy has gone through. Returns what did not save ('' when it
-  // did), which the sheet says; the card says it too, since it holds the same items.
-  async function markSent(): Promise<string> {
+  // Send to Target and Got it are changes (ADR 0006): each names a place on this list, where a failure is said, and the change's guard
+  // makes a press while one is on its way do nothing. What the rows show after the write is the change's `meanwhile`, until the read
+  // that follows lands.
+  const sentPlace = `sent-${listId}`;
+  const gotPlace = `got-${listId}`;
+
+  // The items to get are sent, once the sheet's Open, Share or Copy has gone through.
+  function markSent(): Promise<CardWriteOutcome> {
     const now = new Date();
-    try {
-      await read.write(() => markListSent(supabase, listId), (rows) => withSent(rows, now));
-      fail('');
-      return '';
-    } catch (error) {
-      const problem = failureWords(error);
-      fail(problem);
-      return problem;
-    }
+    return read.change(sentPlace, () => markListSent(supabase, listId), { meanwhile: () => (rows) => withSent(rows, now) });
   }
 
-  // Got it: the waiting items in `came` are crossed off and the rest stop waiting. Returns what did not save, as markSent does.
-  async function gotItems(came: string[]): Promise<string> {
+  // Got it: the waiting items in `came` are crossed off and the rest stop waiting.
+  function gotItems(came: string[]): Promise<CardWriteOutcome> {
     const now = new Date();
-    try {
-      await read.write(() => gotListItems(supabase, listId, came), (rows) => withGot(rows, came, now));
-      fail('');
-      return '';
-    } catch (error) {
-      const problem = failureWords(error);
-      fail(problem);
-      return problem;
-    }
+    return read.change(gotPlace, () => gotListItems(supabase, listId, came), { meanwhile: () => (rows) => withGot(rows, came, now) });
   }
+
+  // The sheets' own words for a write that did not save, and how to forget them when a sheet opens.
+  const sentProblem = read.problem(sentPlace)?.words ?? '';
+  const gotProblem = read.problem(gotPlace)?.words ?? '';
+  const clearSends = () => {
+    read.clear(sentPlace);
+    read.clear(gotPlace);
+  };
 
   async function move(id: string, offset: number) {
     if (items.some(isPending)) return;
@@ -137,7 +135,7 @@ export function useItems(listId: string) {
   }
 
   // Loaded once a read has landed, or the first one failed (the card then says so).
-  return { items, loaded: read.state !== 'loading', problem, add, toggle, clear, move, markSent, gotItems };
+  return { items, loaded: read.state !== 'loading', problem, add, toggle, clear, move, markSent, gotItems, sentProblem, gotProblem, clearSends, busy: read.busy };
 }
 
 // Every Shared List and which one is pinned, read again when a list or the Household changes. `read` is null until the

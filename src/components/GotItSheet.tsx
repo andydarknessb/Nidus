@@ -1,19 +1,31 @@
 import { X } from 'lucide-react';
 import { useState } from 'react';
-import type { ListItem } from '../lib/shared-lists';
+import type { CardWriteOutcome } from '../lib/change';
+import { gotIds, type ListItem } from '../lib/shared-lists';
 import { EmptyRing, Tick } from './people';
 import { Sheet } from './Sheet';
 import { Button } from './ui/button';
 
 // Got it, on the Wall and a phone (docs/specs/0019, "The Got it sheet"): the items sent to Target and still waiting, in the list's order,
 // every one ticked at first. Cross off crosses off the ticked ones and leaves the rest on the list; Close changes nothing. `onCross` gets
-// the ticked ids and returns what did not save ('' when it did); the sheet closes only when it did. The untick set is what the person
-// changed: an item that starts waiting while the sheet is open comes in ticked, and one that stops waiting goes out of the count.
-export function GotItSheet({ items, onCross, onClose }: { items: ListItem[]; onCross: (came: string[]) => Promise<string>; onClose: () => void }) {
+// the ticked ids; the sheet closes when it is done, and says `problem` (the change's words for this list) when it did not save. The
+// untick set is what the person changed: an item that starts waiting while the sheet is open comes in ticked, and one that stops waiting
+// goes out of the count. A press while a cross-off is on its way (`busy`, the change's guard) does nothing.
+export function GotItSheet({
+  items,
+  busy,
+  problem,
+  onCross,
+  onClose,
+}: {
+  items: ListItem[];
+  busy: boolean;
+  problem: string;
+  onCross: (came: string[]) => Promise<CardWriteOutcome>;
+  onClose: () => void;
+}) {
   const [unticked, setUnticked] = useState<ReadonlySet<string>>(() => new Set());
-  const ticked = items.filter((item) => !unticked.has(item.id));
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState('');
+  const ticked = gotIds(items, unticked);
 
   function toggle(id: string) {
     setUnticked((before) => {
@@ -25,12 +37,7 @@ export function GotItSheet({ items, onCross, onClose }: { items: ListItem[]; onC
   }
 
   async function crossOff() {
-    if (busy) return;
-    setBusy(true);
-    const failed = await onCross(ticked.map((item) => item.id));
-    setBusy(false);
-    if (failed) setProblem(failed);
-    else onClose();
+    if ((await onCross(ticked)) === 'done') onClose();
   }
 
   return (

@@ -194,7 +194,7 @@ const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-car
 // many rows and says how many more ("3 more") as it does when it has no room for them, and measures nothing.
 function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists: () => void; limit?: number | undefined }) {
   const say = useStatusLine();
-  const { items, loaded, problem, add, toggle, gotItems } = useItems(list.id);
+  const { items, loaded, problem, add, toggle, gotItems, gotProblem, clearSends, busy } = useItems(list.id);
   // Items sent to Target and waiting for Got it: the card says how many, and Got it opens the sheet that crosses them off.
   const waiting = waitingItems(items);
   const [gettingIt, setGettingIt] = useState(false);
@@ -258,7 +258,10 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
       {waiting.length > 0 && (
         <div className="flex h-12 shrink-0 items-center justify-between gap-2">
           <p className="min-w-0 px-1 text-[15px] leading-5 text-muted-foreground">Sent to Target: {waiting.length}</p>
-          <Button variant="secondary" className="h-12 shrink-0 rounded-[14px] px-4 text-[15px]" onClick={() => setGettingIt(true)}>
+          <Button variant="secondary" className="h-12 shrink-0 rounded-[14px] px-4 text-[15px]" onClick={() => {
+              clearSends();
+              setGettingIt(true);
+            }}>
             Got it
           </Button>
         </div>
@@ -270,7 +273,7 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
           {problem}
         </p>
       )}
-      {gettingIt && <GotItSheet items={waiting} onCross={gotItems} onClose={() => setGettingIt(false)} />}
+      {gettingIt && <GotItSheet items={waiting} busy={busy} problem={gotProblem} onCross={gotItems} onClose={() => setGettingIt(false)} />}
     </section>
   );
 }

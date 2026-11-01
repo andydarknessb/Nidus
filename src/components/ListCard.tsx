@@ -43,7 +43,7 @@ export function ListCard({
   timezone?: string | null;
   onCount?: (listId: string, left: number | null) => void;
 }) {
-  const { items, loaded, problem, add, toggle, clear, markSent, gotItems } = useItems(list.id);
+  const { items, loaded, problem, add, toggle, clear, markSent, gotItems, sentProblem, gotProblem, clearSends, busy } = useItems(list.id);
   const left = leftToGet(loaded, problem, items);
   const crossed = items.length - withoutCrossed(items).length;
   const waiting = waitingItems(items);
@@ -132,20 +132,28 @@ export function ListCard({
               ? `Sent to Target at ${formatClock(sentAt, timezone)}: ${waiting.length} ${waiting.length === 1 ? 'item' : 'items'}`
               : `Sent to Target: ${waiting.length} ${waiting.length === 1 ? 'item' : 'items'}`}
           </p>
-          <Button variant="secondary" size={wall ? undefined : 'phone'} className={wall ? 'h-12 w-full rounded-[14px]' : 'w-full'} onClick={() => setGettingIt(true)}>
+          <Button variant="secondary" size={wall ? undefined : 'phone'} className={wall ? 'h-12 w-full rounded-[14px]' : 'w-full'} onClick={() => {
+              clearSends();
+              setGettingIt(true);
+            }}>
             Got it
           </Button>
         </div>
       )}
       {!wall && withoutCrossed(items).length > 0 && (
-        <Button variant="secondary" size="phone" className="w-full" onClick={() => setSending(true)}>
+        <Button variant="secondary" size="phone" className="w-full" onClick={() => {
+            clearSends();
+            setSending(true);
+          }}>
           Send to Target
         </Button>
       )}
       {gettingIt && (
-        <GotItSheet items={waiting} onCross={gotItems} onClose={() => setGettingIt(false)} />
+        <GotItSheet items={waiting} busy={busy} problem={gotProblem} onCross={gotItems} onClose={() => setGettingIt(false)} />
       )}
-      {sending && <SendToTargetSheet items={withoutCrossed(items)} onMarkSent={markSent} onClose={() => setSending(false)} />}
+      {sending && (
+        <SendToTargetSheet items={withoutCrossed(items)} busy={busy} problem={sentProblem} onMarkSent={markSent} onClose={() => setSending(false)} />
+      )}
       {crossed > 0 && (
         <Button
           variant={wall ? 'quiet' : 'secondary'}

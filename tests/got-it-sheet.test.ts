@@ -18,7 +18,7 @@ beforeAll(async () => {
 const sent = (id: string, text: string): ListItem => ({ id, list_id: 'l-1', text, crossed_at: null, sent_at: '2026-10-09T21:00:00Z', sort_order: 0 });
 const waiting = [sent('i-1', 'Milk'), sent('i-2', 'Ground beef, 2 lb')];
 
-const render = (items: ListItem[]) => renderToStaticMarkup(createElement(GotItSheet, { items, onCross: async () => '', onClose: () => undefined }));
+const render = (items: ListItem[]) => renderToStaticMarkup(createElement(GotItSheet, { items, busy: false, problem: '', onCross: async () => 'done' as const, onClose: () => undefined }));
 
 describe('the Got it sheet', () => {
   it('is named Got it? and asks to cross off every item waiting, all ticked', () => {
