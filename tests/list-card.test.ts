@@ -7,20 +7,32 @@ import type { ListCard as ListCardType } from '../src/components/ListCard';
 // given. It imports the Supabase client, which is built on import and not used to draw: a placeholder URL and key are enough to load it
 // (as tests/phone-meals-lists.test.ts does).
 
-// What the card's items hook says, set per test.
-const hook = vi.hoisted(() => ({ items: null as null | { items: unknown[]; loaded: boolean; problem: string } }));
+// What the card's items and suggestions hooks say, set per test.
+type Suggestions = { suggestions: unknown[]; problem: string; busy: boolean };
+const hook = vi.hoisted(() => ({
+  items: null as null | { items: unknown[]; loaded: boolean; problem: string },
+  suggestions: null as null | Suggestions,
+  lists: null as null | { lists: unknown[]; pinnedId: string | null },
+}));
 vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/lib/use-shared-lists')>();
   const noop = async () => undefined;
-  return { ...original, useItems: (listId: string) => (hook.items ? { ...hook.items, add: noop, toggle: noop, clear: noop } : original.useItems(listId)) };
+  return {
+    ...original,
+    useItems: (listId: string) => (hook.items ? { ...hook.items, add: noop, toggle: noop, clear: noop } : original.useItems(listId)),
+    useSuggestions: (listId: string) => (hook.suggestions ? { ...hook.suggestions, add: noop, dismiss: noop } : original.useSuggestions(listId)),
+    useLists: () => (hook.lists ? { read: hook.lists, state: 'ready' as const } : original.useLists()),
+  };
 });
 
 let ListCard: typeof ListCardType;
+let PinnedListCard: typeof import('../src/SharedListsPage').PinnedListCard;
 let titleId: (listId: string) => string;
 beforeAll(async () => {
   vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
   ({ ListCard } = await import('../src/components/ListCard'));
+  ({ PinnedListCard } = await import('../src/SharedListsPage'));
   ({ titleId } = await import('../src/lib/use-shared-lists'));
 });
 
@@ -30,14 +42,21 @@ const list = { id: 'l-1', name: 'Groceries', sort_order: 0 };
 const milk = { id: 'i-1', list_id: 'l-1', text: 'Milk', crossed_at: null, sort_order: 0 };
 const eggs = { id: 'i-2', list_id: 'l-1', text: 'Eggs', crossed_at: '2026-10-09T08:00:00Z', sort_order: 1 };
 const items = [milk, eggs];
+// What the shopper left on the list (List Suggestions): two, one with what Meals it is for.
+const ground = { id: 's-1', list_id: 'l-1', text: 'Ground beef, 2 lb', for_meals: 'Tacos, Chili', sort_order: 0 };
+const tortillas = { id: 's-2', list_id: 'l-1', text: 'Tortillas', for_meals: null, sort_order: 1 };
+const waiting: Suggestions = { suggestions: [ground, tortillas], problem: '', busy: false };
+const NONE: Suggestions = { suggestions: [], problem: '', busy: false };
 
 type State = { items: unknown[]; loaded: boolean; problem: string };
-const render = (size: 'card' | 'phone', state: State, props: { pinned?: boolean; portrait?: boolean } = {}) => {
+const render = (size: 'card' | 'phone', state: State, props: { pinned?: boolean; portrait?: boolean; suggestions?: Suggestions } = {}) => {
   hook.items = state;
+  hook.suggestions = props.suggestions ?? NONE;
   try {
     return renderToStaticMarkup(createElement(ListCard, { list, size, pinned: props.pinned ?? false, portrait: props.portrait ?? false }));
   } finally {
     hook.items = null;
+    hook.suggestions = null;
   }
 };
 
@@ -98,6 +117,88 @@ describe.each(['card', 'phone'] as const)('the Shared List card, %s size', (size
     expect(html).toContain('aria-label="Add an item to Groceries"');
     expect(html).toContain('>Milk<');
     expect(html).toContain('>Eggs<');
+  });
+});
+
+describe.each(['card', 'phone'] as const)('the suggestions the shopper left, %s size', (size) => {
+  const card = (state: State, props?: { suggestions?: Suggestions }) => render(size, state, props);
+  const withItems = { items, loaded: true, problem: '' };
+
+  it('draws them under a "Suggested from meals" heading, with what Meals each is for, and none "For null"', () => {
+    const text = words(card(withItems, { suggestions: waiting }));
+    expect(text).toContain('Suggested from meals');
+    expect(text).toContain('Ground beef, 2 lb For Tacos, Chili');
+    expect(text).toContain('Tortillas');
+    expect(text).not.toContain('For null');
+  });
+
+  it('shows them on a list with no items yet', () => {
+    expect(words(card({ items: [], loaded: true, problem: '' }, { suggestions: waiting }))).toContain('Suggested from meals');
+  });
+
+  it('names Add and Dismiss for the item and the list, each a 48 px control', () => {
+    const html = card(withItems, { suggestions: waiting });
+    expect(html).toContain('aria-label="Add Ground beef, 2 lb to Groceries"');
+    expect(html).toContain('aria-label="Dismiss Ground beef, 2 lb"');
+    expect(html).toContain('aria-label="Add Tortillas to Groceries"');
+    expect((html.match(/h-12 w-12/g) ?? []).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('draws a suggestion as a dashed outline with no fill, never as an item is drawn', () => {
+    const row = /<div class="([^"]*border-dashed[^"]*)"/.exec(card(withItems, { suggestions: waiting }))?.[1] ?? '';
+    expect(row).toContain('border-[1.5px]');
+    expect(row).toContain('border-input');
+    expect(row).not.toMatch(/\bbg-/);
+  });
+
+  it('offers "Add all" with how many there are, and "Dismiss all", under the rows', () => {
+    const text = words(card(withItems, { suggestions: waiting }));
+    expect(text).toContain('Add all 2');
+    expect(text).toContain('Dismiss all');
+  });
+
+  it('leaves the suggestions out of the count and the chip label', () => {
+    const html = card(withItems, { suggestions: waiting });
+    expect(words(html)).toContain('1 to get');
+    expect(html).toContain('aria-label="Groceries, 1 to get"');
+  });
+
+  it('draws no group when nothing waits', () => {
+    expect(card(withItems)).not.toContain('Suggested from meals');
+  });
+
+  it('says a suggestion write that did not go through at the foot, in the alert', () => {
+    const html = card(withItems, { suggestions: { suggestions: [ground], problem: 'Could not add. Check your connection.', busy: false } });
+    expect(html).toMatch(/<p role="alert"[^>]*>Could not add\. Check your connection\.<\/p>/);
+  });
+});
+
+describe("Home's pinned list card, with the suggestions it has", () => {
+  const home = (suggestions: Suggestions) => {
+    hook.lists = { lists: [list], pinnedId: list.id };
+    hook.items = { items, loaded: true, problem: '' };
+    hook.suggestions = suggestions;
+    try {
+      return renderToStaticMarkup(createElement(PinnedListCard, { onOpenLists: () => undefined }));
+    } finally {
+      hook.lists = null;
+      hook.items = null;
+      hook.suggestions = null;
+    }
+  };
+
+  it('says how many suggestions wait, as a link to the Lists screen at that list', () => {
+    const html = home(waiting);
+    expect(words(html)).toContain('2 suggestions waiting');
+    expect(html).toContain('aria-label="2 suggestions waiting in Groceries. All lists"');
+  });
+
+  it('says one suggestion waiting in the singular', () => {
+    expect(words(home({ ...waiting, suggestions: [ground] }))).toContain('1 suggestion waiting');
+  });
+
+  it('says nothing about suggestions when none wait', () => {
+    expect(home(NONE)).not.toContain('waiting in Groceries');
   });
 });
 

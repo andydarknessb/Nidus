@@ -24,7 +24,7 @@ import { focusElement } from './lib/focus';
 import type { Holds } from './lib/hold';
 import { useFocusToLink, useHoldClock } from './lib/use-hold';
 import { useStatusLine } from './lib/status-line';
-import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
+import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists, useSuggestions } from './lib/use-shared-lists';
 import { useFormRow } from './lib/use-form-row';
 import { problemId } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
@@ -189,9 +189,13 @@ const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-car
 //
 // `limit` is for the phone's column, which the document scrolls and which gives the card no height to measure: the card shows up to that
 // many rows and says how many more ("3 more") as it does when it has no room for them, and measures nothing.
+// "2 suggestions waiting", and "1 suggestion waiting" for one (spec 0019).
+const waitingWords = (count: number) => (count === 1 ? '1 suggestion waiting' : `${count} suggestions waiting`);
+
 function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists: () => void; limit?: number | undefined }) {
   const say = useStatusLine();
   const { items, loaded, problem, add, toggle } = useItems(list.id);
+  const suggested = useSuggestions(list.id);
   // What was crossed off on this card and when, and the time the card last looked at. Both go with the card, when Home is left.
   const [crossedHere, setCrossedHere] = useState<Holds>(() => new Map());
   const now = useHoldClock(crossedHere);
@@ -249,11 +253,22 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
           </>
         )}
       </div>
+      {/* The suggestions waiting on the list are added and dismissed on the Lists screen, so the line links there, at this list. Only when
+          some wait. */}
+      {suggested.suggestions.length > 0 && (
+        <div className="flex shrink-0">
+          <ListsLink
+            words={waitingWords(suggested.suggestions.length)}
+            name={`${waitingWords(suggested.suggestions.length)} in ${list.name}. All lists`}
+            onOpen={onOpenLists}
+          />
+        </div>
+      )}
       {/* What did not save is said at the card's foot, under the rows that fit (they take what room is left): a line over them would
           push the row that was just tapped down from under the finger. */}
-      {problem && (
+      {(problem || suggested.problem) && (
         <p role="alert" className="shrink-0 px-1 text-[15px] leading-5">
-          {problem}
+          {problem || suggested.problem}
         </p>
       )}
     </section>

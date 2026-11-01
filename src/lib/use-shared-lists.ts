@@ -16,6 +16,7 @@ import {
 } from './shared-lists';
 import { couldNotLoad, useSyncedRead, type ReadStateName } from './synced-read';
 import { useFailureWords } from './use-failure-words';
+import { addSuggestions, dismissSuggestions, loadSuggestions, type ListSuggestion } from './list-suggestions';
 
 // The Shared Lists' readers and writers as hooks, one for the Wall's cards and the phone's screens alike (SharedListsPage.tsx draws
 // the tablet's, src/phone/PhoneLists.tsx the phone's). Both read through the synced read (synced-read.ts).
@@ -105,6 +106,23 @@ export function useItems(listId: string) {
 
   // Loaded once a read has landed, or the first one failed (the card then says so).
   return { items, loaded: read.state !== 'loading', problem, add, toggle, clear, move };
+}
+
+// A list's suggestions (spec 0019), read again when they change. Adding and dismissing go through the synced read's change, one at a
+// time, and a write that does not go through is said at the card's foot (`SUGGESTIONS_PLACE`), where the card's other writes say theirs.
+const SUGGESTION_TABLES = ['list_suggestions'] as const;
+const SUGGESTIONS_PLACE = 'suggestions';
+const NO_SUGGESTIONS: ListSuggestion[] = [];
+
+export function useSuggestions(listId: string) {
+  const read = useSyncedRead(() => loadSuggestions(supabase, listId), SUGGESTION_TABLES, listId);
+  return {
+    suggestions: read.data ?? NO_SUGGESTIONS,
+    problem: read.problem(SUGGESTIONS_PLACE)?.words ?? (read.state === 'failed' ? couldNotLoad('the suggestions') : ''),
+    busy: read.busy,
+    add: (ids: string[]) => read.change(SUGGESTIONS_PLACE, () => addSuggestions(supabase, ids)),
+    dismiss: (ids: string[]) => read.change(SUGGESTIONS_PLACE, () => dismissSuggestions(supabase, ids)),
+  };
 }
 
 // Every Shared List and which one is pinned, read again when a list or the Household changes. `read` is null until the
