@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { CardWriteOutcome } from '../lib/change';
 import { chatGptLink, shareEnd, targetMessage } from '../lib/send-to-target';
 import type { ListItem } from '../lib/shared-lists';
@@ -32,19 +32,27 @@ export function SendToTargetSheet({
   const [local, setLocal] = useState('');
   const canShare = typeof navigator !== 'undefined' && 'share' in navigator;
 
+  // A press while a mark is on its way, or while the share sheet is open, does nothing: the second share would only fail.
+  const sharing = useRef(false);
+
   async function share() {
+    if (busy || sharing.current) return;
+    sharing.current = true;
     setLocal('');
     let ended = shareEnd(undefined);
     try {
       await navigator.share({ text: message });
     } catch (error) {
       ended = shareEnd(error);
+    } finally {
+      sharing.current = false;
     }
     if (ended.said) setLocal(ended.said);
     if (ended.marks) await onMarkSent();
   }
 
   async function copy() {
+    if (busy) return;
     setLocal('');
     try {
       await navigator.clipboard.writeText(message);
@@ -87,8 +95,12 @@ export function SendToTargetSheet({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(event) => {
-                if (busy) event.preventDefault();
-                else void onMarkSent();
+                if (busy) {
+                  event.preventDefault();
+                  return;
+                }
+                setLocal('');
+                void onMarkSent();
               }}
             >
               Open in ChatGPT
