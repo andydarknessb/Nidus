@@ -25,7 +25,7 @@ import { focusElement } from './lib/focus';
 import type { Holds } from './lib/hold';
 import { useFocusToLink, useHoldClock } from './lib/use-hold';
 import { useStatusLine } from './lib/status-line';
-import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists } from './lib/use-shared-lists';
+import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists, useSuggestions } from './lib/use-shared-lists';
 import { useFormRow } from './lib/use-form-row';
 import { problemId } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
@@ -184,6 +184,9 @@ export function ListsScreen({ portrait = false, timezone = null }: { portrait?: 
 // On a phone (below 768 px, spec 0004) the card is 22 round, like every card of its column.
 const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-card p-3 phone:rounded-[22px]';
 
+// "2 suggestions waiting", and "1 suggestion waiting" for one (spec 0019).
+const waitingWords = (count: number) => (count === 1 ? '1 suggestion waiting' : `${count} suggestions waiting`);
+
 // The Pinned List's card, under Up next in Home's right column: it is as tall as that column leaves it. A heading row holds the list's
 // name and a link to the Lists screen that says how many items still to get the card has no room for ("3 more"), or "All lists" when it
 // shows them all. Then the field that adds an item, and the rows that fit under it (rowsThatFit): the items still to get, and any
@@ -195,6 +198,7 @@ const HOME_CARD = 'flex min-h-0 min-w-0 flex-1 flex-col gap-2 rounded-3xl bg-car
 function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists: () => void; limit?: number | undefined }) {
   const say = useStatusLine();
   const { items, loaded, problem, add, toggle, gotItems, gotProblem, clearSends, busy } = useItems(list.id);
+  const suggested = useSuggestions(list.id);
   // Items sent to Target and waiting for Got it: the card says how many, and Got it opens the sheet that crosses them off.
   const waiting = waitingItems(items);
   const [gettingIt, setGettingIt] = useState(false);
@@ -255,6 +259,17 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
           </>
         )}
       </div>
+      {/* The suggestions waiting on the list are added and dismissed on the Lists screen, so the line links there, at this list. Only when
+          some wait. */}
+      {suggested.suggestions.length > 0 && (
+        <div className="flex shrink-0">
+          <ListsLink
+            words={waitingWords(suggested.suggestions.length)}
+            name={`${waitingWords(suggested.suggestions.length)} in ${list.name}. All lists`}
+            onOpen={onOpenLists}
+          />
+        </div>
+      )}
       {waiting.length > 0 && (
         <div className="flex h-12 shrink-0 items-center justify-between gap-2">
           <p className="min-w-0 px-1 text-[15px] leading-5 text-muted-foreground">Sent to Target: {waiting.length}</p>
@@ -271,6 +286,11 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
       {problem && (
         <p role="alert" className="shrink-0 px-1 text-[15px] leading-5">
           {problem}
+        </p>
+      )}
+      {suggested.problem && (
+        <p key={suggested.problemKey} role="alert" className="shrink-0 px-1 text-[15px] leading-5">
+          {suggested.problem}
         </p>
       )}
       {gettingIt && <GotItSheet items={waiting} busy={busy} problem={gotProblem} onCross={gotItems} onClose={() => setGettingIt(false)} />}

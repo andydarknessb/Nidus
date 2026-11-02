@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react';
+import { useContext, useRef, useState } from 'react';
+import { ChangeFeedContext } from './change-feed';
+import type { CardWriteOutcome } from './change';
 import { byPosition, movedIds, nextSortOrder } from './ordering';
 import { supabase } from './supabase';
 import {
@@ -18,9 +20,9 @@ import {
   type ListItem,
   type SharedList,
 } from './shared-lists';
-import type { CardWriteOutcome } from './change';
 import { couldNotLoad, useSyncedRead, type ReadStateName } from './synced-read';
 import { useFailureWords } from './use-failure-words';
+import { addSuggestions, dismissSuggestions, loadSuggestions, type ListSuggestion } from './list-suggestions';
 
 // The Shared Lists' readers and writers as hooks, one for the Wall's cards and the phone's screens alike (SharedListsPage.tsx draws
 // the tablet's, src/phone/PhoneLists.tsx the phone's). Both read through the synced read (synced-read.ts).
@@ -136,6 +138,46 @@ export function useItems(listId: string) {
 
   // Loaded once a read has landed, or the first one failed (the card then says so).
   return { items, loaded: read.state !== 'loading', problem, add, toggle, clear, move, markSent, gotItems, sentProblem, gotProblem, clearSends, busy: read.busy };
+}
+
+// A list's suggestions (spec 0019), read again when they change. Adding and dismissing go through the synced read's change, one at a
+// time, and a write that does not go through is said at the card's foot (`SUGGESTIONS_PLACE`), where the card's other writes say theirs.
+const SUGGESTION_TABLES = ['list_suggestions'] as const;
+const SUGGESTIONS_PLACE = 'suggestions';
+const NO_SUGGESTIONS: ListSuggestion[] = [];
+
+export function useSuggestions(listId: string) {
+  const read = useSyncedRead(() => loadSuggestions(supabase, listId), SUGGESTION_TABLES, listId);
+  const feed = useContext(ChangeFeedContext);
+  // Focus goes to the card's title once the change lands, as "Clear" does (preventScroll), but only where the person left it: on the
+  // pressed control, or nowhere once that control has gone. Focus they moved elsewhere while the write was out stays there.
+  const settle = (pressed: Element | null) => (outcome: CardWriteOutcome) => {
+    const now = document.activeElement;
+    if (outcome === 'done' && (now === null || now === document.body || now === pressed)) focusTitle(listId);
+    return outcome;
+  };
+  const said = read.problem(SUGGESTIONS_PLACE);
+  return {
+    suggestions: read.data ?? NO_SUGGESTIONS,
+    problem: said?.words ?? (read.state === 'failed' ? couldNotLoad('the suggestions') : ''),
+    // Changes each time a failure is said again, so the alert is heard again when it repeats (change.ts).
+    problemKey: said?.n ?? 0,
+    busy: read.busy,
+    // An added suggestion is an item: the items read is told at once, not when Realtime or its 30 s poll gets to it.
+    add: (ids: string[]) => {
+      const pressed = document.activeElement;
+      return read
+        .change(SUGGESTIONS_PLACE, async () => {
+          await addSuggestions(supabase, ids);
+          feed?.notify(['list_items']);
+        })
+        .then(settle(pressed));
+    },
+    dismiss: (ids: string[]) => {
+      const pressed = document.activeElement;
+      return read.change(SUGGESTIONS_PLACE, () => dismissSuggestions(supabase, ids)).then(settle(pressed));
+    },
+  };
 }
 
 // Every Shared List and which one is pinned, read again when a list or the Household changes. `read` is null until the

@@ -19,6 +19,7 @@ export const WATCHED_TABLES = [
   'routine_completions',
   'shared_lists',
   'list_items',
+  'list_suggestions',
   'meals',
 ] as const;
 

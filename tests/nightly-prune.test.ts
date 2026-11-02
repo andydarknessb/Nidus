@@ -69,6 +69,28 @@ describe('nightly prune', () => {
     expect(codes?.map((c) => c.code).sort()).toEqual(['KEEP22', 'WARM22']);
   });
 
+  it('deletes a List Suggestion more than seven days old and keeps a newer one', async () => {
+    const account = await createHousehold();
+    households.push(account);
+    const admin = asServiceRole();
+    const { data: list, error: listError } = await admin
+      .from('shared_lists')
+      .insert({ household_id: account.household.id, name: 'Weekly' })
+      .select('id')
+      .single<{ id: string }>();
+    expect(listError).toBeNull();
+    const { error } = await admin.from('list_suggestions').insert([
+      { list_id: list?.id, text: 'Old', created_at: ago(8 * DAY) },
+      { list_id: list?.id, text: 'Recent', created_at: ago(6 * DAY) },
+    ]);
+    expect(error).toBeNull();
+
+    const { error: pruneError } = await admin.rpc('prune_stale_rows');
+    expect(pruneError).toBeNull();
+    const { data: left } = await admin.from('list_suggestions').select('text').eq('list_id', list?.id);
+    expect(left?.map((row) => row.text)).toEqual(['Recent']);
+  });
+
   it('refuses a Household Account, a Device and a visitor', async () => {
     const account = await createHousehold();
     households.push(account);

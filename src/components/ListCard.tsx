@@ -1,9 +1,10 @@
-import { List } from 'lucide-react';
+import { List, Plus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { formatClock } from '@shared/event-words.ts';
+import type { ListSuggestion } from '../lib/list-suggestions';
 import { lastSentMs, leftToGet, listChipName, waitingItems, withoutCrossed, type ListItem, type SharedList } from '../lib/shared-lists';
-import { focusTitle, titleId, useItems } from '../lib/use-shared-lists';
+import { focusTitle, titleId, useItems, useSuggestions } from '../lib/use-shared-lists';
 import { useOverflow } from '../lib/use-overflow';
 import { PhoneCard } from '../phone/parts';
 import { AddRow, ItemRow, PinnedMark } from '../SharedListsPage';
@@ -12,6 +13,36 @@ import { FOOT_CLEARANCE, OverflowButton } from './OverflowButton';
 import { GotItSheet } from './GotItSheet';
 import { SendToTargetSheet } from './SendToTargetSheet';
 import { Button } from './ui/button';
+
+// One suggestion: its words, what Meals it is for, and Add and Dismiss, each 48 px. It has a 1.5 px dashed ring in --input and no fill.
+function SuggestionRow({
+  suggestion,
+  listName,
+  busy,
+  onAdd,
+  onDismiss,
+}: {
+  suggestion: ListSuggestion;
+  listName: string;
+  busy: boolean;
+  onAdd: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-input py-1.5 pr-1.5 pl-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-[17px] wrap-anywhere text-foreground">{suggestion.text}</p>
+        {suggestion.for_meals && <p className="text-[15px] wrap-anywhere text-muted-foreground">For {suggestion.for_meals}</p>}
+      </div>
+      <Button variant="quiet" aria-label={`Add ${suggestion.text} to ${listName}`} aria-disabled={busy || undefined} className="h-12 w-12 shrink-0 rounded-[14px] px-0" onClick={onAdd}>
+        <Plus aria-hidden className="size-6" strokeWidth={2.6} />
+      </Button>
+      <Button variant="quiet" aria-label={`Dismiss ${suggestion.text}`} aria-disabled={busy || undefined} className="h-12 w-12 shrink-0 rounded-[14px] px-0" onClick={onDismiss}>
+        <X aria-hidden className="size-6" strokeWidth={2.6} />
+      </Button>
+    </div>
+  );
+}
 
 // One Shared List as a card, on the Wall's Lists screen (`size="card"`) and the phone's Lists tab (`size="phone"`): its name and how many
 // items are left to get, whether it is the Pinned List, the field that adds an item, then its items, what did not save, and Clear.
@@ -44,6 +75,7 @@ export function ListCard({
   onCount?: (listId: string, left: number | null) => void;
 }) {
   const { items, loaded, problem, add, toggle, clear, markSent, gotItems, sentProblem, gotProblem, clearSends, busy } = useItems(list.id);
+  const suggested = useSuggestions(list.id);
   const left = leftToGet(loaded, problem, items);
   const crossed = items.length - withoutCrossed(items).length;
   const waiting = waitingItems(items);
@@ -67,10 +99,45 @@ export function ListCard({
       ))}
     </ul>
   );
+  // What the shopper left, under the items (spec 0019). They are not items: the count, the notification and "Clear" never read them, and
+  // a suggestion is drawn as an outline, never a row with a fill, so it is not taken for an item.
+  const ids = suggested.suggestions.map((suggestion) => suggestion.id);
+  const suggestionGroup = suggested.suggestions.length > 0 && (
+    <div role="group" aria-label="Suggested from meals" className="flex flex-col gap-2 pt-2">
+      <h4 className="px-1 text-[15px] text-muted-foreground">Suggested from meals</h4>
+      <ul className="flex flex-col gap-2">
+        {suggested.suggestions.map((suggestion) => (
+          <li key={suggestion.id} className={wall ? 'shrink-0' : undefined}>
+            <SuggestionRow
+              suggestion={suggestion}
+              listName={list.name}
+              busy={suggested.busy}
+              onAdd={() => void suggested.add([suggestion.id])}
+              onDismiss={() => void suggested.dismiss([suggestion.id])}
+            />
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-2">
+        <Button variant="secondary" aria-disabled={suggested.busy || undefined} className="h-12 flex-1 rounded-[14px]" onClick={() => void suggested.add(ids)}>
+          Add all {ids.length}
+        </Button>
+        <Button variant="quiet" aria-disabled={suggested.busy || undefined} className="h-12 flex-1 rounded-[14px]" onClick={() => void suggested.dismiss(ids)}>
+          Dismiss all
+        </Button>
+      </div>
+    </div>
+  );
+  const listed = (
+    <>
+      {items.length > 0 && rowList}
+      {suggestionGroup}
+    </>
+  );
   // At rest an item may sit partly under the "More" button at their foot; one that takes the focus, or is added, is scrolled clear of it.
   const scrollBox = (
     <div ref={scrolls ? more.scroller : undefined} className={scrolls ? `min-h-0 overflow-y-auto ${FOOT_CLEARANCE}` : undefined}>
-      {rowList}
+      {listed}
       {scrolls && <OverflowButton control={more} of={list.name} />}
     </div>
   );
@@ -117,12 +184,18 @@ export function ListCard({
         }}
       />
       {loaded && items.length === 0 && !problem && <EmptyWords className={wall ? 'shrink-0' : 'px-1'}>Nothing on this list.</EmptyWords>}
-      {items.length > 0 && (wall ? scrollBox : rowList)}
+      {(items.length > 0 || suggestionGroup) && (wall ? scrollBox : listed)}
       {/* What did not save is said at the card's foot, where "Clear crossed off" sits, and never above the rows: a line over them would
           push the row that was just tapped down from under the finger. */}
+      {/* Each has its own alert, so a stale item failure never hides a new suggestion one. */}
       {problem && (
         <p role="alert" className={wall ? 'shrink-0 text-[15px] leading-5' : 'px-1 text-base'}>
           {problem}
+        </p>
+      )}
+      {suggested.problem && (
+        <p key={suggested.problemKey} role="alert" className={wall ? 'shrink-0 text-[15px] leading-5' : 'px-1 text-base'}>
+          {suggested.problem}
         </p>
       )}
       {waiting.length > 0 && (
