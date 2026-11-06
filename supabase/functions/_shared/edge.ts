@@ -32,6 +32,21 @@ export function findHouseholdAccount(admin: SupabaseClient, authUserId: string, 
   return (householdId ? query.eq('household_id', householdId) : query).maybeSingle<HouseholdAccountRow>();
 }
 
+// Who is asking, for a route a Household Account or a paired Device may use: the Household either one is in. A Device is the tablet's
+// anonymous session with a devices row; an unpaired session has none. 401 without a signed-in session, 403 for anyone else. Answers
+// carry `cors`, since the phone and the Wall call these routes from a browser.
+export async function principalOf(request: Request, admin: SupabaseClient): Promise<{ householdId: string } | Response> {
+  const token = /^Bearer (.+)$/i.exec(request.headers.get('Authorization') ?? '')?.[1];
+  if (!token) return json(401, { error: 'sign in first' }, cors);
+  const { data: session } = await admin.auth.getUser(token);
+  if (!session.user) return json(401, { error: 'sign in first' }, cors);
+  const { data: account } = await findHouseholdAccount(admin, session.user.id);
+  if (account) return { householdId: account.household_id };
+  const { data: device } = await admin.from('devices').select('household_id').eq('auth_user_id', session.user.id).maybeSingle<{ household_id: string }>();
+  if (device) return { householdId: device.household_id };
+  return json(403, { error: 'not a principal of a household' }, cors);
+}
+
 // Who is asking, for the routes only a Household Account may use: its Household and user, or the
 // answer to send (401 without a signed-in session, 403 with `notAllowed` for anyone else).
 export async function householdAccountOf(

@@ -448,3 +448,10 @@ enabled = true
 # formatted with uppercase keywords, indent 2, max width 180, trailing commas,
 # and column/key alignment. Set to "null" to emit raw, unformatted SQL.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
+
+# The shopper (spec 0019): a phone or the Wall posts here with its own session, so the gateway cannot demand a JWT; the function checks
+# the caller's Household itself (principalOf in _shared/edge.ts).
+[functions.shopper]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/shopper/index.ts"

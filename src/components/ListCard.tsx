@@ -4,8 +4,10 @@ import { flushSync } from 'react-dom';
 import { formatClock } from '@shared/event-words.ts';
 import type { ListSuggestion } from '../lib/list-suggestions';
 import { lastSentMs, leftToGet, listChipName, waitingItems, withoutCrossed, type ListItem, type SharedList } from '../lib/shared-lists';
-import { focusTitle, titleId, useItems, useSuggestions } from '../lib/use-shared-lists';
+import { focusTitle, titleId, useItems, useShopper, useSuggestions } from '../lib/use-shared-lists';
 import { useOverflow } from '../lib/use-overflow';
+import { shopperWords, suggestedWords } from '../lib/shopper';
+import { useStatusLine } from '../lib/status-line';
 import { PhoneCard } from '../phone/parts';
 import { AddRow, ItemRow, PinnedMark } from '../SharedListsPage';
 import { EmptyWords } from './EmptyWords';
@@ -76,10 +78,14 @@ export function ListCard({
 }) {
   const { items, loaded, problem, add, toggle, clear, markSent, gotItems, sentProblem, gotProblem, clearSends, busy } = useItems(list.id);
   const suggested = useSuggestions(list.id);
+  const shopper = useShopper(list.id);
+  const say = useStatusLine();
   const left = leftToGet(loaded, problem, items);
   const crossed = items.length - withoutCrossed(items).length;
   const waiting = waitingItems(items);
   const sentAt = lastSentMs(waiting);
+  // What the shopper's last answer says at the foot (spec 0019); a suggestion landing says nothing there, the status line does.
+  const shopperSaid = shopper.answer ? shopperWords(shopper.answer.outcome, list.name) : null;
   const [sending, setSending] = useState(false);
   const [gettingIt, setGettingIt] = useState(false);
   const rows = useRef<HTMLUListElement>(null);
@@ -227,21 +233,46 @@ export function ListCard({
       {sending && (
         <SendToTargetSheet items={withoutCrossed(items)} busy={busy} problem={sentProblem} onMarkSent={markSent} onClose={() => setSending(false)} />
       )}
-      {crossed > 0 && (
-        <Button
-          variant={wall ? 'quiet' : 'secondary'}
-          size={wall ? undefined : 'phone'}
-          aria-label={`Clear ${crossed} crossed off from ${list.name}`}
-          className={wall ? 'h-12 w-full shrink-0 rounded-[14px]' : 'w-full'}
-          // The button goes when nothing is crossed off any more, and focus would fall to the page with it: it goes to the card's title.
-          onClick={() => {
-            focusTitle(list.id);
-            void clear();
-          }}
-        >
-          Clear {crossed} crossed off
-        </Button>
+      {shopperSaid && (
+        <p key={shopper.key} role="alert" className={wall ? 'shrink-0 text-[15px] leading-5' : 'px-1 text-base'}>
+          {shopperSaid}
+        </p>
       )}
+      {/* "Suggest from meals" sits beside "Clear crossed off" at the foot. Asking says that it replaces the waiting ones before it is pressed. */}
+      <div className={wall ? 'flex shrink-0 flex-col gap-2' : 'flex flex-col gap-2 px-1'}>
+        {ids.length > 0 && <p className="text-[15px] leading-5 text-muted-foreground">This replaces the {ids.length} waiting.</p>}
+        <div className="flex gap-2">
+          <Button
+            variant={wall ? 'quiet' : 'secondary'}
+            size={wall ? undefined : 'phone'}
+            aria-disabled={shopper.asking || undefined}
+            className={wall ? 'h-12 flex-1 shrink-0 rounded-[14px]' : 'flex-1'}
+            onClick={() => {
+              if (shopper.asking) return;
+              void shopper.ask().then((next) => {
+                if (next?.outcome === 'suggested') say(suggestedWords(next.count ?? 0, list.name));
+              });
+            }}
+          >
+            {shopper.asking ? 'Looking at your meals' : ids.length > 0 ? 'Suggest again' : 'Suggest from meals'}
+          </Button>
+          {crossed > 0 && (
+            <Button
+              variant={wall ? 'quiet' : 'secondary'}
+              size={wall ? undefined : 'phone'}
+              aria-label={`Clear ${crossed} crossed off from ${list.name}`}
+              className={wall ? 'h-12 flex-1 shrink-0 rounded-[14px]' : 'flex-1'}
+              // The button goes when nothing is crossed off any more, and focus would fall to the page with it: it goes to the card's title.
+              onClick={() => {
+                focusTitle(list.id);
+                void clear();
+              }}
+            >
+              Clear {crossed} crossed off
+            </Button>
+          )}
+        </div>
+      </div>
     </>
   );
 

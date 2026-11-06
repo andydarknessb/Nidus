@@ -12,6 +12,7 @@ type Suggestions = { suggestions: unknown[]; problem: string; busy: boolean };
 const hook = vi.hoisted(() => ({
   items: null as null | { items: unknown[]; loaded: boolean; problem: string },
   suggestions: null as null | Suggestions,
+  shopper: null as null | { asking: boolean; answer: { outcome: string; count?: number } | null; key: number },
   lists: null as null | { lists: unknown[]; pinnedId: string | null },
 }));
 vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
@@ -21,6 +22,7 @@ vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
     ...original,
     useItems: (listId: string) => (hook.items ? { ...hook.items, add: noop, toggle: noop, clear: noop } : original.useItems(listId)),
     useSuggestions: (listId: string) => (hook.suggestions ? { ...hook.suggestions, add: noop, dismiss: noop } : original.useSuggestions(listId)),
+    useShopper: (listId: string) => (hook.shopper ? { ...hook.shopper, ask: async () => null } : original.useShopper(listId)),
     useLists: () => (hook.lists ? { read: hook.lists, state: 'ready' as const } : original.useLists()),
   };
 });
@@ -49,14 +51,20 @@ const waiting: Suggestions = { suggestions: [ground, tortillas], problem: '', bu
 const NONE: Suggestions = { suggestions: [], problem: '', busy: false };
 
 type State = { items: unknown[]; loaded: boolean; problem: string };
-const render = (size: 'card' | 'phone', state: State, props: { pinned?: boolean; portrait?: boolean; suggestions?: Suggestions } = {}) => {
+const render = (
+  size: 'card' | 'phone',
+  state: State,
+  props: { pinned?: boolean; portrait?: boolean; suggestions?: Suggestions; shopper?: NonNullable<typeof hook.shopper> } = {},
+) => {
   hook.items = state;
   hook.suggestions = props.suggestions ?? NONE;
+  hook.shopper = props.shopper ?? null;
   try {
     return renderToStaticMarkup(createElement(ListCard, { list, size, pinned: props.pinned ?? false, portrait: props.portrait ?? false }));
   } finally {
     hook.items = null;
     hook.suggestions = null;
+    hook.shopper = null;
   }
 };
 
@@ -180,6 +188,56 @@ describe.each(['card', 'phone'] as const)('the suggestions the shopper left, %s 
     );
     expect(html).toMatch(/<p role="alert"[^>]*>Could not save\. Check your connection\.<\/p>/);
     expect(html).toMatch(/<p role="alert"[^>]*>Could not add\. Check your connection\.<\/p>/);
+  });
+});
+
+// "Suggest from meals" at the foot (spec 0019, ticket 3): its words in each state, and what the last answer says there.
+describe.each(['card', 'phone'] as const)('the shopper at the foot of the card, %s size', (size) => {
+  const loaded: State = { items, loaded: true, problem: '' };
+  const shopper = (overrides: Partial<NonNullable<typeof hook.shopper>> = {}): NonNullable<typeof hook.shopper> => ({
+    asking: false,
+    answer: null,
+    key: 0,
+    ...overrides,
+  });
+
+  it('offers "Suggest from meals" with nothing waiting, and no line about replacing', () => {
+    const html = render(size, loaded, { shopper: shopper() });
+    expect(words(html)).toContain('Suggest from meals');
+    expect(words(html)).not.toContain('This replaces');
+  });
+
+  it('says it replaces the waiting ones, and reads "Suggest again", once suggestions wait', () => {
+    const html = render(size, loaded, { suggestions: waiting, shopper: shopper() });
+    expect(words(html)).toContain('This replaces the 2 waiting.');
+    expect(words(html)).toContain('Suggest again');
+    expect(words(html)).not.toContain('Suggest from meals');
+  });
+
+  it('reads "Looking at your meals" and cannot be pressed while it waits', () => {
+    const html = render(size, loaded, { shopper: shopper({ asking: true }) });
+    expect(words(html)).toContain('Looking at your meals');
+    expect(html).toContain('aria-disabled="true"');
+  });
+
+  it('says the outcome of an ask at the foot, in an alert', () => {
+    const html = render(size, loaded, { shopper: shopper({ answer: { outcome: 'no-meals' }, key: 1 }) });
+    expect(html).toMatch(/role="alert"[^>]*>No meals planned for the next 7 days\./);
+  });
+
+  it('says nothing at the foot for a suggestion (the status line says how many)', () => {
+    const html = render(size, loaded, { shopper: shopper({ answer: { outcome: 'suggested', count: 2 }, key: 1 }) });
+    expect(html).not.toContain('role="alert"');
+  });
+
+  it('draws it beside "Clear crossed off" when something is crossed off', () => {
+    const html = render(size, { items: [...items], loaded: true, problem: '' }, { shopper: shopper() });
+    expect(html).toMatch(/flex gap-2[^]*Suggest from meals[^]*Clear 1 crossed off/);
+  });
+
+  it.runIf(size === 'card')('draws the button 48 px tall on the Wall', () => {
+    const html = render(size, loaded, { shopper: shopper() });
+    expect(html).toMatch(/<button[^>]*h-12[^>]*>Suggest from meals/);
   });
 });
 
