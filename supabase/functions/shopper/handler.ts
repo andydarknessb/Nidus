@@ -126,6 +126,17 @@ async function askClaude(deps: ShopperDeps, data: string): Promise<Answer['items
   return parsed.items;
 }
 
+// The Household's runs since `since` (its Household midnight), as a count.
+async function runsSince(admin: SupabaseClient, householdId: string, since: string): Promise<number> {
+  const { count, error } = await admin
+    .from('shopper_runs')
+    .select('id', { count: 'exact', head: true })
+    .eq('household_id', householdId)
+    .gte('ran_at', since);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function handleShopper(request: Request, deps: ShopperDeps): Promise<Response> {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (request.method !== 'POST') return json(405, { error: 'POST only' }, cors);
@@ -151,13 +162,9 @@ export async function handleShopper(request: Request, deps: ShopperDeps): Promis
     const timezone = household.timezone;
     const today = householdDay(timezone, new Date(deps.now?.() ?? Date.now())).date;
 
-    const { count: runs, error: runsError } = await admin
-      .from('shopper_runs')
-      .select('id', { count: 'exact', head: true })
-      .eq('household_id', householdId)
-      .gte('ran_at', new Date(dayStartMs(today, timezone)).toISOString());
-    if (runsError) throw runsError;
-    if ((runs ?? 0) >= DAILY_LIMIT) return json(429, { outcome: 'limit' }, cors);
+    const since = new Date(dayStartMs(today, timezone)).toISOString();
+    // A quick refusal before the reads; the limit is judged again below, once this ask's own run is recorded.
+    if ((await runsSince(admin, householdId, since)) >= DAILY_LIMIT) return json(429, { outcome: 'limit' }, cors);
 
     const { data: meals, error: mealsError } = await admin
       .from('meals')
@@ -177,8 +184,20 @@ export async function handleShopper(request: Request, deps: ShopperDeps): Promis
       .eq('household_id', householdId);
     if (peopleError) throw peopleError;
 
-    const { error: runError } = await admin.from('shopper_runs').insert({ household_id: householdId });
+    // The run is recorded before Claude is asked, and it stands only if the Household's runs since midnight, its own included, are within
+    // the limit. Concurrent asks each record first and then count, so the last to count sees every run before it: no more than the limit
+    // pass. A refused run takes its own row back out.
+    const { data: run, error: runError } = await admin
+      .from('shopper_runs')
+      .insert({ household_id: householdId })
+      .select('id')
+      .single<{ id: string }>();
     if (runError) throw runError;
+    if ((await runsSince(admin, householdId, since)) > DAILY_LIMIT) {
+      const { error: undoError } = await admin.from('shopper_runs').delete().eq('id', run.id);
+      if (undoError) throw undoError;
+      return json(429, { outcome: 'limit' }, cors);
+    }
 
     const onList = listItems ?? [];
     const toGet = onList.filter((item) => item.crossed_at === null).map((item) => item.text as string);

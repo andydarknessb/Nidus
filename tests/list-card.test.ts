@@ -12,7 +12,7 @@ type Suggestions = { suggestions: unknown[]; problem: string; busy: boolean };
 const hook = vi.hoisted(() => ({
   items: null as null | { items: unknown[]; loaded: boolean; problem: string },
   suggestions: null as null | Suggestions,
-  shopper: null as null | { asking: boolean; answer: { outcome: string; count?: number } | null; key: number },
+  shopper: null as null | { asking: boolean; answer: { outcome: string; count?: number } | null },
   lists: null as null | { lists: unknown[]; pinnedId: string | null },
 }));
 vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
@@ -197,7 +197,6 @@ describe.each(['card', 'phone'] as const)('the shopper at the foot of the card, 
   const shopper = (overrides: Partial<NonNullable<typeof hook.shopper>> = {}): NonNullable<typeof hook.shopper> => ({
     asking: false,
     answer: null,
-    key: 0,
     ...overrides,
   });
 
@@ -212,6 +211,9 @@ describe.each(['card', 'phone'] as const)('the shopper at the foot of the card, 
     expect(words(html)).toContain('This replaces the 2 waiting.');
     expect(words(html)).toContain('Suggest again');
     expect(words(html)).not.toContain('Suggest from meals');
+    // The button is described by the line that says what it replaces, and is named for its list.
+    expect(html).toMatch(/aria-describedby="([^"]+)"[^]*id="\1"/);
+    expect(html).toContain('aria-label="Suggest again for Groceries"');
   });
 
   it('reads "Looking at your meals" and cannot be pressed while it waits', () => {
@@ -221,18 +223,18 @@ describe.each(['card', 'phone'] as const)('the shopper at the foot of the card, 
   });
 
   it('says the outcome of an ask at the foot, in an alert', () => {
-    const html = render(size, loaded, { shopper: shopper({ answer: { outcome: 'no-meals' }, key: 1 }) });
+    const html = render(size, loaded, { shopper: shopper({ answer: { outcome: 'no-meals' } }) });
     expect(html).toMatch(/role="alert"[^>]*>No meals planned for the next 7 days\./);
   });
 
   it('says nothing at the foot for a suggestion (the status line says how many)', () => {
-    const html = render(size, loaded, { shopper: shopper({ answer: { outcome: 'suggested', count: 2 }, key: 1 }) });
+    const html = render(size, loaded, { shopper: shopper({ answer: { outcome: 'suggested', count: 2 } }) });
     expect(html).not.toContain('role="alert"');
   });
 
   it('draws it beside "Clear crossed off" when something is crossed off', () => {
     const html = render(size, { items: [...items], loaded: true, problem: '' }, { shopper: shopper() });
-    expect(html).toMatch(/flex gap-2[^]*Suggest from meals[^]*Clear 1 crossed off/);
+    expect(html).toMatch(/flex flex-wrap gap-2[^]*Suggest from meals[^]*Clear 1 crossed off/);
   });
 
   it.runIf(size === 'card')('draws the button 48 px tall on the Wall', () => {

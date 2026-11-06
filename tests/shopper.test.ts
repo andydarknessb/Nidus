@@ -224,6 +224,20 @@ describe('the shopper', () => {
     expect(await countRuns(account)).toBe(10);
   });
 
+  it('lets no more than ten asks a Household Date through when fifteen come at once', async () => {
+    const { account, phone, list } = await setUp();
+    const token = await tokenOf(phone);
+    const claude = fakeClaude();
+
+    const responses = await Promise.all(Array.from({ length: 15 }, () => ask(claude, token, list.id)));
+    const statuses = responses.map((response) => response.status);
+    const passed = statuses.filter((status) => status === 200).length;
+    expect(passed).toBeLessThanOrEqual(10);
+    expect(statuses.filter((status) => status === 429)).toHaveLength(15 - passed);
+    expect(claude.requests).toHaveLength(passed);
+    expect(await countRuns(account)).toBe(passed);
+  });
+
   it('counts the runs of a Household Date from Household midnight, not UTC midnight', async () => {
     const { account, phone, list, today } = await setUp();
     const midnight = dayStartMs(today, account.household.timezone);

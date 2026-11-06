@@ -1,5 +1,5 @@
 import { List, Plus, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { formatClock } from '@shared/event-words.ts';
 import type { ListSuggestion } from '../lib/list-suggestions';
@@ -80,12 +80,15 @@ export function ListCard({
   const suggested = useSuggestions(list.id);
   const shopper = useShopper(list.id);
   const say = useStatusLine();
+  const replaceId = useId();
   const left = leftToGet(loaded, problem, items);
   const crossed = items.length - withoutCrossed(items).length;
   const waiting = waitingItems(items);
   const sentAt = lastSentMs(waiting);
   // What the shopper's last answer says at the foot (spec 0019); a suggestion landing says nothing there, the status line does.
   const shopperSaid = shopper.answer ? shopperWords(shopper.answer.outcome, list.name) : null;
+  const waitingCount = suggested.suggestions.length;
+  const shopperLabel = shopper.asking ? 'Looking at your meals' : waitingCount > 0 ? 'Suggest again' : 'Suggest from meals';
   const [sending, setSending] = useState(false);
   const [gettingIt, setGettingIt] = useState(false);
   const rows = useRef<HTMLUListElement>(null);
@@ -234,18 +237,20 @@ export function ListCard({
         <SendToTargetSheet items={withoutCrossed(items)} busy={busy} problem={sentProblem} onMarkSent={markSent} onClose={() => setSending(false)} />
       )}
       {shopperSaid && (
-        <p key={shopper.key} role="alert" className={wall ? 'shrink-0 text-[15px] leading-5' : 'px-1 text-base'}>
+        <p role="alert" className={wall ? 'shrink-0 text-[15px] leading-5' : 'px-1 text-base'}>
           {shopperSaid}
         </p>
       )}
-      {/* "Suggest from meals" sits beside "Clear crossed off" at the foot. Asking says that it replaces the waiting ones before it is pressed. */}
+      {/* "Suggest from meals" sits beside "Clear crossed off" at the foot, and wraps under it when the card is too narrow for both. The line
+          under it says what asking replaces, and the button is described by that line. */}
       <div className={wall ? 'flex shrink-0 flex-col gap-2' : 'flex flex-col gap-2 px-1'}>
-        {ids.length > 0 && <p className="text-[15px] leading-5 text-muted-foreground">This replaces the {ids.length} waiting.</p>}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant={wall ? 'quiet' : 'secondary'}
             size={wall ? undefined : 'phone'}
             aria-disabled={shopper.asking || undefined}
+            aria-label={`${shopperLabel} for ${list.name}`}
+            aria-describedby={waitingCount > 0 ? replaceId : undefined}
             className={wall ? 'h-12 flex-1 shrink-0 rounded-[14px]' : 'flex-1'}
             onClick={() => {
               if (shopper.asking) return;
@@ -254,7 +259,7 @@ export function ListCard({
               });
             }}
           >
-            {shopper.asking ? 'Looking at your meals' : ids.length > 0 ? 'Suggest again' : 'Suggest from meals'}
+            {shopperLabel}
           </Button>
           {crossed > 0 && (
             <Button
@@ -272,6 +277,11 @@ export function ListCard({
             </Button>
           )}
         </div>
+        {waitingCount > 0 && (
+          <p id={replaceId} className="text-[15px] leading-5 text-muted-foreground">
+            This replaces the {waitingCount} waiting.
+          </p>
+        )}
       </div>
     </>
   );

@@ -181,22 +181,20 @@ export function useSuggestions(listId: string) {
   };
 }
 
-// The shopper (spec 0019) for this list: `asking` is true while Claude is being asked, and `answer` is the last answer. `key` changes
-// with each ask, so a repeated answer is said again. A second tap before the answer lands is no second ask: each one is a run.
+// The shopper (spec 0019) for this list: `asking` is true while Claude is being asked, and `answer` is the last answer. Each ask clears
+// the last answer first, so its alert is taken down and a repeated answer is announced again. A second tap before the answer lands is
+// no second ask: each one is a run.
 export function useShopper(listId: string) {
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<ShopperAnswer | null>(null);
-  const [asks, setAsks] = useState(0);
   const inFlight = useRef(false);
   return {
     asking,
     answer,
-    key: asks,
     ask: async (): Promise<ShopperAnswer | null> => {
       if (inFlight.current) return null;
       inFlight.current = true;
       setAsking(true);
-      setAsks((count) => count + 1);
       setAnswer(null);
       const next = await askShopper(supabase, listId);
       inFlight.current = false;
