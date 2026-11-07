@@ -91,6 +91,23 @@ describe('nightly prune', () => {
     expect(left?.map((row) => row.text)).toEqual(['Recent']);
   });
 
+  it('deletes a shopper run more than thirty days old and keeps a newer one', async () => {
+    const account = await createHousehold();
+    households.push(account);
+    const admin = asServiceRole();
+    const { error } = await admin.from('shopper_runs').insert([
+      { household_id: account.household.id, ran_at: ago(31 * DAY) },
+      { household_id: account.household.id, ran_at: ago(29 * DAY) },
+    ]);
+    expect(error).toBeNull();
+
+    const { error: pruneError } = await admin.rpc('prune_stale_rows');
+    expect(pruneError).toBeNull();
+    const { data: left } = await admin.from('shopper_runs').select('ran_at').eq('household_id', account.household.id);
+    expect(left).toHaveLength(1);
+    expect(new Date(left![0]!.ran_at).getTime()).toBeGreaterThan(Date.now() - 30 * DAY);
+  });
+
   it('refuses a Household Account, a Device and a visitor', async () => {
     const account = await createHousehold();
     households.push(account);

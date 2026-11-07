@@ -68,6 +68,8 @@ pnpm supabase functions deploy calendar-sync
 
 `push-notify` is deployed in step 12, after its secrets are set.
 
+`shopper` (spec 0019) is deployed once `ANTHROPIC_API_KEY` is set, before its pull request merges: `pnpm supabase secrets set ANTHROPIC_API_KEY=...`, then `pnpm supabase functions deploy shopper`. Without the key the screens say "The shopper isn't set up yet."
+
 ## 7. Check both cron jobs
 
 In the SQL editor:

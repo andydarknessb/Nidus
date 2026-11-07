@@ -419,6 +419,13 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/push-notify/index.ts"
 
+# The shopper (spec 0019): a phone or the Wall posts here with its own session, so the gateway cannot demand a JWT; the function checks
+# the caller's Household itself (principalOf in _shared/edge.ts).
+[functions.shopper]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/shopper/index.ts"
+
 [analytics]
 enabled = true
 port = 54327
