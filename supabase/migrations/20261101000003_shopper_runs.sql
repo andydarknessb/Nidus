@@ -16,8 +16,10 @@ alter table public.shopper_runs enable row level security;
 revoke all on public.shopper_runs from anon, authenticated;
 
 -- Replaces a list's waiting suggestions with the shopper's answer, in one transaction. The row lock on the list makes two runs for one
--- list at once queue: the second waits, then replaces the first's set, so the list never holds two. p_items is the checked answer as
--- [{ "text": ..., "for_meals": ... | null }, ...] in the order to show it. Returns how many it inserted.
+-- list at once queue: the second waits, then replaces the first's set, so the list never holds two. It is a FOR NO KEY UPDATE lock, not
+-- FOR UPDATE: add_list_suggestions takes the foreign-key KEY SHARE lock on the same row, which FOR UPDATE would deadlock with, and
+-- NO KEY UPDATE does not conflict with it. p_items is the checked answer as [{ "text": ..., "for_meals": ... | null }, ...] in the
+-- order to show it. Returns how many it inserted.
 create or replace function public.replace_list_suggestions(p_list_id uuid, p_items jsonb)
 returns integer
 language plpgsql
@@ -27,7 +29,7 @@ as $$
 declare
   v_count integer;
 begin
-  perform 1 from public.shared_lists as l where l.id = p_list_id for update;
+  perform 1 from public.shared_lists as l where l.id = p_list_id for no key update;
   delete from public.list_suggestions as s where s.list_id = p_list_id;
   insert into public.list_suggestions (list_id, text, for_meals, sort_order)
   select p_list_id, e.value->>'text', e.value->>'for_meals', (e.ord - 1)::integer
@@ -41,6 +43,29 @@ revoke all on function public.replace_list_suggestions(uuid, jsonb) from public;
 -- Supabase grants execute on new functions to anon and authenticated directly; revoking from public does not remove those.
 revoke execute on function public.replace_list_suggestions(uuid, jsonb) from anon, authenticated;
 grant execute on function public.replace_list_suggestions(uuid, jsonb) to service_role;
+
+-- The daily limit, judged and taken in one transaction: a run is recorded only while the Household has fewer than p_limit runs since
+-- p_since (its Household midnight). The Household's row is locked, so asks at once queue here and the second counts the first's run:
+-- no more than the limit pass, and a refused ask records nothing. Returns whether the run was taken.
+create or replace function public.claim_shopper_run(p_household_id uuid, p_since timestamptz, p_limit integer)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform 1 from public.households as h where h.id = p_household_id for update;
+  if (select count(*) from public.shopper_runs as r where r.household_id = p_household_id and r.ran_at >= p_since) >= p_limit then
+    return false;
+  end if;
+  insert into public.shopper_runs (household_id) values (p_household_id);
+  return true;
+end;
+$$;
+
+revoke all on function public.claim_shopper_run(uuid, timestamptz, integer) from public;
+revoke execute on function public.claim_shopper_run(uuid, timestamptz, integer) from anon, authenticated;
+grant execute on function public.claim_shopper_run(uuid, timestamptz, integer) to service_role;
 
 -- The nightly prune (20261101000002 is the last redefinition) also sweeps a run more than thirty days old, and keeps the seven-day sweep
 -- of suggestions. A run is kept that long so the daily limit can never count one that has aged out.

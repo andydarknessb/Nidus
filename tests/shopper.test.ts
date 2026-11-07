@@ -224,7 +224,7 @@ describe('the shopper', () => {
     expect(await countRuns(account)).toBe(10);
   });
 
-  it('lets no more than ten asks a Household Date through when fifteen come at once', async () => {
+  it('lets exactly ten asks a Household Date through when fifteen come at once', async () => {
     const { account, phone, list } = await setUp();
     const token = await tokenOf(phone);
     const claude = fakeClaude();
@@ -232,8 +232,8 @@ describe('the shopper', () => {
     const responses = await Promise.all(Array.from({ length: 15 }, () => ask(claude, token, list.id)));
     const statuses = responses.map((response) => response.status);
     const passed = statuses.filter((status) => status === 200).length;
-    expect(passed).toBeLessThanOrEqual(10);
-    expect(statuses.filter((status) => status === 429)).toHaveLength(15 - passed);
+    expect(passed).toBe(10);
+    expect(statuses.filter((status) => status === 429)).toHaveLength(5);
     expect(claude.requests).toHaveLength(passed);
     expect(await countRuns(account)).toBe(passed);
   });
