@@ -172,7 +172,7 @@ export function UsualsSection({ householdId }: { householdId: string }) {
   const addProblem = addRow.nameProblem(adding?.name ?? '') ?? read.problem(ADD);
 
   return (
-    <Card title="Usuals" read={read} of="usuals">
+    <Card title="What we buy" read={read} of="usuals">
       {usuals?.length === 0 && <p className="text-base">{USUAL_EMPTY}</p>}
       <ul className="flex flex-col gap-2">
         {usuals?.map((usual) => {
@@ -213,7 +213,7 @@ export function UsualsSection({ householdId }: { householdId: string }) {
               ) : deleting === usual.id ? (
                 <Confirm
                   title={`Delete ${usual.name}?`}
-                  words="The Usual goes, and its Target link with it."
+                  words="The product and its Target link go with it."
                   cancel="Keep it"
                   confirm={`Delete ${usual.name}`}
                   busy={busy}

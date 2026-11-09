@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { LINK_WORDS, createUsual, deleteUsual, isTakenName, loadUsuals, updateUsual, usualKey, usualProblem, type Usual, type UsualInput } from '../src/lib/usuals';
+import { openChangeFeed, type ChangeFeed } from '../src/lib/realtime';
 import { asAnonymous, asDevice, asHouseholdAccount, createHousehold, destroyHousehold, destroyTablet, type HouseholdAccount, type Tablet } from './support/supabase';
 
 // Usuals (spec 0019, ticket 4): the product the Household buys for an item, by its name. The form's own check is pure; the rules the
@@ -56,8 +57,10 @@ describe('isTakenName', () => {
 describe('usuals in the database', () => {
   const households: HouseholdAccount[] = [];
   const tablets: Tablet[] = [];
+  const feeds: ChangeFeed[] = [];
 
   afterEach(async () => {
+    for (const feed of feeds.splice(0)) feed.close();
     for (const tablet of tablets.splice(0)) await destroyTablet(tablet);
     for (const account of households.splice(0)) await destroyHousehold(account);
   });
@@ -129,6 +132,34 @@ describe('usuals in the database', () => {
 
     await expect(createUsual(phone, account.household.id, { name: '  MILK   ', product: 'Oat milk', target_link: '' })).rejects.toMatchObject({ code: '23505' });
     await expect(updateUsual(phone, eggs!.id, { name: 'milk ', product: 'Large brown eggs', target_link: '' })).rejects.toMatchObject({ code: '23505' });
+  });
+
+  it('keeps a name to 60 characters once trimmed, a product to 200 and not blank, and a link to 500, whatever a client sends', async () => {
+    const { account, phone } = await arrange();
+    const raw = (row: Record<string, string | null>) =>
+      phone.from('usuals').insert({ household_id: account.household.id, name: 'Milk', product: 'Milk', target_link: null, ...row });
+    const refusal = async (row: Record<string, string | null>) => (await raw(row)).error?.code ?? null;
+    const link = (length: number) => `https://www.target.com/p/${'x'.repeat(length - 'https://www.target.com/p/'.length)}`;
+
+    // Spaces around a name do not count: 60 letters are in however they are padded; 61 are out, and so are spaces alone.
+    expect(await refusal({ name: `   ${'a'.repeat(60)}   ` })).toBeNull();
+    expect(await refusal({ name: 'b'.repeat(61) })).toBe('23514');
+    expect(await refusal({ name: `  ${'c'.repeat(61)}  ` })).toBe('23514');
+    expect(await refusal({ name: '   ' })).toBe('23514');
+    expect(await refusal({ name: 'Eggs', product: 'x'.repeat(200) })).toBeNull();
+    expect(await refusal({ name: 'Bread', product: 'x'.repeat(201) })).toBe('23514');
+    expect(await refusal({ name: 'Oats', product: '   ' })).toBe('23514');
+    expect(await refusal({ name: 'Tea', target_link: link(500) })).toBeNull();
+    expect(await refusal({ name: 'Coffee', target_link: link(501) })).toBe('23514');
+  });
+
+  it('has usuals in the realtime publication, so a Device hears them change', async () => {
+    const { account } = await arrange();
+    const tablet = await asDevice(account);
+    tablets.push(tablet);
+    const feed = openChangeFeed(tablet.client, { tables: ['usuals'] });
+    feeds.push(feed);
+    await expect.poll(() => feed.status(), { timeout: 10_000 }).toBe('online');
   });
 
   it('refuses a link that is not a Target product link', async () => {

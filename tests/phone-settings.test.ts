@@ -442,11 +442,11 @@ describe("the phone's pages, as they are first drawn", () => {
   const primaries = (markup: string) => buttons(markup).filter(({ attributes }) => /class="[^"]*\bbg-primary\b/.test(attributes));
 
   // What the glossary calls things, which is for code, tests and tickets: the family reads people, tablets, time zone, lists, unpair.
-  const GLOSSARY = /\b(Profiles?|Devices?|Household Timezone|Shared Lists?|Revoke|Calendar Accounts?|Mirrored Calendars?|Native Events?)\b/;
+  const GLOSSARY = /\b(Profiles?|Devices?|Household Timezone|Shared Lists?|Revoke|Calendar Accounts?|Mirrored Calendars?|Native Events?|Usuals?)\b/;
 
-  it('hold Household, Appearance, Weather, People, Usuals, Wall tablets, Who can sign in and Notifications on this phone, in that order, then Sign out', () => {
+  it('hold Household, Appearance, Weather, People, What we buy, Wall tablets, Who can sign in and Notifications on this phone, in that order, then Sign out', () => {
     const markup = householdPage();
-    expect(headings(markup)).toEqual(['Household', 'Appearance', 'Weather', 'People', 'Usuals', 'Wall tablets', 'Who can sign in', 'Notifications on this phone']);
+    expect(headings(markup)).toEqual(['Household', 'Appearance', 'Weather', 'People', 'What we buy', 'Wall tablets', 'Who can sign in', 'Notifications on this phone']);
     expect(buttons(markup).at(-1)?.name).toBe('Sign out');
   });
 

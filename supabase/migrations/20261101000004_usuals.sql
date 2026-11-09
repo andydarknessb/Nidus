@@ -5,7 +5,7 @@
 create table public.usuals (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references public.households (id) on delete cascade,
-  name text not null check (char_length(name) between 1 and 60 and name ~ '\S'),
+  name text not null check (char_length(btrim(name)) between 1 and 60 and name ~ '\S'),
   product text not null check (char_length(product) between 1 and 200 and product ~ '\S'),
   target_link text check (target_link is null or (char_length(target_link) <= 500 and starts_with(target_link, 'https://www.target.com/p/'))),
   created_at timestamptz not null default now()
