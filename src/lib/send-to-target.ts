@@ -1,8 +1,9 @@
 // The message Send to Target shows, sends and opens (docs/specs/0019-the-shopper.md, "The Send to Target sheet"). Pure: the items to get
-// in their order, then each Usual whose name is in one of them. A Usual is the product the Household buys for an item (ticket 4 stores
-// them; until then the sheet passes none).
+// in their order, then each Usual whose name is in one of them (the Household's Usuals, src/lib/usuals.ts).
 
-export type Usual = { name: string; product: string; target_link: string | null };
+import type { Usual as HouseholdUsual } from './usuals';
+
+export type Usual = Pick<HouseholdUsual, 'name' | 'product' | 'target_link'>;
 
 // ChatGPT takes at most this many characters of link, so an Open link longer than that is not offered.
 export const CHATGPT_LINK_LIMIT = 8000;

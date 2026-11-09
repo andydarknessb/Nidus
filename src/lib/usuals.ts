@@ -6,6 +6,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type Usual = { id: string; name: string; product: string; target_link: string | null };
 export type UsualInput = { name: string; product: string; target_link: string };
+export type UsualField = keyof UsualInput;
+export type UsualProblem = { field: UsualField; words: string };
 
 const columns = 'id, name, product, target_link';
 export const TARGET_LINK_START = 'https://www.target.com/p/';
@@ -13,19 +15,23 @@ const LINK_LIMIT = 500;
 
 export const USUAL_EMPTY = 'No usuals yet. Add the products you always buy.';
 export const LINK_WORDS = "Paste a link from Target's app or target.com.";
+export const takenWords = (name: string): string => `You already have a usual for ${name.trim()}.`;
 
 // The name as the database compares it: trimmed, runs of spaces as one, ignoring case. "Milk" and "  milk  " are one Usual.
 export const usualKey = (name: string): string => name.trim().replace(/\s+/g, ' ').toLowerCase();
 
-// The first thing wrong with a Usual's product, link or name (the name's blank is the form's own line, and is left to it). Null when
-// nothing is. `others` are the Household's other Usuals; `ownId` is the Usual being changed, which may keep its own name.
-export function usualProblem(input: UsualInput, others: readonly Usual[], ownId: string | null): string | null {
+// Whether the database refused a Usual because its name is one the Household has (a unique violation, 23505).
+export const isTakenName = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
+
+// The first thing wrong with a Usual's product, link or name, and the field it is about (the name's blank is the form's own line, and is
+// left to it). Null when nothing is. `others` are the Household's other Usuals; `ownId` is the Usual being changed, which may keep its name.
+export function usualProblem(input: UsualInput, others: readonly Usual[], ownId: string | null): UsualProblem | null {
   const name = input.name.trim();
   if (name === '') return null;
-  if (input.product.trim() === '') return 'Say what the product is.';
+  if (input.product.trim() === '') return { field: 'product', words: 'Say what the product is.' };
   const link = input.target_link.trim();
-  if (link !== '' && (!link.startsWith(TARGET_LINK_START) || link.length > LINK_LIMIT)) return LINK_WORDS;
-  if (others.some((usual) => usual.id !== ownId && usualKey(usual.name) === usualKey(name))) return `You already have a usual for ${name}.`;
+  if (link !== '' && (!link.startsWith(TARGET_LINK_START) || link.length > LINK_LIMIT)) return { field: 'target_link', words: LINK_WORDS };
+  if (others.some((usual) => usual.id !== ownId && usualKey(usual.name) === usualKey(name))) return { field: 'name', words: takenWords(name) };
   return null;
 }
 

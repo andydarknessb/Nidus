@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { LINK_WORDS, createUsual, deleteUsual, loadUsuals, updateUsual, usualKey, usualProblem, type Usual, type UsualInput } from '../src/lib/usuals';
+import { LINK_WORDS, createUsual, deleteUsual, isTakenName, loadUsuals, updateUsual, usualKey, usualProblem, type Usual, type UsualInput } from '../src/lib/usuals';
 import { asAnonymous, asDevice, asHouseholdAccount, createHousehold, destroyHousehold, destroyTablet, type HouseholdAccount, type Tablet } from './support/supabase';
 
 // Usuals (spec 0019, ticket 4): the product the Household buys for an item, by its name. The form's own check is pure; the rules the
@@ -14,14 +14,15 @@ describe('usualProblem', () => {
     expect(usualProblem(input({ name: '   ' }), [], null)).toBeNull();
   });
 
-  it('says what is wrong when the product is blank', () => {
-    expect(usualProblem(input({ product: '  ' }), [], null)).toBe('Say what the product is.');
+  it('says what is wrong when the product is blank, and names the product field', () => {
+    expect(usualProblem(input({ product: '  ' }), [], null)).toEqual({ field: 'product', words: 'Say what the product is.' });
   });
 
-  it("refuses a link that is not a Target product link, and one past 500 characters", () => {
-    expect(usualProblem(input({ target_link: 'https://example.com/p/milk' }), [], null)).toBe(LINK_WORDS);
-    expect(usualProblem(input({ target_link: 'https://www.target.com/s?searchTerm=milk' }), [], null)).toBe(LINK_WORDS);
-    expect(usualProblem(input({ target_link: `https://www.target.com/p/${'x'.repeat(490)}` }), [], null)).toBe(LINK_WORDS);
+  it("refuses a link that is not a Target product link, and one past 500 characters, naming the link field", () => {
+    const linkProblem = { field: 'target_link', words: LINK_WORDS };
+    expect(usualProblem(input({ target_link: 'https://example.com/p/milk' }), [], null)).toEqual(linkProblem);
+    expect(usualProblem(input({ target_link: 'https://www.target.com/s?searchTerm=milk' }), [], null)).toEqual(linkProblem);
+    expect(usualProblem(input({ target_link: `https://www.target.com/p/${'x'.repeat(490)}` }), [], null)).toEqual(linkProblem);
   });
 
   it('accepts a Target product link, and no link at all', () => {
@@ -31,7 +32,7 @@ describe('usualProblem', () => {
 
   it('refuses a name the Household already has, in any case or spacing, and lets a Usual keep its own name', () => {
     const others: Usual[] = [{ id: 'a', name: 'Milk', product: 'Good & Gather 2% milk', target_link: null }];
-    expect(usualProblem(input({ name: '  MILK ' }), others, null)).toBe('You already have a usual for MILK.');
+    expect(usualProblem(input({ name: '  MILK ' }), others, null)).toEqual({ field: 'name', words: 'You already have a usual for MILK.' });
     expect(usualProblem(input({ name: 'Milk' }), others, 'a')).toBeNull();
   });
 });
@@ -40,6 +41,15 @@ describe('usualKey', () => {
   it('reads a name as the database does: trimmed, runs of spaces as one, ignoring case', () => {
     expect(usualKey('  Whole   Milk ')).toBe('whole milk');
     expect(usualKey('Whole milk')).toBe(usualKey('whole  MILK'));
+  });
+});
+
+describe('isTakenName', () => {
+  it('is true for the database refusing a name the Household has, and for nothing else', () => {
+    expect(isTakenName({ code: '23505' })).toBe(true);
+    expect(isTakenName({ code: '23514' })).toBe(false);
+    expect(isTakenName(new Error('network'))).toBe(false);
+    expect(isTakenName(null)).toBe(false);
   });
 });
 
@@ -83,6 +93,20 @@ describe('usuals in the database', () => {
     // A change or a delete by a Device is quietly no rows: the policy hides them, and the Usual stays as it was.
     await updateUsual(tablet.client, milk!.id, { name: 'Milk', product: 'Changed by a Device', target_link: '' });
     await deleteUsual(tablet.client, milk!.id);
+    expect(await loadUsuals(phone)).toMatchObject([{ product: 'Good & Gather 2% milk' }]);
+  });
+
+  it('a Household Account of another Household cannot add, change or delete this Household\'s Usuals', async () => {
+    const { account, phone } = await arrange();
+    await createUsual(phone, account.household.id, { name: 'Milk', product: 'Good & Gather 2% milk', target_link: '' });
+    const [milk] = await loadUsuals(phone);
+    const other = await createHousehold();
+    households.push(other);
+    const stranger = await asHouseholdAccount(other);
+
+    await expect(createUsual(stranger, account.household.id, { name: 'Eggs', product: 'Eggs', target_link: '' })).rejects.toMatchObject({ code: '42501' });
+    await updateUsual(stranger, milk!.id, { name: 'Milk', product: 'Changed by another Household', target_link: '' });
+    await deleteUsual(stranger, milk!.id);
     expect(await loadUsuals(phone)).toMatchObject([{ product: 'Good & Gather 2% milk' }]);
   });
 

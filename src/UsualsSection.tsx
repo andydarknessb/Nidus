@@ -1,19 +1,20 @@
 import { Pencil, Plus, X } from 'lucide-react';
 import { useState, type ChangeEvent, type FormEvent } from 'react';
-import { Card, Field, Problem, buttonHalf, buttonRow, fieldClass } from '@/components/phone';
+import { Card, Confirm, Field, Problem, buttonHalf, buttonRow, fieldClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import { useFormRow } from '@/lib/use-form-row';
 import { useUsuals } from '@/lib/use-usuals';
-import { USUAL_EMPTY, createUsual, deleteUsual, updateUsual, usualProblem, type Usual, type UsualInput } from '@/lib/usuals';
+import { USUAL_EMPTY, createUsual, deleteUsual, isTakenName, takenWords, updateUsual, usualProblem, type Usual, type UsualField, type UsualInput } from '@/lib/usuals';
 import { problemId } from '@/lib/write-failure';
 
 // Settings, phone only: the Household's Usuals (spec 0019, ticket 4). Each is a row with its product, "Target link" when it has one,
-// and Edit and Delete named for it; Edit swaps the row for the form, and "Add a usual" opens the same form at the foot. Only a Household
-// Account gets this card: a Device reads them through the Send to Target sheet and never writes.
+// and Edit and Delete named for it; Edit swaps the row for the form, Delete asks first, and "Add a usual" opens the same form at the
+// foot. Only a Household Account gets this card: a Device reads them through the Send to Target sheet and never writes.
 
 const ADD = 'add';
 const ADD_ID = 'usual-add';
+const ADD_TITLE_ID = 'usual-add-title';
 const editPlace = (id: string) => `edit-${id}`;
 const deletePlace = (id: string) => `delete-${id}`;
 
@@ -22,19 +23,25 @@ const usualControlId = (id: string, control: 'edit' | 'delete') => `usual-${id}-
 
 const blank: UsualInput = { name: '', product: '', target_link: '' };
 
-// The three fields of a Usual, in the form's order. `describedBy` points the fields at the line that says what is wrong with them.
-export function UsualFields({ draft, describedBy, onChange }: { draft: UsualInput; describedBy?: string | undefined; onChange: (draft: UsualInput) => void }) {
-  const set = (field: keyof UsualInput) => (event: ChangeEvent<HTMLInputElement>) => onChange({ ...draft, [field]: event.target.value });
+// The field a form's problem is about, and the line that says what it is: that field is marked invalid and points at the line.
+type Invalid = { field: UsualField; id: string };
+// Which form and field the last problem with it was about (a form's own check, or the database's word on a taken name).
+type Flag = { place: string; field: UsualField };
+
+// The three fields of a Usual, in the form's order.
+export function UsualFields({ draft, invalid, onChange }: { draft: UsualInput; invalid?: Invalid | undefined; onChange: (draft: UsualInput) => void }) {
+  const set = (field: UsualField) => (event: ChangeEvent<HTMLInputElement>) => onChange({ ...draft, [field]: event.target.value });
+  const mark = (field: UsualField) => (invalid?.field === field ? { 'aria-invalid': true, 'aria-describedby': invalid.id } : {});
   return (
     <>
       <Field label="Name">
-        <input className={fieldClass} autoComplete="off" maxLength={60} value={draft.name} onChange={set('name')} aria-describedby={describedBy} />
+        <input className={fieldClass} autoComplete="off" maxLength={60} value={draft.name} onChange={set('name')} {...mark('name')} />
       </Field>
       <Field label="Product">
-        <input className={fieldClass} autoComplete="off" maxLength={200} value={draft.product} onChange={set('product')} aria-describedby={describedBy} />
+        <input className={fieldClass} autoComplete="off" maxLength={200} value={draft.product} onChange={set('product')} {...mark('product')} />
       </Field>
       <Field label="Target link (optional)">
-        <input className={fieldClass} type="url" autoComplete="off" maxLength={500} value={draft.target_link} onChange={set('target_link')} aria-describedby={describedBy} />
+        <input className={fieldClass} type="url" autoComplete="off" maxLength={500} value={draft.target_link} onChange={set('target_link')} {...mark('target_link')} />
       </Field>
     </>
   );
@@ -85,23 +92,43 @@ export function UsualsSection({ householdId }: { householdId: string }) {
   const usuals = read.data;
   const [adding, setAdding] = useState<UsualInput | null>(null);
   const [editing, setEditing] = useState<{ id: string; draft: UsualInput } | null>(null);
+  const [flag, setFlag] = useState<Flag | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const addRow = useFormRow({ what: 'usual', place: () => ADD, read, opener: () => ADD_ID });
   const editRow = useFormRow({ what: 'usual', place: (id) => editPlace(id), read, opener: (id) => usualControlId(id, 'edit') });
   const off = busy || undefined;
   // Opening or closing a form takes away what a write said in another one.
-  const closeForms = () => read.clear();
+  const closeForms = () => {
+    read.clear();
+    setFlag(null);
+  };
+  // The field to mark in a form: the name when it is asked for and blank, else what the last problem with this form was about.
+  const fieldOf = (place: string, nameAsked: boolean): Invalid | undefined => {
+    const field = nameAsked ? 'name' : flag?.place === place ? flag.field : undefined;
+    return field === undefined ? undefined : { field, id: problemId(place) };
+  };
+  // A write the database refused as a name the Household has (another phone added it a moment before): said as a taken name.
+  const takenFailure = (place: string, name: string) => (error: unknown) => {
+    if (!isTakenName(error)) return;
+    setFlag({ place, field: 'name' });
+    read.say(place, takenWords(name));
+    return true;
+  };
 
   // The form's own check (usualProblem) runs before the write, and says its words in the form's line. A blank name is the form row's:
   // usualProblem leaves it, and submit counts the ask.
   async function add(event: FormEvent) {
     event.preventDefault();
     if (!adding) return;
-    const said = usualProblem(adding, usuals ?? [], null);
-    if (said) {
-      read.say(ADD, said);
+    const problem = usualProblem(adding, usuals ?? [], null);
+    if (problem) {
+      setFlag({ place: ADD, field: problem.field });
+      read.say(ADD, problem.words);
       return;
     }
+    setFlag(null);
     await addRow.submit(adding.name, () => createUsual(supabase, householdId, adding), {
+      failed: takenFailure(ADD, adding.name),
       landed: () => {
         addRow.close();
         setAdding(null);
@@ -113,12 +140,16 @@ export function UsualsSection({ householdId }: { householdId: string }) {
     event.preventDefault();
     if (!editing) return;
     const { id, draft } = editing;
-    const said = usualProblem(draft, usuals ?? [], id);
-    if (said) {
-      read.say(editPlace(id), said);
+    const place = editPlace(id);
+    const problem = usualProblem(draft, usuals ?? [], id);
+    if (problem) {
+      setFlag({ place, field: problem.field });
+      read.say(place, problem.words);
       return;
     }
+    setFlag(null);
     await editRow.submit(draft.name, () => updateUsual(supabase, id, draft), {
+      failed: takenFailure(place, draft.name),
       landed: () => {
         editRow.close();
         setEditing(null);
@@ -127,9 +158,17 @@ export function UsualsSection({ householdId }: { householdId: string }) {
   }
 
   async function remove(usual: Usual) {
-    await change(deletePlace(usual.id), () => deleteUsual(supabase, usual.id), { landed: () => ADD_ID });
+    // Focus goes to the add form's title when that form is open (its button is not drawn then), else to the add button.
+    const addOpen = adding !== null;
+    await change(deletePlace(usual.id), () => deleteUsual(supabase, usual.id), {
+      landed: () => {
+        setDeleting(null);
+        return addOpen ? ADD_TITLE_ID : ADD_ID;
+      },
+    });
   }
 
+  const addField = addRow.nameProblem(adding?.name ?? '') !== null;
   const addProblem = addRow.nameProblem(adding?.name ?? '') ?? read.problem(ADD);
 
   return (
@@ -145,7 +184,11 @@ export function UsualsSection({ householdId }: { householdId: string }) {
               {isEditing ? (
                 <form onSubmit={(event) => void save(event)} noValidate className="flex flex-col gap-4 border-y border-border py-4">
                   <h3 className="font-display text-[22px] leading-7 wrap-anywhere">Edit {usual.name}</h3>
-                  <UsualFields draft={editing.draft} describedBy={editProblem ? problemId(place) : undefined} onChange={(draft) => setEditing({ id: usual.id, draft })} />
+                  <UsualFields
+                    draft={editing.draft}
+                    invalid={fieldOf(place, editRow.nameProblem(editing.draft.name) !== null)}
+                    onChange={(draft) => setEditing({ id: usual.id, draft })}
+                  />
                   <div className={buttonRow}>
                     <Button
                       variant="quiet"
@@ -167,20 +210,35 @@ export function UsualsSection({ householdId }: { householdId: string }) {
                   </div>
                   <Problem id={problemId(place)} problem={editProblem} />
                 </form>
+              ) : deleting === usual.id ? (
+                <Confirm
+                  title={`Delete ${usual.name}?`}
+                  words="The Usual goes, and its Target link with it."
+                  cancel="Keep it"
+                  confirm={`Delete ${usual.name}`}
+                  busy={busy}
+                  problem={read.problem(deletePlace(usual.id))}
+                  onCancel={() => {
+                    if (busy) return;
+                    setDeleting(null);
+                    read.focus(usualControlId(usual.id, 'delete'));
+                  }}
+                  onConfirm={() => void remove(usual)}
+                />
               ) : (
-                <>
-                  <UsualRow
-                    usual={usual}
-                    busy={busy}
-                    onEdit={() => {
-                      closeForms();
-                      editRow.start(usual.id);
-                      setEditing({ id: usual.id, draft: { name: usual.name, product: usual.product, target_link: usual.target_link ?? '' } });
-                    }}
-                    onDelete={() => void remove(usual)}
-                  />
-                  <Problem id={problemId(deletePlace(usual.id))} problem={read.problem(deletePlace(usual.id))} />
-                </>
+                <UsualRow
+                  usual={usual}
+                  busy={busy}
+                  onEdit={() => {
+                    closeForms();
+                    editRow.start(usual.id);
+                    setEditing({ id: usual.id, draft: { name: usual.name, product: usual.product, target_link: usual.target_link ?? '' } });
+                  }}
+                  onDelete={() => {
+                    closeForms();
+                    setDeleting(usual.id);
+                  }}
+                />
               )}
             </li>
           );
@@ -189,8 +247,10 @@ export function UsualsSection({ householdId }: { householdId: string }) {
 
       {adding ? (
         <form onSubmit={(event) => void add(event)} noValidate className="flex flex-col gap-4 border-t border-border pt-4">
-          <h3 className="font-display text-[22px] leading-7">New usual</h3>
-          <UsualFields draft={adding} describedBy={addProblem ? problemId(ADD) : undefined} onChange={setAdding} />
+          <h3 id={ADD_TITLE_ID} tabIndex={-1} className="font-display text-[22px] leading-7 outline-none">
+            New usual
+          </h3>
+          <UsualFields draft={adding} invalid={fieldOf(ADD, addField)} onChange={setAdding} />
           <div className={buttonRow}>
             <Button
               variant="quiet"
