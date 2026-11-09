@@ -25,8 +25,6 @@ const blank: UsualInput = { name: '', product: '', target_link: '' };
 
 // The field a form's problem is about, and the line that says what it is: that field is marked invalid and points at the line.
 type Invalid = { field: UsualField; id: string };
-// Which form and field the last problem with it was about (a form's own check, or the database's word on a taken name).
-type Flag = { place: string; field: UsualField };
 
 // The three fields of a Usual, in the form's order.
 export function UsualFields({ draft, invalid, onChange }: { draft: UsualInput; invalid?: Invalid | undefined; onChange: (draft: UsualInput) => void }) {
@@ -92,7 +90,10 @@ export function UsualsSection({ householdId }: { householdId: string }) {
   const usuals = read.data;
   const [adding, setAdding] = useState<UsualInput | null>(null);
   const [editing, setEditing] = useState<{ id: string; draft: UsualInput } | null>(null);
-  const [flag, setFlag] = useState<Flag | null>(null);
+  // The field each form's last problem was about (its own check, or the database's word on a taken name), by the form's place: two
+  // forms open at once keep their own.
+  const [flags, setFlags] = useState<Partial<Record<string, UsualField>>>({});
+  const flagAt = (place: string, field: UsualField | undefined) => setFlags((was) => ({ ...was, [place]: field }));
   const [deleting, setDeleting] = useState<string | null>(null);
   const addRow = useFormRow({ what: 'usual', place: () => ADD, read, opener: () => ADD_ID });
   const editRow = useFormRow({ what: 'usual', place: (id) => editPlace(id), read, opener: (id) => usualControlId(id, 'edit') });
@@ -100,17 +101,17 @@ export function UsualsSection({ householdId }: { householdId: string }) {
   // Opening or closing a form takes away what a write said in another one.
   const closeForms = () => {
     read.clear();
-    setFlag(null);
+    setFlags({});
   };
   // The field to mark in a form: the name when it is asked for and blank, else what the last problem with this form was about.
   const fieldOf = (place: string, nameAsked: boolean): Invalid | undefined => {
-    const field = nameAsked ? 'name' : flag?.place === place ? flag.field : undefined;
+    const field = nameAsked ? 'name' : flags[place];
     return field === undefined ? undefined : { field, id: problemId(place) };
   };
   // A write the database refused as a name the Household has (another phone added it a moment before): said as a taken name.
   const takenFailure = (place: string, name: string) => (error: unknown) => {
     if (!isTakenName(error)) return;
-    setFlag({ place, field: 'name' });
+    flagAt(place, 'name');
     read.say(place, takenWords(name));
     return true;
   };
@@ -122,11 +123,11 @@ export function UsualsSection({ householdId }: { householdId: string }) {
     if (!adding) return;
     const problem = usualProblem(adding, usuals ?? [], null);
     if (problem) {
-      setFlag({ place: ADD, field: problem.field });
+      flagAt(ADD, problem.field);
       read.say(ADD, problem.words);
       return;
     }
-    setFlag(null);
+    flagAt(ADD, undefined);
     await addRow.submit(adding.name, () => createUsual(supabase, householdId, adding), {
       failed: takenFailure(ADD, adding.name),
       landed: () => {
@@ -143,11 +144,11 @@ export function UsualsSection({ householdId }: { householdId: string }) {
     const place = editPlace(id);
     const problem = usualProblem(draft, usuals ?? [], id);
     if (problem) {
-      setFlag({ place, field: problem.field });
+      flagAt(place, problem.field);
       read.say(place, problem.words);
       return;
     }
-    setFlag(null);
+    flagAt(place, undefined);
     await editRow.submit(draft.name, () => updateUsual(supabase, id, draft), {
       failed: takenFailure(place, draft.name),
       landed: () => {
@@ -213,7 +214,7 @@ export function UsualsSection({ householdId }: { householdId: string }) {
               ) : deleting === usual.id ? (
                 <Confirm
                   title={`Delete ${usual.name}?`}
-                  words="The product and its Target link go with it."
+                  words={usual.target_link ? 'The product and its Target link go with it.' : 'The product goes with it.'}
                   cancel="Keep it"
                   confirm={`Delete ${usual.name}`}
                   busy={busy}

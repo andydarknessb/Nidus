@@ -406,6 +406,21 @@ describe('the shopper', () => {
     expect(body).toContain('Usuals:\\n- Milk: Good & Gather 2% milk, 1 gallon');
     expect(body).not.toContain('target.com');
   });
+
+  it('sends only this Household\'s Usuals, never another Household\'s', async () => {
+    const { account, phone, list } = await setUp();
+    const other = await createHousehold();
+    households.push(other);
+    const { error } = await asServiceRole().from('usuals').insert({ household_id: other.household.id, name: 'Rye Bread', product: 'Rye bread, sliced' });
+    expect(error).toBeNull();
+    await createUsual(phone, account.household.id, { name: 'Milk', product: 'Whole milk', target_link: '' });
+    const claude = fakeClaude();
+
+    expect((await ask(claude, await tokenOf(phone), list.id)).status).toBe(200);
+    const body = JSON.stringify(claude.requests[0]);
+    expect(body).toContain('- Milk: Whole milk');
+    expect(body).not.toContain('Rye');
+  });
 });
 
 describe('the shopper data', () => {
