@@ -26,6 +26,7 @@ A wall-mounted household calendar: a Vite + React PWA on Netlify, Supabase for e
 - `docs/specs/0017-two-fixes.md` is the v16 spec: two fixes from the 2026-10-28 audit of the screens (a sheet's More foot on the Wall at any width, the list chip's count at 14 px).
 - `docs/specs/0018-whose-events-a-phone-gets.md` is the v17 spec: each phone chooses whose events it gets (Everyone, or chosen people) for its reminders and 7 AM summary, replacing v7's "no per-person filter".
 - `docs/specs/0019-the-shopper.md` is the v18 spec: the shopper (Claude suggests groceries from the Meals, waiting on the list; a phone sends the list to Target's app in ChatGPT; Got it crosses off what came; Usuals). `docs/adr/0007` records why Nidus never touches Target's cart.
+- `docs/specs/0020-deeper-modules-round-six.md` is the v19 spec: deeper modules, round six (one read of a Shared List, Settings following the Household, one removal question, the send, the clocks-repeat rule in SQL, one event row), continuing v8, v10, v11, v13 and v14, with six named fixes.
 
 ## Conventions
 

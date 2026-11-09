@@ -375,3 +375,29 @@ list_suggestions      id, list_id, text, for_meals, sort_order, created_at
 shopper_runs          id, household_id, ran_at
 usuals                id, household_id, name (unique per Household, ignoring case and spaces), product, target_link, created_at
 ```
+
+## v19: deeper modules, round six
+
+Settled on 2026-11-09 from an architecture review of master during v18, two rounds of rulings, every recommendation taken. The spec is [0020](specs/0020-deeper-modules-round-six.md) (tracker #300, tickets #301 to #306). It continues v8, v10, v11, v13 and v14, and the build waits for v18 to merge.
+
+### Decisions
+
+- **One read of a Shared List.** A plain core in the Routine Chart's shape answers the count, what is waiting and the writes; `useItems` is a thin hook. Failed writes are said through the change at one place per list, and the shopper's ask runs on a change of its own.
+- **Settings follows the Household** through the synced read. The Household form is a draft over the read, and a Save sends only what was edited. The Notifications card's Profiles and Pinned List name follow too; the stale-sync mark keeps its own loop.
+- **One question before something goes**: the six removals use the form row with no name. Opening or closing a row forgets what was said on its card, and Routines and Shared Lists use the shared question.
+- **The send**: what a press on Send to Target means is a plain core, with the phone's share and copy as adapters. Got it stays as it is.
+- **The clocks-repeat rule has one name in SQL**, handles a half-hour change, and one table of cases runs through it and the Household clock. The one-line Household Date stays inline.
+- **One event row**: both calendar adapters hand their facts to the row's module.
+- **Six named fixes** are the only visible change: Home's card, Settings following the Household, the two questions, what a question or form clears, a failed retry announced again, and a half-hour clock change.
+- **Dropped**: one description per Wall screen (the phone's screen chooser names its return type instead), one day list on the phone, meal slot words on the server, one rule for choosing people, plain cores for the keyboard hold and the Wall's gate, one sheet title row, and one nightly prune.
+- **The new names live in the spec**, not in `CONTEXT.md`, and there is no ADR.
+- **The earlier rulings hold**: replace don't layer, plain cores with thin hooks, no DOM test library, props not a context ([ADR 0004](adr/0004-the-household-facts-are-props-not-a-context.md)), one change at a place ([ADR 0006](adr/0006-one-change.md)).
+- **Six tickets**, each one pull request into `owner/v19`, released to master as one pull request. The migration and the `calendar-sync` deploy reach the hosted project before the release merges.
+
+### Tables
+
+No table changes. One new function:
+
+```
+wall_clock_instant(local timestamp, zone text) returns timestamptz
+```
