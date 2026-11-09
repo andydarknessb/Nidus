@@ -23,6 +23,7 @@ import {
 import { couldNotLoad, useSyncedRead, type ReadStateName } from './synced-read';
 import { useFailureWords } from './use-failure-words';
 import { addSuggestions, dismissSuggestions, loadSuggestions, type ListSuggestion } from './list-suggestions';
+import { askShopper, type ShopperAnswer } from './shopper';
 
 // The Shared Lists' readers and writers as hooks, one for the Wall's cards and the phone's screens alike (SharedListsPage.tsx draws
 // the tablet's, src/phone/PhoneLists.tsx the phone's). Both read through the synced read (synced-read.ts).
@@ -176,6 +177,30 @@ export function useSuggestions(listId: string) {
     dismiss: (ids: string[]) => {
       const pressed = document.activeElement;
       return read.change(SUGGESTIONS_PLACE, () => dismissSuggestions(supabase, ids)).then(settle(pressed));
+    },
+  };
+}
+
+// The shopper (spec 0019) for this list: `asking` is true while Claude is being asked, and `answer` is the last answer. Each ask clears
+// the last answer first, so its alert is taken down and a repeated answer is announced again. A second tap before the answer lands is
+// no second ask: each one is a run.
+export function useShopper(listId: string) {
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<ShopperAnswer | null>(null);
+  const inFlight = useRef(false);
+  return {
+    asking,
+    answer,
+    ask: async (): Promise<ShopperAnswer | null> => {
+      if (inFlight.current) return null;
+      inFlight.current = true;
+      setAsking(true);
+      setAnswer(null);
+      const next = await askShopper(supabase, listId);
+      inFlight.current = false;
+      setAsking(false);
+      setAnswer(next);
+      return next;
     },
   };
 }
