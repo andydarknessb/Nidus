@@ -38,7 +38,7 @@ export type Said = { words: string; n?: number | undefined };
 
 // What a phone form says when it is asked to save with no name: in its own problem line, before anything is sent, in plain words.
 // The browser's own bubble for an empty field is off in these forms (noValidate), so the family reads one voice.
-export type Named = 'routine' | 'person' | 'list';
+export type Named = 'routine' | 'person' | 'list' | 'usual';
 export const giveName = (what: Named): string => `Give the ${what} a name.`;
 
 // What a form says of its name once it has counted `asked` times it was asked to save with none: nothing before it has been asked,

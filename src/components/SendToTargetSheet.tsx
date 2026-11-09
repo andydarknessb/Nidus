@@ -3,6 +3,8 @@ import { useRef, useState } from 'react';
 import type { CardWriteOutcome } from '../lib/change';
 import { chatGptLink, shareEnd, targetMessage } from '../lib/send-to-target';
 import type { ListItem } from '../lib/shared-lists';
+import { couldNotLoad } from '../lib/synced-read';
+import { useUsuals } from '../lib/use-usuals';
 import { Sheet } from './Sheet';
 import { Button } from './ui/button';
 
@@ -13,7 +15,7 @@ import { Button } from './ui/button';
 // what a write that did not save said, in the change's place for this list; a second press while a mark is on its way does nothing.
 export function SendToTargetSheet({
   items,
-  busy,
+  busy: writing,
   problem,
   onMarkSent,
   onClose,
@@ -24,8 +26,12 @@ export function SendToTargetSheet({
   onMarkSent: () => Promise<CardWriteOutcome>;
   onClose: () => void;
 }) {
-  // The Usuals join the message in ticket 4; until then there are none.
-  const message = targetMessage(items, []);
+  // The message names the Household's Usuals, which the sheet reads itself. Until they are read nothing can be sent: a message made
+  // before they land would leave them out, and one that cannot read them says so.
+  const usuals = useUsuals();
+  const busy = writing || usuals.data === null;
+  const usualsSaid = usuals.data === null && usuals.state === 'failed' ? couldNotLoad('your usuals') : '';
+  const message = targetMessage(items, usuals.data ?? []);
   const link = chatGptLink(message);
   const [copied, setCopied] = useState(false);
   // What Share or Copy said when it did not work: an action that is not a save, so the sheet says it.
@@ -65,7 +71,7 @@ export function SendToTargetSheet({
     await onMarkSent();
   }
 
-  const said = local || problem;
+  const said = local || problem || usualsSaid;
 
   return (
     <Sheet

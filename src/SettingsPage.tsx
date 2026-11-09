@@ -5,6 +5,7 @@ import { DevicesSection } from '@/DevicesSection';
 import { HouseholdAccountsSection } from '@/HouseholdAccountsSection';
 import { NotificationsSection } from '@/NotificationsSection';
 import { ProfilesSection } from '@/ProfilesSection';
+import { UsualsSection } from '@/UsualsSection';
 import { WeatherSection } from '@/WeatherSection';
 import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
@@ -103,6 +104,7 @@ export function SettingsPage({ household, userId, onSaved, onSignOut }: Props) {
       </div>
       <WeatherSection household={household} onSaved={onSaved} />
       <ProfilesSection householdId={household.id} />
+      <UsualsSection householdId={household.id} />
       <DevicesSection />
       <HouseholdAccountsSection householdId={household.id} timezone={household.timezone} userId={userId} />
       <NotificationsSection />
