@@ -5,6 +5,7 @@ import { handleShopper, type ShopperDeps } from '../supabase/functions/shopper/h
 import { PROFILE_PALETTE, createProfile } from '../src/lib/profiles';
 import { setMeal } from '../src/lib/meals';
 import { addItem, createList } from '../src/lib/shared-lists';
+import { createUsual } from '../src/lib/usuals';
 import { addDays, dayStartMs, householdDay } from '@shared/zoned-time.ts';
 import {
   asDevice,
@@ -393,6 +394,17 @@ describe('the shopper', () => {
     expect(body).toContain('Items to get:\\n- Milk');
     expect(body).not.toContain('Eggs');
     expect(body).toContain('People in the household: 1');
+  });
+
+  it('sends each Usual as its name and product, and never its Target link', async () => {
+    const { account, phone, list } = await setUp();
+    await createUsual(phone, account.household.id, { name: 'Milk', product: 'Good & Gather 2% milk, 1 gallon', target_link: 'https://www.target.com/p/milk/-/A-1' });
+    const claude = fakeClaude();
+
+    expect((await ask(claude, await tokenOf(phone), list.id)).status).toBe(200);
+    const body = JSON.stringify(claude.requests[0]);
+    expect(body).toContain('Usuals:\\n- Milk: Good & Gather 2% milk, 1 gallon');
+    expect(body).not.toContain('target.com');
   });
 });
 
