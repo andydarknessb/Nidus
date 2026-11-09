@@ -21,6 +21,7 @@ export const WATCHED_TABLES = [
   'list_items',
   'list_suggestions',
   'meals',
+  'usuals',
 ] as const;
 
 export type WatchedTable = (typeof WATCHED_TABLES)[number];
