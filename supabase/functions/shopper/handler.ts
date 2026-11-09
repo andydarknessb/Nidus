@@ -147,7 +147,12 @@ export async function handleShopper(request: Request, deps: ShopperDeps): Promis
 
   const { admin } = deps;
   const householdId = principal.householdId;
-  const { data: list } = await admin.from('shared_lists').select('household_id').eq('id', listId).maybeSingle<{ household_id: string }>();
+  const { data: list, error: listError } = await admin
+    .from('shared_lists')
+    .select('household_id')
+    .eq('id', listId)
+    .maybeSingle<{ household_id: string }>();
+  if (listError) return json(502, { outcome: 'failed' }, cors);
   if (list?.household_id !== householdId) return json(403, { error: 'not a list of this household' }, cors);
   if (!deps.apiKey) return json(503, { outcome: 'not-set-up' }, cors);
 
@@ -171,7 +176,8 @@ export async function handleShopper(request: Request, deps: ShopperDeps): Promis
       .eq('household_id', householdId)
       .gte('meal_date', today)
       .lte('meal_date', addDays(today, 6))
-      .order('meal_date');
+      .order('meal_date')
+      .order('slot');
     if (mealsError) throw mealsError;
     if (!meals?.length) return json(200, { outcome: 'no-meals' }, cors);
 
@@ -183,7 +189,7 @@ export async function handleShopper(request: Request, deps: ShopperDeps): Promis
       .eq('household_id', householdId);
     if (peopleError) throw peopleError;
 
-      // The run is taken here, just before Claude is asked: the limit is judged and the run recorded in one database step, so no more than
+    // The run is taken here, just before Claude is asked: the limit is judged and the run recorded in one database step, so no more than
     // the limit pass however many asks come at once.
     const { data: claimed, error: claimError } = await admin.rpc('claim_shopper_run', {
       p_household_id: householdId,
@@ -193,10 +199,10 @@ export async function handleShopper(request: Request, deps: ShopperDeps): Promis
     if (claimError) throw claimError;
     if (!claimed) return json(429, { outcome: 'limit' }, cors);
 
-    const onList = listItems ?? [];
-    const toGet = onList.filter((item) => item.crossed_at === null).map((item) => item.text as string);
+    // The items to get, as the spec reads them: a crossed-off item is not on the list for the check, so one the Meals need again is kept.
+    const toGet = (listItems ?? []).filter((item) => item.crossed_at === null).map((item) => item.text as string);
     const answer = await askClaude(deps, dataFor(meals, toGet, Math.max(1, people ?? 0)));
-    const kept = checkAnswer(answer, onList.map((item) => item.text as string));
+    const kept = checkAnswer(answer, toGet);
     if (kept.length === 0) return json(200, { outcome: 'nothing-new' }, cors);
 
     const { data: count, error: replaceError } = await admin.rpc('replace_list_suggestions', { p_list_id: listId, p_items: kept });

@@ -46,7 +46,9 @@ grant execute on function public.replace_list_suggestions(uuid, jsonb) to servic
 
 -- The daily limit, judged and taken in one transaction: a run is recorded only while the Household has fewer than p_limit runs since
 -- p_since (its Household midnight). The Household's row is locked, so asks at once queue here and the second counts the first's run:
--- no more than the limit pass, and a refused ask records nothing. Returns whether the run was taken.
+-- no more than the limit pass, and a refused ask records nothing. The lock is FOR NO KEY UPDATE, as on the list in
+-- replace_list_suggestions: a Meal or a Profile inserted for the Household meanwhile takes a foreign-key KEY SHARE lock on that row,
+-- which FOR UPDATE would block. Returns whether the run was taken.
 create or replace function public.claim_shopper_run(p_household_id uuid, p_since timestamptz, p_limit integer)
 returns boolean
 language plpgsql
@@ -54,7 +56,7 @@ security definer
 set search_path = ''
 as $$
 begin
-  perform 1 from public.households as h where h.id = p_household_id for update;
+  perform 1 from public.households as h where h.id = p_household_id for no key update;
   if (select count(*) from public.shopper_runs as r where r.household_id = p_household_id and r.ran_at >= p_since) >= p_limit then
     return false;
   end if;

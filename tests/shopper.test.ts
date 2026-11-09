@@ -275,6 +275,17 @@ describe('the shopper', () => {
     expect(data?.[2]?.for_meals).toBeNull();
   });
 
+  it('checks the answer against the items to get: a crossed-off item the Meals need again is kept, one still to get is dropped', async () => {
+    const { phone, list } = await setUp();
+    await addItem(phone, list.id, 'Eggs', 1);
+    await asServiceRole().from('list_items').update({ crossed_at: new Date().toISOString() }).eq('list_id', list.id).eq('text', 'Eggs');
+    const claude = fakeClaude(() => streamed(suggest('Eggs', 'Milk', 'Tortillas')));
+
+    const response = await ask(claude, await tokenOf(phone), list.id);
+    expect(await response.json()).toEqual({ outcome: 'suggested', count: 2 });
+    expect(await waitingTexts(phone, list.id)).toEqual(['Eggs', 'Tortillas']);
+  });
+
   it.each([
     ['an error from Claude', () => new Response(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'boom' } }), { status: 500, headers: { 'content-type': 'application/json' } })],
     ['a refusal', () => streamed(suggest('Ham'), 'refusal')],
@@ -339,7 +350,7 @@ describe('the shopper', () => {
   });
 
   it('asks Claude with claude-haiku-5-5 at effort max, no sampling parameters, and no Profile, event, Routine or Household name', async () => {
-    const { account, phone, list } = await setUp({ name: 'Zebra Household' });
+    const { account, phone, list, today } = await setUp({ name: 'Zebra Household' });
     const admin = asServiceRole();
     await createProfile(phone, account.household.id, { name: 'Quincy', color: PROFILE_PALETTE[0]!.hex }, 0);
     const { error: eventError } = await admin.from('native_events').insert({
@@ -354,6 +365,8 @@ describe('the shopper', () => {
       .from('routines')
       .insert({ household_id: account.household.id, profile_id: profile!.id, title: 'Juniper Vitamin', days_of_week: 1 });
     expect(routineError).toBeNull();
+    await addItem(phone, list.id, 'Eggs', 1);
+    await admin.from('list_items').update({ crossed_at: new Date().toISOString() }).eq('list_id', list.id).eq('text', 'Eggs');
     const claude = fakeClaude();
 
     expect((await ask(claude, await tokenOf(phone), list.id)).status).toBe(200);
@@ -363,8 +376,12 @@ describe('the shopper', () => {
     for (const sampling of ['temperature', 'top_p', 'top_k']) expect(sent).not.toHaveProperty(sampling);
     const body = JSON.stringify(sent);
     for (const hidden of ['Zebra Household', 'Quincy', 'Quokka Dentist', 'Juniper Vitamin']) expect(body).not.toContain(hidden);
-    expect(body).toContain('Tacos');
-    expect(body).toContain('Milk');
+    // The Meal goes as its weekday and slot, the items to get as a list, and the Profile count: a crossed-off item is not sent.
+    const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(`${addDays(today, 1)}T12:00:00Z`).getUTCDay()];
+    expect(body).toContain(`${weekday} dinner: Tacos`);
+    expect(body).toContain('Items to get:\\n- Milk');
+    expect(body).not.toContain('Eggs');
+    expect(body).toContain('People in the household: 1');
   });
 });
 
