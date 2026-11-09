@@ -189,6 +189,17 @@ describe('the shopper', () => {
     expect(await countRuns(account)).toBe(0);
   });
 
+  it('answers failed, with no request to Claude and no run, when the list cannot be read', async () => {
+    const { account, phone } = await setUp();
+    const claude = fakeClaude();
+
+    const response = await ask(claude, await tokenOf(phone), 'not-a-uuid');
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ outcome: 'failed' });
+    expect(claude.requests).toHaveLength(0);
+    expect(await countRuns(account)).toBe(0);
+  });
+
   it('answers not-set-up without a key, with no request to Claude and no run', async () => {
     const { account, phone, list } = await setUp();
     const claude = fakeClaude();

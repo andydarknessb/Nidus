@@ -152,7 +152,10 @@ export async function handleShopper(request: Request, deps: ShopperDeps): Promis
     .select('household_id')
     .eq('id', listId)
     .maybeSingle<{ household_id: string }>();
-  if (listError) return json(502, { outcome: 'failed' }, cors);
+  if (listError) {
+    console.error('shopper', listError);
+    return json(502, { outcome: 'failed' }, cors);
+  }
   if (list?.household_id !== householdId) return json(403, { error: 'not a list of this household' }, cors);
   if (!deps.apiKey) return json(503, { outcome: 'not-set-up' }, cors);
 
