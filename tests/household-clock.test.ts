@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addDays, dayStartMs, householdDay, householdTime, instantAt, spanIsOn } from '@shared/zoned-time.ts';
+import { loadOccurrences } from '../src/lib/calendar-occurrences';
+import { asAnonymous, asHouseholdAccount, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
 // The Household clock (spec 0008): the Household Date and the time of day on it, for the Wall,
-// the phone and every Edge Function. Pure; run with TZ set to an odd zone to see that the machine's
-// zone never matters.
+// the phone and every Edge Function. Pure, except the table at the foot, which asks the local stack
+// for the clock's other half (public.wall_clock_instant). Run with TZ set to an odd zone to see that
+// the machine's zone never matters.
 
 const MON = 1;
 const TUE = 2;
@@ -85,17 +89,103 @@ describe('a time of day on a Household Date', () => {
     expect(instantAt('2026-10-06', '08:30', 'America/Chicago')).toBe(Date.parse('2026-10-06T13:30:00Z'));
     expect(instantAt('2026-10-07', '03:30', 'Pacific/Kiritimati')).toBe(Date.parse('2026-10-06T13:30:00Z'));
   });
+});
 
-  // RFC 5545 3.3.5, as CONTEXT.md's Household Date says.
-  it('moves a time the clocks skip forward by the gap', () => {
-    expect(instantAt('2026-03-08', '02:30', 'America/Chicago')).toBe(Date.parse('2026-03-08T08:30:00Z'));
-    expect(instantAt('2026-09-27', '02:30', 'Pacific/Auckland')).toBe(Date.parse('2026-09-26T14:30:00Z'));
+// The clock's one table (spec 0020). A plain time; a time the clocks skip, which moves forward by the
+// gap (RFC 5545 3.3.5, as CONTEXT.md's Household Date says); a time that happens twice, which is the
+// first of the two. Each row must give the same instant from instantAt and from public.wall_clock_instant,
+// the rule native_event_occurrences and reanchor_instant both call.
+const CASES: [zone: string, date: string, time: string, instant: string][] = [
+  ['America/Chicago', '2026-10-06', '08:30', '2026-10-06T13:30:00Z'],
+  ['America/Chicago', '2026-03-08', '02:30', '2026-03-08T08:30:00Z'],
+  ['America/Chicago', '2026-11-01', '01:30', '2026-11-01T06:30:00Z'],
+  ['Europe/London', '2026-07-01', '07:00', '2026-07-01T06:00:00Z'],
+  ['Europe/London', '2026-03-29', '01:30', '2026-03-29T01:30:00Z'],
+  ['Europe/London', '2026-10-25', '01:30', '2026-10-25T00:30:00Z'],
+  ['Pacific/Auckland', '2026-07-01', '07:00', '2026-06-30T19:00:00Z'],
+  ['Pacific/Auckland', '2026-09-27', '02:30', '2026-09-26T14:30:00Z'],
+  ['Pacific/Auckland', '2026-04-05', '02:30', '2026-04-04T13:30:00Z'],
+  ['Australia/Lord_Howe', '2026-07-01', '07:00', '2026-06-30T20:30:00Z'],
+  ['Australia/Lord_Howe', '2026-10-04', '02:15', '2026-10-03T15:45:00Z'],
+  ['Australia/Lord_Howe', '2026-04-05', '01:45', '2026-04-04T14:45:00Z'],
+];
+
+describe('the Household clock and the database agree on a time of day', () => {
+  let account: HouseholdAccount;
+  let phone: SupabaseClient;
+  beforeAll(async () => {
+    account = await createHousehold();
+    phone = await asHouseholdAccount(account);
+  });
+  afterAll(async () => {
+    await destroyHousehold(account);
   });
 
-  it('takes the first of a time that happens twice', () => {
-    expect(instantAt('2026-10-25', '01:30', 'Europe/London')).toBe(Date.parse('2026-10-25T00:30:00Z'));
-    expect(instantAt('2026-11-01', '01:30', 'America/Chicago')).toBe(Date.parse('2026-11-01T06:30:00Z'));
-    expect(instantAt('2026-04-05', '02:30', 'Pacific/Auckland')).toBe(Date.parse('2026-04-04T13:30:00Z'));
+  it.each(CASES)('%s, %s %s, is %s', async (zone, date, time, instant) => {
+    expect(instantAt(date, time, zone)).toBe(Date.parse(instant));
+    const { data, error } = await phone.rpc('wall_clock_instant', { p_local: `${date} ${time}:00`, p_zone: zone });
+    expect(error).toBeNull();
+    expect(new Date(data as string).getTime()).toBe(Date.parse(instant));
+  });
+
+  it('is not callable with the anon key alone', async () => {
+    const { error } = await asAnonymous().rpc('wall_clock_instant', { p_local: '2026-10-06 08:30:00', p_zone: 'America/Chicago' });
+    expect(error?.code).toBe('42501');
+  });
+});
+
+// The callers, not only the function: Lord Howe's clocks go back half an hour, so 1:45 AM on 2026-04-05
+// happens at 14:45Z and 15:15Z. A one-hour check would read the later one. The table above never reaches
+// native_event_occurrences (the view calls it only for a Repeat) or reanchor_instant, so these two do.
+describe('a Native Event reads at the Household clock\'s instant', () => {
+  function saveSoccer(phone: SupabaseClient, startsAt: string, endsAt: string, repeat: { until: string } | null) {
+    return phone.rpc('save_native_event', {
+      p_id: null,
+      p_title: 'Soccer',
+      p_location: null,
+      p_notes: null,
+      p_starts_at: startsAt,
+      p_ends_at: endsAt,
+      p_is_all_day: false,
+      p_profile_ids: [],
+      p_repeat_every: repeat ? 'day' : null,
+      p_repeat_interval: 1,
+      p_repeat_days: null,
+      p_repeat_until: repeat?.until ?? null,
+      p_skip_event: null,
+      p_skip_on: null,
+    });
+  }
+
+  it('expands a daily Repeat to 1:45 AM on the Lord Howe night the clocks go back, at the first of the two', async () => {
+    const account = await createHousehold();
+    try {
+      const phone = await asHouseholdAccount(account);
+      const { error: zoneError } = await phone.from('households').update({ timezone: 'Australia/Lord_Howe' }).eq('id', account.household.id);
+      if (zoneError) throw zoneError;
+      const { error } = await saveSoccer(phone, '2026-04-04T14:45:00Z', '2026-04-04T15:15:00Z', { until: '2026-04-05' });
+      if (error) throw error;
+      const rows = await loadOccurrences(phone, new Date('2026-04-04T00:00:00Z'), new Date('2026-04-06T00:00:00Z'));
+      expect(rows.map((row) => new Date(row.starts_at).toISOString())).toEqual(['2026-04-04T14:45:00.000Z']);
+    } finally {
+      await destroyHousehold(account);
+    }
+  });
+
+  it('re-anchors 1:45 AM on that night, from Chicago to Lord Howe, at the first of the two', async () => {
+    const account = await createHousehold();
+    try {
+      const phone = await asHouseholdAccount(account);
+      // 1:45 AM on 2026-04-05 in Chicago (CDT) is 06:45Z; the zone change keeps that wall clock.
+      const { error } = await saveSoccer(phone, '2026-04-05T06:45:00Z', '2026-04-05T07:15:00Z', null);
+      if (error) throw error;
+      const { error: zoneError } = await phone.from('households').update({ timezone: 'Australia/Lord_Howe' }).eq('id', account.household.id);
+      if (zoneError) throw zoneError;
+      const rows = await loadOccurrences(phone, new Date('2026-04-04T00:00:00Z'), new Date('2026-04-06T00:00:00Z'));
+      expect(rows.map((row) => new Date(row.starts_at).toISOString())).toEqual(['2026-04-04T14:45:00.000Z']);
+    } finally {
+      await destroyHousehold(account);
+    }
   });
 });
 
