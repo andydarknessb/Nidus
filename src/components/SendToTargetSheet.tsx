@@ -1,7 +1,7 @@
 import { X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CardWriteOutcome } from '../lib/change';
-import { chatGptLink, shareEnd, targetMessage } from '../lib/send-to-target';
+import { chatGptLink, createSend, targetMessage } from '../lib/send-to-target';
 import type { ListItem } from '../lib/shared-lists';
 import { couldNotLoad } from '../lib/synced-read';
 import { useUsuals } from '../lib/use-usuals';
@@ -33,45 +33,29 @@ export function SendToTargetSheet({
   const usualsSaid = usuals.data === null && usuals.state === 'failed' ? couldNotLoad('your usuals') : '';
   const message = targetMessage(items, usuals.data ?? []);
   const link = chatGptLink(message);
-  const [copied, setCopied] = useState(false);
-  // What Share or Copy said when it did not work: an action that is not a save, so the sheet says it.
-  const [local, setLocal] = useState('');
   const canShare = typeof navigator !== 'undefined' && 'share' in navigator;
 
-  // A press while a mark is on its way, or while the share sheet is open, does nothing: the second share would only fail.
-  const sharing = useRef(false);
+  // The send reads what was drawn last, so a press sends the message and the busy state on screen.
+  const latest = useRef({ message, busy, onMarkSent });
+  useEffect(() => {
+    latest.current = { message, busy, onMarkSent };
+  });
+  const [send] = useState(() =>
+    createSend({
+      message: () => latest.current.message,
+      busy: () => latest.current.busy,
+      share: canShare ? (data) => navigator.share(data) : undefined,
+      copy: (text) => navigator.clipboard.writeText(text),
+      mark: () => latest.current.onMarkSent(),
+    }),
+  );
+  const [state, setState] = useState(send.state);
+  useEffect(() => {
+    setState(send.state());
+    return send.subscribe(() => setState(send.state()));
+  }, [send]);
 
-  async function share() {
-    if (busy || sharing.current) return;
-    sharing.current = true;
-    setLocal('');
-    let ended = shareEnd(undefined);
-    try {
-      await navigator.share({ text: message });
-    } catch (error) {
-      ended = shareEnd(error);
-    } finally {
-      sharing.current = false;
-    }
-    if (ended.said) setLocal(ended.said);
-    if (ended.marks) await onMarkSent();
-  }
-
-  async function copy() {
-    if (busy) return;
-    setLocal('');
-    try {
-      await navigator.clipboard.writeText(message);
-    } catch {
-      setCopied(false);
-      setLocal("Couldn't copy. Select the message and copy it by hand.");
-      return;
-    }
-    setCopied(true);
-    await onMarkSent();
-  }
-
-  const said = local || problem || usualsSaid;
+  const said = state.said || problem || usualsSaid;
 
   return (
     <Sheet
@@ -101,12 +85,7 @@ export function SendToTargetSheet({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(event) => {
-                if (busy) {
-                  event.preventDefault();
-                  return;
-                }
-                setLocal('');
-                void onMarkSent();
+                if (!send.open()) event.preventDefault();
               }}
             >
               Open in ChatGPT
@@ -114,17 +93,17 @@ export function SendToTargetSheet({
           </Button>
         )}
         {canShare && (
-          <Button variant={link === null ? 'primary' : 'secondary'} size="phone" className="w-full" aria-disabled={busy || undefined} onClick={() => void share()}>
+          <Button variant={link === null ? 'primary' : 'secondary'} size="phone" className="w-full" aria-disabled={busy || undefined} onClick={() => void send.share()}>
             Share
           </Button>
         )}
-        <Button variant="secondary" size="phone" className="w-full" aria-disabled={busy || undefined} onClick={() => void copy()}>
+        <Button variant="secondary" size="phone" className="w-full" aria-disabled={busy || undefined} onClick={() => void send.copy()}>
           Copy
         </Button>
       </div>
       {/* Always drawn, so a screen reader announces "Copied" as it arrives rather than a region that was already filled. */}
       <p role="status" className="text-base">
-        {copied && !said ? 'Copied' : ''}
+        {state.copied && !said ? 'Copied' : ''}
       </p>
       {said && (
         <p role="alert" className="text-base">
