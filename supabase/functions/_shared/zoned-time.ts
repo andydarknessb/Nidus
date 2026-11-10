@@ -1,7 +1,8 @@
 // The Household clock: every question about the Household Date (CONTEXT.md) and the time of day
-// on it, for the Wall, the phone and every Edge Function. Nothing else computes a Household Date,
-// a day's start or the instant of a time of day. Plain Intl, no Deno globals, so the same code
-// runs under Node, the browser and Deno, and cannot drift between them.
+// on it, for the Wall, the phone and every Edge Function. Its other half is the SQL function
+// public.wall_clock_instant (supabase/migrations): the instant of a time of day is computed in these
+// two places and nowhere else, and tests/household-clock.test.ts holds them to one table. Plain Intl,
+// no Deno globals, so the same code runs under Node, the browser and Deno, and cannot drift between them.
 
 // Building an Intl.DateTimeFormat is the slow part of every conversion; one per zone is enough.
 const formatters = new Map<string, Intl.DateTimeFormat>();

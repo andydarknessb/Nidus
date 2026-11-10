@@ -1,9 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addDays, dayStartMs, householdDay, householdTime, instantAt, spanIsOn } from '@shared/zoned-time.ts';
+import { asAnonymous, asHouseholdAccount, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
 // The Household clock (spec 0008): the Household Date and the time of day on it, for the Wall,
-// the phone and every Edge Function. Pure; run with TZ set to an odd zone to see that the machine's
-// zone never matters.
+// the phone and every Edge Function. Pure, except the table at the foot, which asks the local stack
+// for the clock's other half (public.wall_clock_instant). Run with TZ set to an odd zone to see that
+// the machine's zone never matters.
 
 const MON = 1;
 const TUE = 2;
@@ -85,17 +88,48 @@ describe('a time of day on a Household Date', () => {
     expect(instantAt('2026-10-06', '08:30', 'America/Chicago')).toBe(Date.parse('2026-10-06T13:30:00Z'));
     expect(instantAt('2026-10-07', '03:30', 'Pacific/Kiritimati')).toBe(Date.parse('2026-10-06T13:30:00Z'));
   });
+});
 
-  // RFC 5545 3.3.5, as CONTEXT.md's Household Date says.
-  it('moves a time the clocks skip forward by the gap', () => {
-    expect(instantAt('2026-03-08', '02:30', 'America/Chicago')).toBe(Date.parse('2026-03-08T08:30:00Z'));
-    expect(instantAt('2026-09-27', '02:30', 'Pacific/Auckland')).toBe(Date.parse('2026-09-26T14:30:00Z'));
+// The clock's one table (spec 0020). A plain time; a time the clocks skip, which moves forward by the
+// gap (RFC 5545 3.3.5, as CONTEXT.md's Household Date says); a time that happens twice, which is the
+// first of the two. Each row must give the same instant from instantAt and from public.wall_clock_instant,
+// the rule native_event_occurrences and reanchor_instant both call.
+const CASES: [zone: string, date: string, time: string, instant: string][] = [
+  ['America/Chicago', '2026-10-06', '08:30', '2026-10-06T13:30:00Z'],
+  ['America/Chicago', '2026-03-08', '02:30', '2026-03-08T08:30:00Z'],
+  ['America/Chicago', '2026-11-01', '01:30', '2026-11-01T06:30:00Z'],
+  ['Europe/London', '2026-07-01', '07:00', '2026-07-01T06:00:00Z'],
+  ['Europe/London', '2026-03-29', '01:30', '2026-03-29T01:30:00Z'],
+  ['Europe/London', '2026-10-25', '01:30', '2026-10-25T00:30:00Z'],
+  ['Pacific/Auckland', '2026-07-01', '07:00', '2026-06-30T19:00:00Z'],
+  ['Pacific/Auckland', '2026-09-27', '02:30', '2026-09-26T14:30:00Z'],
+  ['Pacific/Auckland', '2026-04-05', '02:30', '2026-04-04T13:30:00Z'],
+  ['Australia/Lord_Howe', '2026-07-01', '07:00', '2026-06-30T20:30:00Z'],
+  ['Australia/Lord_Howe', '2026-10-04', '02:15', '2026-10-03T15:45:00Z'],
+  ['Australia/Lord_Howe', '2026-04-05', '01:45', '2026-04-04T14:45:00Z'],
+];
+
+describe('the Household clock and the database agree on a time of day', () => {
+  let account: HouseholdAccount;
+  let phone: SupabaseClient;
+  beforeAll(async () => {
+    account = await createHousehold();
+    phone = await asHouseholdAccount(account);
+  });
+  afterAll(async () => {
+    await destroyHousehold(account);
   });
 
-  it('takes the first of a time that happens twice', () => {
-    expect(instantAt('2026-10-25', '01:30', 'Europe/London')).toBe(Date.parse('2026-10-25T00:30:00Z'));
-    expect(instantAt('2026-11-01', '01:30', 'America/Chicago')).toBe(Date.parse('2026-11-01T06:30:00Z'));
-    expect(instantAt('2026-04-05', '02:30', 'Pacific/Auckland')).toBe(Date.parse('2026-04-04T13:30:00Z'));
+  it.each(CASES)('%s, %s %s, is %s', async (zone, date, time, instant) => {
+    expect(instantAt(date, time, zone)).toBe(Date.parse(instant));
+    const { data, error } = await phone.rpc('wall_clock_instant', { p_local: `${date} ${time}:00`, p_zone: zone });
+    expect(error).toBeNull();
+    expect(new Date(data as string).getTime()).toBe(Date.parse(instant));
+  });
+
+  it('is not callable with the anon key alone', async () => {
+    const { error } = await asAnonymous().rpc('wall_clock_instant', { p_local: '2026-10-06 08:30:00', p_zone: 'America/Chicago' });
+    expect(error?.code).toBe('42501');
   });
 });
 
