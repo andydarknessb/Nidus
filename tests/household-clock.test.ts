@@ -135,32 +135,52 @@ describe('the Household clock and the database agree on a time of day', () => {
 });
 
 // The callers, not only the function: Lord Howe's clocks go back half an hour, so 1:45 AM on 2026-04-05
-// happens at 14:45Z and 15:15Z. A one-hour check would read the later one; the table above never reaches
-// native_event_occurrences, and the Repeat and re-anchor tests only use America/Chicago.
+// happens at 14:45Z and 15:15Z. A one-hour check would read the later one. The table above never reaches
+// native_event_occurrences (the view calls it only for a Repeat) or reanchor_instant, so these two do.
 describe('a Native Event reads at the Household clock\'s instant', () => {
-  it('reads 1:45 AM on the Lord Howe night the clocks go back at the first of the two', async () => {
+  function saveSoccer(phone: SupabaseClient, startsAt: string, endsAt: string, repeat: { until: string } | null) {
+    return phone.rpc('save_native_event', {
+      p_id: null,
+      p_title: 'Soccer',
+      p_location: null,
+      p_notes: null,
+      p_starts_at: startsAt,
+      p_ends_at: endsAt,
+      p_is_all_day: false,
+      p_profile_ids: [],
+      p_repeat_every: repeat ? 'day' : null,
+      p_repeat_interval: 1,
+      p_repeat_days: null,
+      p_repeat_until: repeat?.until ?? null,
+      p_skip_event: null,
+      p_skip_on: null,
+    });
+  }
+
+  it('expands a daily Repeat to 1:45 AM on the Lord Howe night the clocks go back, at the first of the two', async () => {
     const account = await createHousehold();
     try {
       const phone = await asHouseholdAccount(account);
       const { error: zoneError } = await phone.from('households').update({ timezone: 'Australia/Lord_Howe' }).eq('id', account.household.id);
       if (zoneError) throw zoneError;
-      const { error } = await phone.rpc('save_native_event', {
-        p_id: null,
-        p_title: 'Soccer',
-        p_location: null,
-        p_notes: null,
-        p_starts_at: '2026-04-04T14:45:00Z',
-        p_ends_at: '2026-04-04T15:15:00Z',
-        p_is_all_day: false,
-        p_profile_ids: [],
-        p_repeat_every: null,
-        p_repeat_interval: 1,
-        p_repeat_days: null,
-        p_repeat_until: null,
-        p_skip_event: null,
-        p_skip_on: null,
-      });
+      const { error } = await saveSoccer(phone, '2026-04-04T14:45:00Z', '2026-04-04T15:15:00Z', { until: '2026-04-05' });
       if (error) throw error;
+      const rows = await loadOccurrences(phone, new Date('2026-04-04T00:00:00Z'), new Date('2026-04-06T00:00:00Z'));
+      expect(rows.map((row) => new Date(row.starts_at).toISOString())).toEqual(['2026-04-04T14:45:00.000Z']);
+    } finally {
+      await destroyHousehold(account);
+    }
+  });
+
+  it('re-anchors 1:45 AM on that night, from Chicago to Lord Howe, at the first of the two', async () => {
+    const account = await createHousehold();
+    try {
+      const phone = await asHouseholdAccount(account);
+      // 1:45 AM on 2026-04-05 in Chicago (CDT) is 06:45Z; the zone change keeps that wall clock.
+      const { error } = await saveSoccer(phone, '2026-04-05T06:45:00Z', '2026-04-05T07:15:00Z', null);
+      if (error) throw error;
+      const { error: zoneError } = await phone.from('households').update({ timezone: 'Australia/Lord_Howe' }).eq('id', account.household.id);
+      if (zoneError) throw zoneError;
       const rows = await loadOccurrences(phone, new Date('2026-04-04T00:00:00Z'), new Date('2026-04-06T00:00:00Z'));
       expect(rows.map((row) => new Date(row.starts_at).toISOString())).toEqual(['2026-04-04T14:45:00.000Z']);
     } finally {
