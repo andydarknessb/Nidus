@@ -7,6 +7,8 @@ import type { CalendarsPage as CalendarsPageType } from '../src/CalendarsPage';
 import type { EVENT_TABLES as EventTablesType, EventRow as EventRowType } from '../src/EventsSection';
 import type { RoutineForm as RoutineFormType, RoutineRead, RoutinesPage as RoutinesPageType } from '../src/RoutinesPage';
 import type { SettingsPage as SettingsPageType } from '../src/SettingsPage';
+import type { SendToTargetSheet as SendToTargetSheetType } from '../src/components/SendToTargetSheet';
+import type { UsualFields as UsualFieldsType, UsualRow as UsualRowType } from '../src/UsualsSection';
 import type { SharedListsPage as SharedListsPageType } from '../src/SharedListsPage';
 import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '../src/components/PersonEditor';
 import { Confirm } from '../src/components/phone';
@@ -14,6 +16,7 @@ import { Button } from '../src/components/ui/button';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
 import { ICLOUD_LINK_GONE_WORDS, ICLOUD_TRUNCATED_WORDS, UPDATE_FAILED_WORDS, accountStatusText, type CalendarAccount, type MirroredCalendar } from '../src/lib/calendar-accounts';
 import { seenWords } from '../src/lib/device-format';
+import { USUAL_EMPTY, type Usual } from '../src/lib/usuals';
 import type { Household } from '../src/lib/household';
 import { TOKENS } from '../src/lib/look';
 import { OCCURRENCE_TABLES } from '../src/lib/realtime';
@@ -439,11 +442,11 @@ describe("the phone's pages, as they are first drawn", () => {
   const primaries = (markup: string) => buttons(markup).filter(({ attributes }) => /class="[^"]*\bbg-primary\b/.test(attributes));
 
   // What the glossary calls things, which is for code, tests and tickets: the family reads people, tablets, time zone, lists, unpair.
-  const GLOSSARY = /\b(Profiles?|Devices?|Household Timezone|Shared Lists?|Revoke|Calendar Accounts?|Mirrored Calendars?|Native Events?)\b/;
+  const GLOSSARY = /\b(Profiles?|Devices?|Household Timezone|Shared Lists?|Revoke|Calendar Accounts?|Mirrored Calendars?|Native Events?|Usuals?)\b/;
 
-  it('hold Household, Appearance, Weather, People, Wall tablets, Who can sign in and Notifications on this phone, in that order, then Sign out', () => {
+  it('hold Household, Appearance, Weather, People, What we buy, Wall tablets, Who can sign in and Notifications on this phone, in that order, then Sign out', () => {
     const markup = householdPage();
-    expect(headings(markup)).toEqual(['Household', 'Appearance', 'Weather', 'People', 'Wall tablets', 'Who can sign in', 'Notifications on this phone']);
+    expect(headings(markup)).toEqual(['Household', 'Appearance', 'Weather', 'People', 'What we buy', 'Wall tablets', 'Who can sign in', 'Notifications on this phone']);
     expect(buttons(markup).at(-1)?.name).toBe('Sign out');
   });
 
@@ -1009,5 +1012,49 @@ describe("the phone's buttons", () => {
     // It still takes a tap, which only keeps the focus where it was: pointer events off would hand the tap to what is under it.
     expect(markup).not.toMatch(/\baria-disabled:pointer-events-none\b/);
     expect(markup).not.toMatch(/\sdisabled(=|\s|>)/);
+  });
+});
+
+describe('the Usuals card, as it is drawn', () => {
+  let UsualRowPart: typeof UsualRowType;
+  let UsualFieldsPart: typeof UsualFieldsType;
+  let SendToTargetPart: typeof SendToTargetSheetType;
+  beforeAll(async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+    ({ UsualRow: UsualRowPart, UsualFields: UsualFieldsPart } = await import('../src/UsualsSection'));
+    ({ SendToTargetSheet: SendToTargetPart } = await import('../src/components/SendToTargetSheet'));
+  });
+
+  const milk: Usual = { id: 'u1', name: 'Milk', product: 'Good & Gather 2% milk, 1 gallon', target_link: 'https://www.target.com/p/milk/-/A-1' };
+
+  it('draws a row with its product, a Target link line when it has one, and Edit and Delete named for the Usual', () => {
+    const markup = renderToStaticMarkup(createElement(UsualRowPart, { usual: milk, busy: false, onEdit: () => undefined, onDelete: () => undefined }));
+    expect(markup).toContain('Good &amp; Gather 2% milk, 1 gallon');
+    expect(markup).toContain('Target link');
+    expect(markup).toContain('aria-label="Edit Milk"');
+    expect(markup).toContain('aria-label="Delete Milk"');
+  });
+
+  it('draws no Target link line for a Usual without a link', () => {
+    const markup = renderToStaticMarkup(createElement(UsualRowPart, { usual: { ...milk, target_link: null }, busy: false, onEdit: () => undefined, onDelete: () => undefined }));
+    expect(markup).not.toContain('Target link');
+  });
+
+  it('asks for the name, the product, then the link, which is optional', () => {
+    const markup = renderToStaticMarkup(createElement(UsualFieldsPart, { draft: { name: '', product: '', target_link: '' }, onChange: () => undefined }));
+    expect(markup.indexOf('>Name<')).toBeLessThan(markup.indexOf('>Product<'));
+    expect(markup.indexOf('>Product<')).toBeLessThan(markup.indexOf('>Target link (optional)<'));
+  });
+
+  it('says what an empty Household has, in the words the spec gives', () => {
+    expect(USUAL_EMPTY).toBe('No usuals yet. Add the products you always buy.');
+  });
+
+  it('holds the Send to Target message until the Usuals are read, so a message never leaves them out', () => {
+    const markup = renderToStaticMarkup(
+      createElement(SendToTargetPart, { items: [], busy: false, problem: '', onMarkSent: () => Promise.resolve('done' as const), onClose: () => undefined }),
+    );
+    expect(markup).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Copy<\/button>/);
   });
 });

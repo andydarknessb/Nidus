@@ -91,14 +91,17 @@ function checkAnswer(items: Answer['items'], onList: string[]): Suggestion[] {
   return kept;
 }
 
-// The Meals, the items to get and the number of people, as data after the instructions.
-function dataFor(meals: { meal_date: string; slot: string; title: string }[], toGet: string[], people: number): string {
+// The Meals, the items to get, the Usuals (their names and products, never their links) and the number of people, as data after the
+// instructions.
+function dataFor(meals: { meal_date: string; slot: string; title: string }[], toGet: string[], usuals: { name: string; product: string }[], people: number): string {
   return [
     `People in the household: ${people}`,
     'Meals:',
     ...meals.map((meal) => `- ${WEEKDAYS[new Date(`${meal.meal_date}T12:00:00Z`).getUTCDay()]} ${meal.slot}: ${meal.title}`),
     'Items to get:',
     ...(toGet.length > 0 ? toGet.map((text) => `- ${text}`) : ['- none']),
+    'Usuals:',
+    ...(usuals.length > 0 ? usuals.map((usual) => `- ${usual.name}: ${usual.product}`) : ['- none']),
   ].join('\n');
 }
 
@@ -186,6 +189,8 @@ export async function handleShopper(request: Request, deps: ShopperDeps): Promis
 
     const { data: listItems, error: itemsError } = await admin.from('list_items').select('text, crossed_at').eq('list_id', listId);
     if (itemsError) throw itemsError;
+    const { data: usuals, error: usualsError } = await admin.from('usuals').select('name, product').eq('household_id', householdId);
+    if (usualsError) throw usualsError;
     const { count: people, error: peopleError } = await admin
       .from('profiles')
       .select('id', { count: 'exact', head: true })
@@ -204,7 +209,7 @@ export async function handleShopper(request: Request, deps: ShopperDeps): Promis
 
     // The items to get, as the spec reads them: a crossed-off item is not on the list for the check, so one the Meals need again is kept.
     const toGet = (listItems ?? []).filter((item) => item.crossed_at === null).map((item) => item.text as string);
-    const answer = await askClaude(deps, dataFor(meals, toGet, Math.max(1, people ?? 0)));
+    const answer = await askClaude(deps, dataFor(meals, toGet, usuals ?? [], Math.max(1, people ?? 0)));
     const kept = checkAnswer(answer, toGet);
     if (kept.length === 0) return json(200, { outcome: 'nothing-new' }, cors);
 
