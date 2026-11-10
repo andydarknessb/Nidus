@@ -5,7 +5,7 @@
 // Vitest (Node) and the Edge Function (Deno). The machine's own zone is never consulted: every
 // wall-clock time is turned into an instant by the feed's zone or the Household Timezone.
 import ICAL from 'ical.js';
-import { type EventRow, MAX_DESCRIPTION, MAX_LOCATION, MAX_TITLE } from './event-row.ts';
+import { type EventRow, eventRow } from './event-row.ts';
 import { type FeedBudget, FeedTooLargeError, RunBudget, type SeriesBudget } from './run-budget.ts';
 import { dayStartMs, wallClockMs } from './zoned-time.ts';
 
@@ -81,16 +81,9 @@ function layout(ev: ICAL.Event, timezone: string): Layout | null {
 }
 
 function build(ev: ICAL.Event, uid: string, originalMs: number, startMs: number, endMs: number, isAllDay: boolean): EventRow | null {
-  if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) return null;
-  return {
-    google_event_id: `${uid}${KEY_SEPARATOR}${new Date(originalMs).toISOString()}`,
-    title: (ev.summary?.trim() || '(No title)').slice(0, MAX_TITLE),
-    description: ev.description ? ev.description.slice(0, MAX_DESCRIPTION) : null,
-    location: ev.location ? ev.location.slice(0, MAX_LOCATION) : null,
-    starts_at: new Date(startMs).toISOString(),
-    ends_at: new Date(endMs).toISOString(),
-    is_all_day: isAllDay,
-  };
+  // The key formats originalMs, which throws unless it is a real instant.
+  if (!Number.isFinite(originalMs)) return null;
+  return eventRow({ key: `${uid}${KEY_SEPARATOR}${new Date(originalMs).toISOString()}`, title: ev.summary, notes: ev.description, place: ev.location, startsMs: startMs, endsMs: endMs, allDay: isAllDay });
 }
 
 const cancelled = (ev: ICAL.Event) => ev.component.getFirstPropertyValue('status')?.toString().toUpperCase() === 'CANCELLED';

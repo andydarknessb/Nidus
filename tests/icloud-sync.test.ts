@@ -146,6 +146,19 @@ describe('a first sync of an iPhone calendar', () => {
     expect(world.calls.map((call) => call.url).sort()).toEqual([link, other].sort());
   });
 
+  it('names two untitled events at the same time, and reads them back as two Occurrences', async () => {
+    const account = await arrange();
+    const link = newLink();
+    const mine = await arrangeIcloud(account, link);
+    const untitled = (uid: string) => `BEGIN:VEVENT\nUID:${uid}\nDTSTAMP:20260901T000000Z\nDTSTART:20261008T150000Z\nDTEND:20261008T160000Z\nEND:VEVENT`;
+
+    await syncOk(deps(account, fakeWorld(new Map<string, FeedReply>([[link, { text: feedOf(untitled('a'), untitled('b')), etag: '"v1"' }]]))));
+
+    const { data, error } = await (await asHouseholdAccount(account)).from('calendar_occurrences').select('title').eq('calendar_id', mine.calendarId);
+    if (error) throw error;
+    expect(data!.map((row) => row.title)).toEqual(['(No title)', '(No title)']);
+  });
+
   it('reads the link in Apple’s own spelling, in the Household Timezone', async () => {
     const account = await arrange();
     // The Household's zone is Chicago: a floating 09:00 is 14:00Z in October.

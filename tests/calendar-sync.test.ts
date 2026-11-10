@@ -226,6 +226,17 @@ describe('a full sync', () => {
 
     expect((await rowsOf(calendarId)).map((row) => [row.google_event_id, row.title])).toEqual([['blank', '(No title)']]);
   });
+
+  it('reads two untitled events at the same time back as two Occurrences', async () => {
+    const account = await arrange();
+    const { calendarId } = await arrangeCalendar(account, { googleCalendarId: 'cal' });
+    const at = { start: { dateTime: '2026-10-05T10:00:00Z' }, end: { dateTime: '2026-10-05T11:00:00Z' } };
+    await syncOk(deps(account, fakeGoogle({ events: { cal: [{ id: 'a', ...at }, { id: 'b', ...at }] } })));
+
+    const { data, error } = await (await asHouseholdAccount(account)).from('calendar_occurrences').select('title').eq('calendar_id', calendarId);
+    if (error) throw error;
+    expect(data.map((row) => row.title)).toEqual(['(No title)', '(No title)']);
+  });
 });
 
 describe('syncing again', () => {
