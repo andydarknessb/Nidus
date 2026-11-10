@@ -28,7 +28,7 @@ export function displayNameOf(session: Session): string {
 
 // First sign-in creates the Household and its link; every later call returns
 // the existing one. The database owns that rule (ensure_household).
-export async function ensureHousehold(session: Session): Promise<Household> {
+export async function ensureHousehold(session: Session): Promise<void> {
   const display_name = displayNameOf(session);
   let { error } = await supabase.rpc('ensure_household', { display_name, browser_timezone: browserTimezone() });
   if (error?.code === '23514') {
@@ -36,7 +36,6 @@ export async function ensureHousehold(session: Session): Promise<Household> {
     ({ error } = await supabase.rpc('ensure_household', { display_name, browser_timezone: 'UTC' }));
   }
   if (error) throw error;
-  return loadHousehold();
 }
 
 export async function loadHousehold(): Promise<Household> {

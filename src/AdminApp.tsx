@@ -52,7 +52,8 @@ export function AdminApp() {
   const tab = settingsTabOf(window.location.pathname);
 
   // Each page says where it is in the document's title, from the first paint: the sign-in and the dead end have their own.
-  useDocumentTitle(session === null ? 'Sign in' : device ? 'Settings are for phones' : ready === userId ? settingsLabelOf(tab) : 'Settings');
+  // A signed-in page names itself once its Household is there (Administration below); until then it is Settings.
+  useDocumentTitle(session === null ? 'Sign in' : device ? 'Settings are for phones' : 'Settings');
 
   // The tabs stay at the top while a page scrolls under them, so a control that is scrolled to for the keyboard must stop short of them:
   // 5 rem is the bar (76 px) and a little air.
@@ -134,6 +135,8 @@ export function AdminApp() {
 function Administration({ userId, tab, onSignOut }: { userId: string; tab: SettingsTab; onSignOut: () => void }) {
   const read = useSyncedRead(loadHousehold, HOUSEHOLD_TABLES, userId);
   const household = read.data;
+  // Settings until the Household is there, so a first read that fails leaves the title as it says: Settings.
+  useDocumentTitle(household ? settingsLabelOf(tab) : 'Settings');
   // Only a first read that fails says it could not load; a later failure keeps what is shown.
   if (read.state === 'failed') return <main className="p-4 text-base">{COULD_NOT_LOAD}</main>;
   if (!household) return null;

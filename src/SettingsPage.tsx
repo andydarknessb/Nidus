@@ -10,7 +10,7 @@ import { WeatherSection } from '@/WeatherSection';
 import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
-import { changesOf, shownOf, type HouseholdDraft } from '@/lib/household-draft';
+import { changesOf, leftAfter, shownOf, type HouseholdDraft } from '@/lib/household-draft';
 import { timezoneOptions } from '@/lib/timezones';
 import { useChange } from '@/lib/change';
 import type { SyncedRead } from '@/lib/synced-read';
@@ -46,9 +46,10 @@ export function SettingsPage({ household, read, userId, onSignOut }: Props) {
       words: { refusal: 'Could not save. Check the name and try again.' },
       // What the Household holds from the save until the read after it lands, so a read that fails leaves the saved words on screen.
       meanwhile: (saved) => () => saved,
-      // The read has followed the save by now, so the fields show what the Household holds: the draft is no longer needed.
+      // The read has followed the save by now, so the fields show what the Household holds: what was sent is no longer drafted, and an edit
+      // made while the save was on its way stays.
       landed: () => {
-        setDraft({});
+        setDraft((now) => leftAfter(now, changes));
         setSaved(true);
       },
     });

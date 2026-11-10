@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Household } from '../src/lib/household';
-import { changesOf, shownOf } from '../src/lib/household-draft';
+import { changesOf, leftAfter, shownOf } from '../src/lib/household-draft';
 
 // The Settings form is a draft over the Household as it is now (spec 0020, ticket 2): a field shows the Household's value until it is
 // edited, and a Save sends only the fields edited. Pure, so the rule is tested without a screen.
@@ -56,5 +56,23 @@ describe('what a Save sends', () => {
 
   it('sends a blank name as blank, so the database refuses it and the form says so', () => {
     expect(changesOf({ name: '   ' })).toEqual({ name: '' });
+  });
+});
+
+describe('what a Save that landed leaves of the draft', () => {
+  it('forgets the fields it sent, as they were sent', () => {
+    expect(leftAfter({ name: 'The Nguyens', timezone: 'America/New_York' }, { name: 'The Nguyens', timezone: 'America/New_York' })).toEqual({});
+  });
+
+  it('forgets a name it sent trimmed, as the name was typed', () => {
+    expect(leftAfter({ name: '  The Nguyens ' }, { name: 'The Nguyens' })).toEqual({});
+  });
+
+  it('keeps a field edited while the Save was on its way, so the words typed there are not taken away', () => {
+    expect(leftAfter({ name: 'The Nguyens Jr' }, { name: 'The Nguyens' })).toEqual({ name: 'The Nguyens Jr' });
+  });
+
+  it('keeps a field the Save did not send', () => {
+    expect(leftAfter({ name: 'The Nguyens', timezone: 'America/New_York' }, { name: 'The Nguyens' })).toEqual({ timezone: 'America/New_York' });
   });
 });
