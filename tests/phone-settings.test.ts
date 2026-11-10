@@ -433,7 +433,9 @@ describe("the phone's pages, as they are first drawn", () => {
     temperature_unit: 'fahrenheit',
     appearance: 'auto',
   };
-  const householdPage = () => renderToStaticMarkup(createElement(SettingsPage, { household, userId: 'u1', onSaved: () => undefined, onSignOut: () => undefined }));
+  // The page writes through the Household's synced read; a page that is only drawn writes nothing, so the read is a stand-in.
+  const read = { write: async <R>(work: () => Promise<R>) => work(), readBack: async () => undefined };
+  const householdPage = () => renderToStaticMarkup(createElement(SettingsPage, { household, read, userId: 'u1', onSignOut: () => undefined }));
   const calendarsPage = () => renderToStaticMarkup(createElement(CalendarsPage, { household }));
   const routinesPage = () => renderToStaticMarkup(createElement(RoutinesPage, { household }));
 

@@ -10,32 +10,48 @@ import { WeatherSection } from '@/WeatherSection';
 import { Card, Field, PhonePage, Problem, cardClass, fieldClass, helpClass, statusLineClass } from '@/components/phone';
 import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
+import { changesOf, leftAfter, shownOf, type HouseholdDraft } from '@/lib/household-draft';
 import { timezoneOptions } from '@/lib/timezones';
 import { useChange } from '@/lib/change';
+import type { SyncedRead } from '@/lib/synced-read';
 
-type Props = { household: Household; userId: string; onSaved: (household: Household) => void; onSignOut: () => void };
+type Props = { household: Household; read: Pick<SyncedRead<Household>, 'write' | 'readBack'>; userId: string; onSignOut: () => void };
 
 // The phone's Household page (/settings): the Household's name and time zone, how the Wall looks, the weather, the people and the
 // Wall tablets, who can sign in and notifications on this phone, then Sign out. The Calendar Accounts and the events added in Nidus are on the Calendars page.
-export function SettingsPage({ household, userId, onSaved, onSignOut }: Props) {
-  const [name, setName] = useState(household.name);
-  const [timezone, setTimezone] = useState(household.timezone);
+export function SettingsPage({ household, read, userId, onSignOut }: Props) {
+  // The fields as edited: a field shows the Household as it is now until it is edited, so a page left open shows what the Household
+  // holds, and a Save sends only what was edited.
+  const [draft, setDraft] = useState<HouseholdDraft>({});
   const [saved, setSaved] = useState(false);
+  const shown = shownOf(household, draft);
+  // "Saved." is not said while an edit that was made during a save is still waiting to be saved.
+  const savedLine = saved && Object.keys(draft).length === 0;
   // What a save that did not go through says (the Wall's two sentences; "Check the name" only when the database refused the name), at
   // once, under the button. One save at a time: while it is on its way Save is `aria-disabled` and does nothing, never `disabled`,
   // which would drop the focus to the page.
-  const { busy, isBusy, change, problem: problemAt, clear } = useChange();
+  const { busy, isBusy, change, problem: problemAt, clear } = useChange(read);
   // About four hundred zones, each named: drawn once for a zone and not again at every key typed in the name.
-  const zones = useMemo(() => timezoneOptions(household.timezone), [household.timezone]);
+  const zones = useMemo(() => timezoneOptions(shown.timezone), [shown.timezone]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
     if (isBusy()) return;
     setSaved(false);
-    await change('household', () => updateHousehold(household.id, { name: name.trim(), timezone }), {
+    const changes = changesOf(draft);
+    // Nothing edited: nothing is written, and the Household is as it says it is.
+    if (changes === null) {
+      setSaved(true);
+      return;
+    }
+    await change('household', () => updateHousehold(household.id, changes), {
       words: { refusal: 'Could not save. Check the name and try again.' },
-      landed: (next) => {
-        onSaved(next);
+      // What the Household holds from the save until the read after it lands, so a read that fails leaves the saved words on screen.
+      meanwhile: (saved) => () => saved,
+      // The read has followed the save by now, so the fields show what the Household holds: what was sent is no longer drafted, and an edit
+      // made while the save was on its way stays.
+      landed: () => {
+        setDraft((now) => leftAfter(now, changes));
         setSaved(true);
       },
     });
@@ -56,9 +72,9 @@ export function SettingsPage({ household, userId, onSaved, onSignOut }: Props) {
             <input
               className={fieldClass}
               autoComplete="off"
-              value={name}
+              value={shown.name}
               onChange={(e) => {
-                setName(e.target.value);
+                setDraft({ ...draft, name: e.target.value });
                 edited();
               }}
               maxLength={100}
@@ -71,9 +87,9 @@ export function SettingsPage({ household, userId, onSaved, onSignOut }: Props) {
             <Field label="Time zone">
               <select
                 className={fieldClass}
-                value={timezone}
+                value={shown.timezone}
                 onChange={(e) => {
-                  setTimezone(e.target.value);
+                  setDraft({ ...draft, timezone: e.target.value });
                   edited();
                 }}
               >
@@ -93,16 +109,16 @@ export function SettingsPage({ household, userId, onSaved, onSignOut }: Props) {
               Save
             </Button>
             <p role="status" className={statusLineClass}>
-              {saved && 'Saved.'}
+              {savedLine && 'Saved.'}
             </p>
             <Problem id="problem-household" problem={problem} />
           </div>
         </form>
       </Card>
       <div className={cardClass}>
-        <AppearanceSection household={household} onSaved={onSaved} />
+        <AppearanceSection household={household} read={read} />
       </div>
-      <WeatherSection household={household} onSaved={onSaved} />
+      <WeatherSection household={household} read={read} />
       <ProfilesSection householdId={household.id} />
       <UsualsSection householdId={household.id} />
       <DevicesSection />

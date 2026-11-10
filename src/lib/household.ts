@@ -28,7 +28,7 @@ export function displayNameOf(session: Session): string {
 
 // First sign-in creates the Household and its link; every later call returns
 // the existing one. The database owns that rule (ensure_household).
-export async function ensureHousehold(session: Session): Promise<Household> {
+export async function ensureHousehold(session: Session): Promise<void> {
   const display_name = displayNameOf(session);
   let { error } = await supabase.rpc('ensure_household', { display_name, browser_timezone: browserTimezone() });
   if (error?.code === '23514') {
@@ -36,7 +36,6 @@ export async function ensureHousehold(session: Session): Promise<Household> {
     ({ error } = await supabase.rpc('ensure_household', { display_name, browser_timezone: 'UTC' }));
   }
   if (error) throw error;
-  return loadHousehold();
 }
 
 export async function loadHousehold(): Promise<Household> {
@@ -48,9 +47,9 @@ export async function loadHousehold(): Promise<Household> {
 // What the wall knows of the Household: the last good read, and whether the latest read failed.
 export type HouseholdView = { household: Household | null; failed: boolean };
 
-// Household Account only: a Device reads the Household and the database refuses its write. The Appearance is saved on
-// its own, from its own section of the phone's settings.
-export async function updateHousehold(id: string, changes: { name: string; timezone: string } | { appearance: Appearance }): Promise<Household> {
+// Household Account only: a Device reads the Household and the database refuses its write. A name, a time zone or both; what is not
+// given stays as it is. The Appearance is saved on its own, from its own section of the phone's settings.
+export async function updateHousehold(id: string, changes: { name?: string; timezone?: string } | { appearance: Appearance }): Promise<Household> {
   const { data, error } = await supabase
     .from('households')
     .update(changes)

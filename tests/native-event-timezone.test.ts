@@ -218,4 +218,20 @@ describe('a time zone change re-anchors Native Events', () => {
     expect(await instants(account)).not.toEqual(before);
     expect(await instants(other)).toEqual(foreignBefore);
   });
+
+  it('leaves the zone another session set, and every instant, when a Save of the name alone follows it', async () => {
+    const account = await arrange(NEW_YORK);
+    const phone = await asHouseholdAccount(account);
+    await save(phone, account.household.id, { starts_at: '2026-10-20T13:00:00Z', ends_at: '2026-10-20T14:00:00Z' });
+
+    // Another phone changes the zone; this phone's page saves only the name it was edited to.
+    await setZone(account, LOS_ANGELES);
+    const after = await instants(account);
+    const { error } = await phone.from('households').update({ name: 'The Nguyens' }).eq('id', account.household.id);
+    expect(error).toBeNull();
+
+    expect(await instants(account)).toEqual(after);
+    const { data } = await asServiceRole().from('households').select('name, timezone').eq('id', account.household.id).single();
+    expect(data).toEqual({ name: 'The Nguyens', timezone: LOS_ANGELES });
+  });
 });
