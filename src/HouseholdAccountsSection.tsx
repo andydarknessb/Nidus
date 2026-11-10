@@ -17,6 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { CANCEL_SAID, MAKE_SAID, REMOVED_WORDS, inviteViewOf, isRemoved, loadFailedWords, sharePayload, type InviteView } from '@/lib/household-accounts';
 import { type WriteProblem } from '@/lib/change';
 import { useSyncedRead } from '@/lib/synced-read';
+import { useFormRow } from '@/lib/use-form-row';
 import { problemId, removePlace } from '@/lib/write-failure';
 
 // What the status line says: nothing, or what the last tap did.
@@ -209,7 +210,11 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
   const [status, setStatus] = useState<InviteStatus>('idle');
   // A trouble reading, kept apart from what a write said of itself, as in the tablets section.
   const loadProblem = read.failed ? loadFailedWords(read.error) : null;
-  const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
+  // The account whose row is expanded (its own state), and the question before removing one: a form row with no name, open for the
+  // account it asks about. Closing it by Cancel returns focus to that account's Remove button.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const removal = useFormRow({ place: (id) => removePlace(id), read, opener: (id) => removeId(id) });
+  const open = expandedId === null ? null : { id: expandedId, confirming: removal.open === expandedId };
   // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
   // afterwards.
   const { busy, change } = read;
@@ -259,7 +264,9 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
         if (removed !== true) return;
         // Removing someone also cancels the waiting invite, server side: a link just made would be a dead one.
         setMade(null);
-        setOpen(null);
+        // The account is gone with its row: the question closes, and focus goes to Invite someone.
+        removal.dismiss();
+        setExpandedId(null);
         return INVITE_MAIN;
       },
       meanwhile: (removed) => (removed === true ? (shown) => ({ accounts: shown.accounts.filter((account) => account.authUserId !== id), stored: null }) : undefined),
@@ -302,18 +309,12 @@ export function HouseholdAccountsSection({ householdId, timezone, userId }: { ho
       loadProblem={loadProblem}
       problemAt={read.problem}
       onOpen={(id) => {
-        read.clear();
-        setOpen(id === null ? null : { id, confirming: false });
+        // Opening or closing a row takes its question away, so a question asked for another account does not come back with it.
+        removal.dismiss();
+        setExpandedId(id);
       }}
-      onAskRemove={(id) => {
-        read.clear();
-        setOpen({ id, confirming: true });
-      }}
-      onCancelRemove={(id) => {
-        read.clear();
-        setOpen({ id, confirming: false });
-        read.focus(removeId(id));
-      }}
+      onAskRemove={(id) => removal.start(id)}
+      onCancelRemove={() => removal.close()}
       onRemove={remove}
       onMakeInvite={makeInvite}
       onCancelInvite={cancelInvite}

@@ -13,6 +13,8 @@ import type { SharedListsPage as SharedListsPageType } from '../src/SharedListsP
 import { ColorPicker, DELETE_PERSON_WORDS, DeletePerson, PersonFields } from '../src/components/PersonEditor';
 import { Confirm } from '../src/components/phone';
 import { Button } from '../src/components/ui/button';
+import { archiveQuestion, deleteListQuestion } from '../src/lib/removal-questions';
+import type { Routine } from '../src/lib/routines';
 import type { Occurrence } from '../src/lib/calendar-occurrences';
 import { ICLOUD_LINK_GONE_WORDS, ICLOUD_TRUNCATED_WORDS, UPDATE_FAILED_WORDS, accountStatusText, type CalendarAccount, type MirroredCalendar } from '../src/lib/calendar-accounts';
 import { seenWords } from '../src/lib/device-format';
@@ -826,6 +828,7 @@ describe('the phone forms that ask for a name', () => {
   const routineRead: RoutineRead = {
     change: async (_place, work) => (await work(), 'done'),
     focus: () => undefined,
+    clear: () => undefined,
     busy: false,
     isBusy: () => false,
     problem: () => null,
@@ -1058,5 +1061,54 @@ describe('the Usuals card, as it is drawn', () => {
       createElement(SendToTargetPart, { items: [], busy: false, problem: '', onMarkSent: () => Promise.resolve('done' as const), onClose: () => undefined }),
     );
     expect(markup).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Copy<\/button>/);
+  });
+});
+
+// The two questions a Routine's archive and a Shared List's delete ask, as the Confirm draws them: their titles, words and buttons,
+// the safe answer first, and the part of day in a Routine's name.
+describe('the questions before a Routine is archived and a Shared List is deleted', () => {
+  const brush: Routine = { id: 'r1', profile_id: 'p-ava', title: 'Brush teeth', days_of_week: 127, time_of_day: 'morning', picture: null, sort_order: 0, archived_at: null };
+  const render = (question: ReturnType<typeof archiveQuestion> | ReturnType<typeof deleteListQuestion>) =>
+    renderToStaticMarkup(createElement(Confirm, { ...question, onCancel: () => undefined, onConfirm: () => undefined }));
+
+  it('name the Routine with its part of day, and say what goes, in the family’s words', () => {
+    expect(archiveQuestion(brush, 'Ava')).toEqual({
+      title: 'Archive Brush teeth, Morning?',
+      words: "It comes off Ava's chart and can't be brought back. Days already ticked are kept.",
+      cancel: 'Keep it',
+      confirm: 'Archive Brush teeth, Morning',
+    });
+  });
+
+  it('leave the part of day out of the name when the Routine has none', () => {
+    const anytime = { ...brush, time_of_day: null };
+    expect(archiveQuestion(anytime, 'Ava').title).toBe('Archive Brush teeth?');
+    expect(archiveQuestion(anytime, 'Ava').confirm).toBe('Archive Brush teeth');
+  });
+
+  it('say what a Shared List delete takes with it, and name the list on the button that does it', () => {
+    expect(deleteListQuestion('Groceries')).toEqual({
+      title: 'Delete Groceries?',
+      words: "Its items go with it, and it can't be brought back.",
+      cancel: 'Keep it',
+      confirm: 'Delete Groceries and its items',
+    });
+  });
+
+  it('put Keep it first, and the delete in the delete voice after it, for both', () => {
+    for (const question of [archiveQuestion(brush, 'Ava'), deleteListQuestion('Groceries')]) {
+      const markup = render(question);
+      expect(markup.indexOf(`>${question.cancel}<`)).toBeLessThan(markup.indexOf(`>${question.confirm}<`));
+      const doing = new RegExp(`<button[^>]*>\\s*${question.confirm}\\s*</button>`).exec(markup)?.[0] ?? '';
+      expect(doing, question.confirm).toMatch(/class="[^"]*\bbg-destructive\b/);
+      expect(words(markup)).toContain(question.title);
+      expect(words(markup)).toContain(question.words);
+    }
+  });
+
+  it('have no em-dash or en-dash in what they say', () => {
+    for (const question of [archiveQuestion(brush, 'Ava'), deleteListQuestion('Groceries')]) {
+      for (const sentence of [question.title, question.words, question.cancel, question.confirm]) expect(sentence).not.toMatch(/[–—]/);
+    }
   });
 });

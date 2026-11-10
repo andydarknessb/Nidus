@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type RefObject } from 'react';
-import { flushSync } from 'react-dom';
 import { ArrowDown, ArrowUp, ChevronRight } from 'lucide-react';
 import { movedIds, nextSortOrder } from './lib/ordering';
 import { supabase } from './lib/supabase';
@@ -20,7 +19,6 @@ import {
 } from './lib/shared-lists';
 import { rootFontSize } from './lib/home-layout';
 import type { Household } from './lib/household';
-import { focusElement } from './lib/focus';
 import type { Holds } from './lib/hold';
 import { useFocusToLink, useHoldClock } from './lib/use-hold';
 import { useStatusLine } from './lib/status-line';
@@ -32,7 +30,8 @@ import { EmptyWords } from './components/EmptyWords';
 import { GotItSheet } from './components/GotItSheet';
 import { AddRow, ItemRow, ListCard, PinnedMark } from './components/ListCard';
 import { Shelf } from './components/Shelf';
-import { cardClass, cardTitleClass, Problem } from './components/phone';
+import { cardClass, cardTitleClass, Confirm, Problem } from './components/phone';
+import { deleteListQuestion } from './lib/removal-questions';
 import { ReadState } from './components/ReadState';
 import { Button } from './components/ui/button';
 import { couldNotLoad, useSyncedRead } from './lib/synced-read';
@@ -368,7 +367,9 @@ export function SharedListsPage({ household }: { household: Household }) {
   const [renameName, setRenameName] = useState('');
   const newProblem = newRow.nameProblem(newName);
   const renameProblem = renameRow.nameProblem(renameName);
-  const [confirming, setConfirming] = useState<string | null>(null);
+  // The question before a Shared List is deleted: a form row with no name, open for the list it asks about. Cancel returns focus to
+  // that list's Delete button; a removal that lands takes focus to the list beside it, or to New list.
+  const deleteRow = useFormRow({ place: (id) => `delete-${id}`, read, opener: (id) => `delete-${id}` });
   const [open, setOpen] = useState<string | null>(null);
   // One change at a time (read.change): the buttons are drawn `aria-disabled` from `busy`, and a failure is said at its place.
   const { busy } = read;
@@ -397,16 +398,19 @@ export function SharedListsPage({ household }: { household: Household }) {
     await read.change('reorder', () => reorderLists(supabase, ids));
   }
 
-  // The Delete that was pressed goes with its list: focus goes at once to the title of the list beside it, or to "New list" when it was
-  // the only one, so it never falls to the page; and back to this list's Delete if the delete did not go through.
+  // The list goes with its question: once the delete has landed, focus goes to the title of the list beside it, or to "New list" when it
+  // was the only one, so it never falls to the page. A delete that did not go through leaves the question open, with what it said.
   async function remove(id: string) {
     if (read.isBusy()) return;
     const ids = (lists ?? []).map((list) => list.id);
     const beside = ids[ids.indexOf(id) + 1] ?? ids[ids.indexOf(id) - 1];
-    setConfirming(null);
-    if (open === id) setOpen(null);
-    focusElement(document.getElementById(beside === undefined ? NEW_LIST_TITLE : titleId(beside)));
-    if ((await read.change(`delete-${id}`, () => deleteList(supabase, id))) !== 'done') focusElement(document.getElementById(`delete-${id}`));
+    await deleteRow.submit(null, () => deleteList(supabase, id), {
+      landed: () => {
+        deleteRow.dismiss();
+        if (open === id) setOpen(null);
+        return beside === undefined ? NEW_LIST_TITLE : titleId(beside);
+      },
+    });
   }
 
   return (
@@ -524,33 +528,17 @@ export function SharedListsPage({ household }: { household: Household }) {
                     Show on home screen
                   </Button>
                 )}
-                {confirming === list.id ? (
-                  <>
-                    <Button variant="delete" className="h-auto min-h-12 px-4 py-2 whitespace-normal" aria-disabled={busy || undefined} onClick={() => void remove(list.id)}>
-                      Delete {list.name} and its items
-                    </Button>
-                    <Button
-                      autoFocus
-                      variant="quiet"
-                      className={ACTION}
-                      onClick={() => {
-                        // Delete is not on the page while this is asked: draw it again, then put focus back on it.
-                        flushSync(() => setConfirming(null));
-                        document.getElementById(`delete-${list.id}`)?.focus();
-                      }}
-                    >
-                      Keep it
-                    </Button>
-                  </>
-                ) : (
-                  <Button id={`delete-${list.id}`} variant="quiet" className={ACTION} onClick={() => setConfirming(list.id)}>
+                {deleteRow.open !== list.id && (
+                  <Button id={`delete-${list.id}`} variant="quiet" className={ACTION} onClick={() => deleteRow.start(list.id)}>
                     Delete
                   </Button>
                 )}
               </div>
 
+              {deleteRow.open === list.id && (
+                <Confirm {...deleteListQuestion(list.name)} busy={busy} problem={read.problem(`delete-${list.id}`)} onCancel={() => deleteRow.close()} onConfirm={() => void remove(list.id)} />
+              )}
               <Problem id={problemId(`pin-${list.id}`)} problem={read.problem(`pin-${list.id}`)} />
-              <Problem id={problemId(`delete-${list.id}`)} problem={read.problem(`delete-${list.id}`)} />
 
               {open === list.id && <ItemsEditor listId={list.id} listName={list.name} />}
             </section>

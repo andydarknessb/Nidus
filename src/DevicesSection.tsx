@@ -31,6 +31,7 @@ const PAIR_SAID = { failed: 'Could not pair. Try again.', offline: 'No internet,
 // Where a write that failed says so: in the form to pair, or in the question about unpairing a tablet.
 const PAIR = 'pair';
 const unpairPlace = (id: string) => `unpair-${id}`;
+const unpairButtonId = (id: string) => `unpair-${id}`;
 
 // Settings, phone only: the Wall tablets (Devices). Pair one with the code it shows, see when each was last seen, and unpair one
 // (revoke its Device), which sends it back to asking for a code. A Device never gets this screen.
@@ -48,8 +49,10 @@ export function DevicesSection() {
   // The pairing form's lifecycle (form-row.ts): no name to check, its place is the card's line, and closing it returns focus to the
   // Pair a tablet button.
   const pairRow = useFormRow({ place: () => PAIR, read, opener: () => PAIR_ID });
-  // The tablet whose row is open, and whether it is being asked to be sure.
-  const [open, setOpen] = useState<{ id: string; confirming: boolean } | null>(null);
+  // The question before unpairing a tablet: a form row with no name, open for the tablet it asks about.
+  const unpairRow = useFormRow({ place: (id) => unpairPlace(id), read, opener: (id) => unpairButtonId(id) });
+  // The tablet whose row is expanded. Which row is open is its own state; the question above says which one is asking.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   async function pair(event: FormEvent) {
     event.preventDefault();
@@ -81,7 +84,9 @@ export function DevicesSection() {
   async function unpair(id: string) {
     await change(unpairPlace(id), () => revokeDevice(supabase, id), {
       landed: () => {
-        setOpen(null);
+        // The tablet is gone with its row: the question closes, and focus goes to Pair a tablet.
+        unpairRow.dismiss();
+        setExpandedId(null);
         return PAIR_ID;
       },
     });
@@ -94,7 +99,8 @@ export function DevicesSection() {
       {devices?.length === 0 && <p className="text-base">No tablet is paired yet.</p>}
       <ul className="flex flex-col gap-2">
         {devices?.map((device) => {
-          const expanded = open?.id === device.id;
+          const expanded = expandedId === device.id;
+          const asking = unpairRow.open === device.id;
           return (
             <li key={device.id} className="flex flex-col gap-4">
               <Button
@@ -103,8 +109,9 @@ export function DevicesSection() {
                 aria-expanded={expanded}
                 className="h-14 w-full justify-start gap-3 rounded-[14px] px-3.5 text-left font-medium"
                 onClick={() => {
-                  read.clear();
-                  setOpen(expanded ? null : { id: device.id, confirming: false });
+                  // Opening or closing a row takes its question away, so a question asked for another tablet does not come back with it.
+                  unpairRow.dismiss();
+                  setExpandedId(expanded ? null : device.id);
                 }}
               >
                 <Tablet aria-hidden className="size-[22px]" />
@@ -115,7 +122,7 @@ export function DevicesSection() {
                 {expanded ? <ChevronDown aria-hidden className="size-[22px] text-muted-foreground" /> : <ChevronRight aria-hidden className="size-[22px] text-muted-foreground" />}
               </Button>
               {expanded &&
-                (open.confirming ? (
+                (asking ? (
                   <Confirm
                     title={`Unpair ${device.name}?`}
                     words="The tablet stops showing your household and goes back to showing a code. You can pair it again any time."
@@ -123,23 +130,16 @@ export function DevicesSection() {
                     confirm={`Unpair ${device.name}`}
                     busy={busy}
                     problem={read.problem(unpairPlace(device.id))}
-                    onCancel={() => {
-                      read.clear();
-                      setOpen({ id: device.id, confirming: false });
-                      read.focus(`unpair-${device.id}`);
-                    }}
+                    onCancel={() => unpairRow.close()}
                     onConfirm={() => void unpair(device.id)}
                   />
                 ) : (
                   <Button
-                    id={`unpair-${device.id}`}
+                    id={unpairButtonId(device.id)}
                     variant="secondary"
                     size="phone"
                     className="h-auto min-h-14 py-2 whitespace-normal [overflow-wrap:anywhere]"
-                    onClick={() => {
-                      read.clear();
-                      setOpen({ id: device.id, confirming: true });
-                    }}
+                    onClick={() => unpairRow.start(device.id)}
                   >
                     Unpair {device.name}
                   </Button>
@@ -178,7 +178,6 @@ export function DevicesSection() {
                 aria-disabled={busy || undefined}
                 onClick={() => {
                   if (busy) return;
-                  read.clear();
                   pairRow.close();
                   setPairing(null);
                   setPairStatus('idle');
@@ -199,7 +198,6 @@ export function DevicesSection() {
             size="phone"
             className="w-full"
             onClick={() => {
-              read.clear();
               pairRow.start('pair');
               setPairing({ code: '', name: '' });
               setPairStatus('idle');

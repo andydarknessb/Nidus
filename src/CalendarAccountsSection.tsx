@@ -267,12 +267,14 @@ export function CalendarAccountsSection() {
   const profiles = read.data?.profiles ?? NO_PROFILES;
   const [notice, setNotice] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
   const [iphoneLink, setIphoneLink] = useState('');
   // Removing an account and adding an iPhone calendar are each one at a time (the card write guard), and independent of each other:
   // the read's own guard is the removal's, and the addition has one of its own. The field's value now is kept apart (a press's answer
   // comes after more may have been typed).
   const removal = read;
+  // The question before removing an account: a form row with no name, open for the account it asks about. Cancel returns focus to
+  // that account's Remove button.
+  const removalRow = useFormRow({ place: (id) => removePlace(id), read, opener: (id) => removeButtonId(id) });
   const iphoneRow = useFormRow({ place: () => ADD_IPHONE, read, opener: () => IPHONE_LINK, initially: 'iphone' });
   const removing = removal.busy;
   const adding = iphoneRow.busy;
@@ -347,7 +349,7 @@ export function CalendarAccountsSection() {
       {
         // The account is gone and with it the button that asked: focus goes to the first control of its card.
         landed: () => {
-          setConfirming(null);
+          removalRow.dismiss();
           return account.provider === 'icloud' ? IPHONE_LINK : 'connect-google';
         },
       },
@@ -381,20 +383,13 @@ export function CalendarAccountsSection() {
       calendars={calendarsOfAccount(calendars, account.id)}
       profiles={profiles}
       now={now}
-      confirming={confirming === account.id}
+      confirming={removalRow.open === account.id}
       removing={removing}
       problems={{ at: read.problem }}
       onReconnect={() => void reconnect(account)}
       onChoose={choose}
-      onAskRemove={() => {
-        read.clear(removePlace(account.id));
-        setConfirming(account.id);
-      }}
-      onCancelRemove={() => {
-        read.clear(removePlace(account.id));
-        setConfirming(null);
-        removal.focus(removeButtonId(account.id));
-      }}
+      onAskRemove={() => removalRow.start(account.id)}
+      onCancelRemove={() => removalRow.close()}
       onRemove={() => void remove(account)}
     />
   );

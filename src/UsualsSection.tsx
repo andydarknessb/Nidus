@@ -94,15 +94,13 @@ export function UsualsSection({ householdId }: { householdId: string }) {
   // forms open at once keep their own.
   const [flags, setFlags] = useState<Partial<Record<string, UsualField>>>({});
   const flagAt = (place: string, field: UsualField | undefined) => setFlags((was) => ({ ...was, [place]: field }));
-  const [deleting, setDeleting] = useState<string | null>(null);
   const addRow = useFormRow({ what: 'usual', place: () => ADD, read, opener: () => ADD_ID });
   const editRow = useFormRow({ what: 'usual', place: (id) => editPlace(id), read, opener: (id) => usualControlId(id, 'edit') });
+  // The question before deleting a Usual: a form row with no name, open for the Usual it asks about.
+  const removalRow = useFormRow({ place: (id) => deletePlace(id), read, opener: (id) => usualControlId(id, 'delete') });
   const off = busy || undefined;
-  // Opening or closing a form takes away what a write said in another one.
-  const closeForms = () => {
-    read.clear();
-    setFlags({});
-  };
+  // Opening or closing a form takes away the field each one was asked to mark (the row itself takes away what was said).
+  const closeForms = () => setFlags({});
   // The field to mark in a form: the name when it is asked for and blank, else what the last problem with this form was about.
   const fieldOf = (place: string, nameAsked: boolean): Invalid | undefined => {
     const field = nameAsked ? 'name' : flags[place];
@@ -163,7 +161,7 @@ export function UsualsSection({ householdId }: { householdId: string }) {
     const addOpen = adding !== null;
     await change(deletePlace(usual.id), () => deleteUsual(supabase, usual.id), {
       landed: () => {
-        setDeleting(null);
+        removalRow.dismiss();
         return addOpen ? ADD_TITLE_ID : ADD_ID;
       },
     });
@@ -211,7 +209,7 @@ export function UsualsSection({ householdId }: { householdId: string }) {
                   </div>
                   <Problem id={problemId(place)} problem={editProblem} />
                 </form>
-              ) : deleting === usual.id ? (
+              ) : removalRow.open === usual.id ? (
                 <Confirm
                   title={`Delete ${usual.name}?`}
                   words={usual.target_link ? 'The product and its Target link go with it.' : 'The product goes with it.'}
@@ -221,8 +219,7 @@ export function UsualsSection({ householdId }: { householdId: string }) {
                   problem={read.problem(deletePlace(usual.id))}
                   onCancel={() => {
                     if (busy) return;
-                    setDeleting(null);
-                    read.focus(usualControlId(usual.id, 'delete'));
+                    removalRow.close();
                   }}
                   onConfirm={() => void remove(usual)}
                 />
@@ -232,12 +229,13 @@ export function UsualsSection({ householdId }: { householdId: string }) {
                   busy={busy}
                   onEdit={() => {
                     closeForms();
+                    removalRow.dismiss();
                     editRow.start(usual.id);
                     setEditing({ id: usual.id, draft: { name: usual.name, product: usual.product, target_link: usual.target_link ?? '' } });
                   }}
                   onDelete={() => {
                     closeForms();
-                    setDeleting(usual.id);
+                    removalRow.start(usual.id);
                   }}
                 />
               )}
