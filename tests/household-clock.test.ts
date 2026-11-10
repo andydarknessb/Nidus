@@ -157,16 +157,28 @@ describe('a Native Event reads at the Household clock\'s instant', () => {
     });
   }
 
+  // The first Sunday of April in the Household Date's year: the night Lord Howe's clocks go back (02:00 to 01:30).
+  // Derived, not a literal, because native_event_occurrences floors a series at today minus two years.
+  function lordHoweFallBackNight(): string {
+    const year = Number(householdDay('Australia/Lord_Howe', new Date()).date.slice(0, 4));
+    const aprilFirst = new Date(Date.UTC(year, 3, 1)).getUTCDay();
+    return `${year}-04-${String(1 + ((7 - aprilFirst) % 7)).padStart(2, '0')}`;
+  }
+
   it('expands a daily Repeat to 1:45 AM on the Lord Howe night the clocks go back, at the first of the two', async () => {
+    const night = lordHoweFallBackNight();
+    const startsAt = instantAt(night, '01:45', 'Australia/Lord_Howe');
+    // 1:45 happens twice on that night, the second thirty minutes on: the computed night has both.
+    expect(householdTime(startsAt + 30 * 60_000, 'Australia/Lord_Howe')).toMatchObject({ date: night, minutes: 105 });
     const account = await createHousehold();
     try {
       const phone = await asHouseholdAccount(account);
       const { error: zoneError } = await phone.from('households').update({ timezone: 'Australia/Lord_Howe' }).eq('id', account.household.id);
       if (zoneError) throw zoneError;
-      const { error } = await saveSoccer(phone, '2026-04-04T14:45:00Z', '2026-04-04T15:15:00Z', { until: '2026-04-05' });
+      const { error } = await saveSoccer(phone, new Date(startsAt).toISOString(), new Date(startsAt + 30 * 60_000).toISOString(), { until: night });
       if (error) throw error;
-      const rows = await loadOccurrences(phone, new Date('2026-04-04T00:00:00Z'), new Date('2026-04-06T00:00:00Z'));
-      expect(rows.map((row) => new Date(row.starts_at).toISOString())).toEqual(['2026-04-04T14:45:00.000Z']);
+      const rows = await loadOccurrences(phone, new Date(`${addDays(night, -1)}T00:00:00Z`), new Date(`${addDays(night, 1)}T00:00:00Z`));
+      expect(rows.map((row) => new Date(row.starts_at).toISOString())).toEqual([new Date(startsAt).toISOString()]);
     } finally {
       await destroyHousehold(account);
     }
