@@ -7,6 +7,7 @@ import { DEFAULT_TITLE, eventRow } from '@shared/event-row';
 const START = Date.parse('2026-10-05T10:00:00Z');
 const END = Date.parse('2026-10-05T11:00:00Z');
 const facts = { key: 'k', title: 'Dentist', notes: undefined, place: undefined, startsMs: START, endsMs: END, allDay: false };
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 describe('eventRow: the title', () => {
   it('names a missing, empty or blank title the default, and the default is "(No title)"', () => {
@@ -23,6 +24,18 @@ describe('eventRow: the title', () => {
   it('cuts a title to 500 characters after trimming', () => {
     expect(eventRow({ ...facts, title: `  ${'T'.repeat(600)}` })?.title).toBe('T'.repeat(500));
   });
+
+  it('cuts a title by characters, so an emoji on the cap is never split', () => {
+    const title = `${'a'.repeat(499)}😀`;
+    const row = eventRow({ ...facts, title });
+    expect(row?.title).toBe(title);
+    expect(row?.title).not.toMatch(LONE_SURROGATE);
+  });
+
+  it('keeps an emoji whole when it fits under the cap, and counts astral text by characters', () => {
+    expect(eventRow({ ...facts, title: `${'a'.repeat(498)}😀` })?.title).toBe(`${'a'.repeat(498)}😀`);
+    expect(eventRow({ ...facts, title: '😀'.repeat(501) })?.title).toBe('😀'.repeat(500));
+  });
 });
 
 describe('eventRow: the notes and the place', () => {
@@ -30,6 +43,15 @@ describe('eventRow: the notes and the place', () => {
     const row = eventRow({ ...facts, notes: 'D'.repeat(9000), place: 'L'.repeat(600) });
     expect(row?.description).toBe('D'.repeat(8000));
     expect(row?.location).toBe('L'.repeat(500));
+  });
+
+  it('cuts the notes and the place by characters, so an emoji on the cap is never split', () => {
+    const notes = `${'a'.repeat(7999)}😀`;
+    const place = `${'a'.repeat(499)}😀`;
+    const row = eventRow({ ...facts, notes, place });
+    expect(row).toMatchObject({ description: notes, location: place });
+    expect(row?.description).not.toMatch(LONE_SURROGATE);
+    expect(row?.location).not.toMatch(LONE_SURROGATE);
   });
 
   it('leaves absent or empty notes and place null', () => {
