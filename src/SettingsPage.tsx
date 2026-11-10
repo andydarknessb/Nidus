@@ -25,6 +25,8 @@ export function SettingsPage({ household, read, userId, onSignOut }: Props) {
   const [draft, setDraft] = useState<HouseholdDraft>({});
   const [saved, setSaved] = useState(false);
   const shown = shownOf(household, draft);
+  // "Saved." is not said while an edit that was made during a save is still waiting to be saved.
+  const savedLine = saved && Object.keys(draft).length === 0;
   // What a save that did not go through says (the Wall's two sentences; "Check the name" only when the database refused the name), at
   // once, under the button. One save at a time: while it is on its way Save is `aria-disabled` and does nothing, never `disabled`,
   // which would drop the focus to the page.
@@ -107,7 +109,7 @@ export function SettingsPage({ household, read, userId, onSignOut }: Props) {
               Save
             </Button>
             <p role="status" className={statusLineClass}>
-              {saved && 'Saved.'}
+              {savedLine && 'Saved.'}
             </p>
             <Problem id="problem-household" problem={problem} />
           </div>
