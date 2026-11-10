@@ -1,9 +1,33 @@
-import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { PinnedListCard as PinnedListCardType } from '../src/SharedListsPage';
 import { HOME_HOLD_MS } from '../src/lib/hold';
 import { homeRows, homeWindow, pinnedFirst, rowsThatFit, type ListItem, type SharedList } from '../src/lib/shared-lists';
 
 // Pure rules for a Shared List's card on the Wall: how many rows Home's card holds, which rows it draws, and which list comes
-// first on the Lists screen. They run without the local stack.
+// first on the Lists screen. They run without the local stack. Home's card drawn to markup, with its read's state, is at the end.
+
+const hook = vi.hoisted(() => ({
+  items: null as null | { items: unknown[]; state?: 'loading' | 'failed' | 'ready'; problem?: string },
+  lists: null as null | { read: { lists: SharedList[]; pinnedId: string | null }; state: string },
+}));
+vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/lib/use-shared-lists')>();
+  const { drawnCard } = await import('./support/drawn-card');
+  return {
+    ...original,
+    useLists: () => hook.lists ?? original.useLists(),
+    useItems: (listId: string) => (hook.items ? drawnCard(listId, hook.items) : original.useItems(listId)),
+  };
+});
+
+let PinnedListCard: typeof PinnedListCardType;
+beforeAll(async () => {
+  vi.stubEnv('VITE_SUPABASE_URL', process.env['VITE_SUPABASE_URL'] ?? 'http://127.0.0.1:54321');
+  vi.stubEnv('VITE_SUPABASE_ANON_KEY', process.env['VITE_SUPABASE_ANON_KEY'] ?? 'placeholder-anon-key');
+  ({ PinnedListCard } = await import('../src/SharedListsPage'));
+});
 
 // Home's card, from the drawing (v2/home.js): a row is 48 px and the gap between rows 8.
 const ROW = 48;
@@ -211,5 +235,39 @@ describe('pinnedFirst', () => {
     const lists = [groceries, costco, camping];
     pinnedFirst(lists, 'camping');
     expect(ids(lists)).toEqual(['groceries', 'costco', 'camping']);
+  });
+});
+
+describe("Home's Pinned List card, drawn with what its read says", () => {
+  const groceries: SharedList = { id: 'g-1', name: 'Groceries', sort_order: 0 };
+  const row = (id: string, text: string, crossed_at: string | null = null): ListItem => ({ id, list_id: 'g-1', text, crossed_at, sent_at: null, sort_order: 0 });
+
+  const home = (items: { items: unknown[]; state?: 'loading' | 'failed' | 'ready'; problem?: string }) => {
+    hook.lists = { read: { lists: [groceries], pinnedId: groceries.id }, state: 'ready' };
+    hook.items = items;
+    try {
+      return renderToStaticMarkup(createElement(PinnedListCard, { onOpenLists: () => undefined, limit: 6 }));
+    } finally {
+      hook.lists = null;
+      hook.items = null;
+    }
+  };
+
+  it('after a first read that failed, says only the alert: no "Nothing left to get", and the list is named by its name alone', () => {
+    const html = home({ items: [], state: 'failed', problem: 'Could not load this list. Check your connection.' });
+    expect(html).toContain('Could not load this list. Check your connection.');
+    expect(html).not.toContain('Nothing left to get');
+    expect(html).toContain('aria-label="Groceries"');
+  });
+
+  it('names the list with how many are left to get, as the other cards do', () => {
+    const html = home({ items: [row('a', 'Milk'), row('b', 'Eggs'), row('c', 'Bread')], state: 'ready' });
+    expect(html).toContain('aria-label="Groceries, 3 to get"');
+  });
+
+  it('says "Nothing left to get" once the read is in and every item is crossed off', () => {
+    const html = home({ items: [row('a', 'Milk', '2026-10-09T21:00:00Z')], state: 'ready' });
+    expect(html).toContain('Nothing left to get.');
+    expect(html).toContain('aria-label="Groceries, 0 to get"');
   });
 });

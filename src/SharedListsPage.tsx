@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Ref, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
-import { ArrowDown, ArrowUp, ChevronRight, Pin, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronRight } from 'lucide-react';
 import { movedIds, nextSortOrder } from './lib/ordering';
 import { supabase } from './lib/supabase';
 import {
@@ -14,8 +14,7 @@ import {
   renameList,
   reorderLists,
   setPinnedList,
-  waitingItems,
-  withoutCrossed,
+  listChipName,
   type ListItem,
   type SharedList,
 } from './lib/shared-lists';
@@ -25,14 +24,14 @@ import { focusElement } from './lib/focus';
 import type { Holds } from './lib/hold';
 import { useFocusToLink, useHoldClock } from './lib/use-hold';
 import { useStatusLine } from './lib/status-line';
-import { focusTitle, isPending, LIST_TABLES, titleId, useItems, useLists, useSuggestions } from './lib/use-shared-lists';
+import { isPending } from './lib/list-card';
+import { focusTitle, LIST_TABLES, titleId, useItems, useLists, useSuggestions } from './lib/use-shared-lists';
 import { useFormRow } from './lib/use-form-row';
 import { problemId } from './lib/write-failure';
 import { EmptyWords } from './components/EmptyWords';
 import { GotItSheet } from './components/GotItSheet';
-import { ListCard } from './components/ListCard';
+import { AddRow, ItemRow, ListCard, PinnedMark } from './components/ListCard';
 import { Shelf } from './components/Shelf';
-import { EmptyRing, Tick } from './components/people';
 import { cardClass, cardTitleClass, Problem } from './components/phone';
 import { ReadState } from './components/ReadState';
 import { Button } from './components/ui/button';
@@ -53,76 +52,6 @@ function useHeight(ref: RefObject<HTMLElement | null>): number | null {
     return () => observer.disconnect();
   }, [ref]);
   return height;
-}
-
-// How an item's row is drawn in each place, from the drawings. In a card on the Lists screen it is 52 px, and its words may take two
-// lines (the row grows for the second). On Home it is 48 px and the words one line, since its rows are counted by height. On the phone
-// it is at least 56 px and shows the words in full. Words with no space in them break where the row ends.
-const ROW = {
-  card: { box: 'min-h-13 py-2', words: 'line-clamp-2 wrap-anywhere' },
-  home: { box: 'h-12', words: 'truncate' },
-  phone: { box: 'min-h-14 py-2', words: 'wrap-anywhere' },
-} as const;
-
-// One item. The whole row is the button: a tap crosses the item off, another puts it back. To get, it is an empty ring;
-// crossed off, a tick and struck-through words, so it never rests on colour alone.
-export function ItemRow({ item, size, onToggle, ref }: { item: ListItem; size: keyof typeof ROW; onToggle: () => void; ref?: Ref<HTMLButtonElement> }) {
-  const crossed = item.crossed_at !== null;
-  const ring = size === 'home' ? 26 : 28;
-  return (
-    <button
-      ref={ref}
-      type="button"
-      aria-pressed={crossed}
-      onClick={onToggle}
-      // The focus ring is drawn inside the row: its list scrolls, and a scrolling box clips what is drawn outside it.
-      className={`flex w-full shrink-0 items-center gap-3 rounded-[14px] bg-muted px-3 text-left text-[17px] transition-[transform,background-color] duration-75 select-none focus-visible:-outline-offset-2 active:translate-y-0.5 active:bg-accent ${ROW[size].box}`}
-    >
-      {crossed ? <Tick size={ring} /> : <EmptyRing size={ring} width={2.5} />}
-      <span className={`min-w-0 flex-1 ${ROW[size].words} ${crossed ? 'text-muted-foreground line-through' : ''}`}>{item.text}</span>
-    </button>
-  );
-}
-
-// The field that adds an item, and its button: 52 px on the Wall, 56 on the phone. `onAdd` says whether the item was added. The
-// field empties at once, so a second Enter while the first is still out has nothing to add; if the item could not be added the
-// words come back, unless something else has been typed there since.
-export function AddRow({ listName, size = 'wall', onAdd }: { listName: string; size?: 'wall' | 'phone'; onAdd: (text: string) => Promise<boolean> }) {
-  const [text, setText] = useState('');
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const words = text;
-    if (!words.trim()) return;
-    setText('');
-    if (!(await onAdd(words))) setText((now) => now || words);
-  }
-
-  return (
-    <form onSubmit={(event) => void submit(event)} className="flex shrink-0 gap-2">
-      <input
-        className={`min-w-0 flex-1 text-[17px] ${size === 'phone' ? 'h-14' : ''}`}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        maxLength={200}
-        placeholder="Add an item"
-        aria-label={`Add an item to ${listName}`}
-      />
-      <Button type="submit" variant="secondary" size={size} aria-label={`Add to ${listName}`} className={size === 'phone' ? 'w-14 px-0' : 'w-13 px-0'}>
-        <Plus aria-hidden className="size-6" strokeWidth={2.6} />
-      </Button>
-    </form>
-  );
-}
-
-// The mark on the Pinned List, on the Wall's card and on the phone's.
-export function PinnedMark() {
-  return (
-    <p className="flex min-h-8 shrink-0 items-center gap-2 self-start rounded-full bg-muted px-3 py-0.5 text-sm text-muted-foreground">
-      <Pin aria-hidden className="size-4" />
-      On the home screen
-    </p>
-  );
 }
 
 // ---- The Lists screen: a card for every list ----------------------------------------------
@@ -197,16 +126,14 @@ const waitingWords = (count: number) => (count === 1 ? '1 suggestion waiting' : 
 // many rows and says how many more ("3 more") as it does when it has no room for them, and measures nothing.
 function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists: () => void; limit?: number | undefined }) {
   const say = useStatusLine();
-  const { items, loaded, problem, add, toggle, gotItems, gotProblem, clearSends, busy } = useItems(list.id);
+  const { items, left, problem, problemKey, waiting, add, toggle, gotItems, gotProblem, clearSends, busy } = useItems(list.id);
   const suggested = useSuggestions(list.id);
   // Items sent to Target and waiting for Got it: the card says how many, and Got it opens the sheet that crosses them off.
-  const waiting = waitingItems(items);
   const [gettingIt, setGettingIt] = useState(false);
   // What was crossed off on this card and when, and the time the card last looked at. Both go with the card, when Home is left.
   const [crossedHere, setCrossedHere] = useState<Holds>(() => new Map());
   const now = useHoldClock(crossedHere);
   const rows = homeRows(items, crossedHere, now);
-  const left = withoutCrossed(items).length;
   const region = useRef<HTMLDivElement>(null);
   const room = useHeight(region);
   // A row that goes while it has the keyboard's focus (one crossed off here leaves after its four seconds) would leave the keyboard
@@ -216,7 +143,7 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
   const watchRow = useFocusToLink(card, link);
   // "Nothing left to get" waits until the last row has gone (`rows` holds a row crossed off here for its four seconds), so it never
   // pushes a row that was just crossed off down from under the finger.
-  const nothing = loaded && rows.length === 0;
+  const nothing = left !== null && rows.length === 0;
   const measured = limit === undefined;
   // The rows that show, and the items still to get that the card has no room for.
   const { shown, hidden } = homeWindow({ rows, limit, room, rem: rootFontSize() });
@@ -235,7 +162,7 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
   }
 
   return (
-    <section ref={card} aria-label={loaded ? `${list.name}, ${left} left` : list.name} className={HOME_CARD}>
+    <section ref={card} aria-label={listChipName(list.name, left)} className={HOME_CARD}>
       <div className="flex h-12 shrink-0 items-center justify-between gap-2">
         <h2 className="min-w-0 flex-1 truncate px-1 font-display text-[22px] leading-7">{list.name}</h2>
         <ListsLink ref={link} words={hidden > 0 ? `${hidden} more` : 'All lists'} name={hidden > 0 ? `${hidden} more in ${list.name}. All lists` : 'All lists'} onOpen={onOpenLists} />
@@ -284,7 +211,7 @@ function HomeList({ list, onOpenLists, limit }: { list: SharedList; onOpenLists:
       {/* What did not save is said at the card's foot, under the rows that fit (they take what room is left): a line over them would
           push the row that was just tapped down from under the finger. */}
       {problem && (
-        <p role="alert" className="shrink-0 px-1 text-[15px] leading-5">
+        <p key={problemKey} role="alert" className="shrink-0 px-1 text-[15px] leading-5">
           {problem}
         </p>
       )}
@@ -372,18 +299,17 @@ const ICON_ACTION = 'size-12 rounded-full px-0';
 
 // One list's items on the phone: the rows of the Wall's cards, with the arrows that reorder them, which only the phone has.
 function ItemsEditor({ listId, listName }: { listId: string; listName: string }) {
-  const { items, loaded, problem, add, toggle, clear, move } = useItems(listId);
-  const crossed = items.length - withoutCrossed(items).length;
+  const { items, left, crossed, problem, problemKey, add, toggle, clear, move } = useItems(listId);
 
   return (
     <div className="flex flex-col gap-4">
       <AddRow listName={listName} size="phone" onAdd={async (text) => (await add(text)) !== null} />
       {problem && (
-        <p role="alert" className="text-base">
+        <p key={problemKey} role="alert" className="text-base">
           {problem}
         </p>
       )}
-      {loaded && items.length === 0 && !problem && <p className="text-base">Nothing on this list.</p>}
+      {left !== null && items.length === 0 && <p className="text-base">Nothing on this list.</p>}
       {items.length > 0 && (
         <ul className="flex flex-col gap-2">
           {items.map((item, index) => (

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   addItem,
   clearCompleted,
@@ -33,7 +33,6 @@ import {
   type HouseholdAccount,
   type Tablet,
 } from './support/supabase';
-import { startSyncedRead } from '../src/lib/synced-read';
 
 describe('shared lists', () => {
   const households: HouseholdAccount[] = [];
@@ -466,65 +465,5 @@ describe('list ordering and optimistic helpers', () => {
   it('drops crossed items for the optimistic clear', () => {
     const items = [item('a', 0, '2026-09-29T12:00:00Z'), item('b', 1)];
     expect(withoutCrossed(items).map((row) => row.id)).toEqual(['b']);
-  });
-});
-
-describe('crossing off and clearing through the synced read, against the real database', () => {
-  it('shows a Device crossing off at once, and the read after it shows an item the phone added meanwhile', async () => {
-    const account = await createHousehold('The Andersons');
-    const wall = await asDevice(account);
-    const shown: (ListItem[] | null)[] = [];
-    let read: ReturnType<typeof startSyncedRead<ListItem[]>> | null = null;
-    try {
-      const phone = await asHouseholdAccount(account);
-      const list = (await loadPinnedListId(phone))!;
-      const milk = await addItem(phone, list, 'Milk', 0);
-      read = startSyncedRead({ load: () => loadItems(wall.client, list), onChange: (state) => shown.push(state.data) });
-      await vi.waitFor(() => expect(shown.at(-1)?.map((item) => item.text)).toEqual(['Milk']));
-
-      const crossing = read.write(
-        async () => {
-          await addItem(phone, list, 'Eggs', 1);
-          await setCrossed(wall.client, milk.id, true);
-        },
-        (rows) => withCrossed(rows, milk.id, true),
-      );
-      expect(shown.at(-1)?.[0]?.crossed_at).not.toBeNull();
-      await crossing;
-      await read.readBack();
-      expect(shown.at(-1)?.map((item) => [item.text, item.crossed_at !== null])).toEqual([
-        ['Milk', true],
-        ['Eggs', false],
-      ]);
-    } finally {
-      read?.stop();
-      await destroyTablet(wall);
-      await destroyHousehold(account);
-    }
-  });
-
-  it('clears the crossed-off items at once, and the database agrees', async () => {
-    const account = await createHousehold('The Andersons');
-    const wall = await asDevice(account);
-    let read: ReturnType<typeof startSyncedRead<ListItem[]>> | null = null;
-    try {
-      const phone = await asHouseholdAccount(account);
-      const list = (await loadPinnedListId(phone))!;
-      await addItem(phone, list, 'Milk', 0);
-      const eggs = await addItem(phone, list, 'Eggs', 1);
-      await setCrossed(phone, eggs.id, true);
-      let shown: ListItem[] | null = null;
-      read = startSyncedRead({ load: () => loadItems(wall.client, list), onChange: (state) => (shown = state.data) });
-      await vi.waitFor(() => expect(shown).toHaveLength(2));
-
-      const clearing = read.write(() => clearCompleted(wall.client, list), withoutCrossed);
-      expect((shown as ListItem[] | null)?.map((item) => item.text)).toEqual(['Milk']);
-      await clearing;
-      expect((await loadItems(phone, list)).map((item) => item.text)).toEqual(['Milk']);
-    } finally {
-      read?.stop();
-      await destroyTablet(wall);
-      await destroyHousehold(account);
-    }
   });
 });

@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react';
 import type { WallNavigator, WallRoute } from './lib/wall-routes';
 import type { HouseholdView } from './lib/household';
 import type { Profile } from './lib/profiles';
@@ -29,7 +30,8 @@ export type PhoneScreenProps = {
   navigator: WallNavigator;
 };
 
-export function PhoneWall(props: PhoneScreenProps) {
+// The return type is named so that a route left out of the switch fails the typecheck (checked by hand: a case removed fails `pnpm typecheck`).
+export function PhoneWall(props: PhoneScreenProps): ReactElement {
   const { route } = props;
   switch (route.view) {
     case 'home': return <PhoneHome {...props} />;

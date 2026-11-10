@@ -1,144 +1,30 @@
-import { useContext, useRef, useState } from 'react';
+import { useContext, useState } from 'react';
 import { ChangeFeedContext } from './change-feed';
-import type { CardWriteOutcome } from './change';
-import { byPosition, movedIds, nextSortOrder } from './ordering';
+import { useChange, type CardWriteOutcome } from './change';
+import { listCard, type ListCardView } from './list-card';
 import { supabase } from './supabase';
-import {
-  addItem,
-  clearCompleted,
-  gotListItems,
-  loadItems,
-  loadLists,
-  loadPinnedListId,
-  markListSent,
-  reorderItems,
-  setCrossed,
-  withCrossed,
-  withGot,
-  withoutCrossed,
-  withSent,
-  type ListItem,
-  type SharedList,
-} from './shared-lists';
+import { loadItems, loadLists, loadPinnedListId, type ListItem, type SharedList } from './shared-lists';
 import { couldNotLoad, useSyncedRead, type ReadStateName } from './synced-read';
-import { useFailureWords } from './use-failure-words';
 import { addSuggestions, dismissSuggestions, loadSuggestions, type ListSuggestion } from './list-suggestions';
 import { askShopper, type ShopperAnswer } from './shopper';
 
 // The Shared Lists' readers and writers as hooks, one for the Wall's cards and the phone's screens alike (SharedListsPage.tsx draws
-// the tablet's, src/phone/PhoneLists.tsx the phone's). Both read through the synced read (synced-read.ts).
+// the tablet's, src/phone/PhoneLists.tsx the phone's). Both read through the synced read (synced-read.ts). A list's card is the core in
+// list-card.ts; its hook here only reads and hands the core its effects.
 
 // What each read here listens to. The pinned list is a column of the Household.
 const ITEM_TABLES = ['list_items'] as const;
 export const LIST_TABLES = ['shared_lists', 'households'] as const;
 
-// A row shown for an item the server has not stored yet has an id that says so ("pending-1"). It cannot be crossed off or moved
-// until the stored row has taken its place, which is a moment.
-const PENDING = 'pending-';
-export const isPending = (item: ListItem) => item.id.startsWith(PENDING);
-
 const NO_ITEMS: ListItem[] = [];
 
-// One list's items. Adding, crossing off, clearing and moving show at once, as pending changes of the synced read: one that does not go
-// through takes back only itself, and the card says why. What a write said stays until the next action; a read does not clear it.
-export function useItems(listId: string) {
+// One list's card: its items, the count, and the writes (list-card.ts). The read and the change are this hook's.
+export function useItems(listId: string): ListCardView {
   const read = useSyncedRead(() => loadItems(supabase, listId), ITEM_TABLES, listId);
-  const items = read.data ?? NO_ITEMS;
-  const [said, setSaid] = useState<{ listId: string; problem: string }>({ listId, problem: '' });
-  // What a write that did not go through says: the one vocabulary of the Wall and the phone (write-failure.ts).
-  const failureWords = useFailureWords();
-  // How many rows have been shown before the server answered, so that each has an id of its own.
-  const pendings = useRef(0);
-  // Said of this list only: a write that answers after another list was opened says nothing there.
-  const fail = (problem: string) => setSaid({ listId, problem });
-  const written = said.listId === listId ? said.problem : '';
-  // Items already shown stay when a later read fails; the header says the connection is gone.
-  const problem = written || (read.state === 'failed' ? couldNotLoad('this list') : '');
-
-  // Adding does not wait for the server: the item shows at once, as a row that is not stored yet, and the stored row takes its place
-  // when the server has answered. If it cannot be added the row goes and the card says so. Returns the item as stored, or null when
-  // it could not be.
-  async function add(text: string): Promise<ListItem | null> {
-    const pending: ListItem = { id: `${PENDING}${(pendings.current += 1)}`, list_id: listId, text: text.trim(), crossed_at: null, sent_at: null, sort_order: nextSortOrder(items) };
-    try {
-      const created = await read.write(
-        () => addItem(supabase, listId, text, pending.sort_order),
-        (rows) => [...rows, pending],
-        (stored) => (rows) => rows.map((row) => (row.id === pending.id ? stored : row)),
-      );
-      fail('');
-      return created;
-    } catch (error) {
-      fail(failureWords(error));
-      return null;
-    }
-  }
-
-  async function toggle(item: ListItem) {
-    if (isPending(item)) return;
-    const crossed = item.crossed_at === null;
-    try {
-      await read.write(() => setCrossed(supabase, item.id, crossed), (rows) => withCrossed(rows, item.id, crossed));
-      fail('');
-    } catch (error) {
-      fail(failureWords(error));
-    }
-  }
-
-  async function clear() {
-    try {
-      await read.write(() => clearCompleted(supabase, listId), withoutCrossed);
-      fail('');
-    } catch (error) {
-      fail(failureWords(error));
-    }
-  }
-
-  // Send to Target and Got it are changes (ADR 0006): each names a place on this list, where a failure is said, and the change's guard
-  // makes a press while one is on its way do nothing. What the rows show after the write is the change's `meanwhile`, until the read
-  // that follows lands.
-  const sentPlace = `sent-${listId}`;
-  const gotPlace = `got-${listId}`;
-
-  // The items to get are sent, once the sheet's Open, Share or Copy has gone through.
-  function markSent(): Promise<CardWriteOutcome> {
-    const now = new Date();
-    return read.change(sentPlace, () => markListSent(supabase, listId), { meanwhile: () => (rows) => withSent(rows, now) });
-  }
-
-  // Got it: the waiting items in `came` are crossed off and the rest stop waiting.
-  function gotItems(came: string[]): Promise<CardWriteOutcome> {
-    const now = new Date();
-    return read.change(gotPlace, () => gotListItems(supabase, listId, came), { meanwhile: () => (rows) => withGot(rows, came, now) });
-  }
-
-  // The sheets' own words for a write that did not save, and how to forget them when a sheet opens.
-  const sentProblem = read.problem(sentPlace)?.words ?? '';
-  const gotProblem = read.problem(gotPlace)?.words ?? '';
-  const clearSends = () => {
-    read.clear(sentPlace);
-    read.clear(gotPlace);
-  };
-
-  async function move(id: string, offset: number) {
-    if (items.some(isPending)) return;
-    const ids = movedIds(items.map((item) => item.id), id, offset);
-    try {
-      await read.write(
-        () => reorderItems(supabase, ids),
-        (rows) => byPosition(ids.flatMap((itemId, index) => rows.filter((row) => row.id === itemId).map((row) => ({ ...row, sort_order: index })))),
-      );
-      fail('');
-    } catch {
-      // The old order is back at once; the read that follows the write replaces it with what the database holds (some of the writes
-      // may have landed) once the connection allows. The words hold whether or not that read gets through, so they never claim what
-      // is saved.
-      fail('Could not reorder. The order may not be saved. Check your connection.');
-    }
-  }
-
-  // Loaded once a read has landed, or the first one failed (the card then says so).
-  return { items, loaded: read.state !== 'loading', problem, add, toggle, clear, move, markSent, gotItems, sentProblem, gotProblem, clearSends, busy: read.busy };
+  return listCard(
+    { listId, items: read.data ?? NO_ITEMS, state: read.state, busy: read.busy },
+    { client: supabase, write: read.write, change: read.change, fail: read.fail, say: read.say, clear: read.clear, problem: read.problem },
+  );
 }
 
 // A list's suggestions (spec 0019), read again when they change. Adding and dismissing go through the synced read's change, one at a
@@ -182,25 +68,23 @@ export function useSuggestions(listId: string) {
 }
 
 // The shopper (spec 0019) for this list: `asking` is true while Claude is being asked, and `answer` is the last answer. Each ask clears
-// the last answer first, so its alert is taken down and a repeated answer is announced again. A second tap before the answer lands is
-// no second ask: each one is a run.
+// the last answer first, so its alert is taken down and a repeated answer is announced again. The ask is a change of its own (no place:
+// the answers say their own words), so a second tap before the answer lands is no second ask: each one is a run. It is apart from the
+// suggestions' change, so an ask of up to two minutes never blocks adding or dismissing.
 export function useShopper(listId: string) {
-  const [asking, setAsking] = useState(false);
+  const ask = useChange();
   const [answer, setAnswer] = useState<ShopperAnswer | null>(null);
-  const inFlight = useRef(false);
   return {
-    asking,
+    asking: ask.busy,
     answer,
     ask: async (): Promise<ShopperAnswer | null> => {
-      if (inFlight.current) return null;
-      inFlight.current = true;
-      setAsking(true);
-      setAnswer(null);
-      const next = await askShopper(supabase, listId);
-      inFlight.current = false;
-      setAsking(false);
-      setAnswer(next);
-      return next;
+      let next = null as ShopperAnswer | null;
+      const outcome = await ask.change(null, async () => {
+        setAnswer(null);
+        next = await askShopper(supabase, listId);
+        setAnswer(next);
+      });
+      return outcome === 'busy' ? null : next;
     },
   };
 }
