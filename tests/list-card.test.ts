@@ -17,10 +17,14 @@ const hook = vi.hoisted(() => ({
 }));
 vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/lib/use-shared-lists')>();
+  const { drawnCard } = await import('./support/drawn-card');
   const noop = async () => undefined;
   return {
     ...original,
-    useItems: (listId: string) => (hook.items ? { ...hook.items, add: noop, toggle: noop, clear: noop } : original.useItems(listId)),
+    useItems: (listId: string) =>
+      hook.items
+        ? { ...drawnCard(listId, { items: hook.items.items, state: hook.items.loaded ? 'ready' : 'loading', problem: hook.items.problem }), add: noop, toggle: noop, clear: noop }
+        : original.useItems(listId),
     useSuggestions: (listId: string) => (hook.suggestions ? { ...hook.suggestions, add: noop, dismiss: noop } : original.useSuggestions(listId)),
     useShopper: (listId: string) => (hook.shopper ? { ...hook.shopper, ask: async () => null } : original.useShopper(listId)),
     useLists: () => (hook.lists ? { read: hook.lists, state: 'ready' as const } : original.useLists()),

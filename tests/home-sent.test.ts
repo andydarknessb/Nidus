@@ -12,11 +12,15 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock('../src/lib/use-shared-lists', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/lib/use-shared-lists')>();
+  const { drawnCard } = await import('./support/drawn-card');
   const noop = async () => '';
   return {
     ...original,
     useLists: () => state.lists ?? original.useLists(),
-    useItems: (listId: string) => (state.items ? { ...state.items, add: noop, toggle: noop, clear: noop, move: noop, markSent: noop, gotItems: noop, clearSends: noop } : original.useItems(listId)),
+    useItems: (listId: string) =>
+      state.items
+        ? { ...drawnCard(listId, { items: state.items.items, state: state.items.loaded ? 'ready' : 'loading', problem: state.items.problem }), add: noop, toggle: noop, clear: noop, move: noop, markSent: noop, gotItems: noop, clearSends: noop }
+        : original.useItems(listId),
   };
 });
 

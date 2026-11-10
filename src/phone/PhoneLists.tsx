@@ -4,7 +4,7 @@ import { EmptyWords } from '../components/EmptyWords';
 import { ListCard } from '../components/ListCard';
 import { ReadState } from '../components/ReadState';
 import { Button } from '../components/ui/button';
-import { leftToGet, listChipName, pinnedFirst, pickedList, type SharedList } from '../lib/shared-lists';
+import { listChipName, pinnedFirst, pickedList, type SharedList } from '../lib/shared-lists';
 import { useItems, useLists } from '../lib/use-shared-lists';
 import { SideScroll } from './parts';
 
@@ -38,8 +38,7 @@ type Counts = Readonly<Record<string, number | null>>;
 
 // Reads one list's items for its chip's count and draws nothing: the same reader the card uses, kept for a list that is not open.
 function CountReader({ listId, onCount }: { listId: string; onCount: (listId: string, left: number | null) => void }) {
-  const { items, loaded, problem } = useItems(listId);
-  const left = leftToGet(loaded, problem, items);
+  const { left } = useItems(listId);
   useEffect(() => onCount(listId, left), [left, listId, onCount]);
   return null;
 }
