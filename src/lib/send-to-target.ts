@@ -43,7 +43,7 @@ function shareFailure(error: unknown): string {
 
 // The phone's side of a press, and the list's: what the message is now, whether a write is on its way (the list's, or the Usuals not yet
 // read), the share sheet (absent when the phone has none), the copy, and the mark-sent write (the list's change).
-export type SendAdapters = {
+type SendAdapters = {
   message: () => string;
   busy: () => boolean;
   share?: ((data: { text: string }) => Promise<void>) | undefined;
@@ -51,7 +51,7 @@ export type SendAdapters = {
   mark: () => Promise<CardWriteOutcome>;
 };
 
-export type SendState = { said: string; copied: boolean };
+type SendState = { said: string; copied: boolean };
 
 // What a press of Send to Target does (docs/specs/0020, "The send"). Open marks the list sent and says whether the link is to be
 // followed; a share that resolves marks it, a share the person closed marks nothing and says nothing, any other failure says so; a copy

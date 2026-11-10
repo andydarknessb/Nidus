@@ -31,14 +31,15 @@ function deferred() {
 // Lets every settled promise run on before the test looks.
 const settle = () => new Promise((done) => setTimeout(done, 0));
 
-function setup(options: { share?: boolean } = {}) {
+// `busy` defaults to the change's live state; a test gives its own to show the send refuses on the sheet's word alone.
+function setup(options: { share?: boolean; busy?: () => boolean } = {}) {
   const change = createChange();
   const work = vi.fn(async () => 1);
   const share = vi.fn<(data: { text: string }) => Promise<void>>(async () => {});
   const copy = vi.fn<(text: string) => Promise<void>>(async () => {});
   const send = createSend({
     message: () => MESSAGE,
-    busy: change.isBusy,
+    busy: options.busy ?? change.isBusy,
     share: options.share === false ? undefined : share,
     copy,
     mark: () => change.change('sent-l', work),
@@ -123,6 +124,30 @@ describe('Copy', () => {
 });
 
 describe('a press while a mark or a share is on its way', () => {
+  it('does nothing while the sheet says a write is on its way, even when no mark is pending', async () => {
+    const { send, copy, share, work } = setup({ busy: () => false });
+    const held = deferred();
+    work.mockImplementationOnce(() => held.promise.then(() => 1));
+    expect(send.open()).toBe(true);
+    // The sheet has not drawn the mark yet, so its busy is still false: only the send's own flag refuses these.
+    expect(send.open()).toBe(false);
+    await send.copy();
+    await send.share();
+    expect(copy).not.toHaveBeenCalled();
+    expect(share).not.toHaveBeenCalled();
+    expect(work).toHaveBeenCalledTimes(1);
+    held.resolve();
+  });
+
+  it('refuses Copy and Share while the sheet says a write is on its way', async () => {
+    const { send, copy, share, work } = setup({ busy: () => true });
+    await send.copy();
+    await send.share();
+    expect(copy).not.toHaveBeenCalled();
+    expect(share).not.toHaveBeenCalled();
+    expect(work).not.toHaveBeenCalled();
+  });
+
   it('does nothing while a mark is on its way: no second mark, no link, no copy, no share', async () => {
     const { send, copy, share, work } = setup();
     const held = deferred();
