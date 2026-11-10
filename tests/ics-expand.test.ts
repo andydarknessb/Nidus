@@ -246,10 +246,11 @@ describe('expandFeed: which occurrences', () => {
 });
 
 describe('expandFeed: text', () => {
-  it('unfolds lines and unescapes text', () => {
+  it('unfolds lines, unescapes text, and carries the place', () => {
     const folded = 'DESCRIPTION:Bring the big one\\, the blue one\\nand a snack\n  that is folded here';
-    const [row] = expand(feed(`BEGIN:VEVENT\nUID:t\nDTSTAMP:20260901T000000Z\nDTSTART:20261014T140000Z\n${folded}\nEND:VEVENT`));
+    const [row] = expand(feed(`BEGIN:VEVENT\nUID:t\nDTSTAMP:20260901T000000Z\nLOCATION:Clinic\\, Room 2\nDTSTART:20261014T140000Z\n${folded}\nEND:VEVENT`));
     expect(row?.description).toBe('Bring the big one, the blue one\nand a snack that is folded here');
+    expect(row?.location).toBe('Clinic, Room 2');
   });
 });
 

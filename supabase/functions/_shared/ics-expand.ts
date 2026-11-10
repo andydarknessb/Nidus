@@ -81,8 +81,6 @@ function layout(ev: ICAL.Event, timezone: string): Layout | null {
 }
 
 function build(ev: ICAL.Event, uid: string, originalMs: number, startMs: number, endMs: number, isAllDay: boolean): EventRow | null {
-  // The key formats originalMs, which throws unless it is a real instant.
-  if (!Number.isFinite(originalMs)) return null;
   return eventRow({ key: `${uid}${KEY_SEPARATOR}${new Date(originalMs).toISOString()}`, title: ev.summary, notes: ev.description, place: ev.location, startsMs: startMs, endsMs: endMs, allDay: isAllDay });
 }
 
