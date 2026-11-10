@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addDays, dayStartMs, householdDay, householdTime, instantAt, spanIsOn } from '@shared/zoned-time.ts';
+import { loadOccurrences } from '../src/lib/calendar-occurrences';
 import { asAnonymous, asHouseholdAccount, createHousehold, destroyHousehold, type HouseholdAccount } from './support/supabase';
 
 // The Household clock (spec 0008): the Household Date and the time of day on it, for the Wall,
@@ -130,6 +131,41 @@ describe('the Household clock and the database agree on a time of day', () => {
   it('is not callable with the anon key alone', async () => {
     const { error } = await asAnonymous().rpc('wall_clock_instant', { p_local: '2026-10-06 08:30:00', p_zone: 'America/Chicago' });
     expect(error?.code).toBe('42501');
+  });
+});
+
+// The callers, not only the function: Lord Howe's clocks go back half an hour, so 1:45 AM on 2026-04-05
+// happens at 14:45Z and 15:15Z. A one-hour check would read the later one; the table above never reaches
+// native_event_occurrences, and the Repeat and re-anchor tests only use America/Chicago.
+describe('a Native Event reads at the Household clock\'s instant', () => {
+  it('reads 1:45 AM on the Lord Howe night the clocks go back at the first of the two', async () => {
+    const account = await createHousehold();
+    try {
+      const phone = await asHouseholdAccount(account);
+      const { error: zoneError } = await phone.from('households').update({ timezone: 'Australia/Lord_Howe' }).eq('id', account.household.id);
+      if (zoneError) throw zoneError;
+      const { error } = await phone.rpc('save_native_event', {
+        p_id: null,
+        p_title: 'Soccer',
+        p_location: null,
+        p_notes: null,
+        p_starts_at: '2026-04-04T14:45:00Z',
+        p_ends_at: '2026-04-04T15:15:00Z',
+        p_is_all_day: false,
+        p_profile_ids: [],
+        p_repeat_every: null,
+        p_repeat_interval: 1,
+        p_repeat_days: null,
+        p_repeat_until: null,
+        p_skip_event: null,
+        p_skip_on: null,
+      });
+      if (error) throw error;
+      const rows = await loadOccurrences(phone, new Date('2026-04-04T00:00:00Z'), new Date('2026-04-06T00:00:00Z'));
+      expect(rows.map((row) => new Date(row.starts_at).toISOString())).toEqual(['2026-04-04T14:45:00.000Z']);
+    } finally {
+      await destroyHousehold(account);
+    }
   });
 });
 
