@@ -22,8 +22,8 @@ const NO_ITEMS: ListItem[] = [];
 export function useItems(listId: string): ListCardView {
   const read = useSyncedRead(() => loadItems(supabase, listId), ITEM_TABLES, listId);
   return listCard(
-    { listId, items: read.data ?? NO_ITEMS, state: read.state },
-    { client: supabase, write: read.write, change: read.change, fail: read.fail, say: read.say, clear: read.clear, problem: read.problem, isBusy: read.isBusy },
+    { listId, items: read.data ?? NO_ITEMS, state: read.state, busy: read.busy },
+    { client: supabase, write: read.write, change: read.change, fail: read.fail, say: read.say, clear: read.clear, problem: read.problem },
   );
 }
 

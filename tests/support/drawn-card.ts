@@ -7,6 +7,7 @@ import type { ReadStateName } from '../../src/lib/synced-read';
 // make one throw; `problem` is what a write said at the list's place. The card's reads and writes are driven in list-card-core.test.ts.
 export function drawnCard(listId: string, facts: { items: unknown[]; state?: ReadStateName; problem?: string }): ListCardView {
   const { items, state = 'ready', problem = '' } = facts;
+  const busy = false;
   const unmade = () => {
     throw new Error('a drawn card makes no write');
   };
@@ -18,7 +19,6 @@ export function drawnCard(listId: string, facts: { items: unknown[]; state?: Rea
     say: () => undefined,
     clear: () => undefined,
     problem: (place) => (problem ? { place, words: problem, n: 1, refused: false } : null),
-    isBusy: () => false,
   };
-  return listCard({ listId, items: items as ListItem[], state }, effects);
+  return listCard({ listId, items: items as ListItem[], state, busy }, effects);
 }

@@ -23,6 +23,13 @@ describe("the Wall's writers", () => {
     }
   });
 
+  // A retry that fails again is a new alert, heard again: each place's alert takes the change's count as its key (change.ts `n`). Drawn
+  // markup does not show keys, so the source is what is checked.
+  it("take the list's count as the key of their alerts", () => {
+    expect(source('components/ListCard.tsx'), 'ListCard').toContain('<p key={problemKey} role="alert"');
+    expect(source('SharedListsPage.tsx'), 'SharedListsPage').toContain('<p key={problemKey} role="alert"');
+  });
+
   it('keep none of the sentences they said before', () => {
     for (const file of WRITERS) {
       const code = source(file).replace(/\/\/.*$/gm, '');

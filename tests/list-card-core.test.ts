@@ -32,14 +32,13 @@ function mount(listId: string, reader: SupabaseClient, writer: SupabaseClient) {
     say: guard.say,
     clear: guard.clear,
     problem: (place) => guard.state().problems[place] ?? null,
-    isBusy: guard.isBusy,
   });
   return {
     read,
     writes,
     effects,
     problems: () => guard.state().problems,
-    view: (): ListCardView => listCard({ listId, items: synced.data ?? [], state: synced.state }, effects()),
+    view: (): ListCardView => listCard({ listId, items: synced.data ?? [], state: synced.state, busy: guard.state().busy }, effects()),
     stop: () => read.stop(),
   };
 }
@@ -240,7 +239,7 @@ describe.each(['a Device', 'a Household Account'] as const)('the list card, writ
     await list.view().add('Bread');
     expect(list.view().problem).not.toBe('');
 
-    const another = listCard({ listId: 'another-list', items: [], state: 'ready' }, list.effects());
+    const another = listCard({ listId: 'another-list', items: [], state: 'ready', busy: false }, list.effects());
     expect(another.problem).toBe('');
     expect(another.left).toBe(0);
   });

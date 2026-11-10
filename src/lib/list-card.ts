@@ -37,6 +37,8 @@ export type ListCardFacts = {
   // What the read holds, with each pending change shown (the synced read's data), or nothing until it lands.
   items: ListItem[];
   state: ReadStateName;
+  // Whether a change is on its way, as the change's last draw says.
+  busy: boolean;
 };
 
 export type ListCardEffects = {
@@ -49,7 +51,6 @@ export type ListCardEffects = {
   say(place: string, words: string): void;
   clear(place?: string): void;
   problem(place: string): WriteProblem | null;
-  isBusy(): boolean;
 };
 
 export type ListCardView = {
@@ -77,7 +78,7 @@ export type ListCardView = {
   gotItems(came: string[]): Promise<CardWriteOutcome>;
 };
 
-export function listCard({ listId, items, state }: ListCardFacts, effects: ListCardEffects): ListCardView {
+export function listCard({ listId, items, state, busy }: ListCardFacts, effects: ListCardEffects): ListCardView {
   const place = `items-${listId}`;
   const sentPlace = `sent-${listId}`;
   const gotPlace = `got-${listId}`;
@@ -97,7 +98,7 @@ export function listCard({ listId, items, state }: ListCardFacts, effects: ListC
     problemKey: failure?.n ?? 0,
     sentProblem: effects.problem(sentPlace)?.words ?? '',
     gotProblem: effects.problem(gotPlace)?.words ?? '',
-    busy: effects.isBusy(),
+    busy,
     clearSends() {
       effects.clear(sentPlace);
       effects.clear(gotPlace);

@@ -46,17 +46,17 @@ function SuggestionRow({
   );
 }
 
-// One item's row. The whole row is the button: a tap crosses the item off, another puts it back. To get, it is an empty ring; crossed off, a
-// tick and struck-through words, so it never rests on colour alone.
+// How an item's row is drawn in each place, from the drawings. In a card on the Lists screen it is 52 px, and its words may take two
+// lines (the row grows for the second). On Home it is 48 px and the words one line, since its rows are counted by height. On the phone
+// it is at least 56 px and shows the words in full. Words with no space in them break where the row ends.
 const ROW = {
   card: { box: 'min-h-13 py-2', words: 'line-clamp-2 wrap-anywhere' },
   home: { box: 'h-12', words: 'truncate' },
   phone: { box: 'min-h-14 py-2', words: 'wrap-anywhere' },
 } as const;
 
-// How an item's row is drawn in each place, from the drawings. In a card on the Lists screen it is 52 px, and its words may take two
-// lines (the row grows for the second). On Home it is 48 px and the words one line, since its rows are counted by height. On the phone
-// it is at least 56 px and shows the words in full. Words with no space in them break where the row ends.
+// One item. The whole row is the button: a tap crosses the item off, another puts it back. To get, it is an empty ring;
+// crossed off, a tick and struck-through words, so it never rests on colour alone.
 export function ItemRow({ item, size, onToggle, ref }: { item: ListItem; size: keyof typeof ROW; onToggle: () => void; ref?: Ref<HTMLButtonElement> }) {
   const crossed = item.crossed_at !== null;
   const ring = size === 'home' ? 26 : 28;
