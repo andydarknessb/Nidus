@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { updateHousehold, type Household } from '@/lib/household';
 import type { Appearance } from '@/lib/mode';
 import { useChange } from '@/lib/change';
+import type { SyncedRead } from '@/lib/synced-read';
 import { NOT_SAVED } from '@/lib/write-failure';
 
 // Light and Dark carry the icon of what they are; Auto is the Wall following the sun, which no one icon says.
@@ -78,12 +79,13 @@ export function AppearanceControl({
 
 // Settings, phone only: how the Wall looks. A choice is saved the moment it is made, and the section says when it has landed
 // and what Auto does. The Wall reads the Household again when it changes, so a tablet follows within a second or two. A Device
-// reads the Appearance and never gets this screen.
-export function AppearanceSection({ household, onSaved }: { household: Household; onSaved: (household: Household) => void }) {
+// reads the Appearance and never gets this screen. The save goes through the Household's synced read (`read`), so the choice the
+// card shows is the one the Household holds once the save is over.
+export function AppearanceSection({ household, read }: { household: Household; read: Pick<SyncedRead<Household>, 'write' | 'readBack'> }) {
   // The choice being saved shows as chosen at once; it goes back to the saved one if the save fails.
   const [saving, setSaving] = useState<Appearance | null>(null);
   const [status, setStatus] = useState<SaveStatus>('idle');
-  const { change, isBusy, problem } = useChange();
+  const { change, isBusy, problem } = useChange(read);
 
   async function choose(appearance: Appearance) {
     // One save at a time, so a slow answer can never land after a newer one; the chosen one is already saved.
@@ -91,10 +93,8 @@ export function AppearanceSection({ household, onSaved }: { household: Household
     setSaving(appearance);
     setStatus('idle');
     await change('appearance', () => updateHousehold(household.id, { appearance }), {
-      landed: (saved) => {
-        onSaved(saved);
-        setStatus('saved');
-      },
+      meanwhile: (saved) => () => saved,
+      landed: () => setStatus('saved'),
       failed: () => setStatus('failed'),
     });
     setSaving(null);

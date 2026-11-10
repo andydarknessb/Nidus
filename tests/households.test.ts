@@ -52,6 +52,30 @@ describe('households', () => {
   });
 });
 
+describe('a Household name or time zone, changed alone', () => {
+  const arranged: HouseholdAccount[] = [];
+
+  afterEach(async () => {
+    await Promise.all(arranged.splice(0).map(destroyHousehold));
+  });
+
+  // updateHousehold writes what it is given and nothing else: a name leaves the time zone, and a time zone leaves the name.
+  it('writes a name and leaves the time zone, and writes a time zone and leaves the name', async () => {
+    const mine = await createHousehold('The Andersons');
+    arranged.push(mine);
+    const phone = await asHouseholdAccount(mine);
+    const write = (changes: object) => phone.from('households').update(changes).eq('id', mine.household.id).select('name, timezone').single();
+
+    const named = await write({ name: 'The Nguyens' });
+    expect(named.error).toBeNull();
+    expect(named.data).toEqual({ name: 'The Nguyens', timezone: 'America/Chicago' });
+
+    const zoned = await write({ timezone: 'America/New_York' });
+    expect(zoned.error).toBeNull();
+    expect(zoned.data).toEqual({ name: 'The Nguyens', timezone: 'America/New_York' });
+  });
+});
+
 describe('household weather', () => {
   const households: HouseholdAccount[] = [];
   const tablets: Tablet[] = [];

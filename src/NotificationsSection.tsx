@@ -177,40 +177,31 @@ export function NotificationsView({ support, state, profiles = null, listName, b
 // read (every 30 seconds, 5 after a failure, after each write, and again on coming back to the page); each write (turning on or off,
 // a change of what is sent, a test) is alone, and the card says what it did.
 const NO_TABLES = [] as const;
+// A person added, changed or deleted reads the Profiles again; a list renamed, or another pinned, reads the Pinned List's name again.
+const PROFILE_TABLES = ['profiles'] as const;
+const PINNED_LIST_TABLES = ['shared_lists', 'households'] as const;
 
 export function NotificationsSection() {
   const [support] = useState<PushSupport>(() => (typeof window === 'undefined' ? 'unsupported' : pushSupport()));
   const read = useSyncedRead<PushState>(() => readPushState(supabase), NO_TABLES, support === 'supported' ? 'push' : null);
   const state = read.data;
-  const [listName, setListName] = useState<string | null>(null);
-  const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [status, setStatus] = useState<NotificationsStatus>('idle');
+  // The Profiles and the Pinned List's name are read through the synced read as well (spec 0020). Their failures stay silent: without
+  // the Profiles the card draws no "Whose events?" and drops nothing from the saved choice, and without the name it says "the shopping list".
+  const people = useSyncedRead(() => loadProfiles(supabase), PROFILE_TABLES, support === 'supported' ? 'profiles' : null);
+  const pinned = useSyncedRead(() => loadPinnedListName(supabase), PINNED_LIST_TABLES, support === 'supported' ? 'pinned' : null);
   // One change at a time (read.change, the card write guard): the card draws `aria-disabled` from `busy`, and says where focus goes
   // afterwards.
   const { busy, change } = read;
 
   useEffect(() => {
     if (support !== 'supported') return;
-    let live = true;
     // Back on the page after the phone's settings: what was blocked may be allowed now. A write on its way is let finish first.
     const again = () => {
       if (document.visibilityState === 'visible') read.refresh();
     };
     document.addEventListener('visibilitychange', again);
-    // The name only words one line; without it the card says "the shopping list".
-    loadPinnedListName(supabase).then(
-      (name) => live && setListName(name),
-      () => undefined,
-    );
-    // Likewise the people: without them the card draws no "Whose events?" and drops nothing from the saved choice.
-    loadProfiles(supabase).then(
-      (found) => live && setProfiles(found),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-      document.removeEventListener('visibilitychange', again);
-    };
+    return () => document.removeEventListener('visibilitychange', again);
   }, [support, read.refresh]);
 
   // Each write is alone: what it did is the status (what was said of the last write is old when the next begins, so that a repeat is
@@ -220,8 +211,8 @@ export function NotificationsSection() {
     <NotificationsView
       support={support}
       state={state}
-      profiles={profiles}
-      listName={listName}
+      profiles={people.data}
+      listName={pinned.data}
       busy={busy}
       status={status}
       failed={read.failed}

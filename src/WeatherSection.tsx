@@ -4,6 +4,7 @@ import { Card, Field, Problem, fieldClass, labelClass, statusLineClass } from '@
 import { Button } from '@/components/ui/button';
 import { updateHouseholdWeather, type Household } from '@/lib/household';
 import { useChange } from '@/lib/change';
+import type { SyncedRead } from '@/lib/synced-read';
 import { describePlaces, searchPlaces, type PlaceMatch, type TemperatureUnit, type WeatherPlace } from '@/lib/weather';
 
 const UNITS: { value: TemperatureUnit; label: string }[] = [
@@ -30,7 +31,7 @@ const SEARCH_WORDS: Record<Exclude<SearchStatus, 'found'>, string> = {
 // Settings, phone only: where the Household's weather is for and which unit it shows in. The place is shown with a button to
 // change it, which opens a search; a tap on a place found uses it, and a tap on a unit uses that, each saved at once as the
 // Appearance is. The phone asks Open-Meteo for matches itself; a Device reads the saved place and never gets this screen.
-export function WeatherSection({ household, onSaved }: { household: Household; onSaved: (household: Household) => void }) {
+export function WeatherSection({ household, read }: { household: Household; read: Pick<SyncedRead<Household>, 'write' | 'readBack'> }) {
   const [changing, setChanging] = useState(false);
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<PlaceMatch[]>([]);
@@ -39,7 +40,7 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
   const [savingUnit, setSavingUnit] = useState<TemperatureUnit | null>(null);
   // One save at a time: a button that is busy is `aria-disabled` and does nothing, never `disabled`, which would drop the focus to the
   // page. What a save that failed says is said at once, where it was made.
-  const { busy, isBusy, change, problem, clear } = useChange();
+  const { busy, isBusy, change, problem, clear } = useChange(read);
   const [landed, setLanded] = useState(false);
   const changeButton = useRef<HTMLButtonElement>(null);
   // Which search is the latest, so that an answer that comes after the search was closed, or after a newer one began, is let go.
@@ -87,8 +88,8 @@ export function WeatherSection({ household, onSaved }: { household: Household; o
     if (isBusy()) return false;
     setLanded(false);
     const outcome = await change(place, () => updateHouseholdWeather(household.id, weather, nextUnit), {
-      landed: (next) => {
-        onSaved(next);
+      meanwhile: (next) => () => next,
+      landed: () => {
         // The place and the unit are saved together, and say so on one line: what either said before is old.
         clear();
         setLanded(true);

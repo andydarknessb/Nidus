@@ -48,9 +48,9 @@ export async function loadHousehold(): Promise<Household> {
 // What the wall knows of the Household: the last good read, and whether the latest read failed.
 export type HouseholdView = { household: Household | null; failed: boolean };
 
-// Household Account only: a Device reads the Household and the database refuses its write. The Appearance is saved on
-// its own, from its own section of the phone's settings.
-export async function updateHousehold(id: string, changes: { name: string; timezone: string } | { appearance: Appearance }): Promise<Household> {
+// Household Account only: a Device reads the Household and the database refuses its write. A name, a time zone or both; what is not
+// given stays as it is. The Appearance is saved on its own, from its own section of the phone's settings.
+export async function updateHousehold(id: string, changes: { name?: string; timezone?: string } | { appearance: Appearance }): Promise<Household> {
   const { data, error } = await supabase
     .from('households')
     .update(changes)
