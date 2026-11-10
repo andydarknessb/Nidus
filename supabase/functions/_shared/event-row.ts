@@ -31,15 +31,18 @@ export type EventFacts = {
   allDay: boolean;
 };
 
+// The caps count characters: a cut on UTF-16 units can split an emoji, and jsonb refuses the lone half.
+const cut = (text: string, max: number): string => Array.from(text).slice(0, max).join('');
+
 // The row for `facts`, or null when an instant is not a real time or the end falls before the start.
 export function eventRow(facts: EventFacts): EventRow | null {
   const { startsMs, endsMs } = facts;
   if (!Number.isFinite(startsMs) || !Number.isFinite(endsMs) || endsMs < startsMs) return null;
   return {
     google_event_id: facts.key,
-    title: (facts.title?.trim() || DEFAULT_TITLE).slice(0, MAX_TITLE),
-    description: facts.notes ? facts.notes.slice(0, MAX_DESCRIPTION) : null,
-    location: facts.place ? facts.place.slice(0, MAX_LOCATION) : null,
+    title: cut(facts.title?.trim() || DEFAULT_TITLE, MAX_TITLE),
+    description: facts.notes ? cut(facts.notes, MAX_DESCRIPTION) : null,
+    location: facts.place ? cut(facts.place, MAX_LOCATION) : null,
     starts_at: new Date(startsMs).toISOString(),
     ends_at: new Date(endsMs).toISOString(),
     is_all_day: facts.allDay,
