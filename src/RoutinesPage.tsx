@@ -7,9 +7,10 @@ import { RoutineColumn, type ColumnLayout } from './components/RoutineColumn';
 import { FOOT_CLEARANCE, OverflowButton } from './components/OverflowButton';
 import { Shelf } from './components/Shelf';
 import { PersonDisc } from './components/people';
-import { cardTitleClass, Problem } from './components/phone';
+import { cardTitleClass, Confirm, Problem } from './components/phone';
 import { Button } from './components/ui/button';
 import type { Household } from './lib/household';
+import { archiveQuestion, routineName } from './lib/removal-questions';
 import { nextSortOrder } from './lib/ordering';
 import { loadProfiles, type Profile } from './lib/profiles';
 import {
@@ -146,13 +147,6 @@ function scheduleSummary(mask: number, timeOfDay: TimeOfDay | null): string {
           .join(', ');
   const time = timeWord(timeOfDay);
   return time ? `${days}\u00a0·\u00a0${time}` : days;
-}
-
-// What a Routine's buttons are called: its title, then its time of day when it has one, so two
-// Routines with one title (Brush teeth in the morning and again in the evening) can be told apart.
-function routineName(routine: Routine): string {
-  const time = timeWord(routine.time_of_day);
-  return time ? `${routine.title}, ${time}` : routine.title;
 }
 
 // Monday first on screen; the bits stay Sunday = 0.
@@ -312,7 +306,9 @@ export function RoutinesPage({ household }: { household: Household }) {
   const routines = read.data?.routines ?? NO_ROUTINES;
   // The read's own trouble, kept apart from what a write said at its place (change.ts).
   const loadProblem = read.failed ? couldNotLoad('routines') : '';
-  const [confirming, setConfirming] = useState<string | null>(null);
+  // The question before a Routine is archived: a form row with no name, open for the Routine it asks about. Cancel returns focus to
+  // that Routine's Archive button; a removal that lands takes focus to its person's heading.
+  const archiveRow = useFormRow({ place: (id) => `archive-${id}`, read, opener: (id) => `archive-${id}` });
   const [editing, setEditing] = useState<string | null>(null);
   // Which Routine's form is open right now. A save that finishes late looks here, not at the render it began in.
   const editingNow = useRef<string | null>(null);
@@ -394,34 +390,22 @@ export function RoutinesPage({ household }: { household: Household }) {
                               <p className="text-sm leading-[1.2857] text-muted-foreground">{scheduleSummary(routine.days_of_week, routine.time_of_day)}</p>
                             </div>
                           </div>
-                          {confirming === routine.id ? (
-                            <div className="flex gap-2">
-                              <Button
-                                autoFocus
-                                variant="delete"
-                                aria-label={`Archive ${routineName(routine)}`}
-                                className="h-12 flex-1 rounded-[14px]"
-                                aria-disabled={busy || undefined}
-                                onClick={() => {
-                                  if (read.isBusy()) return;
-                                  setConfirming(null);
-                                  read.focus(`profile-${profile.id}`);
-                                  void read.change(`archive-${routine.id}`, () => archiveRoutine(supabase, routine.id));
-                                }}
-                              >
-                                Archive {routine.title}
-                              </Button>
-                              <Button
-                                variant="quiet"
-                                className="h-12 rounded-[14px]"
-                                onClick={() => {
-                                  setConfirming(null);
-                                  read.focus(`archive-${routine.id}`);
-                                }}
-                              >
-                                Keep it
-                              </Button>
-                            </div>
+                          {archiveRow.open === routine.id ? (
+                            <Confirm
+                              {...archiveQuestion(routine, profile.name)}
+                              busy={busy}
+                              problem={read.problem(`archive-${routine.id}`)}
+                              onCancel={() => archiveRow.close()}
+                              onConfirm={() =>
+                                void archiveRow.submit(null, () => archiveRoutine(supabase, routine.id), {
+                                  // The Routine is gone with its question: focus goes to its person's heading.
+                                  landed: () => {
+                                    archiveRow.dismiss();
+                                    return `profile-${profile.id}`;
+                                  },
+                                })
+                              }
+                            />
                           ) : (
                             <div className="flex gap-2">
                               <Button
@@ -438,7 +422,7 @@ export function RoutinesPage({ household }: { household: Household }) {
                                 variant="quiet"
                                 className="h-12 flex-1 rounded-[14px]"
                                 aria-label={`Archive ${routineName(routine)}`}
-                                onClick={() => setConfirming(routine.id)}
+                                onClick={() => archiveRow.start(routine.id)}
                               >
                                 Archive
                               </Button>
@@ -468,7 +452,6 @@ export function RoutinesPage({ household }: { household: Household }) {
                               </Button>
                             </div>
                           )}
-                          <Problem id={problemId(`archive-${routine.id}`)} problem={read.problem(`archive-${routine.id}`)} />
                         </>
                       )}
                     </li>

@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import type { CardWriteOutcome, ChangeThen, useChange } from './change';
-import { askRow, CLOSED_ROW, nameGiven, rowProblem, startRow, type FormRowState } from './form-row';
+import { askRow, cancelRow, CLOSED_ROW, dismissRow, nameGiven, openRow, rowProblem, startRow, type FormRowState } from './form-row';
 import type { Named, Said } from './write-failure';
 
 // The form row's hook (form-row.ts has the state and the words): which row a form is open for, the name it was asked for, and the
 // one call a form makes to save. `place` names where a write's failure is said (a field's, a row's, or the page's line); `opener`
 // is the control focus returns to when the row closes. A form that is always on the page passes `initially` and never closes.
+// A removal's question is a row with no `what`: `dismiss` closes it once the removal has landed, with no focus to the opener.
 
-export type FormRowRead<T> = Pick<ReturnType<typeof useChange<T>>, 'change' | 'focus' | 'busy' | 'isBusy' | 'problem'>;
+export type FormRowRead<T> = Pick<ReturnType<typeof useChange<T>>, 'change' | 'focus' | 'busy' | 'isBusy' | 'problem' | 'clear'>;
 
 export function useFormRow<T>({
   what,
@@ -31,12 +32,10 @@ export function useFormRow<T>({
   // What the form says of its name, in its own line.
   const nameProblem = (name: string): Said | null => (what === undefined ? null : rowProblem(row, what, name));
 
-  // Opens a row, and closes it: focus goes back to the control that opened it.
-  const start = (id: string) => setRow(startRow(id));
-  const close = () => {
-    if (row.id !== null) read.focus(opener(row.id));
-    setRow(CLOSED_ROW);
-  };
+  // Opens a row; closes it by Cancel, with focus back to the control that opened it; and closes it once a removal has landed.
+  const start = (id: string) => setRow(openRow(read, id));
+  const close = () => setRow(cancelRow(read, row, opener));
+  const dismiss = () => setRow(dismissRow(read));
   // Starts an always-on form again, with the next ask the first.
   const reset = () => {
     if (row.id !== null) setRow(startRow(row.id));
@@ -54,5 +53,5 @@ export function useFormRow<T>({
     return read.change(place(row.id), work, then);
   }
 
-  return { row, open: row.id, start, close, reset, submit, nameProblem, busy: read.busy, isBusy: read.isBusy, focus: read.focus };
+  return { row, open: row.id, start, close, dismiss, reset, submit, nameProblem, busy: read.busy, isBusy: read.isBusy, focus: read.focus };
 }

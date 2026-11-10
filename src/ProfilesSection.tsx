@@ -26,7 +26,7 @@ const editPlace = (id: string) => `edit-${id}`;
 const movePlace = (id: string) => `move-${id}`;
 const deletePlace = (id: string) => `delete-${id}`;
 
-type Editing = { id: string; draft: PersonDraft; deleting: boolean };
+type Editing = { id: string; draft: PersonDraft };
 
 // A form's title: the disc the person will be, which follows the name and the colour as they are chosen, and what the form does.
 function FormTitle({ draft, title }: { draft: PersonDraft; title: string }) {
@@ -56,6 +56,8 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   // The two forms' lifecycles (form-row.ts): their asks, their places and where focus goes when they close.
   const addRow = useFormRow({ what: 'person', place: () => ADD, read, opener: () => ADD_ID });
   const editRow = useFormRow({ what: 'person', place: (id) => editPlace(id), read, opener: (id) => controlId(id, 'edit') });
+  // The question before deleting the person being edited: a form row with no name, open for the person it asks about.
+  const deleteRow = useFormRow({ place: (id) => deletePlace(id), read, opener: (id) => controlId(id, 'delete') });
 
   async function add(event: FormEvent) {
     event.preventDefault();
@@ -85,6 +87,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
   async function remove(id: string) {
     await change(deletePlace(id), () => deleteProfile(supabase, id), {
       landed: () => {
+        deleteRow.dismiss();
         setEditing(null);
         return ADD_ID;
       },
@@ -97,8 +100,6 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
     await change(movePlace(id), () => reorderProfiles(supabase, ids), { landed: () => controlId(id, offset < 0 ? 'up' : 'down') });
   }
 
-  // Opening or closing a form, or a question, takes away what a write said in another one.
-  const closeForms = () => read.clear();
   // While a write is on its way nothing that changes what is open does anything either: its answer would land on the wrong form.
   const off = busy || undefined;
   // What the add form says: the name it wants (form-row.ts), else what its write said.
@@ -114,16 +115,12 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
             <li key={profile.id}>
               {editing?.id === profile.id ? (
                 <div className="flex flex-col gap-4 border-y border-border py-4">
-                  {editing.deleting ? (
+                  {deleteRow.open === profile.id ? (
                     <DeletePerson
                       name={profile.name}
                       busy={busy}
                       problem={read.problem(deletePlace(profile.id))}
-                      onCancel={() => {
-                        closeForms();
-                        setEditing({ ...editing, deleting: false });
-                        read.focus(controlId(profile.id, 'delete'));
-                      }}
+                      onCancel={() => deleteRow.close()}
                       onDelete={() => void remove(profile.id)}
                     />
                   ) : (
@@ -144,7 +141,6 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                             aria-disabled={off}
                             onClick={() => {
                               if (busy) return;
-                              closeForms();
                               editRow.close();
                               setEditing(null);
                             }}
@@ -196,8 +192,7 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                         aria-disabled={off}
                         onClick={() => {
                           if (busy) return;
-                          closeForms();
-                          setEditing({ ...editing, deleting: true });
+                          deleteRow.start(profile.id);
                         }}
                       >
                         Delete {profile.name}
@@ -217,9 +212,10 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
                     aria-disabled={off}
                     onClick={() => {
                       if (busy) return;
-                      closeForms();
+                      // Another person's question does not come back with this one's edit.
+                      deleteRow.dismiss();
                       editRow.start(profile.id);
-                      setEditing({ id: profile.id, draft: { name: profile.name, color: profile.color }, deleting: false });
+                      setEditing({ id: profile.id, draft: { name: profile.name, color: profile.color } });
                     }}
                   >
                     <Pencil aria-hidden className="size-[22px]" />
@@ -248,7 +244,6 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
               aria-disabled={off}
               onClick={() => {
                 if (busy) return;
-                closeForms();
                 addRow.close();
                 setAdding(null);
               }}
@@ -270,7 +265,6 @@ export function ProfilesSection({ householdId }: { householdId: string }) {
           aria-disabled={profiles === null || busy || undefined}
           onClick={() => {
             if (profiles === null || busy) return;
-            closeForms();
             addRow.start('add');
             setAdding({ name: '', color: firstFreeColor(profiles) });
           }}
