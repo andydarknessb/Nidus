@@ -1,6 +1,8 @@
 // The message Send to Target shows, sends and opens (docs/specs/0019-the-shopper.md, "The Send to Target sheet"). Pure: the items to get
-// in their order, then each Usual whose name is in one of them (the Household's Usuals, src/lib/usuals.ts).
+// in their order, then each Usual whose name is in one of them (the Household's Usuals, src/lib/usuals.ts). Also the send: what each
+// press does, over the phone's share and copy and the list's mark-sent write (docs/specs/0020, "The send").
 
+import type { CardWriteOutcome } from './change';
 import type { Usual as HouseholdUsual } from './usuals';
 
 export type Usual = Pick<HouseholdUsual, 'name' | 'product' | 'target_link'>;
@@ -33,10 +35,90 @@ export function chatGptLink(message: string): string | null {
   return link.length <= CHATGPT_LINK_LIMIT ? link : null;
 }
 
-// What a Share that ended means (the sheet calls it with the error, or undefined when the share resolved): a resolved share marks the
-// list sent; a share sheet the person closed marks nothing and says nothing; any other failure marks nothing and says so.
-export function shareEnd(error: unknown): { marks: boolean; said: string } {
-  if (error === undefined) return { marks: true, said: '' };
+// What a share that threw says: a share sheet the person closed says nothing; any other failure says so.
+function shareFailure(error: unknown): string {
   const name = typeof error === 'object' && error !== null && 'name' in error ? error.name : '';
-  return name === 'AbortError' ? { marks: false, said: '' } : { marks: false, said: "Couldn't share. Try Copy." };
+  return name === 'AbortError' ? '' : "Couldn't share. Try Copy.";
+}
+
+// The phone's side of a press, and the list's: what the message is now, whether a write is on its way (the list's, or the Usuals not yet
+// read), the share sheet (absent when the phone has none), the copy, and the mark-sent write (the list's change).
+type SendAdapters = {
+  message: () => string;
+  busy: () => boolean;
+  share?: ((data: { text: string }) => Promise<void>) | undefined;
+  copy: (text: string) => Promise<void>;
+  mark: () => Promise<CardWriteOutcome>;
+};
+
+type SendState = { said: string; copied: boolean };
+
+// What a press of Send to Target does (docs/specs/0020, "The send"). Open marks the list sent and says whether the link is to be
+// followed; a share that resolves marks it, a share the person closed marks nothing and says nothing, any other failure says so; a copy
+// that worked says Copied and marks it, one that failed says so and marks nothing. A press while a mark or the share sheet is on its way
+// does nothing. A share is called in the press's own turn, since the browser allows it only from a press.
+export function createSend(adapters: SendAdapters) {
+  let state: SendState = { said: '', copied: false };
+  const listeners = new Set<() => void>();
+  const set = (next: Partial<SendState>) => {
+    state = { ...state, ...next };
+    listeners.forEach((listener) => listener());
+  };
+  let marking = false;
+  let sharing = false;
+  const idle = () => !marking && !sharing && !adapters.busy();
+
+  const mark = async () => {
+    marking = true;
+    try {
+      await adapters.mark();
+    } finally {
+      marking = false;
+    }
+  };
+
+  return {
+    state: () => state,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+    // Returns whether the link is to be followed.
+    open(): boolean {
+      if (!idle()) return false;
+      set({ said: '' });
+      void mark();
+      return true;
+    },
+    async share(): Promise<void> {
+      const share = adapters.share;
+      if (!share || !idle()) return;
+      sharing = true;
+      set({ said: '' });
+      let said = '';
+      let marks = true;
+      try {
+        await share({ text: adapters.message() });
+      } catch (error) {
+        marks = false;
+        said = shareFailure(error);
+      } finally {
+        sharing = false;
+      }
+      set({ said });
+      if (marks) await mark();
+    },
+    async copy(): Promise<void> {
+      if (!idle()) return;
+      set({ said: '' });
+      try {
+        await adapters.copy(adapters.message());
+      } catch {
+        set({ copied: false, said: "Couldn't copy. Select the message and copy it by hand." });
+        return;
+      }
+      set({ copied: true });
+      await mark();
+    },
+  };
 }
