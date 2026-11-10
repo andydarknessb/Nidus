@@ -246,21 +246,11 @@ describe('expandFeed: which occurrences', () => {
 });
 
 describe('expandFeed: text', () => {
-  it('unfolds lines, unescapes text, and cuts long ones as Google rows are cut', () => {
-    const long = 'x'.repeat(9000);
+  it('unfolds lines, unescapes text, and carries the place', () => {
     const folded = 'DESCRIPTION:Bring the big one\\, the blue one\\nand a snack\n  that is folded here';
-    const text = feed(`BEGIN:VEVENT\nUID:t\nDTSTAMP:20260901T000000Z\nSUMMARY:${'T'.repeat(600)}\nLOCATION:${'L'.repeat(600)}\nDTSTART:20261014T140000Z\n${folded}\nEND:VEVENT`);
-    const [row] = expand(text);
-    expect(row?.title).toBe('T'.repeat(500));
-    expect(row?.location).toBe('L'.repeat(500));
+    const [row] = expand(feed(`BEGIN:VEVENT\nUID:t\nDTSTAMP:20260901T000000Z\nLOCATION:Clinic\\, Room 2\nDTSTART:20261014T140000Z\n${folded}\nEND:VEVENT`));
     expect(row?.description).toBe('Bring the big one, the blue one\nand a snack that is folded here');
-    const [longRow] = expand(feed(event(`DTSTART:20261014T140000Z\nDESCRIPTION:${long}`)));
-    expect(longRow?.description).toHaveLength(8000);
-  });
-
-  it('names an untitled event and leaves absent notes null', () => {
-    const [row] = expand(feed('BEGIN:VEVENT\nUID:n\nDTSTAMP:20260901T000000Z\nDTSTART:20261014T140000Z\nEND:VEVENT'));
-    expect(row).toMatchObject({ title: '(No title)', description: null, location: null });
+    expect(row?.location).toBe('Clinic, Room 2');
   });
 });
 

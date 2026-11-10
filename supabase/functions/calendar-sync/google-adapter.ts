@@ -9,7 +9,7 @@
 // deleted with its events and is no failure. One calendar failing never stops the others; an account Google no
 // longer honours is needs_reauth. Token minting is shared with calendar-connect's code exchange
 // (_shared/google-token.ts).
-import { type EventRow, MAX_DESCRIPTION, MAX_LOCATION, MAX_TITLE } from '../_shared/event-row.ts';
+import { type EventRow, eventRow } from '../_shared/event-row.ts';
 import { mintAccessToken } from '../_shared/google-token.ts';
 import { addDays, dayStartMs } from '../_shared/zoned-time.ts';
 import { type Calendar, canReadIncrementally, type Outcome, type ProviderAdapter, replace, SyncFailure, type SyncDeps, syncWindow, type Window } from './adapter.ts';
@@ -35,29 +35,20 @@ class CalendarGone extends Error {}
 // usable time. All-day events (`date`, the end exclusive) become Household midnights.
 export function toRow(event: GoogleEvent, timezone: string): EventRow | null {
   if (!event.id || event.status === 'cancelled') return null;
-  let startsAt: number;
-  let endsAt: number;
-  let isAllDay = false;
+  let startsMs: number;
+  let endsMs: number;
+  let allDay = false;
   if (event.start?.date && DATE_ONLY.test(event.start.date)) {
-    isAllDay = true;
-    startsAt = dayStartMs(event.start.date, timezone);
-    endsAt = dayStartMs(event.end?.date && DATE_ONLY.test(event.end.date) ? event.end.date : addDays(event.start.date, 1), timezone);
+    allDay = true;
+    startsMs = dayStartMs(event.start.date, timezone);
+    endsMs = dayStartMs(event.end?.date && DATE_ONLY.test(event.end.date) ? event.end.date : addDays(event.start.date, 1), timezone);
   } else if (event.start?.dateTime) {
-    startsAt = Date.parse(event.start.dateTime);
-    endsAt = event.end?.dateTime ? Date.parse(event.end.dateTime) : startsAt;
+    startsMs = Date.parse(event.start.dateTime);
+    endsMs = event.end?.dateTime ? Date.parse(event.end.dateTime) : startsMs;
   } else {
     return null;
   }
-  if (Number.isNaN(startsAt) || Number.isNaN(endsAt) || endsAt < startsAt) return null;
-  return {
-    google_event_id: event.id,
-    title: (event.summary?.trim() || '(No title)').slice(0, MAX_TITLE),
-    description: event.description ? event.description.slice(0, MAX_DESCRIPTION) : null,
-    location: event.location ? event.location.slice(0, MAX_LOCATION) : null,
-    starts_at: new Date(startsAt).toISOString(),
-    ends_at: new Date(endsAt).toISOString(),
-    is_all_day: isAllDay,
-  };
+  return eventRow({ key: event.id, title: event.summary, notes: event.description, place: event.location, startsMs, endsMs, allDay });
 }
 
 
