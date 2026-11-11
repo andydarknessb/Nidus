@@ -271,7 +271,8 @@ async function callback(url: URL, deps: ConnectDeps, now: number): Promise<Respo
       household_id: state.household_id,
       calendar_account_id: accountId,
       google_calendar_id: calendar.id,
-      name: (calendar.summaryOverride ?? calendar.summary ?? calendar.id).slice(0, 500),
+      // Cut by code points, as _shared/feed.ts does: the cap and the migration's check count characters.
+      name: Array.from(calendar.summaryOverride ?? calendar.summary ?? calendar.id).slice(0, 500).join(''),
     })),
     { onConflict: 'calendar_account_id,google_calendar_id' },
   );

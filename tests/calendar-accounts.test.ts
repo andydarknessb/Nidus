@@ -41,7 +41,7 @@ import {
   type Tablet,
 } from './support/supabase';
 import { startSyncedRead } from '../src/lib/synced-read';
-import { fakeGoogle } from './support/google';
+import { fakeGoogle, type FakeGoogleOptions } from './support/google';
 
 const STATE_SECRET = 'test-state-secret-that-is-long-enough-to-sign-with';
 const env = {
@@ -103,8 +103,13 @@ async function arrange(): Promise<HouseholdAccount> {
   return account;
 }
 
-async function connect(account: HouseholdAccount, email: string, refreshToken = 'refresh-token-1'): Promise<string> {
-  const google = fakeGoogle({ email, refreshToken });
+async function connect(
+  account: HouseholdAccount,
+  email: string,
+  refreshToken = 'refresh-token-1',
+  calendars?: FakeGoogleOptions['calendars'],
+): Promise<string> {
+  const google = fakeGoogle({ email, refreshToken, ...(calendars ? { calendars } : {}) });
   const d = deps(google);
   const state = stateOf(await startFlow(account, 'settings', d));
   const response = await handleCalendarConnect(callbackFor(state), d);
@@ -243,6 +248,22 @@ describe('calendar-connect callback', () => {
     await connect(account, 'parent@example.com');
 
     expect(await familyOf()).toEqual([{ selected: false }]);
+  });
+
+  // The cap counts characters, as the migration's check does: an emoji is kept or cut whole, never split.
+  it.each([
+    ['an emoji that sits on the cap', 'a'.repeat(499) + '😀', 'a'.repeat(499) + '😀'],
+    ['a run of emoji past the cap', '😀'.repeat(501), '😀'.repeat(500)],
+    ['an emoji that ends just inside the cap', 'a'.repeat(498) + '😀', 'a'.repeat(498) + '😀'],
+  ])('stores a calendar name with %s on a character boundary', async (_label, summary, stored) => {
+    const account = await arrange();
+    await connect(account, 'parent@example.com', 'refresh-token-1', [
+      { id: 'parent@example.com', summary: 'parent@example.com', primary: true },
+      { id: 'long@group.calendar.google.com', summary },
+    ]);
+
+    const calendars = await loadMirroredCalendars(await asHouseholdAccount(account));
+    expect(calendars.map((calendar) => calendar.name).sort()).toEqual(['parent@example.com', stored].sort());
   });
 
   it('refuses a forged, tampered or expired state and stores nothing', async () => {
